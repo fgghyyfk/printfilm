@@ -3,6 +3,20 @@
 from app.services.ark import _format_seedance_create_error
 
 
+def test_format_seedance_invalid_image_format():
+    body = (
+        '{"error":{"code":"InvalidParameter","message":'
+        '"The parameter `content[3]` specified in the request is not valid: '
+        'invalid image format (detected format); received: M4A. '
+        'Request id: 021792136049408d"}}'
+    )
+    labels = ["分镜文案", "角色「甲」", "场景「室」", "参考图「试听」"]
+    msg = _format_seedance_create_error(400, body, content_labels=labels)
+    assert "参考图格式无效" in msg
+    assert "试听" in msg
+    assert "1.8" not in msg
+
+
 def test_format_seedance_audio_duration_too_short_with_label():
     body = (
         '{"error":{"code":"InvalidParameter","message":'

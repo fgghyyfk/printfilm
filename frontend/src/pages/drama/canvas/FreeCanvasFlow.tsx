@@ -4,6 +4,7 @@ import {
   Background,
   MiniMap,
   ReactFlow,
+  SelectionMode,
   useReactFlow,
   type Connection,
   type Edge,
@@ -164,6 +165,8 @@ export function FreeCanvasFlow({ projectId }: FreeCanvasFlowProps) {
         onConnect={onConnect}
         onNodeDragStart={handleNodeDragStart}
         onNodeDragStop={handleNodeDragStop}
+        onSelectionDragStart={handleNodeDragStart}
+        onSelectionDragStop={handleNodeDragStop}
         isValidConnection={isValidConnection}
         onPaneClick={handlePaneClick}
         deleteKeyCode={['Backspace', 'Delete']}
@@ -172,6 +175,12 @@ export function FreeCanvasFlow({ projectId }: FreeCanvasFlowProps) {
         minZoom={0.2}
         maxZoom={2}
         zoomOnDoubleClick={false}
+        selectionOnDrag
+        selectionMode={SelectionMode.Partial}
+        selectionKeyCode="Shift"
+        multiSelectionKeyCode={['Meta', 'Control']}
+        panOnDrag={[1, 2]}
+        panActivationKeyCode="Space"
         proOptions={{ hideAttribution: true }}
         defaultEdgeOptions={{ type: 'default' }}
       >

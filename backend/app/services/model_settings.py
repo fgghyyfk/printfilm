@@ -400,7 +400,7 @@ async def _ensure_tokenfree_channel(db: AsyncSession, existing: list[SystemModel
         current_key = migrated_key
     from app.services.media_model_presets import all_preset_channel_models
 
-    # 渠道 models 固定为站点预设并集（含 gpt-image-2 / 仅 qwen-tts）
+    # 渠道 models 固定为站点预设并集（含 gpt-image-2 / gpt-image-2.5 / 仅 qwen-tts）
     preset = all_preset_channel_models()
     if list(token_row.models or []) != preset:
         token_row.models = preset

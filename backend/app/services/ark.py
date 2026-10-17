@@ -458,6 +458,18 @@ def _format_seedance_create_error(
         return "分镜文案未通过内容审核，请修改敏感表述后重试"
     if "resource download failed" in text and "audio" in text.lower():
         return "参考音频无法下载，请检查角色音色绑定后重试"
+    # 参考图槽位收到非图片（常见：音色 cover 写成 mp3）
+    if re.search(r"invalid image format", text, re.I) or (
+        re.search(r"File type not supported", text, re.I)
+        and re.search(r"content\[\d+\]", text, re.I)
+    ):
+        idx, label = _seedance_content_slot_label(text, content_labels)
+        who = label or (f"提交内容第 {idx + 1} 项 / content[{idx}]" if idx >= 0 else "某张参考图")
+        return (
+            f"参考图格式无效：{who}。"
+            "上游按图片校验失败（常见原因：音频文件被误当作参考图，或链接不是 PNG/JPG/WEBP）。"
+            "请检查本镜引用的角色/场景封面，确认音色资产未占用参考图槽位后重试。"
+        )
     # Seedance r2v：reference_audio 时长须 ≥ 1.8 秒
     if re.search(r"audio duration.*(?:1\.8|greater than or equal)", text, re.I) or (
         "audio duration" in text.lower() and "content[" in text.lower()
@@ -976,20 +988,40 @@ class ArkGateway:
         # TokenFree 按逻辑路由解析出的上游模型原样发送，不硬改模型名
         chosen = (upstream_model or "").strip()
         if on_tokenfree and "gpt-image" in chosen.lower():
-            # Kie / gpt-image 实际按 1K·2K 档；画幅靠 aspect_ratio 自然语言约束。
-            # 无 aspect_ratio 时保留 WxH，避免把唯一画幅信号压成「清晰度2K」。
+            from app.services.tokenfree_image import gpt_image_caps_at_2k
+
+            # GPT Image 2 只吃 1K/2K；2.5 保留 4K。画幅靠 aspect_ratio 自然语言约束。
             raw_size = str(resolved_size or "").strip()
             upper = raw_size.upper()
-            if upper in {"3K", "4K"}:
-                resolved_size = "2K"
-            elif "x" in raw_size.lower() and str(aspect_ratio or "").strip():
-                try:
-                    w_s, _, h_s = raw_size.lower().partition("x")
-                    area = int(w_s) * int(h_s)
-                    resolved_size = "2K" if area >= 1500 * 1500 else "1K"
-                except ValueError:
+            if gpt_image_caps_at_2k(chosen):
+                if upper in {"3K", "4K"}:
                     resolved_size = "2K"
-        if on_tokenfree:
+                elif "x" in raw_size.lower() and str(aspect_ratio or "").strip():
+                    try:
+                        w_s, _, h_s = raw_size.lower().partition("x")
+                        area = int(w_s) * int(h_s)
+                        resolved_size = "2K" if area >= 1500 * 1500 else "1K"
+                    except ValueError:
+                        resolved_size = "2K"
+            elif upper in {"3K", "4K"} or "x" in raw_size.lower():
+                resolved_size = raw_size
+        from app.services.tokenfree_image import (
+            build_tokenfree_openai_image_body,
+            is_gpt_image_25,
+        )
+
+        # 2.5 的渠道是 image-generation，走 /responses 会报 default 分组无 distributor
+        if on_tokenfree and is_gpt_image_25(chosen):
+            path = "/images/generations"
+            body = build_tokenfree_openai_image_body(
+                model=chosen,
+                prompt=full_prompt,
+                size=str(resolved_size or ""),
+                aspect_ratio=str(aspect_ratio or ""),
+                ref_urls=subject_refs,
+                style_ref_urls=style_refs,
+            )
+        elif on_tokenfree:
             path = "/responses"
             body = build_tokenfree_image_body(
                 model=chosen,
@@ -1450,6 +1482,16 @@ class ArkGateway:
                 content,
                 project_id=project_id,
             )
+        # 提交上游前硬校验 reference_audio 时长，避免 InvalidParameter 才暴露
+        from app.services.drama.voice_reference_audio import (
+            validate_seedance_body_reference_audios,
+        )
+
+        await validate_seedance_body_reference_audios(
+            payload,
+            content_labels=content_labels,
+            project_id=project_id,
+        )
         payload["duration"] = self._seedance_duration(
             payload.get("duration", 8),
             model=str(payload.get("model") or ""),

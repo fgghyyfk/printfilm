@@ -1539,6 +1539,23 @@ async def prepare_fragment_video_for_submit(
                 ),
             }
         )
+        content_labels = describe_seedance_content_slots(
+            ref_payloads,
+            continuity_url,
+            has_text=bool((prompt or "").strip()),
+            style_board_url=video_board_url or None,
+            content=prompt,
+        )
+        # 准备阶段先校验时长，过短/过长直接失败并提示（提交阶段 ark 仍会再拦一次）
+        from app.services.drama.voice_reference_audio import (
+            validate_seedance_body_reference_audios,
+        )
+
+        await validate_seedance_body_reference_audios(
+            body,
+            content_labels=content_labels,
+            project_id=project.id,
+        )
         return FragmentVideoPrepared(
             submit_mode="seedance_body",
             seedance_body=body,
@@ -1546,13 +1563,7 @@ async def prepare_fragment_video_for_submit(
             duration=duration,
             ratio=ratio,
             resolution=resolution,
-            content_labels=describe_seedance_content_slots(
-                ref_payloads,
-                continuity_url,
-                has_text=bool((prompt or "").strip()),
-                style_board_url=video_board_url or None,
-                content=prompt,
-            ),
+            content_labels=content_labels,
             model_id=mid,
         )
 

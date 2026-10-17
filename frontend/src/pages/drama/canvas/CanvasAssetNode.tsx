@@ -13,6 +13,7 @@ import {
   Handle,
   NodeToolbar,
   Position,
+  useStore,
   useUpdateNodeInternals,
   type Node,
   type NodeProps,
@@ -82,8 +83,18 @@ function CanvasAssetNodeComponent({ id, data, selected }: NodeProps<Node<CanvasA
   const Icon = option.icon
   const isText = data.kind === 'text'
   const mediaSrc = resolveDramaMediaUrl(data.mediaUrl)
-  const showUpload = selected && CANVAS_UPLOADABLE_KINDS.has(data.kind)
-  const showGenerate = selected && CANVAS_GENERATABLE_KINDS.has(data.kind)
+  /* 框选多张时只给唯一选中节点展开编辑条，其余只显示选中描边 */
+  const soloSelected = useStore((state) => {
+    let selectedId: string | null = null
+    for (const node of state.nodes) {
+      if (!node.selected) continue
+      if (selectedId) return false
+      selectedId = node.id
+    }
+    return selectedId === id
+  })
+  const showUpload = soloSelected && CANVAS_UPLOADABLE_KINDS.has(data.kind)
+  const showGenerate = soloSelected && CANVAS_GENERATABLE_KINDS.has(data.kind)
   const voiceLabel = typeof data.voiceLabel === 'string' ? data.voiceLabel : ''
   const voiceUrl = typeof data.voiceUrl === 'string' ? data.voiceUrl : ''
   const displayName =
@@ -252,7 +263,7 @@ function CanvasAssetNodeComponent({ id, data, selected }: NodeProps<Node<CanvasA
           }
         >
           {isText ? (
-            selected ? (
+            soloSelected ? (
               <textarea
                 className="fc-text-editor nodrag nowheel"
                 value={data.textContent || ''}

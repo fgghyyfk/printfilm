@@ -84,6 +84,77 @@ def test_style_board_sits_after_assets_before_continuity():
     assert all(item.get("role") == "reference_image" for item in items if item.get("type") == "image_url")
 
 
+def test_voice_asset_cover_mp3_not_in_image_slots():
+    """音色 cover 写成 mp3 时不得进 reference_image（否则上游 content[n] invalid image format）。"""
+    reference = [
+        {
+            "id": 1,
+            "type": "character",
+            "name": "甲",
+            "cover": "https://cdn.example.com/a.jpg",
+            "url": "",
+            "params": {"voiceAudio": {"url": "https://cdn.example.com/voice.mp3"}},
+        },
+        {
+            "id": 2,
+            "type": "scene",
+            "name": "室",
+            "cover": "https://cdn.example.com/s.jpg",
+            "url": "",
+            "params": {},
+        },
+        {
+            "id": 3,
+            "type": "voice",
+            "assetType": "audio",
+            "name": "试听",
+            "cover": "https://cdn.example.com/voice.mp3",
+            "url": "https://cdn.example.com/voice.mp3",
+            "params": {},
+        },
+    ]
+    script = "甲：你好。"
+    items = build_seedance_content_items(script, reference)
+    labels = describe_seedance_content_slots(
+        reference, None, has_text=True, content=script
+    )
+    image_urls = [
+        item["image_url"]["url"]
+        for item in items
+        if item.get("type") == "image_url"
+    ]
+    audio_urls = [
+        item["audio_url"]["url"]
+        for item in items
+        if item.get("type") == "audio_url"
+    ]
+    assert image_urls == [
+        "https://cdn.example.com/a.jpg",
+        "https://cdn.example.com/s.jpg",
+    ]
+    assert "voice.mp3" not in "".join(image_urls)
+    assert "https://cdn.example.com/voice.mp3" in audio_urls
+    assert len(labels) == len(items)
+    assert labels[3].startswith("角色音色") or "音色" in labels[3]
+
+
+def test_character_cover_mp3_rejected_as_image():
+    """角色 cover 误写成音频时也不进 reference_image。"""
+    from app.services.drama.build_seedance_generate_body import resolve_reference_image_url
+
+    assert (
+        resolve_reference_image_url(
+            {
+                "id": 9,
+                "type": "character",
+                "cover": "https://cdn.example.com/bad.mp3",
+                "url": "",
+            }
+        )
+        is None
+    )
+
+
 def test_style_board_ignored_without_catalog_images():
     continuity = "https://cdn.example.com/prev_last.jpg"
     board = "https://cdn.example.com/ghibli-board.png"

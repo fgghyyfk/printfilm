@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -201,7 +202,14 @@ RECOMMENDED_MODELS: tuple[dict[str, Any], ...] = (
         "id": "gpt-image-2",
         "capability": "image",
         "label": "GPT Image 2",
-        "note": "OpenAI 生图，约 $0.075/次",
+        "note": "OpenAI 生图，约 ¥0.55/次",
+        "recommended": False,
+    },
+    {
+        "id": "gpt-image-2.5",
+        "capability": "image",
+        "label": "GPT Image 2.5",
+        "note": "OpenAI 新一代生图，细节与文字更稳",
         "recommended": False,
     },
     {
@@ -412,18 +420,44 @@ def parse_pricing_payload(payload: dict[str, Any], settings: Settings | None = N
     return out
 
 
+def _gpt_image_id_variants(model: str) -> list[str]:
+    """gpt-image-2.5 ↔ gpt-image-2-5 等目录写法互查。"""
+    mid = (model or "").strip()
+    if not mid:
+        return []
+    out: list[str] = [mid]
+    dotted = re.sub(r"(?i)gpt-image-2-5", "gpt-image-2.5", mid)
+    hyphen = re.sub(r"(?i)gpt-image-2\.5", "gpt-image-2-5", mid)
+    for alt in (dotted, hyphen):
+        if alt and alt not in out:
+            out.append(alt)
+    return out
+
+
 def lookup_rate(model: str, rates: dict[str, OfficialRate] | None = None) -> OfficialRate | None:
-    """按模型 id 精确或忽略大小写查找。"""
+    """按模型 id 精确或忽略大小写查找（含 gpt-image 点分/连字符）。"""
     mid = (model or "").strip()
     table = rates if rates is not None else cached_rates()
     if not mid or not table:
         return None
-    hit = table.get(mid)
-    if hit:
-        return hit
-    key = mid.lower()
+    candidates = _gpt_image_id_variants(mid)
+    try:
+        from app.services.media_model_presets import resolve_preset_alias
+
+        aliased = resolve_preset_alias(mid)
+        if aliased:
+            for alt in _gpt_image_id_variants(aliased):
+                if alt not in candidates:
+                    candidates.append(alt)
+    except Exception:  # noqa: BLE001
+        pass
+    for cand in candidates:
+        hit = table.get(cand)
+        if hit:
+            return hit
+    keys = {c.lower() for c in candidates}
     for name, row in table.items():
-        if name.lower() == key:
+        if name.lower() in keys:
             return row
     return None
 
@@ -547,11 +581,9 @@ def resolve_billing_image_size(settings: Settings, *, model: str = "", size: str
     # z-image / qwen 等生成侧强制 1K，计费同步
     if _is_compact_tokenfree_image_model(working) or _is_compact_tokenfree_image_model(upstream):
         return "1K"
-    if (
-        is_seedream_pro_model(upstream)
-        or "sunburst" in working.lower()
-        or "gpt-image" in working.lower()
-    ):
+    from app.services.tokenfree_image import gpt_image_caps_at_2k
+
+    if is_seedream_pro_model(upstream) or gpt_image_caps_at_2k(working) or gpt_image_caps_at_2k(upstream):
         if raw.strip().upper() in {"3K", "4K"}:
             return "2K"
     return raw

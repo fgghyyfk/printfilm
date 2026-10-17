@@ -201,7 +201,10 @@ async def synthesize_voice_asset(
         asset_id=asset.id,
     )
     asset.url = audio_url
-    asset.cover = asset.cover or audio_url
+    # 不把 mp3 写入 cover：避免 Seedance 把音色资产当成 reference_image
+    cover = (asset.cover or "").split("?", 1)[0].strip().lower()
+    if any(cover.endswith(ext) for ext in (".mp3", ".wav", ".m4a", ".aac", ".ogg", ".webm")):
+        asset.cover = ""
     params: dict[str, Any] = dict(asset.params or {})
     params["voicePrompt"] = prompt
     params["sampleText"] = text

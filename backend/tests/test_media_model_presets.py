@@ -24,6 +24,7 @@ def test_all_preset_channel_models_covers_four_caps() -> None:
     assert "seedream-5.0" in models
     assert "seedream-5.0-flash" in models
     assert "gpt-image-2" in models
+    assert "gpt-image-2.5" in models
     assert "seedance-2.5" in models
     assert "seedance-2.0-fast" in models
     assert "MiniMax-H3" in models
@@ -35,6 +36,7 @@ def test_all_preset_channel_models_covers_four_caps() -> None:
         "seedream-5.0",
         "seedream-5.0-flash",
         "gpt-image-2",
+        "gpt-image-2.5",
     ]
     assert preset_ids("audio") == ["qwen-tts-2025-05-22"]
     assert set(preset_ids("video")) == {
@@ -66,8 +68,11 @@ def test_clamp_seedream_aliases_to_canonical() -> None:
     assert clamp_default_to_preset("image", "seedream-5-0") == "seedream-5.0"
     assert clamp_default_to_preset("image", "seedream-5.0-flash") == "seedream-5.0-flash"
     assert clamp_default_to_preset("image", "gpt-image-2") == "gpt-image-2"
-    assert clamp_default_to_preset("image", "gpt-image-2.5") == "gpt-image-2"
+    assert clamp_default_to_preset("image", "gpt-image-2.5") == "gpt-image-2.5"
+    assert clamp_default_to_preset("image", "gpt-image-2-5") == "gpt-image-2.5"
+    assert clamp_default_to_preset("image", "gpt-image-2.5-sunburst") == "gpt-image-2.5"
     assert is_preset_model("image", "gpt-image-2") is True
+    assert is_preset_model("image", "gpt-image-2.5") is True
     assert is_preset_model("image", "seedream-5.0") is True
     assert is_preset_model("image", "nano-banana-2") is False
 
@@ -90,11 +95,13 @@ def test_build_body_clamps_minimax_duration() -> None:
 
 
 def test_image_options_standard_1k_2k() -> None:
-    for mid in ("seedream-5.0-pro", "seedream-5.0", "seedream-5.0-flash"):
+    for mid in ("seedream-5.0-pro", "seedream-5.0", "seedream-5.0-flash", "gpt-image-2"):
         opts = model_generation_options(mid)
         assert opts["capability"] == "image"
         assert opts["allowed_resolutions"] == ["1K", "2K"]
         assert "3:4" in opts["allowed_aspect_ratios"]
+    opts25 = model_generation_options("gpt-image-2.5")
+    assert opts25["allowed_resolutions"] == ["1K", "2K", "4K"]
 
 
 def test_minimax_h3_video_options() -> None:
