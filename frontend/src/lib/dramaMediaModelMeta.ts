@@ -10,6 +10,12 @@ export type MediaModelIconKind =
   | 'gptImage'
   | 'generic'
 
+/** MiniMax-H3（忽略大小写与连字符）才开放分集批量提交 */
+export function isMinimaxH3Model(modelId: string | undefined | null): boolean {
+  const id = (modelId || '').toLowerCase().replace(/[_-]/g, '')
+  return id.includes('minimax') && id.includes('h3')
+}
+
 /** 按模型 id 推断图标族 */
 export function mediaModelIconKind(modelId: string | undefined | null): MediaModelIconKind {
   const id = (modelId || '').toLowerCase()
