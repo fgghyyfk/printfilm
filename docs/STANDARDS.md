@@ -71,7 +71,7 @@ backend/app/
   services/      业务逻辑、流水线、方舟/OSS/计费
   models*.py     ORM
   schemas*.py    Pydantic 入出参
-  workers/       Celery / autoscale
+  services/tasks/  进程内调度、执行、轮询与看门狗
 frontend/src/
   pages/         路由页（studio / drama / …）
   components/    可复用 UI
@@ -104,6 +104,7 @@ docs/            产品与工程文档（本规范所在处）
 - 样式以 **`styles/printfilm.css` + 语义化 class（`pf-*`）** 为主，与现有视觉体系统一。
 - 路由与壳：`AppShell` / `SiteNav`；漫剧页 `active="drama"`。
 - 请求统一走 `src/api.ts` / `src/api/*`；错误用可读中文抛给 UI。
+- `api/http.ts` 只负责可独立测试的 HTTP 传输与响应解析，`api/client.ts` 绑定浏览器地址、登录态和错误展示；业务模块复用它们，不再各自维护 `fetch` 包装器。
 - 列表筛选、分页：**服务端分页**（见历史页 `/api/projects`）；禁止只在前端 slice 全量列表当长期方案。
 - 组件内临时 UI 状态用 `useState`；跨页共享若出现，优先评估提升到明确模块，避免隐式全局变量。
 
@@ -112,6 +113,8 @@ docs/            产品与工程文档（本规范所在处）
 - **Tailwind + shadcn/ui**；用 `cn()` 合并 class。
 - 复杂运营台布局可用 `admin-*.css` / `index.css` 中的语义 class（与用户端 `pf-*` 分离）。
 - 分页组件复用 `PaginationBar`；列表接口带 `page` / `page_size` / `meta`。
+- `api/client.ts` 维护请求与登录能力，接口类型按领域放在 `api/types/`；旧路径保留类型导出，避免页面随内部拆分批量改动。
+- 财务列表统一调用 `api/finance.ts`，订单与流水详情放在 `components/finance/`，页面只编排筛选、分页和交互状态。
 
 ### 4.3 交互与可访问性
 
@@ -129,11 +132,14 @@ docs/            产品与工程文档（本规范所在处）
 - 鉴权：用户接口 `get_current_user`；管理 `get_current_admin`。
 - 入参用 Pydantic；出参明确 `response_model`。
 - 列表默认：**分页**（`page`、`page_size`、`meta.total`），并支持必要筛选参数。
+- 项目列表的筛选、统计和运行态投影放在 `services/kepu_projects.py`；关联活动任务按整页项目批量读取，复用任务服务的用户隔离与加载规则。
 - 错误：业务用 `HTTPException`，对外 `detail` 为中文短句；勿把堆栈直接回给前端。
 
 ### 5.2 异步与任务
 
-- 长任务走 Celery（`pipeline` / `oss` 队列）；`USE_CELERY=true` 时本地也要起 worker。
+- 长任务走 `services/tasks/` 统一任务平台，由 FastAPI 进程内的调度器、执行器和轮询器处理；不需要单独启动 Celery worker。
+- 运行时按调度器、轮询器、看门狗的顺序启动，启动失败时逆序清理已启动组件；关闭某个组件失败也必须继续清理其余组件。
+- 健康摘要同时检查组件存活和心跳是否过期；轮询下载期间沿用轮询器自身的心跳宽限规则。
 - 启动 `seed_*` 不得阻塞过久：已有 OSS URL 勿重复同步上传。
 - 多 worker 下注意 `create_all` / 迁移竞态；生产 API 建议单 worker 或显式迁移策略。
 

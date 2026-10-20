@@ -239,7 +239,6 @@ def _bootstrap_logical_from_channels(channels: list[SystemModelChannel]) -> tupl
     alias_models: list[LogicalModel] = []
 
     def _bindings_for_upstream(upstream: str) -> list:
-        from app.schemas_routing import LogicalModelBinding
         from app.services.tokenfree_pricing import canonicalize_channel_model_id
 
         wanted = {(upstream or "").strip(), canonicalize_channel_model_id(upstream)}
@@ -573,7 +572,7 @@ def _build_readiness(
         "video": "video_model",
         "audio": "audio_model",
     }.items():
-        cap = capability  # type: LogicalModelCapability
+        cap: LogicalModelCapability = capability
         model_id = getattr(defaults, attr) or ""
         resolved = resolve_logical_model_config(logical_models, channels, cap, model_id) if model_id else None
         items.append(

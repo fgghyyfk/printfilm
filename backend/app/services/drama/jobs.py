@@ -748,8 +748,8 @@ async def _run_single_episode_script_job(
                     character_asset_names=character_asset_names,
                 )
             elif mode == "full":
-                if len(ep_creative) < 20:
-                    raise ValueError("请先填写本集原始创意（至少 20 字）")
+                if len(ep_summary) < 40 and len(ep_creative) < 20:
+                    raise ValueError("请先填写本集梗概（至少 40 字）或创作备注（至少 20 字）")
                 batch = await run_episode_full_from_creative(
                     summary,
                     existing,
@@ -758,6 +758,7 @@ async def _run_single_episode_script_job(
                     project_source=project_source,
                     title=ep_title,
                     character_asset_names=character_asset_names,
+                    summary=ep_summary,
                 )
             elif mode == "brief":
                 ep_body = str((current or {}).get("body") or (current or {}).get("content") or "").strip()

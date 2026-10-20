@@ -9,7 +9,6 @@ import re
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from app.services.tokenfree_gateway import TOKENFREE_CHANNEL_ID
 from app.services.tokenfree_video import uses_tokenfree_video
 
 logger = logging.getLogger(__name__)

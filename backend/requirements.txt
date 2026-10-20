@@ -9,7 +9,6 @@ python-jose[cryptography]==3.4.0
 passlib[bcrypt]==1.7.4
 bcrypt==4.3.0
 python-multipart==0.0.20
-celery==5.5.1
 redis==5.2.1
 httpx==0.28.1
 sse-starlette==2.2.1

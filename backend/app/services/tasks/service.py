@@ -1014,6 +1014,20 @@ async def cancel_task_for_user(db: AsyncSession, user: User, task_id: int) -> Ta
     return await get_task_for_user(db, user, task.id)
 
 
+# 共用用户隔离、活动态筛选和详情加载，保证单项目与列表查询语义一致。
+def _active_owner_tasks_statement(user_id: int, *scope_filters) -> Select:
+    return (
+        select(TaskRun)
+        .options(*task_detail_options())
+        .where(
+            TaskRun.requested_by == user_id,
+            TaskRun.status.in_(tuple(ACTIVE_TASK_STATUSES)),
+            or_(*scope_filters),
+        )
+        .order_by(TaskRun.created_at.desc())
+    )
+
+
 async def list_active_tasks_for_owner(
     db: AsyncSession,
     user_id: int,
@@ -1021,6 +1035,7 @@ async def list_active_tasks_for_owner(
     project_id: int | None = None,
     drama_project_id: int | None = None,
 ) -> list[TaskRun]:
+    """读取用户在指定项目范围内的活动任务，按创建时间倒序返回。"""
     scope_filters = []
     if project_id is not None:
         scope_filters.append(TaskRun.project_id == project_id)
@@ -1028,13 +1043,25 @@ async def list_active_tasks_for_owner(
         scope_filters.append(TaskRun.drama_project_id == drama_project_id)
     if not scope_filters:
         return []
-    filters = [
-        TaskRun.requested_by == user_id,
-        TaskRun.status.in_(tuple(ACTIVE_TASK_STATUSES)),
-        or_(*scope_filters),
-    ]
-    stmt = select(TaskRun).options(*task_detail_options()).where(*filters).order_by(TaskRun.created_at.desc())
+    stmt = _active_owner_tasks_statement(user_id, *scope_filters)
     return list((await db.execute(stmt)).scalars().unique().all())
+
+
+async def list_active_tasks_for_projects(
+    db: AsyncSession,
+    user_id: int,
+    project_ids: list[int],
+) -> dict[int, list[TaskRun]]:
+    """一次读取一页科普项目的活动任务，分组后仍保持各项目的新任务优先。"""
+    # 去重后的映射也为暂无活动任务的项目保留空列表；空页不访问数据库。
+    grouped: dict[int, list[TaskRun]] = {int(project_id): [] for project_id in project_ids}
+    if not grouped:
+        return grouped
+    stmt = _active_owner_tasks_statement(user_id, TaskRun.project_id.in_(list(grouped)))
+    tasks = (await db.execute(stmt)).scalars().unique().all()
+    for task in tasks:
+        grouped[task.project_id].append(task)
+    return grouped
 
 
 async def cancel_tasks_for_scope(

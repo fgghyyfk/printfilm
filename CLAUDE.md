@@ -43,7 +43,7 @@ pytest tests/test_x.py::test_name       # 单测
 
 ### 统一任务平台（核心，易误判）
 
-代码里没有独立 worker 进程：Celery 仅是遗留依赖（`USE_CELERY` 代码已不读取，`workers/` 目录不存在）。实际运行时是 **随 FastAPI 启动的进程内三件套**（`app/services/tasks/`）：
+代码里没有独立 worker 进程，也不依赖 Celery（`USE_CELERY` 等旧配置已移除，`workers/` 目录不存在）。实际运行时是 **随 FastAPI 启动的进程内三件套**（`app/services/tasks/`）：
 
 - `scheduler.py`：定时租约到期任务（pending→leased→running），受全站槽位 `TASK_RUNTIME_MAX_CONCURRENCY` 与单用户槽位 `TASK_USER_MAX_CONCURRENCY` 限制；含孤儿任务回收
 - `executor.py`：执行 handler

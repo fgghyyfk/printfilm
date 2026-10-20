@@ -43,11 +43,10 @@ def configure_logging(*, level: str = "INFO", sql_echo: bool = False) -> None:
         logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
 
     # 其他噪音
-    for name in ("uvicorn.access", "httpx", "httpcore", "celery", "asyncio", "multipart"):
+    for name in ("uvicorn.access", "httpx", "httpcore", "asyncio", "multipart"):
         logging.getLogger(name).setLevel(
             logging.INFO if name == "uvicorn.access" else logging.WARNING
         )
-    logging.getLogger("celery").setLevel(logging.INFO)
 
     if not _configured:
         logging.getLogger("app").info(

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { api, type AdminLedger, type PageMeta } from "@/api/client";
+import type { AdminLedger, PageResult } from "@/api/client";
+import { listAdminLedger } from "@/api/finance";
 import { AdminDateRangeFilter } from "@/components/admin/AdminDateRangeFilter";
 import { AdminEntityLink } from "@/components/admin/AdminEntityLink";
 import { AdminFilterBar } from "@/components/admin/AdminFilterBar";
@@ -12,18 +13,11 @@ import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page";
 import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
 import { fenToYuan } from "@/lib/utils";
 
-type LedgerRes = { items: AdminLedger[]; meta: PageMeta };
+type LedgerRes = PageResult<AdminLedger>;
 
 type DirectionFilter = "" | "credit" | "debit";
-
-/** 将 YYYY-MM-DD 转为东八区 ISO 边界（与订单用量筛选一致） */
-function toDayBoundary(date: string, endOfDay: boolean): string | null {
-  if (!date.trim()) return null;
-  return endOfDay ? `${date.trim()}T23:59:59+08:00` : `${date.trim()}T00:00:00+08:00`;
-}
 
 /** 调账方向文案：正数为调增，负数为调减 */
 function directionLabel(deltaFen: number): string {
@@ -44,20 +38,14 @@ export function AdjustRecordsPage() {
     async (nextPage = page) => {
       setLoading(true);
       try {
-        const params = new URLSearchParams({
-          page: String(nextPage),
-          page_size: String(DEFAULT_PAGE_SIZE),
-          ref_type: "admin",
-        });
-        if (userId) params.set("user_id", String(userId));
-        // 后台写流水：调减 kind=adjust，调增 kind=grant
-        if (direction === "credit") params.set("kind", "grant");
-        if (direction === "debit") params.set("kind", "adjust");
-        const fromIso = toDayBoundary(dateFrom, false);
-        const toIso = toDayBoundary(dateTo, true);
-        if (fromIso) params.set("created_from", fromIso);
-        if (toIso) params.set("created_to", toIso);
-        setData(await api<LedgerRes>(`/api/admin/ledger?${params}`));
+        // 后台写流水：调减 kind=adjust，调增 kind=grant。
+        setData(await listAdminLedger(nextPage, {
+          refType: "admin",
+          userId,
+          kind: direction === "credit" ? "grant" : direction === "debit" ? "adjust" : "",
+          dateFrom,
+          dateTo,
+        }));
       } catch (err) {
         setData(null);
         toast.error(err instanceof Error ? err.message : "加载调账记录失败");

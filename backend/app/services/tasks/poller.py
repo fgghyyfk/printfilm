@@ -208,10 +208,6 @@ async def _poll_one_task(task_id: int) -> None:
 
 # 后台轮询 api/studio 轻量视频任务：主动查上游终态，超时则失败并解冻。
 async def _poll_ephemeral_deferred_tasks() -> None:
-    from app.models import User
-    from app.services.billing.ephemeral import settle_deferred_video_poll
-    from app.services.studio_tools import poll_video_task
-
     now = datetime.now(UTC)
     timeout_sec = float(get_settings().ark_video_poll_timeout or 900.0)
 

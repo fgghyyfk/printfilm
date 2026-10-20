@@ -104,7 +104,7 @@ def main() -> None:
     parser.add_argument(
         "--enqueue",
         action="store_true",
-        help="Enqueue Celery oss uploads instead of sync upload+DB write",
+        help="Queue background OSS uploads instead of synchronous upload and DB update",
     )
     args = parser.parse_args()
     asyncio.run(run(dry_run=args.dry_run, enqueue=args.enqueue))

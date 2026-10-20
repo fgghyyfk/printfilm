@@ -1,29 +1,11 @@
 /** Agent Skill API：列表 / 上传 / 启用 / 删除 */
 
-import { getDramaApiBase } from './drama'
+import { createJsonRequester, uploadFile } from './client'
 
-/** 组装请求头；FormData 时不要强行 JSON */
-function authHeaders(json = true): HeadersInit {
-  const token = localStorage.getItem('token')
-  const headers: Record<string, string> = {}
-  if (token) headers.Authorization = `Bearer ${token}`
-  if (json) headers['Content-Type'] = 'application/json'
-  return headers
-}
-
-/** 带登录态请求 Agent Skill API */
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${getDramaApiBase()}${path}`, {
-    ...init,
-    headers: { ...authHeaders(init?.body instanceof FormData ? false : true), ...(init?.headers || {}) },
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }))
-    const detail = err.detail
-    throw new Error(typeof detail === 'string' ? detail : '请求失败')
-  }
-  return res.json()
-}
+/** Skill API 保留本模块的错误文案，避免依赖漫剧客户端。 */
+const request = createJsonRequester((_response, detail) => {
+  throw new Error(typeof detail === 'string' ? detail : '请求失败')
+})
 
 export type AgentSkill = {
   id: number
@@ -53,20 +35,10 @@ export function uploadAgentSkillMarkdown(markdown: string) {
 }
 
 /** 上传 .md 文件 */
-export async function uploadAgentSkillFile(file: File) {
-  const token = localStorage.getItem('token')
-  const body = new FormData()
-  body.append('file', file)
-  const res = await fetch(`${getDramaApiBase()}/api/drama/skills/upload`, {
-    method: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-    body,
+export function uploadAgentSkillFile(file: File) {
+  return uploadFile<AgentSkill>('/api/drama/skills/upload', file, (_response, detail) => {
+    throw new Error(typeof detail === 'string' ? detail : '上传失败')
   })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }))
-    throw new Error(typeof err.detail === 'string' ? err.detail : '上传失败')
-  }
-  return res.json() as Promise<AgentSkill>
 }
 
 /** 启用/停用或改正文 */

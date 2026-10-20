@@ -1,37 +1,8 @@
-import { throwApiError } from './lib/apiError'
+import { API_BASE, createJsonRequester, requestResponse, uploadFile } from './api/client'
+import { apiErrorMessage } from './api/http'
 
-function defaultApiBase() {
-  if (typeof window !== 'undefined' && window.location?.hostname) {
-    const { protocol, hostname } = window.location
-    // Same host as Vite; API listens on 8000 for LAN + local
-    return `${protocol}//${hostname}:8000`
-  }
-  return 'http://127.0.0.1:8000'
-}
-
-// Empty string = same-origin (nginx proxies /api). Undefined = LAN default :8000.
-const _viteApiBase = import.meta.env.VITE_API_BASE
-const API_BASE =
-  _viteApiBase === undefined || _viteApiBase === null ? defaultApiBase() : String(_viteApiBase)
-
-function authHeaders(): HeadersInit {
-  const token = localStorage.getItem('token')
-  return token
-    ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
-    : { 'Content-Type': 'application/json' }
-}
-
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: { ...authHeaders(), ...(init?.headers || {}) },
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }))
-    throwApiError(res.status, err.detail, res.statusText)
-  }
-  return res.json()
-}
+/** 科普、账号和计费 API 共用 JSON 传输层。 */
+const request = createJsonRequester()
 
 export type PipelineMode = 'full' | 'image_text'
 
@@ -356,27 +327,11 @@ export const api = {
       body: JSON.stringify(body),
     })
   },
-  async uploadAvatar(file: File) {
-    const token = localStorage.getItem('token')
-    const form = new FormData()
-    form.append('file', file)
-    const res = await fetch(`${API_BASE}/api/auth/avatar`, {
-      method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      body: form,
+  /** 上传用户头像并返回更新后的用户资料。 */
+  uploadAvatar(file: File) {
+    return uploadFile<User>('/api/auth/avatar', file, (response, detail) => {
+      throw new Error(apiErrorMessage(detail, response.statusText) || '头像上传失败')
     })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: res.statusText }))
-      const detail = err.detail
-      const message =
-        typeof detail === 'string'
-          ? detail
-          : Array.isArray(detail)
-            ? detail.map((d: { msg?: string }) => d.msg || JSON.stringify(d)).join('; ')
-            : res.statusText
-      throw new Error(message || '头像上传失败')
-    }
-    return res.json() as Promise<User>
   },
   templates() {
     return request<Template[]>('/api/templates')
@@ -425,27 +380,11 @@ export const api = {
   mediaModels() {
     return request<MediaModelsCatalog>('/api/media-models')
   },
-  async uploadCover(id: number, file: File) {
-    const token = localStorage.getItem('token')
-    const form = new FormData()
-    form.append('file', file)
-    const res = await fetch(`${API_BASE}/api/projects/${id}/cover`, {
-      method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      body: form,
+  /** 上传科普项目封面并返回项目。 */
+  uploadCover(id: number, file: File) {
+    return uploadFile<Project>(`/api/projects/${id}/cover`, file, (response, detail) => {
+      throw new Error(apiErrorMessage(detail, response.statusText) || '封面上传失败')
     })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: res.statusText }))
-      const detail = err.detail
-      const message =
-        typeof detail === 'string'
-          ? detail
-          : Array.isArray(detail)
-            ? detail.map((d: { msg?: string }) => d.msg || JSON.stringify(d)).join('; ')
-            : res.statusText
-      throw new Error(message || '封面上传失败')
-    }
-    return res.json() as Promise<Project>
   },
   voices() {
     return request<VoicePreset[]>('/api/voices')
@@ -491,23 +430,14 @@ export const api = {
       stats: { total: number; generating: number; done: number; published: number }
     }>(`/api/projects${qs ? `?${qs}` : ''}`)
   },
+  /** 打包下载选中项目的视频，保留服务端文件名。 */
   async downloadZip(ids: number[]) {
-    const res = await fetch(`${API_BASE}/api/projects/download-zip`, {
+    const res = await requestResponse('/api/projects/download-zip', {
       method: 'POST',
-      headers: authHeaders(),
       body: JSON.stringify({ ids }),
+    }, (response, detail) => {
+      throw new Error(apiErrorMessage(detail, response.statusText) || '打包下载失败')
     })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: res.statusText }))
-      const detail = err.detail
-      const message =
-        typeof detail === 'string'
-          ? detail
-          : Array.isArray(detail)
-            ? detail.map((d: { msg?: string }) => d.msg || JSON.stringify(d)).join('; ')
-            : res.statusText
-      throw new Error(message || '打包下载失败')
-    }
     const blob = await res.blob()
     const cd = res.headers.get('Content-Disposition') || ''
     const m = cd.match(/filename="?([^"]+)"?/)
@@ -542,21 +472,11 @@ export const api = {
       body: JSON.stringify({ shot_ids: shotIds }),
     })
   },
-  async uploadShotImage(projectId: number, shotId: number, file: File) {
-    const token = localStorage.getItem('token')
-    const form = new FormData()
-    form.append('file', file)
-    const res = await fetch(`${API_BASE}/api/projects/${projectId}/shots/${shotId}/image`, {
-      method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      body: form,
-    })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: res.statusText }))
-      const detail = err.detail
+  /** 上传分镜图片，保留当前项目响应结构。 */
+  uploadShotImage(projectId: number, shotId: number, file: File) {
+    return uploadFile<Project>(`/api/projects/${projectId}/shots/${shotId}/image`, file, (_response, detail) => {
       throw new Error(typeof detail === 'string' ? detail : '画面上传失败')
-    }
-    return res.json() as Promise<Project>
+    })
   },
   regenImage(projectId: number, shotId: number) {
     return request<Project>(`/api/projects/${projectId}/shots/${shotId}/regen-image`, {

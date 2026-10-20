@@ -16,7 +16,7 @@ from app.config import get_settings
 from app.models import ToolRun, User
 from app.models_tasks import TaskRun
 from app.services.ark import get_ark
-from app.services.billing import record_line, run_billed_ephemeral
+from app.services.billing import run_billed_ephemeral
 from app.services.drama.billing_util import record_seedream_image_usage
 from app.services.billing.estimates import estimate_task_fen
 from app.services.billing.settlement import billing_active

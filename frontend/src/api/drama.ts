@@ -1,16 +1,11 @@
 import { throwApiError } from '../lib/apiError'
+import { API_BASE, createJsonRequester, uploadFile } from './client'
+import { apiErrorMessage } from './http'
 
-function defaultApiBase() {
-  if (typeof window !== 'undefined' && window.location?.hostname) {
-    const { protocol, hostname } = window.location
-    return `${protocol}//${hostname}:8000`
-  }
-  return 'http://127.0.0.1:8000'
-}
-
-const _viteApiBase = import.meta.env.VITE_API_BASE
-const API_BASE =
-  _viteApiBase === undefined || _viteApiBase === null ? defaultApiBase() : String(_viteApiBase)
+/** 漫剧 API 沿用原有错误提示，并共用登录态与 JSON 解析。 */
+const request = createJsonRequester((response, detail) =>
+  throwApiError(response.status, detail, '请求失败'),
+)
 
 /** 导出 API 根地址，供静态资源 URL 拼接 */
 export function getDramaApiBase() {
@@ -43,25 +38,6 @@ export function resolveDramaAssetPreviewUrl(asset: {
   const gen = (asset.params || {}).generation as { finished_at?: string; queued_at?: string } | undefined
   const bust = asset.updated_at || gen?.finished_at || gen?.queued_at || ''
   return resolveDramaMediaUrl(raw, bust || null)
-}
-
-function authHeaders(): HeadersInit {
-  const token = localStorage.getItem('token')
-  return token
-    ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
-    : { 'Content-Type': 'application/json' }
-}
-
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: { ...authHeaders(), ...(init?.headers || {}) },
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }))
-    throwApiError(res.status, err.detail, '请求失败')
-  }
-  return res.json()
 }
 
 export type DramaScript = {
@@ -335,28 +311,11 @@ export const dramaApi = {
     request<DramaAsset>('/api/drama/assets', { method: 'POST', body: JSON.stringify(body) }),
   updateAsset: (id: number, body: Partial<DramaAsset>) =>
     request<DramaAsset>(`/api/drama/assets/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
-  uploadAssetMedia: async (assetId: number, file: File) => {
-    const token = localStorage.getItem('token')
-    const form = new FormData()
-    form.append('file', file)
-    const res = await fetch(`${API_BASE}/api/drama/assets/${assetId}/upload`, {
-      method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      body: form,
-    })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: res.statusText }))
-      const detail = err.detail
-      const message =
-        typeof detail === 'string'
-          ? detail
-          : Array.isArray(detail)
-            ? detail.map((d: { msg?: string }) => d.msg || JSON.stringify(d)).join('; ')
-            : res.statusText
-      throw new Error(message || '上传失败')
-    }
-    return res.json() as Promise<DramaAsset>
-  },
+  /** 上传资产媒体并返回更新后的资产。 */
+  uploadAssetMedia: (assetId: number, file: File) =>
+    uploadFile<DramaAsset>(`/api/drama/assets/${assetId}/upload`, file, (response, detail) => {
+      throw new Error(apiErrorMessage(detail, response.statusText) || '上传失败')
+    }),
   activateAssetImageVersion: (assetId: number, versionId: string) =>
     request<DramaAsset>(`/api/drama/assets/${assetId}/activate_image_version`, {
       method: 'POST',

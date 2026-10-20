@@ -10,7 +10,7 @@
 |------|----------|
 | PostgreSQL | Docker |
 | Redis | Docker |
-| FastAPI / Celery worker | 宿主机 Python 进程 |
+| FastAPI / 进程内任务平台 | 同一个宿主机 Python 进程 |
 | 前端 / 管理后台 | 宿主机 `npm run build` + nginx 静态托管 |
 
 ## 1. 启动中间件（独立目录，不复用其它项目的库）
@@ -35,7 +35,8 @@ Postgres / Redis 端口均映射为 `0.0.0.0`（便于本机直连调试）。�
 DATABASE_URL=postgresql+asyncpg://printfilm:<密码>@127.0.0.1:5432/printfilm
 DATABASE_URL_SYNC=postgresql+psycopg2://printfilm:<密码>@127.0.0.1:5432/printfilm
 REDIS_URL=redis://127.0.0.1:6379/0
-USE_CELERY=true
+TASK_RUNTIME_MAX_CONCURRENCY=4
+TASK_USER_MAX_CONCURRENCY=4
 ```
 
 需本机已安装：Python 3.12、FFmpeg（PATH）、Node.js。
@@ -50,7 +51,7 @@ sudo apt-get install -y fonts-wqy-zenhei fonts-wqy-microhei fontconfig
 
 缺字体时字幕会显示为「方框」（□），需装字体后**重新合成**该项目成片。
 
-## 3. 启动 API + Worker
+## 3. 启动 API 与任务平台
 
 ```bash
 cd backend
@@ -61,6 +62,8 @@ pip install -r requirements.txt
 
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
+
+调度器、执行器、轮询器与看门狗随 API 启动，无需单独的 Celery worker。OSS 上传在后台协程执行。
 
 ## 4. 前端
 

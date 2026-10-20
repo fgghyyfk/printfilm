@@ -10,13 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import User
 from app.models_tasks import TaskRun
-from app.schemas_tasks import TaskCreateRequest, TaskEventCreate, TaskStepCreate
+from app.schemas_tasks import TaskCreateRequest, TaskEventCreate
 from sqlalchemy import select
 
 from app.config import get_settings
 from app.services.billing.context import billing_scope
 from app.services.billing.settlement import freeze_for_task, settle_task
-from app.services.billing.usage import record_line
 from app.services.tasks.handlers import get_task_handler
 from app.services.tasks.service import append_task_event, build_task_event, build_task_step
 

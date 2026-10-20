@@ -1,0 +1,146 @@
+/** 模型路由、运行时、存储、支付与站点设置的接口契约。 */
+export type ModelCapabilityReadiness = {
+  capability: string;
+  label: string;
+  model: string;
+  ready: boolean;
+  message: string;
+};
+
+export type AdminModelSettings = {
+  openai_api_key: string;
+  openai_base_url: string;
+  model_llm: string;
+  has_openai_api_key: boolean;
+  ark_api_key: string;
+  ark_base_url: string;
+  model_image: string;
+  model_image_45: string;
+  model_video: string;
+  model_audio: string;
+  has_ark_api_key: boolean;
+  ark_image_size: string;
+  ark_video_resolution: string;
+  ark_video_ratio: string;
+  seedance_duration_min: number;
+  seedance_duration_max: number;
+  ark_video_poll_interval: number;
+  ark_video_poll_timeout: number;
+  pipeline_image_concurrency: number;
+  pipeline_video_concurrency: number;
+  pipeline_audio_concurrency: number;
+  task_runtime_max_concurrency: number;
+  task_user_max_concurrency: number;
+  task_poll_max_concurrency: number;
+  drama_user_video_job_limit: number;
+  drama_fragment_max_attempts: number;
+  ark_mock: boolean;
+  oss_enabled: boolean;
+  oss_endpoint: string;
+  oss_region: string;
+  oss_bucket: string;
+  oss_folder: string;
+  oss_access_key_id: string;
+  oss_access_key_secret: string;
+  oss_public_base: string;
+  oss_upload_async: boolean;
+  oss_upload_queue: string;
+  has_oss_access_key_id: boolean;
+  has_oss_access_key_secret: boolean;
+  tos_endpoint: string;
+  tos_bucket: string;
+  tos_access_key: string;
+  tos_secret_key: string;
+  has_tos_access_key: boolean;
+  has_tos_secret_key: boolean;
+  cdn_base: string;
+  epay_api_url: string;
+  epay_pid: string;
+  epay_key: string;
+  epay_notify_url: string;
+  epay_return_url: string;
+  has_epay_key: boolean;
+  billing_enabled: boolean;
+  billing_markup: number;
+  billing_estimate_buffer: number;
+  billing_seedance_video0: number;
+  billing_seedance_video1: number;
+  billing_llm_per_m: number;
+  billing_seedream_per_m: number;
+  billing_tts_per_m: number;
+  billing_kie_fen_per_credit: number;
+  billing_est_llm_tokens: number;
+  billing_est_seedream_tokens: number;
+  billing_est_tts_tokens: number;
+  billing_est_seedance_tokens_per_sec: number;
+  billing_signup_grant_fen: number;
+  quota_enabled: boolean;
+  new_user_quota: number;
+  billing_user_alert_enabled: boolean;
+  billing_user_alert_interval_fen: number;
+  billing_admin_cost_alert_enabled: boolean;
+  billing_admin_cost_alert_threshold_fen: number;
+  billing_admin_cost_alert_emails: string;
+  billing_admin_cost_alert_period: string;
+  billing_admin_cost_alert_last_period_key: string;
+  billing_admin_cost_alert_last_level: number;
+  smtp_enabled: boolean;
+  smtp_host: string;
+  smtp_port: number;
+  smtp_user: string;
+  smtp_password: string;
+  smtp_from: string;
+  smtp_use_tls: boolean;
+  has_smtp_password: boolean;
+  public_base_url: string;
+  ffmpeg_path: string;
+  ffprobe_path: string;
+  source: string;
+  updated_at?: string | null;
+  readiness: ModelCapabilityReadiness[];
+};
+
+export type AdminRoutingChannel = {
+  id: string;
+  name: string;
+  base_url: string;
+  api_key: string;
+  has_api_key: boolean;
+  api_format: "openai";
+  protocol: "auto" | "openai";
+  models: string[];
+  enabled: boolean;
+  sort_order: number;
+};
+
+export type AdminLogicalModelBinding = {
+  id: string;
+  channel_id: string;
+  upstream_model: string;
+  enabled: boolean;
+  priority: number;
+  weight?: number | null;
+};
+
+export type AdminLogicalModel = {
+  id: string;
+  name: string;
+  capability: "text" | "image" | "video" | "audio";
+  enabled: boolean;
+  bindings: AdminLogicalModelBinding[];
+};
+
+export type AdminDefaultModels = {
+  text_model: string;
+  image_model: string;
+  video_model: string;
+  audio_model: string;
+};
+
+export type AdminRoutingSettings = {
+  system_channels: AdminRoutingChannel[];
+  logical_models: AdminLogicalModel[];
+  default_models: AdminDefaultModels;
+  validation_errors: string[];
+  updated_at?: string | null;
+};

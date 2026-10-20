@@ -913,7 +913,6 @@ async def _parallel_image_and_audio(project_id: int) -> None:
         negative = _project_image_negative(project)
         voice = _project_voice(project)
         image_model = (getattr(project, "image_model", None) or "").strip()
-        video_model = (getattr(project, "video_model", None) or "").strip()
         output_ratio = _project_output_ratio(project) or ""
 
     if not shot_meta:

@@ -16,14 +16,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.models import User
 from app.models_drama import DramaAsset, DramaEpisode, DramaEpisodeFragment, DramaFragmentAssetRef, DramaProject
-from app.services.ark import get_ark
+from app.services.ark import TaskResult, get_ark
 from app.services.drama.billing_util import record_seedance_video_usage, record_seedream_image_usage, seedance_billing_key
 from app.services.drama.output_settings import (
     infer_aspect_ratio_from_pixels,
     resolve_episode_video_output,
     seedream_still_size_for_video_ratio,
 )
-from app.services.billing import record_line
 from app.services.drama.build_seedance_generate_body import (
     ASSET_MENTION_TOKEN_PATTERN,
     SEEDANCE_ATTACH_REFERENCE_AUDIO,

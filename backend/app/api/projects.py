@@ -9,7 +9,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sse_starlette.sse import EventSourceResponse
@@ -21,12 +21,9 @@ from app.models_tasks import TaskRun
 from app.schemas import (
     ContentExpandOut,
     ContentExpandRequest,
-    PageMeta,
     ProjectCreate,
     ProjectDownloadRequest,
-    ProjectListItem,
     ProjectListOut,
-    ProjectListStats,
     ProjectOut,
     ProjectUpdate,
     ShotOut,
@@ -51,6 +48,7 @@ from app.services.tasks.service import (
 )
 from app.services.voices import ensure_voice_preview, list_voices
 from app.services.kepu_stages import resolve_kepu_billing_phase
+from app.services.kepu_projects import list_project_page, project_runtime_view
 
 router = APIRouter(tags=["projects"])
 
@@ -157,7 +155,7 @@ async def _get_owned_project(db: AsyncSession, project_id: int, user: User) -> P
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
     project.active_tasks = await list_active_tasks_for_owner(db, user.id, project_id=project.id)
-    runtime_status, runtime_progress, runtime_error = _project_runtime_view(project)
+    runtime_status, runtime_progress, runtime_error = project_runtime_view(project)
     project.status = runtime_status
     project.progress = runtime_progress
     project.error_msg = runtime_error
@@ -212,58 +210,6 @@ async def _ensure_compose_allowed(db: AsyncSession, user: User, project: Project
     # COMPOSING / FAILED / VIDEO_READY / DONE 等均可重试拼接（无 active task）
 
 
-# 用统一任务中心投影项目运行态，避免前端只依赖旧 Project.status。
-def _project_runtime_view(project: Project) -> tuple[str, int, str | None]:
-    active_tasks = list(getattr(project, "active_tasks", []) or [])
-    if not active_tasks:
-        return str(project.status), int(project.progress or 0), project.error_msg
-    task = active_tasks[0]
-    task_type = str(getattr(task, "task_type", "") or "")
-    status = str(getattr(task, "status", "") or "")
-    progress = int(getattr(task, "progress_percent", 0) or 0)
-    if task_type == "project_pipeline":
-        # 勿一律标 SCRIPTING：续跑 videos/assets 时列表会误显示「拆分镜中」
-        payload = getattr(task, "payload", None) or {}
-        phase = str(payload.get("phase") or "").strip().lower() if isinstance(payload, dict) else ""
-        phase_label = {
-            "script": ProjectStatus.SCRIPTING,
-            "assets": ProjectStatus.IMAGING,
-            "videos": ProjectStatus.VIDEOING,
-            "compose": ProjectStatus.COMPOSING,
-        }.get(phase)
-        proj_status = str(project.status or "")
-        if phase_label:
-            label = phase_label
-        elif proj_status in {
-            ProjectStatus.SCRIPTING,
-            ProjectStatus.IMAGING,
-            ProjectStatus.VIDEOING,
-            ProjectStatus.AUDIOING,
-            ProjectStatus.COMPOSING,
-            ProjectStatus.AUDITING,
-        }:
-            label = proj_status
-        else:
-            label = ProjectStatus.SCRIPTING
-    elif task_type == "shot_regen_image":
-        label = ProjectStatus.IMAGING
-    elif task_type == "shot_regen_video":
-        label = ProjectStatus.VIDEOING
-    elif task_type == "shot_regen_audio":
-        label = ProjectStatus.AUDIOING
-    elif task_type == "project_regen_audio":
-        label = ProjectStatus.AUDIOING
-    elif task_type == "project_compose_only":
-        label = ProjectStatus.COMPOSING
-    else:
-        label = str(project.status)
-    if status in {"failed", "cancelled"}:
-        return status.upper(), progress, getattr(task, "error_message", None) or project.error_msg
-    if status in {"pending", "leased", "running", "awaiting_poll", "cancel_requested"}:
-        return label, max(progress, int(project.progress or 0)), getattr(task, "error_message", None)
-    return str(project.status), int(project.progress or 0), project.error_msg
-
-
 # 为科普项目/镜头创建统一任务，由平台调度器自动执行
 async def _create_kepu_task(
     db: AsyncSession,
@@ -295,22 +241,6 @@ async def _create_kepu_task(
         await db.rollback()
         raise http_exception_for_value_error(exc) from exc
     return int(task.id)
-
-
-# 批量读取项目活动任务，避免列表页逐项查询。
-async def list_active_tasks_for_user_rows(
-    db: AsyncSession,
-    user_id: int,
-    project_ids: list[int],
-) -> dict[int, list]:
-    by_project_id: dict[int, list] = {}
-    for project_id in project_ids:
-        by_project_id[int(project_id)] = await list_active_tasks_for_owner(
-            db,
-            user_id,
-            project_id=int(project_id),
-        )
-    return by_project_id
 
 
 @router.post("/projects", response_model=ProjectOut)
@@ -352,16 +282,6 @@ async def create_project(
     return result.scalar_one()
 
 
-_RUNNING_STATUSES = {
-    ProjectStatus.SCRIPTING,
-    ProjectStatus.IMAGING,
-    ProjectStatus.VIDEOING,
-    ProjectStatus.AUDIOING,
-    ProjectStatus.COMPOSING,
-    ProjectStatus.AUDITING,
-}
-
-
 @router.get("/projects", response_model=ProjectListOut)
 async def list_projects(
     page: int = Query(1, ge=1),
@@ -378,122 +298,10 @@ async def list_projects(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> ProjectListOut:
-    """Paginated project list with status / published / type filters."""
-    published_exists = (
-        select(Work.id)
-        .where(Work.project_id == Project.id, Work.user_id == user.id)
-        .correlate(Project)
-        .exists()
-    )
-
-    base = select(Project).where(Project.user_id == user.id)
-    count_base = select(func.count()).select_from(Project).where(Project.user_id == user.id)
-
-    mode = (pipeline_mode or "").strip().lower()
-    if mode in {"full", "image_text"}:
-        base = base.where(Project.pipeline_mode == mode)
-        count_base = count_base.where(Project.pipeline_mode == mode)
-
-    keyword = (q or "").strip()
-    if keyword:
-        like = f"%{keyword}%"
-        filt = or_(Project.title.ilike(like), Project.error_msg.ilike(like))
-        base = base.where(filt)
-        count_base = count_base.where(filt)
-
-    tab = (status or "all").strip().lower()
-    if tab == "draft":
-        base = base.where(Project.status == ProjectStatus.DRAFT)
-        count_base = count_base.where(Project.status == ProjectStatus.DRAFT)
-    elif tab == "running":
-        base = base.where(Project.status.in_(_RUNNING_STATUSES))
-        count_base = count_base.where(Project.status.in_(_RUNNING_STATUSES))
-    elif tab == "done":
-        base = base.where(Project.status == ProjectStatus.DONE)
-        count_base = count_base.where(Project.status == ProjectStatus.DONE)
-    elif tab == "published":
-        base = base.where(published_exists)
-        count_base = count_base.where(published_exists)
-
-    total = int((await db.execute(count_base)).scalar_one() or 0)
-    rows = list(
-        (
-            await db.execute(
-                base.order_by(Project.id.desc())
-                .offset((page - 1) * page_size)
-                .limit(page_size)
-            )
-        )
-        .scalars()
-        .all()
-    )
-
-    published_ids: set[int] = set()
-    if rows:
-        pub_result = await db.execute(
-            select(Work.project_id).where(
-                Work.user_id == user.id,
-                Work.project_id.in_([p.id for p in rows]),
-            )
-        )
-        published_ids = {int(x) for x in pub_result.scalars().all()}
-        active_tasks = await list_active_tasks_for_user_rows(db, user.id, [p.id for p in rows])
-        for project in rows:
-            project.active_tasks = active_tasks.get(int(project.id), [])
-
-    items = [
-        ProjectListItem(
-            id=p.id,
-            title=p.title,
-            template_id=p.template_id,
-            status=_project_runtime_view(p)[0],
-            progress=_project_runtime_view(p)[1],
-            cover_url=p.cover_url,
-            final_video_url=p.final_video_url,
-            error_msg=_project_runtime_view(p)[2],
-            pipeline_mode=p.pipeline_mode or "full",
-            output_ratio=p.output_ratio or "",
-            published=p.id in published_ids,
-            created_at=p.created_at,
-            updated_at=p.updated_at,
-            active_tasks=list(getattr(p, "active_tasks", []) or []),
-        )
-        for p in rows
-    ]
-
-    # Stats ignore status tab but keep type + search scope
-    stats_filter = [Project.user_id == user.id]
-    if mode in {"full", "image_text"}:
-        stats_filter.append(Project.pipeline_mode == mode)
-    if keyword:
-        like = f"%{keyword}%"
-        stats_filter.append(or_(Project.title.ilike(like), Project.error_msg.ilike(like)))
-
-    async def _count(*extra):
-        stmt = select(func.count()).select_from(Project).where(*stats_filter, *extra)
-        return int((await db.execute(stmt)).scalar_one() or 0)
-
-    stats_total = await _count()
-    stats_generating = await _count(Project.status.in_(_RUNNING_STATUSES))
-    stats_done = await _count(Project.status == ProjectStatus.DONE)
-    pub_stmt = (
-        select(func.count())
-        .select_from(Work)
-        .join(Project, Project.id == Work.project_id)
-        .where(Work.user_id == user.id, *stats_filter)
-    )
-    stats_published = int((await db.execute(pub_stmt)).scalar_one() or 0)
-    stats = ProjectListStats(
-        total=stats_total,
-        generating=stats_generating,
-        done=stats_done,
-        published=stats_published,
-    )
-
-    return ProjectListOut(
-        items=items,
-        meta=PageMeta(page=page, page_size=page_size, total=total),
-        stats=stats,
+    """校验分页参数并返回当前用户的项目列表及统计。"""
+    return await list_project_page(
+        db, user.id, page=page, page_size=page_size,
+        status=status, q=q, pipeline_mode=pipeline_mode,
     )
 
 
@@ -707,8 +515,6 @@ async def generate_project(
     - Continue: one billing stage per click — assets → videos → compose（各自预扣）。
     - restart=true: wipe shots/media and regenerate storyboard from scratch.
     """
-    from app.services.kepu_stages import resolve_kepu_billing_phase
-
     project = await _get_owned_project(db, project_id, user)
     if project.status in {
         ProjectStatus.SCRIPTING,
