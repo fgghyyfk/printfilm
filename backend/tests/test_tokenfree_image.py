@@ -26,7 +26,7 @@ from app.services.tokenfree_gateway import TOKENFREE_BASE_URL, TOKENFREE_CHANNEL
 def test_uses_tokenfree_image_on_tokenfree_host():
     assert uses_tokenfree_image(base_url=TOKENFREE_BASE_URL) is True
     assert uses_tokenfree_image(channel_id=TOKENFREE_CHANNEL_ID) is True
-    assert uses_tokenfree_image(base_url="https://ark.cn-beijing.volces.com/api/v3") is False
+    assert uses_tokenfree_image(base_url="https://ark.cn-beijing.volces.com/api/v3") is True
 
 
 def test_build_tokenfree_image_body_matches_live_success():
@@ -322,8 +322,8 @@ async def test_post_retries_http200_server_error_then_ok():
 
 
 @pytest.mark.asyncio
-async def test_seedream_once_does_not_fall_back_to_kie(monkeypatch):
-    """TokenFree 协议失败时不再回退 api.kie.ai。"""
+async def test_seedream_once_protocol_error_raises(monkeypatch):
+    """TokenFree 协议失败时直接报错，不改打其它上游。"""
     from app.config import Settings
     from app.services.ark import ArkGateway
 

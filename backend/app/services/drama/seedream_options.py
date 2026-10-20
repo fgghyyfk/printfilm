@@ -81,8 +81,6 @@ def is_seedream_pro_model(model: str | None) -> bool:
         return False
     if "lite" in mid or "flash" in mid:
         return False
-    if "kie-" in mid:
-        return False
     # 仅明确带 pro 的算 Pro；裸 seedream-5.0 是标准档
     if "5-0-pro" in mid or "5.0-pro" in mid:
         return True

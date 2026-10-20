@@ -79,7 +79,7 @@ export function formatDramaGenError(raw: string | null | undefined): DramaGenErr
     }
   }
 
-  if (/网络错误|ConnectError|ConnectTimeout|无法连接上游|tokenfree\.com|api\.kie\.ai/i.test(text)) {
+  if (/网络错误|ConnectError|ConnectTimeout|无法连接上游|tokenfree\.com/i.test(text)) {
     return {
       title: '无法连接图片/视频服务',
       message: text.length > 200 ? `${text.slice(0, 200)}…` : text,

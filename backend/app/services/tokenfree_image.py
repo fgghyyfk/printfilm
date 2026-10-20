@@ -1,4 +1,4 @@
-"""TokenFree / New API 生图：KIE 渠道走 POST /v1/responses，不是方舟 /images/generations。"""
+"""TokenFree / New API 生图：Seedream 与 GPT Image 2 走 POST /v1/responses，不是方舟 /images/generations。"""
 
 from __future__ import annotations
 
@@ -282,7 +282,7 @@ def is_tokenfree_rate_limit(*, status_code: int = 0, body: str = "") -> bool:
 
 
 def is_tokenfree_protocol_error(*, status_code: int = 0, body: str = "") -> bool:
-    """KIE / New API 任务协议失败（含 Invalid task protocol request）。"""
+    """New API 任务协议失败（含 Invalid task protocol request）。"""
     text = (body or "").lower()
     if (
         "task_protocol_error" in text

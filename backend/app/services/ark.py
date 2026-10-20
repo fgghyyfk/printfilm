@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import hashlib
 import json
 import logging
@@ -36,7 +35,6 @@ from app.services.tokenfree_audio import (
     tokenfree_tts_chat_model,
     tokenfree_tts_uses_chat_audio,
     tokenfree_tts_uses_omni_stream,
-    uses_tokenfree_audio,
     wrap_pcm_s16le_wav,
 )
 from app.services.tokenfree_image import (
@@ -49,7 +47,6 @@ from app.services.tokenfree_image import (
     raise_tokenfree_image_if_failed,
     tokenfree_image_slot,
     tokenfree_image_user_error,
-    uses_tokenfree_image,
 )
 from app.services.voices import edge_tts_voice_for_speaker
 from app.services.tokenfree_video import (
@@ -981,13 +978,9 @@ class ArkGateway:
         from app.services.style_lock import split_seedream_subject_style_refs
 
         subject_refs, style_refs = split_seedream_subject_style_refs(ref_urls, style_ref_urls)
-        refs = [*subject_refs, *style_refs]
-        channel_id = (route.channel_id if route else "") or ""
-        base = (route.base_url if route and route.base_url else self.settings.ark_base_url) or ""
-        on_tokenfree = uses_tokenfree_image(base_url=base, channel_id=channel_id)
         # TokenFree 按逻辑路由解析出的上游模型原样发送，不硬改模型名
         chosen = (upstream_model or "").strip()
-        if on_tokenfree and "gpt-image" in chosen.lower():
+        if "gpt-image" in chosen.lower():
             from app.services.tokenfree_image import gpt_image_caps_at_2k
 
             # GPT Image 2 只吃 1K/2K；2.5 保留 4K。画幅靠 aspect_ratio 自然语言约束。
@@ -1011,7 +1004,7 @@ class ArkGateway:
         )
 
         # 2.5 的渠道是 image-generation，走 /responses 会报 default 分组无 distributor
-        if on_tokenfree and is_gpt_image_25(chosen):
+        if is_gpt_image_25(chosen):
             path = "/images/generations"
             body = build_tokenfree_openai_image_body(
                 model=chosen,
@@ -1021,7 +1014,7 @@ class ArkGateway:
                 ref_urls=subject_refs,
                 style_ref_urls=style_refs,
             )
-        elif on_tokenfree:
+        else:
             path = "/responses"
             body = build_tokenfree_image_body(
                 model=chosen,
@@ -1031,17 +1024,6 @@ class ArkGateway:
                 ref_urls=subject_refs,
                 style_ref_urls=style_refs,
             )
-        else:
-            path = "/images/generations"
-            body = {
-                "model": upstream_model,
-                "prompt": full_prompt,
-                "size": resolved_size,
-                "response_format": "url",
-                "watermark": False,
-            }
-            if refs:
-                body["image"] = refs if len(refs) > 1 else refs[0]
 
         try:
             async with httpx.AsyncClient(timeout=_upstream_timeout(IMAGE_GEN_READ_SEC)) as client:
@@ -1053,11 +1035,8 @@ class ArkGateway:
                         json=body,
                     )
 
-                if on_tokenfree:
-                    async with tokenfree_image_slot():
-                        resp = await post_until_not_rate_limited(_post)
-                else:
-                    resp = await _post()
+                async with tokenfree_image_slot():
+                    resp = await post_until_not_rate_limited(_post)
                 # 限流/4xx 走 HTTP 文案；200 + status=failed 留给 raise_tokenfree_image_if_failed
                 if resp.status_code >= 400 or is_tokenfree_rate_limit(
                     status_code=resp.status_code, body=resp.text
@@ -1066,14 +1045,13 @@ class ArkGateway:
                         resp.status_code,
                         resp.text,
                         model=chosen,
-                        tokenfree=on_tokenfree,
+                        tokenfree=True,
                     )
                 data = resp.json()
         except httpx.TimeoutException as exc:
             reraise_upstream_timeout(exc, kind="生图", read_sec=IMAGE_GEN_READ_SEC)
 
-        if on_tokenfree:
-            raise_tokenfree_image_if_failed(data)
+        raise_tokenfree_image_if_failed(data)
 
         usage_parsed = parse_usage_dict(data)
         raw_usage = data.get("usage") if isinstance(data.get("usage"), dict) else None
@@ -1086,7 +1064,7 @@ class ArkGateway:
         if upstream_cost_fen is None and raw_usage:
             upstream_cost_fen = parse_upstream_cost_fen({"usage": raw_usage})
 
-        remote = extract_tokenfree_image_url(data) if on_tokenfree else self._extract_image_url(data)
+        remote = extract_tokenfree_image_url(data)
         if not remote:
             remote = self._extract_image_url(data) or extract_tokenfree_image_url(data)
         if not remote:
@@ -1865,18 +1843,10 @@ class ArkGateway:
                 await asyncio.sleep(1.5 * (attempt + 1))
         raise RuntimeError(str(last_err) if last_err else "video generation failed")
 
-    def _openspeech_configured(self) -> bool:
-        """豆包 openspeech 是否已配置（新版 API Key 或旧版 AppId + AccessKey）。"""
-        if (self.settings.volc_tts_api_key or "").strip():
-            return True
-        return bool(self.settings.volc_tts_app_id and self.settings.volc_tts_access_key)
-
     def _resolved_audio_model(self) -> str:
         routed = (resolve_upstream_model("audio", None) or "").strip()
         mid = routed or (self.settings.model_audio or "").strip() or TOKENFREE_DEFAULT_TTS_MODEL
-        if uses_tokenfree_audio(base_url=self.settings.ark_base_url or ""):
-            return resolve_tokenfree_tts_model(mid)
-        return mid
+        return resolve_tokenfree_tts_model(mid)
 
     async def _tts_openai_speech(
         self,
@@ -1891,12 +1861,12 @@ class ArkGateway:
         key = (self.settings.ark_api_key or "").strip()
         if not base or not key:
             return False
-        model_id = (model or self._resolved_audio_model()).strip()
-        if uses_tokenfree_audio(base_url=base):
-            model_id = tokenfree_tts_chat_model(resolve_tokenfree_tts_model(model_id))
-            voice = tokenfree_speech_voice(voice, model_id)
-            if tokenfree_tts_uses_chat_audio(model_id):
-                return await self._tts_openai_chat_audio(text, voice, dest, model=model_id)
+        model_id = tokenfree_tts_chat_model(
+            resolve_tokenfree_tts_model((model or self._resolved_audio_model()).strip())
+        )
+        voice = tokenfree_speech_voice(voice, model_id)
+        if tokenfree_tts_uses_chat_audio(model_id):
+            return await self._tts_openai_chat_audio(text, voice, dest, model=model_id)
         async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await client.post(
                 f"{base}/audio/speech",
@@ -1918,8 +1888,6 @@ class ArkGateway:
                 model_id,
                 (resp.text or "")[:300],
             )
-        if uses_tokenfree_audio(base_url=base) and tokenfree_tts_uses_chat_audio(model_id):
-            return await self._tts_openai_chat_audio(text, voice, dest, model=model_id)
         return False
 
     async def _tts_openai_chat_audio(
@@ -1971,19 +1939,6 @@ class ArkGateway:
             return False
         return await asyncio.to_thread(self._persist_tts_mp3, dest, wav)
 
-    @staticmethod
-    def _build_tts_additions(speaker: str, emotion_hint: str | None) -> str | None:
-        """组装 openspeech additions（S_ 克隆 + 语气 context_texts）。"""
-        additions: dict[str, Any] = {}
-        if speaker.startswith("S_"):
-            additions["model_type"] = 4
-        hint = (emotion_hint or "").strip()
-        if hint:
-            additions["context_texts"] = [f"用「{hint}」的语气朗读"]
-        if not additions:
-            return None
-        return json.dumps(additions, ensure_ascii=False)
-
     async def tts(
         self,
         text: str,
@@ -1992,9 +1947,8 @@ class ArkGateway:
         project_id: int | None = None,
         shot_no: int | None = None,
         duration_hint: float = 4.0,
-        emotion_hint: str | None = None,
     ) -> str:
-        """整片/单镜配音：豆包 openspeech → TokenFree 多 TTS → edge-tts；失败则抛错，不写静音。"""
+        """整片/单镜配音：TokenFree 多 TTS → edge-tts；失败则抛错，不写静音。"""
         voice_map = {
             "narrator_calm": "zh_female_cancan_uranus_bigtts",
             "warm_storyteller": "zh_female_tianmeixiaoyuan_uranus_bigtts",
@@ -2003,11 +1957,7 @@ class ArkGateway:
             "retro_host": "zh_male_shaonianzixin_uranus_bigtts",
             "guqin_narrator": "zh_female_vv_uranus_bigtts",
         }
-        speaker = (
-            voice_map.get(voice, voice)
-            or self.settings.volc_tts_speaker
-            or "zh_female_cancan_uranus_bigtts"
-        )
+        speaker = voice_map.get(voice, voice) or "zh_female_cancan_uranus_bigtts"
         clean = (text or "").strip() or "这一幕。"
 
         if self.mock:
@@ -2030,37 +1980,23 @@ class ArkGateway:
             return storage.publish_local(dest)
 
         audio_model = self._resolved_audio_model()
-        on_tokenfree = uses_tokenfree_audio(base_url=self.settings.ark_base_url or "")
-
-        # 豆包 openspeech：标准 speaker 优先，避免 /audio/speech 忽略音色 id
-        if self._openspeech_configured():
-            try:
-                ok = await self._tts_openspeech(clean, speaker, dest, emotion_hint=emotion_hint)
-                if ok:
-                    url = await _accept_if_audible("openspeech")
-                    if url:
-                        logger.info("TTS openspeech ok shot=%s speaker=%s", shot_no, speaker)
-                        return url
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("openspeech TTS failed: %s", exc)
 
         # TokenFree：默认模型 + Gemini / ElevenLabs / Qwen 其它 TTS 依次试
-        if on_tokenfree:
-            for model_id in iter_tokenfree_tts_models(audio_model):
-                try:
-                    ok = await self._tts_openai_speech(clean, speaker, dest, model=model_id)
-                    if ok:
-                        url = await _accept_if_audible("tokenfree-speech")
-                        if url:
-                            logger.info(
-                                "TTS tokenfree ok shot=%s model=%s bytes=%s",
-                                shot_no,
-                                model_id,
-                                dest.stat().st_size,
-                            )
-                            return url
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning("tokenfree speech failed model=%s: %s", model_id, exc)
+        for model_id in iter_tokenfree_tts_models(audio_model):
+            try:
+                ok = await self._tts_openai_speech(clean, speaker, dest, model=model_id)
+                if ok:
+                    url = await _accept_if_audible("tokenfree-speech")
+                    if url:
+                        logger.info(
+                            "TTS tokenfree ok shot=%s model=%s bytes=%s",
+                            shot_no,
+                            model_id,
+                            dest.stat().st_size,
+                        )
+                        return url
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("tokenfree speech failed model=%s: %s", model_id, exc)
 
         # edge-tts：按 speaker 映射不同 neural，上游都失败时仍能分出角色声线
         try:
@@ -2072,91 +2008,8 @@ class ArkGateway:
         except Exception as exc:  # noqa: BLE001
             logger.warning("edge-tts failed: %s", exc)
 
-        # 非 TokenFree 时再试 /audio/speech（方舟等）
-        if not on_tokenfree:
-            try:
-                ok = await self._tts_openai_speech(clean, speaker, dest, model=audio_model)
-                if ok:
-                    url = await _accept_if_audible("ark-speech")
-                    if url:
-                        return url
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("Ark TTS failed: %s", exc)
-
         logger.error("TTS all providers failed shot=%s", shot_no)
         raise RuntimeError("配音失败：语音服务暂不可用，请稍后重试")
-
-    def _tts_resource_id(self, speaker: str) -> str:
-        if speaker.startswith("S_"):
-            return "seed-icl-2.0"
-        if "_uranus_" in speaker or speaker.startswith("saturn_"):
-            return self.settings.volc_tts_resource_id or "seed-tts-2.0"
-        return "seed-tts-1.0"
-
-    async def _tts_openspeech(
-        self,
-        text: str,
-        speaker: str,
-        dest: Path,
-        *,
-        emotion_hint: str | None = None,
-    ) -> bool:
-        resource = self._tts_resource_id(speaker)
-        headers: dict[str, str] = {
-            "Content-Type": "application/json",
-            "X-Api-Resource-Id": resource,
-        }
-        api_key = (self.settings.volc_tts_api_key or "").strip()
-        if api_key:
-            headers["X-Api-Key"] = api_key
-        else:
-            headers["X-Api-App-Id"] = self.settings.volc_tts_app_id
-            headers["X-Api-Access-Key"] = self.settings.volc_tts_access_key
-        body: dict[str, Any] = {
-            "user": {"uid": "framecut"},
-            "req_params": {
-                "text": text,
-                "speaker": speaker,
-                "audio_params": {"format": "mp3", "sample_rate": 24000},
-            },
-        }
-        additions = self._build_tts_additions(speaker, emotion_hint)
-        if additions:
-            body["req_params"]["additions"] = additions
-
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            resp = await client.post(self.settings.volc_tts_url, headers=headers, json=body)
-            if resp.status_code >= 400:
-                logger.warning("openspeech HTTP %s: %s", resp.status_code, resp.text[:400])
-                return False
-            audio = self._parse_openspeech_ndjson(resp.content)
-            if not audio:
-                logger.warning("openspeech empty audio body")
-                return False
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_bytes(audio)
-            return True
-
-    @staticmethod
-    def _parse_openspeech_ndjson(raw: bytes) -> bytes:
-        chunks: list[bytes] = []
-        text = raw.decode("utf-8", errors="ignore")
-        for line in text.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            code = obj.get("code")
-            if code == 0 and obj.get("data"):
-                chunks.append(base64.b64decode(obj["data"]))
-            elif code in {20000000, 20000001}:
-                break
-            elif code not in (None, 0):
-                logger.warning("openspeech line error: %s", line[:300])
-        return b"".join(chunks)
 
     async def _tts_edge(self, text: str, dest: Path, voice_hint: str = "") -> None:
         """微软 edge-tts 兜底。国内连 api.msedgeservices.com 常超过默认 10s，拉长握手并重试。"""

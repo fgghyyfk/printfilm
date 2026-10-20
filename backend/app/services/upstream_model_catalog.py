@@ -50,8 +50,6 @@ async def _resolve_channel_credentials(
 
     if proto == "ark" and not base:
         base = TOKENFREE_BASE_URL.rstrip("/")
-    if proto == "kie" and not base:
-        base = TOKENFREE_BASE_URL.rstrip("/")
     return proto, base, key
 
 
@@ -137,10 +135,8 @@ async def list_upstream_models(
         api_key_override=api_key_override,
     )
 
-    if proto == "volc_tts":
-        raise RuntimeError("豆包 TTS 暂不支持从上游拉取模型目录，请手动填写 speaker / 音色 ID")
-
-    if proto == "kie" or proto == "ark" or "volces.com" in base.lower() or "kie.ai" in base.lower():
+    # 已下线的方舟 / 豆包协议或 volces 地址不再直连，改拉 TokenFree 目录
+    if proto in {"ark", "volc_tts"} or "volces.com" in base.lower() or "openspeech.bytedance.com" in base.lower():
         from app.services.tokenfree_gateway import TOKENFREE_BASE_URL, resolve_tokenfree_api_key
 
         base = TOKENFREE_BASE_URL

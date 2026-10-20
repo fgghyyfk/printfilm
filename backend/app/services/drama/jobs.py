@@ -1515,6 +1515,7 @@ async def poll_fragment_video_task(task_id: int) -> None:
                 await _fail_task(db, task, RuntimeError("任务已取消"))
                 return
 
+            # 旧 Kie 任务号不能拿去查 TokenFree，否则会一直轮询并占着冻结余额
             if str(payload.get("video_provider") or "") == "kie":
                 await _fail_task(db, task, RuntimeError("已改为 TokenFree 通道，请重新生成本镜视频"))
                 return

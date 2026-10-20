@@ -35,17 +35,6 @@ class AdminModelSettingsOut(BaseModel):
     model_audio: str = ""
     has_ark_api_key: bool = False
 
-    volc_tts_app_id: str = ""
-    volc_tts_access_key: str = ""
-    volc_tts_api_key: str = ""
-    volc_tts_resource_id: str = ""
-    volc_tts_speaker: str = ""
-    volc_tts_url: str = ""
-    volc_tts_voice_design_url: str = ""
-    volc_tts_voice_design_speaker_ids: str = ""
-    has_volc_tts_access_key: bool = False
-    has_volc_tts_api_key: bool = False
-
     ark_image_size: str = ""
     ark_video_resolution: str = ""
     ark_video_ratio: str = ""
@@ -160,17 +149,6 @@ class AdminModelSettingsPatch(BaseModel):
     model_video_2: str | None = None
     model_audio: str | None = None
     clear_ark_api_key: bool = False
-
-    volc_tts_app_id: str | None = None
-    volc_tts_access_key: str | None = None
-    volc_tts_api_key: str | None = None
-    volc_tts_resource_id: str | None = None
-    volc_tts_speaker: str | None = None
-    volc_tts_url: str | None = None
-    volc_tts_voice_design_url: str | None = None
-    volc_tts_voice_design_speaker_ids: str | None = None
-    clear_volc_tts_access_key: bool = False
-    clear_volc_tts_api_key: bool = False
 
     ark_image_size: str | None = None
     ark_video_resolution: str | None = None
@@ -288,14 +266,6 @@ def model_config_field_names() -> tuple[str, ...]:
         "model_video",
         "model_video_2",
         "model_audio",
-        "volc_tts_app_id",
-        "volc_tts_access_key",
-        "volc_tts_api_key",
-        "volc_tts_resource_id",
-        "volc_tts_speaker",
-        "volc_tts_url",
-        "volc_tts_voice_design_url",
-        "volc_tts_voice_design_speaker_ids",
         "ark_image_size",
         "ark_video_resolution",
         "ark_video_ratio",
@@ -373,8 +343,6 @@ def model_config_field_names() -> tuple[str, ...]:
 SECRET_FIELD_FLAGS: dict[str, str] = {
     "openai_api_key": "has_openai_api_key",
     "ark_api_key": "has_ark_api_key",
-    "volc_tts_access_key": "has_volc_tts_access_key",
-    "volc_tts_api_key": "has_volc_tts_api_key",
     "oss_access_key_id": "has_oss_access_key_id",
     "oss_access_key_secret": "has_oss_access_key_secret",
     "tos_access_key": "has_tos_access_key",

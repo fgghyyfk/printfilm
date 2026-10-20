@@ -8,8 +8,8 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 LogicalModelCapability = Literal["text", "image", "video", "audio"]
-ChannelProtocol = Literal["openai", "ark", "volc_tts", "kie", "auto"]
-ApiCallFormat = Literal["openai", "ark", "kie"]
+ChannelProtocol = Literal["openai", "auto"]
+ApiCallFormat = Literal["openai"]
 
 
 class LogicalModelBinding(BaseModel):

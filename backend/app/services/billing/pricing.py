@@ -107,7 +107,7 @@ def parse_upstream_cost_fen(
     data: dict[str, Any] | None,
     settings: Settings | None = None,
 ) -> int | None:
-    """从 New API quota / 火山 usage / Kie credits 解析上游成本（分）；无则 None。"""
+    """从 New API quota / 火山 usage 解析上游成本（分）；无则 None。"""
     if not data:
         return None
     usage = data.get("usage") if isinstance(data.get("usage"), dict) else data
@@ -140,13 +140,6 @@ def parse_upstream_cost_fen(
                 return max(0, int(math.ceil(float(usage[key]) * 100)))
             except (TypeError, ValueError):
                 pass
-    # Kie：任务级 creditsConsumed（usage 内或顶层）
-    credits = usage.get("creditsConsumed")
-    if credits is None:
-        credits = data.get("creditsConsumed")
-    converted = kie_credits_to_cost_fen(credits, settings)
-    if converted is not None:
-        return converted
     return None
 
 

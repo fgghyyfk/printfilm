@@ -203,7 +203,7 @@ def _build_route(
     channel: SystemModelChannel,
 ) -> ResolvedModelRoute | None:
     api_key = channel.api_key or ""
-    if channel.protocol != "volc_tts" and not api_key:
+    if not api_key:
         return None
     protocol = channel.protocol if channel.protocol != "auto" else _auto_protocol(channel, upstream_model)
     return ResolvedModelRoute(
@@ -220,20 +220,11 @@ def _build_route(
 
 
 def _auto_protocol(channel: SystemModelChannel, upstream_model: str) -> str:
+    """未写明协议时按 OpenAI 兼容处理，不再回落方舟原生。"""
+    del upstream_model
     explicit = (channel.protocol or "auto").lower()
     if explicit not in {"", "auto"}:
         return explicit
-    cap = infer_model_capability(upstream_model)
-    if cap == "audio":
-        return "openai"
-    if cap in {"image", "video"}:
-        # TokenFree / New API 走 OpenAI 兼容根路径；方舟专有渠道仍用 ark 路径
-        from app.services.tokenfree_gateway import TOKENFREE_CHANNEL_ID, TOKENFREE_BASE_URL
-
-        base = (channel.base_url or "").rstrip("/").lower()
-        if channel.id == TOKENFREE_CHANNEL_ID or TOKENFREE_BASE_URL.split("://")[-1].lower() in base:
-            return "openai"
-        return "ark"
     return "openai"
 
 

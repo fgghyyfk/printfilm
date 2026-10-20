@@ -12,31 +12,6 @@ def test_parse_upstream_cost_fen_from_yuan():
     assert parse_upstream_cost_fen({"usage": {"cost_fen": 456}}) == 456
 
 
-def test_parse_upstream_cost_fen_from_kie_credits():
-    from app.services.billing.pricing import kie_credits_to_cost_fen
-
-    settings = get_settings()
-    settings.billing_kie_fen_per_credit = 3.5
-    assert kie_credits_to_cost_fen(10, settings) == 35
-    assert parse_upstream_cost_fen({"usage": {"creditsConsumed": 10}}, settings) == 35
-    assert parse_upstream_cost_fen({"creditsConsumed": 10}, settings) == 35
-
-
-def test_charge_fen_for_usage_kie_credits_no_markup():
-    settings = get_settings()
-    settings.billing_markup = 1.5
-    settings.billing_kie_fen_per_credit = 3.5
-    cost, charge, used = charge_fen_for_usage(
-        0,
-        "seedream",
-        raw_usage={"usage": {"creditsConsumed": 10}, "provider": "kie"},
-        settings=settings,
-    )
-    assert used is True
-    assert cost == 35
-    assert charge == 35
-
-
 def test_charge_fen_for_usage_prefers_upstream_cost():
     settings = get_settings()
     settings.billing_markup = 1.5

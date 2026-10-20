@@ -62,7 +62,7 @@ export type Template = {
   }
 }
 
-/** Template voice_preset alias → openspeech speaker id */
+/** 模板音色别名 → 预设 speaker id */
 export const VOICE_PRESET_ALIASES: Record<string, string> = {
   narrator_calm: 'zh_female_cancan_uranus_bigtts',
   warm_storyteller: 'zh_female_tianmeixiaoyuan_uranus_bigtts',

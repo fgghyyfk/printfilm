@@ -1419,8 +1419,6 @@ class FragmentVideoPrepared:
     generate_audio: bool = True
     content_labels: list[str] | None = None
     model_id: str | None = None
-    # 旧 payload 字段，反序列化仍读取；新任务不再写入
-    kie_api_kind: str | None = None
 
 
 # Worker 准备阶段：参考图 / 衔接帧 / 请求体（可耗时，但不等待上游成片）。
@@ -1637,7 +1635,6 @@ def serialize_fragment_video_prepared(prepared: FragmentVideoPrepared) -> dict[s
         "generate_audio": prepared.generate_audio,
         "content_labels": prepared.content_labels,
         "model_id": prepared.model_id,
-        "kie_api_kind": prepared.kie_api_kind,
     }
 
 
@@ -1669,7 +1666,6 @@ def deserialize_fragment_video_prepared(raw: dict[str, Any]) -> FragmentVideoPre
         generate_audio=bool(raw.get("generate_audio", True)),
         content_labels=labels,
         model_id=str(raw.get("model_id") or "") or None,
-        kie_api_kind=str(raw.get("kie_api_kind") or "") or None,
     )
 
 

@@ -7,8 +7,6 @@ import json
 import struct
 from typing import Any
 
-from app.services.tokenfree_gateway import TOKENFREE_CHANNEL_ID
-
 # 管理端逻辑名仍是 qwen-tts；真正发请求时改打 Omni（Ali ConvertAudioRequest 未实现）
 TOKENFREE_DEFAULT_TTS_MODEL = "qwen-tts-2025-05-22"
 TOKENFREE_OMNI_TTS_MODEL = "qwen3-omni-flash"
@@ -33,15 +31,9 @@ _SEED_TTS_MARKERS = ("seed-tts",)
 
 
 def uses_tokenfree_audio(*, base_url: str = "", channel_id: str = "") -> bool:
-    """判断 TTS 是否应走 TokenFree（与视频、LLM 同一 Base URL / Key）。"""
-    if (channel_id or "").strip().lower() == TOKENFREE_CHANNEL_ID:
-        return True
-    raw = (base_url or "").strip().lower()
-    if "tokenfree.com" in raw:
-        return True
-    if "volces.com" in raw or "volcengineapi.com" in raw:
-        return False
-    return False
+    """配音模型路由只走 TokenFree。"""
+    del base_url, channel_id
+    return True
 
 
 def resolve_tokenfree_tts_model(model: str | None) -> str:

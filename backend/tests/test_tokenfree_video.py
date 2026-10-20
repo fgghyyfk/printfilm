@@ -28,13 +28,14 @@ def test_remap_video_path_on_tokenfree():
     assert poll == "/videos/task-1"
 
 
-def test_remap_video_path_keeps_ark_volces():
+def test_remap_video_path_ignores_volces_host():
+    """方舟主机不再保留原生任务路径。"""
     path = remap_video_path(
         "/contents/generations/tasks",
         base_url="https://ark.cn-beijing.volces.com/api/v3",
     )
-    assert path == "/contents/generations/tasks"
-    assert uses_tokenfree_video(base_url="https://ark.cn-beijing.volces.com/api/v3") is False
+    assert path == "/videos"
+    assert uses_tokenfree_video(base_url="https://ark.cn-beijing.volces.com/api/v3") is True
 
 
 def test_wrap_seedance_payload_canonicalizes_mini_hyphen_id():
@@ -234,17 +235,15 @@ def test_wrap_seedance_payload_caps_reference_images():
     assert "input" not in wrapped["metadata"]
 
 
-def test_prepare_video_create_body_only_wraps_tokenfree():
+def test_prepare_video_create_body_always_wraps():
     body = {"model": "seedance-2-5", "content": [{"type": "text", "text": "hi"}], "duration": 5}
-    ark = prepare_video_create_body(
+    wrapped = prepare_video_create_body(
         body,
         base_url="https://ark.cn-beijing.volces.com/api/v3",
     )
-    tf = prepare_video_create_body(body, base_url=TOKENFREE_BASE_URL)
-    assert ark["content"][0]["text"] == "hi"
-    assert tf["prompt"] == "hi"
-    assert tf["metadata"]["duration"] == 5
-    assert "input" not in tf["metadata"]
+    assert wrapped["prompt"] == "hi"
+    assert wrapped["metadata"]["duration"] == 5
+    assert "input" not in wrapped["metadata"]
 
 
 def test_extract_video_task_id_from_newapi_and_wrapped_data():

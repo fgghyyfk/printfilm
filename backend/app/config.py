@@ -47,17 +47,6 @@ class Settings(BaseSettings):
     seedance_duration_min: int = 4
     seedance_duration_max: int = 30
     model_audio: str = "qwen-tts-2025-05-22"
-    # 豆包语音（openspeech）— 与方舟 ARK_API_KEY 不同产品线
-    volc_tts_app_id: str = ""
-    volc_tts_access_key: str = ""
-    volc_tts_resource_id: str = "seed-tts-2.0"
-    volc_tts_speaker: str = "zh_female_cancan_uranus_bigtts"
-    volc_tts_url: str = "https://openspeech.bytedance.com/api/v3/tts/unidirectional"
-    # 新版控制台 API Key（与 app_id/access_key 二选一，优先 api_key）
-    volc_tts_api_key: str = ""
-    # 音色设计：控制台购买的 S_ 槽位，逗号分隔；配了且鉴权齐全则漫剧走 voice_design
-    volc_tts_voice_design_url: str = "https://openspeech.bytedance.com/api/v3/tts/voice_design"
-    volc_tts_voice_design_speaker_ids: str = ""
     # Seedream: 2k|3k|4k or WIDTHxHEIGHT，且总像素 >= 3686400（约 2560x1440）
     ark_image_size: str = "2k"
     ark_video_resolution: str = "480p"

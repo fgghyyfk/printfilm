@@ -216,11 +216,6 @@ async def record_seedance_video_usage(
     if upstream_cost is not None and raw is not None:
         raw["usage"] = {**(raw.get("usage") or {}), "cost_fen": upstream_cost}
 
-    provider = "kie" if (
-        (isinstance(raw, dict) and (raw.get("provider") == "kie" or raw.get("kie_task_id")))
-        or (isinstance(raw_usage, dict) and (raw_usage.get("provider") == "kie" or raw_usage.get("kie_task_id")))
-    ) else "ark"
-
     if total_tokens > 0 or upstream_cost:
         return await record_line(
             db,
@@ -235,7 +230,7 @@ async def record_seedance_video_usage(
             drama_project_id=drama_project_id,
             shot_id=shot_id,
             domain=domain,
-            provider=provider,
+            provider="ark",
         )
 
     return await record_line(
@@ -250,7 +245,7 @@ async def record_seedance_video_usage(
         drama_project_id=drama_project_id,
         shot_id=shot_id,
         domain=domain,
-        provider=provider,
+        provider="ark",
     )
 
 
@@ -286,12 +281,6 @@ async def record_seedream_image_usage(
     if upstream_cost is not None:
         raw["usage"] = {**(raw.get("usage") or {}), "cost_fen": int(upstream_cost)}
 
-    provider = "kie" if (
-        (isinstance(raw_usage, dict) and (raw_usage.get("provider") == "kie" or raw_usage.get("kie_task_id")))
-        or (isinstance(extra_raw, dict) and (extra_raw.get("provider") == "kie" or extra_raw.get("kie_task_id")))
-        or ("kie" in (model or "").lower())
-    ) else "ark"
-
     if total_tokens > 0 or upstream_cost:
         return await record_line(
             db,
@@ -307,7 +296,7 @@ async def record_seedream_image_usage(
             drama_project_id=drama_project_id,
             shot_id=shot_id,
             domain=domain,
-            provider=provider,
+            provider="ark",
         )
 
     return await record_line(
@@ -321,7 +310,7 @@ async def record_seedream_image_usage(
         drama_project_id=drama_project_id,
         shot_id=shot_id,
         domain=domain,
-        provider=provider,
+        provider="ark",
     )
 
 

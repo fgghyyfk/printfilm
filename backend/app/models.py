@@ -114,7 +114,7 @@ class Project(Base):
     pipeline_mode: Mapped[str] = mapped_column(String(32), default="full")
     # 输出画幅，如 16:9 / 9:16；空则回退模板 default_ratio
     output_ratio: Mapped[str] = mapped_column(String(16), default="")
-    # TTS voice id (openspeech speaker or preset alias); empty → template default
+    # 配音预设 id；空则用模板默认
     voice_id: Mapped[str] = mapped_column(String(128), default="")
     # Canonical cast/look description for Seedream consistency across shots
     character_bible: Mapped[str] = mapped_column(Text, default="")

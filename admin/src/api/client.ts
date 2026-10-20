@@ -572,16 +572,6 @@ export type AdminModelSettings = {
   model_video: string;
   model_audio: string;
   has_ark_api_key: boolean;
-  volc_tts_app_id: string;
-  volc_tts_access_key: string;
-  volc_tts_api_key: string;
-  volc_tts_resource_id: string;
-  volc_tts_speaker: string;
-  volc_tts_url: string;
-  volc_tts_voice_design_url: string;
-  volc_tts_voice_design_speaker_ids: string;
-  has_volc_tts_access_key: boolean;
-  has_volc_tts_api_key: boolean;
   ark_image_size: string;
   ark_video_resolution: string;
   ark_video_ratio: string;
@@ -669,8 +659,8 @@ export type AdminRoutingChannel = {
   base_url: string;
   api_key: string;
   has_api_key: boolean;
-  api_format: "openai" | "ark" | "kie";
-  protocol: "auto" | "openai" | "ark" | "volc_tts" | "kie";
+  api_format: "openai";
+  protocol: "auto" | "openai";
   models: string[];
   enabled: boolean;
   sort_order: number;

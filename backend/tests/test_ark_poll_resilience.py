@@ -68,7 +68,7 @@ def ark_client(monkeypatch) -> ArkGateway:
     settings = SimpleNamespace(
         ark_video_poll_timeout=30.0,
         ark_video_poll_interval=0.0,
-        ark_base_url="https://ark.cn-beijing.volces.com",
+        ark_base_url="https://www.tokenfree.com/v1",
         ark_api_key="test-key",
     )
     client = ArkGateway(settings)
@@ -149,6 +149,7 @@ async def test_poll_retries_after_503_then_succeeds(ark_client, monkeypatch) -> 
                     "id": "task-abc",
                     "status": "succeeded",
                     "content": {"video_url": "https://cdn.example.com/v.mp4"},
+                    "usage": {"total_tokens": 100},
                 },
             ),
         ]
