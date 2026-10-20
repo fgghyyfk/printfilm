@@ -42,8 +42,8 @@ EPISODE_BATCH_CONTENT_SYSTEM = """你是专业的短剧/网剧编剧，负责根
 2. episodeNumber 须与用户指定的集数一一对应，不得遗漏、不得额外生成
 3. 须携带并参考「已有剧集正文」保持剧情、人设与世界观连贯；首批次无已有正文时从第 1 集开篇写起
 4. 批次内各集之间须有因果衔接，末集结尾留追剧钩子
-5. 必须输出对象格式：{"episodes":[{"episodeNumber":数字,"title":"集名","creative":"本集创意","summary":"本集摘要","content":"..."}]}，不要直接输出数组
-6. creative 为本集 80-200 字创意梗概；summary 为本集 120-300 字剧情摘要；content 为正文主字段；不要把正文写得过短
+5. 必须输出对象格式：{"episodes":[{"episodeNumber":数字,"title":"集名","summary":"本集梗概","content":"..."}]}，不要直接输出数组
+6. summary 为本集 120-300 字事件梗概；content 为正文主字段；creative 为可选创作备注，没有额外要求就省略，禁止再生成一份同义梗概
 
 格式要求（每集 content 须严格遵守）：
 1. 按场次组织，场号格式为 ### 场{集数}-{场次}，如第 1 集第 2 场：### 场1-2
@@ -121,19 +121,19 @@ EPISODE_BODY_FROM_BRIEF_SYSTEM = """你是专业的短剧/网剧编剧，根据�
 {"episodes":[{"episodeNumber":数字,"title":"集名","content":"..."}]}"""
 
 
-# 已有正文 → 反推本集创意 + 摘要
-EPISODE_BRIEF_FROM_BODY_SYSTEM = """你是专业的短剧/网剧编剧策划。根据已有拍摄正文，反推本集「原始创意」与「剧情摘要」。
+# 已有正文 → 提取本集梗概，保留用户原有创作备注
+EPISODE_BRIEF_FROM_BODY_SYSTEM = """你是专业的短剧/网剧编剧策划。根据已有拍摄正文，提取本集剧情梗概。
 
 输出要求：
 1. 只输出用户指定的那一集，episodes 数组必须恰好 1 项
-2. creative 为本集 80-200 字原始创意：故事起点、核心冲突、看点；不要写成场戏
+2. 只提取本集正文已有事件，不反推或补写 creative 创作备注
 3. summary 为本集 120-300 字剧情摘要：人物、冲突、转折、结尾钩子；不要写成场戏正文
 4. 可顺带优化 title（4-12 字集名）；不要输出 content/body
 5. 须忠实于正文已有情节，不要另起故事
 6. 语言使用简体中文
 
 必须输出严格 JSON：
-{"episodes":[{"episodeNumber":数字,"title":"集名","creative":"...","summary":"..."}]}"""
+{"episodes":[{"episodeNumber":数字,"title":"集名","summary":"..."}]}"""
 
 
 # 所有正文入口共用：原始故事是事实依据，摘要与画面风格不得改变事件因果。
@@ -418,10 +418,10 @@ async def run_episode_brief_from_body(
     title: str | None = None,
     character_asset_names: list[str] | None = None,
 ) -> list[dict[str, Any]]:
-    """已有拍摄正文 → 反推本集 creative + summary（不改 body）。"""
+    """已有拍摄正文 → 提取 summary，保留原有 creative 和 body。"""
     script_body = (body or "").strip()
     if len(script_body) < 80:
-        raise ValueError("本集剧本内容过短，无法反推创意与摘要")
+        raise ValueError("本集剧本内容过短，无法提取梗概")
     title_text = (title or "").strip() or f"第 {number} 集"
     user_parts = [
         *build_single_episode_context(
@@ -434,7 +434,7 @@ async def run_episode_brief_from_body(
         f"当前集号：{number}",
         f"当前集名：{title_text}",
         f"本集拍摄正文：\n{script_body[:12000]}",
-        "请只输出本集 title、creative、summary；不要改写正文。",
+        "请只输出本集 title、summary；不要改写正文或补写创作备注。",
     ]
     data = await drama_chat_json(
         EPISODE_BRIEF_FROM_BODY_SYSTEM,
@@ -443,12 +443,14 @@ async def run_episode_brief_from_body(
     )
     episodes = data.get("episodes") if isinstance(data, dict) else None
     if not isinstance(episodes, list) or not episodes:
-        raise ValueError("模型未返回本集创意与摘要")
+        raise ValueError("模型未返回本集梗概")
     item = episodes[0] if isinstance(episodes[0], dict) else {}
-    out_creative = str(item.get("creative") or "").strip()
+    current = next(
+        (row for row in existing if isinstance(row, dict) and int(row.get("episodeNumber") or 0) == number),
+        {},
+    )
+    out_creative = str(current.get("creative") or "").strip()
     out_summary = str(item.get("summary") or item.get("synopsis") or "").strip()
-    if len(out_creative) < 20:
-        raise ValueError("反推的本集创意过短，请重试")
     if len(out_summary) < 40:
         raise ValueError("反推的本集摘要过短，请重试")
     out_title = str(item.get("title") or "").strip() or title_text

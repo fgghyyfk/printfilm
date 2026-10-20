@@ -223,19 +223,14 @@ async def episode_script(
                 None,
             )
             cur_summary = str((cur or {}).get("summary") or "").strip()
-            cur_creative = creative_in
-            if not cur_creative:
-                cur = next(
-                    (
-                        x
-                        for x in existing
-                        if isinstance(x, dict) and int(x.get("episodeNumber") or 0) == episode_number
-                    ),
-                    None,
-                )
-                cur_creative = str((cur or {}).get("creative") or "").strip()
+            cur_creative = creative_in or str((cur or {}).get("creative") or "").strip()
             if len(cur_creative) < 20 and not (mode == "full" and len(cur_summary) >= 40):
-                raise HTTPException(status_code=400, detail="请先填写本集梗概（至少 40 字）或创作备注（至少 20 字）" if mode == "full" else "请先填写创作备注（至少 20 字）")
+                detail = (
+                    "请先填写本集梗概（至少 40 字）或创作备注（至少 20 字）"
+                    if mode == "full"
+                    else "请先填写创作备注（至少 20 字）"
+                )
+                raise HTTPException(status_code=400, detail=detail)
         elif mode == "body":
             # 与 run_episode_body_from_brief 门槛一致：创意≥10 或摘要≥40，否则任务必败
             cur = next(

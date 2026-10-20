@@ -276,3 +276,22 @@ def test_visual_shot_label_is_not_timed_as_a_speaking_character():
     assert len(drafts) == 1
     assert drafts[0]["duration_sec"] <= 4
     assert "【画面·无配音仅环境音】空镜：" in drafts[0]["content"]
+
+
+def test_locked_fragment_summary_keeps_tagged_action_and_dialogue():
+    """续拆要知道已拍情节，不能把所有带【前缀的内容过滤掉。"""
+    from app.services.drama.fragment_dialogue import summarize_locked_fragment
+
+    content = (
+        "【BGM：钢琴】\n【字幕：关闭】\n【片头·集号叠字】第1集\n"
+        "@duration:5\n【画面·无配音仅环境音】近景：@asset:7埋好种子。\n"
+        "@duration:6\n【对白·慢速清晰】@asset:7：冬天就有粮食吃了。"
+    )
+    assets = [SimpleNamespace(id=7, name="朵朵")]
+    summary = summarize_locked_fragment(content, assets)
+    assert "朵朵埋好种子" in summary
+    assert "朵朵：冬天就有粮食吃了" in summary
+    assert "@asset" not in summary
+    assert "@duration" not in summary
+    assert "BGM" not in summary
+    assert "第1集" not in summary

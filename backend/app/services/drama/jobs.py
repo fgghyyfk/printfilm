@@ -12,6 +12,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.services.drama.fragment_dialogue import summarize_locked_fragment
 from app.database import AsyncSessionLocal
 from app.models import User
 from app.models_tasks import TaskRun
@@ -1027,16 +1028,9 @@ async def run_episode_fragment_plan_job(
             for frag in protected_frags:
                 for name in extract_introduced_names_from_content(frag.content or ""):
                     already_introduced.add(name)
-                # 摘要：去掉 cue 行后取前几行画面/对白
-                narr: list[str] = []
-                for raw in (frag.content or "").replace("\r\n", "\n").split("\n"):
-                    line = raw.strip()
-                    if not line or line.startswith("@") or line.startswith("【"):
-                        continue
-                    narr.append(line)
-                    if len(narr) >= 3:
-                        break
-                locked_summaries.append("；".join(narr) if narr else f"分镜#{frag.sort_order}")
+                # 生产元信息不能当作剧情，画面/对白标签后的正文必须保留。
+                narr = summarize_locked_fragment(frag.content or "", assets)
+                locked_summaries.append(narr or f"分镜#{frag.sort_order}")
 
         mode_used = "llm"
         summary = script.summary if script and isinstance(script.summary, dict) else {}

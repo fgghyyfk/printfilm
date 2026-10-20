@@ -23,6 +23,21 @@ _MIN_COVERAGE_LINE_CHARS = 6
 _SPEECH_BREAKS = frozenset("。！？!?；;，,、")
 
 
+def summarize_locked_fragment(content: str, assets: list[Any] | None = None) -> str:
+    """保留已拍镜头的画面和口播，避免续拆时只给模型一个分镜编号。"""
+    names = asset_names_by_id(assets)
+    lines: list[str] = []
+    for raw in (content or "").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("@duration:") or is_production_meta_line(line):
+            continue
+        line = re.sub(r"^【(?:画面|空镜|对白|旁白|内心独白)[^】]*】\s*", "", line)
+        lines.append(_restore_assets(line, names) if names else line)
+        if len(lines) >= 3:
+            break
+    return "；".join(lines)
+
+
 def asset_names_by_id(assets: list[Any] | None) -> dict[int, str]:
     """建立资产 ID 到名称的映射，用于还原角色称呼和台词中的引用。"""
     return {

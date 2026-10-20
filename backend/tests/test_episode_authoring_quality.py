@@ -41,6 +41,21 @@ async def test_generated_body_still_too_short_after_retry_fails(monkeypatch, mod
     assert chat.await_count == 2
 
 
+@pytest.mark.parametrize("notes", ["", "保留温暖结尾，不添加反派"])
+async def test_extract_synopsis_preserves_optional_creation_notes(monkeypatch, notes):
+    """从正文提取梗概时，不反推或覆盖用户的可选创作备注。"""
+    synopsis = "小松鼠认真储粮过冬，春天发现遗忘的种子发芽，和朋友一起照顾树苗。" * 2
+    monkeypatch.setattr(agents, "drama_chat_json", AsyncMock(return_value={
+        "episodes": [{"episodeNumber": 1, "summary": synopsis, "creative": "模型擅自补写的创意"}],
+    }))
+    body = "△ 松鼠埋好松果，冬天找到存粮，春天看见树苗。\n" * 8
+    existing = [{"episodeNumber": 1, "creative": notes}]
+    rows = await agents.run_episode_brief_from_body({}, existing, 1, body)
+    assert rows[0]["creative"] == notes
+    assert rows[0]["summary"] == synopsis
+    assert rows[0]["body"] == body.strip()
+
+
 @pytest.mark.parametrize("changed", [False, True])
 def test_episode_output_marks_stale_storyboard_without_mutating_params(changed):
     """正文变更时只标注旧镜，保留镜头并且不写入 ORM params。"""
