@@ -1,6 +1,6 @@
 /** 漫剧视频输出规格（画幅 / 清晰度）：分集 params 优先，可回退 project.params */
 export const DRAMA_RATIO_OPTIONS = ['9:16', '16:9', '1:1'] as const
-export const DRAMA_RES_OPTIONS = ['480p', '720p', '1080p'] as const
+export const DRAMA_RES_OPTIONS = ['480p', '720p', '768p', '1080p'] as const
 
 export type DramaAspectRatio = (typeof DRAMA_RATIO_OPTIONS)[number]
 export type DramaResolution = (typeof DRAMA_RES_OPTIONS)[number]

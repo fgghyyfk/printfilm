@@ -122,15 +122,15 @@ VENDOR_VIDEO_YUAN_5S_BY_RES.update(
 )
 # Seedance 秒价表硬底：仅挡住低于旧错误表 ¥0.50/秒 的脏数据
 SEEDANCE_VENDOR_FLOOR_YUAN_PER_SEC = 0.5
-# MiniMax-H3：约 $0.08/秒（768P）；本站仅开放 720p；人民币按 billing_usd_cny 折算
-MINIMAX_H3_USD_PER_SEC_720P = 0.08
+# MiniMax-H3：约 $0.08/秒（768P 档参考）；开放 480p / 768p；人民币按 billing_usd_cny 折算
+MINIMAX_H3_USD_PER_SEC = 0.08
 
 
 def minimax_h3_yuan_per_sec(settings: Settings | None = None) -> float:
-    """MiniMax-H3 720p 结算参考秒价（人民币）。"""
+    """MiniMax-H3 结算参考秒价（人民币，按 768P 档）。"""
     s = settings or get_settings()
     fx = float(getattr(s, "billing_usd_cny", 0) or 7.3)
-    return MINIMAX_H3_USD_PER_SEC_720P * fx
+    return MINIMAX_H3_USD_PER_SEC * fx
 
 
 # 兼容旧逻辑：480P 秒价（= 5 秒价 / 5）
@@ -143,9 +143,10 @@ VENDOR_VIDEO_YUAN_PER_SEC_480P = {
 VIDEO_RESOLUTION_MULT = {
     "480p": 1.0,
     "720p": 2.0,
+    "768p": 2.0,
     "1080p": 4.0,
 }
-_VIDEO_RES_ORDER = ("480p", "720p", "1080p")
+_VIDEO_RES_ORDER = ("480p", "720p", "768p", "1080p")
 # Kie sunburst 控制台档（USD / credits）；公开 /api/pricing 往往只有笼统 gpt-image-2-5
 KIE_SUNBURST_USD_1K = 0.03
 KIE_SUNBURST_USD_2K = 0.05
@@ -230,7 +231,7 @@ RECOMMENDED_MODELS: tuple[dict[str, Any], ...] = (
         "id": "MiniMax-H3",
         "capability": "video",
         "label": "MiniMax H3",
-        "note": "4–15 秒，仅 720p",
+        "note": "4–15 秒，480p / 768p",
         "recommended": False,
     },
     {
@@ -671,7 +672,7 @@ def charge_fen_official_llm(tokens: int, settings: Settings, *, model: str = "")
 
 
 def normalize_video_resolution(resolution: str | None, settings: Settings | None = None) -> str:
-    """预估用清晰度：只认 480p/720p/1080p。"""
+    """预估用清晰度：认 480p/720p/768p/1080p。"""
     raw = (resolution or "").strip().lower()
     if raw in VIDEO_RESOLUTION_MULT:
         return raw
@@ -776,7 +777,7 @@ def format_video_pricing_hint(model: str) -> str:
     if expr_parts:
         return "按清晰度×时长 · " + " · ".join(expr_parts)
     if _is_minimax_video_model(mid):
-        return f"约 ¥{minimax_h3_yuan_per_sec():.2f}/秒 · 仅 720p"
+        return f"约 ¥{minimax_h3_yuan_per_sec():.2f}/秒 · 480p/768p"
     key = _resolve_vendor_video_key(mid)
     tiers = VENDOR_VIDEO_YUAN_5S_BY_RES.get(key)
     if not tiers:

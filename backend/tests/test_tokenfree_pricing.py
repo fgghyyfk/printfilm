@@ -388,7 +388,7 @@ def test_media_model_pricing_hint_lists_all_video_tiers() -> None:
     # 2.0 720p ≈ ¥1.52/秒（刊例 46×1.5×22k tok）
     assert "1.52" in h20 or "1.51" in h20 or "7.59" in h20
     assert "0.58" in h_mm or "0.584" in h_mm
-    assert "720p" in h_mm
+    assert "768p" in h_mm or "480p" in h_mm
 
 
 def test_charge_official_llm_uses_in_out_split() -> None:

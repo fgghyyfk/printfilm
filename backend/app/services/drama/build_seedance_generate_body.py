@@ -1155,10 +1155,10 @@ def resolve_seedance_resolution(
     *,
     model_id: str | None = None,
 ) -> str:
-    """解析并按模型能力钳制清晰度。"""
-    from app.services.seedance_resolutions import clamp_video_resolution
+    """解析并按模型能力钳制清晰度（MiniMax 提交小写 480p/768p）。"""
+    from app.services.seedance_resolutions import format_video_resolution_for_upstream
 
-    return clamp_video_resolution(model_id, resolution)
+    return format_video_resolution_for_upstream(model_id, resolution)
 
 
 # 将分镜参数转为 Seedance 请求体

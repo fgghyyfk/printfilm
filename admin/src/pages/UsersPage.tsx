@@ -34,7 +34,10 @@ export function UsersPage() {
   const [detailUser, setDetailUser] = useState<AdminUserRow | null>(null);
   const [form, setForm] = useState({
     role: "user",
-    balance_yuan: "0",
+    /** increase=增加 / decrease=减少 */
+    balance_dir: "increase" as "increase" | "decrease",
+    /** 调账金额（元），空表示不改余额 */
+    balance_amount_yuan: "",
     balance_note: "",
   });
   const [saving, setSaving] = useState(false);
@@ -82,7 +85,8 @@ export function UsersPage() {
     setEditing(user);
     setForm({
       role: user.role || "user",
-      balance_yuan: fenToYuan(user.balance_fen),
+      balance_dir: "increase",
+      balance_amount_yuan: "",
       balance_note: "",
     });
   }
@@ -91,17 +95,34 @@ export function UsersPage() {
     if (!editing) return;
     setSaving(true);
     try {
-      const balanceFen = Math.round(parseFloat(form.balance_yuan || "0") * 100);
-      if (Number.isNaN(balanceFen)) throw new Error("余额格式无效");
+      const payload: {
+        role: string;
+        balance_delta_fen?: number;
+        balance_note?: string;
+      } = { role: form.role };
+
+      const amountRaw = form.balance_amount_yuan.trim();
+      if (amountRaw) {
+        const amountYuan = parseFloat(amountRaw);
+        if (Number.isNaN(amountYuan) || amountYuan < 0) {
+          throw new Error("调账金额须为非负数字");
+        }
+        const amountFen = Math.round(amountYuan * 100);
+        if (amountFen > 0) {
+          const signed = form.balance_dir === "decrease" ? -amountFen : amountFen;
+          if (form.balance_dir === "decrease" && signed + editing.balance_fen < 0) {
+            throw new Error("减少后余额不能为负");
+          }
+          payload.balance_delta_fen = signed;
+          payload.balance_note = form.balance_note || undefined;
+        }
+      }
+
       await api(`/api/admin/users/${editing.id}`, {
         method: "PATCH",
-        body: JSON.stringify({
-          role: form.role,
-          balance_fen: balanceFen,
-          balance_note: form.balance_note || undefined,
-        }),
+        body: JSON.stringify(payload),
       });
-      toast.success("已保存");
+      toast.success(payload.balance_delta_fen ? "已调账并保存" : "已保存");
       setEditing(null);
       await load();
     } catch (err) {
@@ -255,13 +276,44 @@ export function UsersPage() {
               <option value="admin">admin</option>
             </Select>
           </AdminField>
-          <AdminField label="余额（元）">
+          <AdminField label="当前余额" hint="只读">
+            <Input value={editing ? `¥${fenToYuan(editing.balance_fen)}` : "—"} disabled readOnly />
+          </AdminField>
+          <AdminField label="调账方向">
+            <Select
+              value={form.balance_dir}
+              onChange={(e) =>
+                setForm((f) => ({
+                  ...f,
+                  balance_dir: e.target.value === "decrease" ? "decrease" : "increase",
+                }))
+              }
+            >
+              <option value="increase">增加</option>
+              <option value="decrease">减少</option>
+            </Select>
+          </AdminField>
+          <AdminField
+            label="调账金额（元）"
+            hint={
+              form.balance_amount_yuan.trim()
+                ? form.balance_dir === "increase"
+                  ? "保存后余额将增加该金额"
+                  : "保存后余额将减少该金额"
+                : "留空则不改余额"
+            }
+          >
             <Input
-              value={form.balance_yuan}
-              onChange={(e) => setForm((f) => ({ ...f, balance_yuan: e.target.value }))}
+              type="number"
+              min="0"
+              step="0.01"
+              inputMode="decimal"
+              value={form.balance_amount_yuan}
+              onChange={(e) => setForm((f) => ({ ...f, balance_amount_yuan: e.target.value }))}
+              placeholder="例如 100"
             />
           </AdminField>
-          <AdminField label="调账备注" hint="可选">
+          <AdminField label="调账备注" hint="可选；仅改余额时写入流水">
             <Input
               value={form.balance_note}
               onChange={(e) => setForm((f) => ({ ...f, balance_note: e.target.value }))}

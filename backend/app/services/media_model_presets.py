@@ -94,7 +94,7 @@ PRESET_MODELS: dict[LogicalModelCapability, tuple[dict[str, str], ...]] = {
         {
             "id": "MiniMax-H3",
             "label": "MiniMax H3",
-            "note": "节奏感强、人物生动；4–15 秒，仅 720p",
+            "note": "节奏感强、人物生动；4–15 秒，480p / 768p",
             "pricing_hint": "出片偏慢 · 约 ¥0.44–0.73/秒",
             "eta_hint": "偏慢，4s 约 15 分钟起",
         },
@@ -130,8 +130,8 @@ IMAGE_RESOLUTIONS_GPT_IMAGE_25: tuple[str, ...] = ("1K", "2K", "4K")
 VIDEO_ASPECT_RATIOS: tuple[str, ...] = ("9:16", "16:9", "1:1")
 VIDEO_RESOLUTIONS_FULL: tuple[str, ...] = ("480p", "720p", "1080p")
 VIDEO_RESOLUTIONS_SAFE: tuple[str, ...] = ("480p", "720p")
-# MiniMax-H3 当前渠道仅 720p
-VIDEO_RESOLUTIONS_720_ONLY: tuple[str, ...] = ("720p",)
+# MiniMax-H3：TokenFree 枚举为小写 480p / 768p
+VIDEO_RESOLUTIONS_MINIMAX_H3: tuple[str, ...] = ("480p", "768p")
 
 
 # 历史友好别名 / 旧连字符 id → TokenFree 点分规范 id
@@ -310,7 +310,7 @@ def model_generation_options(model_id: str | None) -> dict[str, Any]:
             return {
                 "capability": "video",
                 "allowed_aspect_ratios": list(VIDEO_ASPECT_RATIOS),
-                "allowed_resolutions": list(VIDEO_RESOLUTIONS_720_ONLY),
+                "allowed_resolutions": list(VIDEO_RESOLUTIONS_MINIMAX_H3),
                 "duration_min": 4,
                 "duration_max": 15,
             }
