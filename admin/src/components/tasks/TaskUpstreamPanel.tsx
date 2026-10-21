@@ -1,18 +1,21 @@
 import { useMemo } from "react";
 import type { AdminTaskDetail } from "@/api/client";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { PaginationBar } from "@/components/PaginationBar";
+import { useTaskEventPage } from "@/hooks/useTaskEventPage";
 import { prettyJson } from "@/lib/jsonPreview";
-import { groupUpstreamRecords, redactTaskData, redactTaskText, taskUpstream, upstreamStateLabel, UPSTREAM_PHASE_LABELS } from "@/lib/taskObservability";
+import { groupUpstreamRecords, redactTaskData, redactTaskText, taskUpstream, upstreamRecords, upstreamStateLabel, UPSTREAM_PHASE_LABELS } from "@/lib/taskObservability";
 
 function time(value?: string | null) {
   return value ? new Date(value).toLocaleString() : "未记录";
 }
 
-function JsonRecord({ title, value }: { title: string; value: unknown }) {
+function JsonRecord({ title, value, paginated = false }: { title: string; value: unknown; paginated?: boolean }) {
   return (
     <details className="rounded-lg border border-[var(--admin-border)] bg-white p-3">
       <summary className="cursor-pointer text-xs font-semibold text-[var(--admin-text)]">{title}（脱敏）</summary>
-      {value === undefined ? <p className="mt-3 text-xs text-[var(--admin-muted)]">未记录</p> : <pre className="task-detail-json mt-3">{prettyJson(redactTaskData(value))}</pre>}
+      {value === undefined ? <p className="mt-3 text-xs text-[var(--admin-muted)]">{paginated ? "本页未包含，可翻页查看历史记录" : "未记录"}</p> : <pre className="task-detail-json mt-3">{prettyJson(redactTaskData(value))}</pre>}
     </details>
   );
 }
@@ -20,21 +23,27 @@ function JsonRecord({ title, value }: { title: string; value: unknown }) {
 /** Only dedicated HTTP events are treated as evidence of actual upstream requests. */
 export function TaskUpstreamPanel({ task }: { task: AdminTaskDetail }) {
   const summary = useMemo(() => taskUpstream(task), [task]);
-  const requests = useMemo(() => groupUpstreamRecords(summary.records), [summary]);
+  const refreshToken = `${task.upstream_events_total}:${task.updated_at}:${task.status}`;
+  const history = useTaskEventPage(task.id, refreshToken, "upstream.request.");
+  const pageRecords = useMemo(() => upstreamRecords(history.data?.items), [history.data]);
+  const requests = useMemo(() => groupUpstreamRecords(pageRecords), [pageRecords]);
   return (
     <div className="space-y-4">
       <section className="task-detail-section">
         <h4>实际上游请求</h4>
-        <p className="text-xs leading-6 text-[var(--admin-muted)]">按请求 ID 关联提交与响应；查询事件可能为采样记录。缺失内容显示“未记录”。任务参数与步骤参数保留在各自页签。</p>
+        <p className="text-xs leading-6 text-[var(--admin-muted)]">按事件 ID 倒序分页，并在本页按请求 ID 关联提交与响应；同一请求可能跨页，当前页缺少内容不代表历史从未记录。查询事件可能为采样记录。</p>
         <dl className="mt-3 grid gap-3 text-xs sm:grid-cols-3">
           <div><dt className="text-[var(--admin-muted)]">最近记录阶段</dt><dd className="mt-1 font-medium">{summary.phase}</dd></div>
           <div><dt className="text-[var(--admin-muted)]">上游任务 ID</dt><dd className="mt-1 break-all font-mono">{summary.providerTaskId || "未记录"}</dd></div>
-          <div><dt className="text-[var(--admin-muted)]">请求记录</dt><dd className="mt-1">{requests.length} 组 · {summary.records.length} 个事件</dd></div>
+          <div><dt className="text-[var(--admin-muted)]">上游事件</dt><dd className="mt-1">本页 {pageRecords.length} 条 · 历史 {history.data?.total ?? task.upstream_events_total ?? "—"} 条</dd></div>
         </dl>
       </section>
 
-      {requests.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-[var(--admin-border)] px-5 py-8 text-sm text-[var(--admin-muted)]">未记录上游 HTTP 请求。已有上游任务 ID 或任务已完成，也不能据此还原实际请求体。</div>
+      <div className="flex justify-end"><Button variant="outline" size="sm" disabled={history.loading} onClick={history.refresh}>刷新上游记录</Button></div>
+      {history.error ? <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700" role="alert">{history.error}<Button className="ml-3" variant="outline" size="sm" onClick={history.refresh}>重试</Button></div> : null}
+
+      {history.loading ? <p className="py-8 text-center text-sm text-[var(--admin-muted)]" role="status">正在加载本页上游事件…</p> : history.error ? null : requests.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-[var(--admin-border)] px-5 py-8 text-sm text-[var(--admin-muted)]">本页未记录上游 HTTP 请求。已有上游任务 ID 或任务已完成，也不能据此还原实际请求体。</div>
       ) : requests.map((request) => (
         <section key={request.key} className="task-detail-section">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -56,12 +65,14 @@ export function TaskUpstreamPanel({ task }: { task: AdminTaskDetail }) {
             {request.records.map((record) => <li key={record.id} className="flex flex-wrap gap-x-3 gap-y-1 text-[11px]"><span>{UPSTREAM_PHASE_LABELS[record.phase]}</span>{record.upstreamStatus ? <span>{upstreamStateLabel(record.upstreamStatus)}</span> : null}<span className="text-[var(--admin-muted)]">{time(record.createdAt)}</span>{record.elapsedMs != null ? <span className="text-[var(--admin-muted)]">{record.elapsedMs} ms</span> : null}</li>)}
           </ol>
           <div className="grid items-start gap-3 xl:grid-cols-2">
-            <JsonRecord title="请求" value={request.request} />
-            <JsonRecord title="响应" value={request.response} />
+            <JsonRecord title="请求" value={request.request} paginated />
+            <JsonRecord title="响应" value={request.response} paginated />
           </div>
-          {request.error !== undefined ? <div className="mt-3"><JsonRecord title="错误" value={request.error} /></div> : null}
+          {request.error !== undefined ? <div className="mt-3"><JsonRecord title="错误" value={request.error} paginated /></div> : null}
         </section>
       ))}
+
+      {history.data ? <PaginationBar page={history.page} pageSize={history.pageSize} total={history.data.total} onPageChange={history.setPage} onPageSizeChange={history.changePageSize} pageSizeOptions={[20, 50, 100]} /> : null}
 
       {(task.steps || []).some((step) => step.input_payload || step.output_payload) ? (
         <details className="task-detail-section">

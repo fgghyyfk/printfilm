@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TaskUpstreamPanel } from "@/components/tasks/TaskUpstreamPanel";
+import { TaskEventsPanel } from "@/components/tasks/TaskEventsPanel";
 import { useTaskClock } from "@/hooks/useTaskClock";
 import { taskDomainLabel, taskStatusLabel, taskTypeLabel } from "@/lib/statusLabels";
 import { hasJsonContent, prettyJson } from "@/lib/jsonPreview";
@@ -262,10 +263,10 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
             {(
               [
                 ["overview", "概览"],
-                ["upstream", `上游请求 (${upstream.records.length})`],
+                ["upstream", "上游请求"],
                 ["billing", `计费 (${task.usage_lines?.length ?? 0})`],
                 ["steps", `步骤 (${task.steps?.length ?? 0})`],
-                ["events", `事件 (${task.events?.length ?? 0})`],
+                ["events", `事件 (${task.events_total ?? task.events?.length ?? 0})`],
                 ["json", "任务 JSON（脱敏）"],
               ] as const
             ).map(([key, label]) => (
@@ -438,7 +439,7 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
               </div>
             ) : null}
 
-            {tab === "upstream" ? <TaskUpstreamPanel task={task} /> : null}
+            {tab === "upstream" ? <TaskUpstreamPanel key={task.id} task={task} /> : null}
 
             {tab === "billing" ? (
               <div className="task-detail-grid">
@@ -565,32 +566,7 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
               </div>
             ) : null}
 
-            {tab === "events" ? (
-              <div className="task-detail-events">
-                {(task.events?.length ?? 0) === 0 ? (
-                  <p className="text-sm text-[#909399]">暂无事件日志</p>
-                ) : (
-                  [...(task.events ?? [])]
-                    .sort((a, b) => (a.id ?? 0) - (b.id ?? 0))
-                    .map((ev) => (
-                      <div key={ev.id} className="task-detail-event">
-                        <div className="task-detail-event-head">
-                          <span className="font-mono text-xs text-[#303133]">{ev.event_type}</span>
-                          <span className="text-[11px] text-[#909399]">{fmtTime(ev.created_at)}</span>
-                        </div>
-                        <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-[#909399]">
-                          {ev.status ? <span>status={ev.status}</span> : null}
-                          {ev.phase ? <span>phase={ev.phase}</span> : null}
-                        </div>
-                        {ev.message ? <p className="mt-1 text-sm text-[#606266]">{redactTaskText(ev.message)}</p> : null}
-                        {ev.payload ? (
-                          <pre className="task-detail-json task-detail-json--compact">{fmtJson(ev.payload)}</pre>
-                        ) : null}
-                      </div>
-                    ))
-                )}
-              </div>
-            ) : null}
+            {tab === "events" ? <TaskEventsPanel key={task.id} task={task} /> : null}
 
             {tab === "json" ? (
               <div className="space-y-4">

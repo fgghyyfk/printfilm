@@ -74,3 +74,20 @@ test('provider response status determines visible upstream phase without inventi
   assert.equal(upstreamStateLabel('failed'), '上游失败');
   assert.equal(taskUpstream({}).phase, '尚无上游请求记录');
 });
+
+test('bounded dedicated upstream evidence works without inspecting omitted general history', () => {
+  const task = {
+    upstream_events: [
+      { id: 64071, event_type: 'upstream.request.failed', payload: { model: 'resolved-model', status_code: 422, error: 'invalid body' } },
+      { id: 64070, event_type: 'upstream.request.started', payload: { model: 'resolved-model', method: 'POST' } },
+    ],
+  };
+  Object.defineProperty(task, 'events', { get() { throw new Error('general history must not be loaded'); } });
+  const result = taskUpstream(task);
+  assert.equal(result.records.length, 2);
+  assert.equal(result.latest.id, 64071);
+  assert.equal(result.latest.httpStatus, 422);
+  assert.equal(result.phase, '请求失败');
+  assert.equal(result.model, 'resolved-model');
+  assert.deepEqual(taskUpstream({ upstream_events: [], events: [{ id: 1, event_type: 'upstream.request.started' }] }).records, []);
+});

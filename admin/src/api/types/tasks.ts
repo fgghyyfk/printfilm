@@ -38,6 +38,9 @@ export type AdminTaskRow = {
   result_payload?: Record<string, unknown> | null;
   steps?: AdminTaskStep[];
   events?: AdminTaskEvent[];
+  events_total?: number;
+  upstream_events?: AdminTaskEvent[];
+  upstream_events_total?: number;
 };
 
 export type AdminTaskStep = {
@@ -63,6 +66,13 @@ export type AdminTaskEvent = {
   message?: string | null;
   payload?: Record<string, unknown> | null;
   created_at?: string | null;
+};
+
+export type AdminTaskEventPage = {
+  items: AdminTaskEvent[];
+  total: number;
+  page: number;
+  page_size: number;
 };
 
 export type AdminTaskDetail = AdminTaskRow & {

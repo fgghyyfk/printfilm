@@ -8,7 +8,7 @@ from typing import Any
 
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import raiseload, selectinload
 
 from app.models import Project, Shot, User
 from app.models_drama import DramaAsset, DramaEpisode, DramaEpisodeFragment, DramaProject, DramaScript
@@ -1127,8 +1127,12 @@ async def get_task_for_runtime(db: AsyncSession, task_id: int) -> TaskRun | None
 
 
 async def get_task_admin(db: AsyncSession, task_id: int) -> TaskRun:
-    """Load one task for admin without ownership check."""
-    stmt = select(TaskRun).options(*task_detail_options()).where(TaskRun.id == task_id)
+    """管理员读取任务执行数据；完整历史由独立的有界事件查询提供。"""
+    stmt = (
+        select(TaskRun)
+        .options(selectinload(TaskRun.steps), selectinload(TaskRun.targets), raiseload(TaskRun.events))
+        .where(TaskRun.id == task_id)
+    )
     task = (await db.execute(stmt)).scalar_one_or_none()
     if not task:
         raise LookupError("任务不存在")
@@ -1180,7 +1184,7 @@ async def list_tasks_admin(
 
     total = int((await db.execute(count_stmt)).scalar_one() or 0)
     stmt = (
-        base_stmt.options(*task_detail_options())
+        base_stmt.options(selectinload(TaskRun.steps), selectinload(TaskRun.targets), raiseload(TaskRun.events))
         .order_by(TaskRun.created_at.desc(), TaskRun.id.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)

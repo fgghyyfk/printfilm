@@ -170,8 +170,9 @@ export function groupUpstreamRecords(records: UpstreamRecord[]) {
   }).reverse();
 }
 
-export function taskUpstream(task: Pick<AdminTaskRow, "events" | "steps" | "payload" | "provider_task_id">) {
-  const records = upstreamRecords(task.events);
+export function taskUpstream(task: Pick<AdminTaskRow, "events" | "upstream_events" | "steps" | "payload" | "provider_task_id">) {
+  // Dedicated bounded evidence remains available when the general event list is omitted or paginated.
+  const records = upstreamRecords(task.upstream_events ?? task.events);
   const latest = records.at(-1);
   const modelRecord = [...records].reverse().find((record) => record.model);
   const providerRecord = [...records].reverse().find((record) => record.provider);
