@@ -89,6 +89,12 @@ docker compose -f deploy/docker-compose.yml --env-file deploy/.env.prod down -v
 
 任务并发：通过 `backend/.env` 中的 `TASK_RUNTIME_MAX_CONCURRENCY`、`TASK_USER_MAX_CONCURRENCY` 调整统一任务平台并发。
 
+测试环境由 `dev` 分支 push 自动发布；日常测试发版提交并推送代码即可，不需要手动上传补丁或更新服务器容器。
+
+本地 API 联调连接共享测试数据库时，设置 `TASK_RUNTIME_ENABLED=false`，只保留测试服务器执行调度、轮询和孤儿恢复。已由服务器初始化的共享数据库还可设 `DATABASE_BOOTSTRAP_ENABLED=false`，本机只读取模型缓存，不再重复建表、补列、seed 或提升管理员。本地仍能创建和查询任务，执行与产物存储由测试服务器负责；本地页面应能访问服务器返回的媒体地址。独立本地数据库或实际执行节点保持两个开关为 `true`（默认）。不要让多个调试实例同时恢复同一队列。
+
+任务中心区分「待调度」（已到期）、「待激活」（尚无调度时间，可能等前置镜或额度）和「延时等待」。排查积压时一起查看调度最近成功时间、连续失败次数、数据库锁等待；增加并发无法解决调度停滞或锁等待。
+
 ## OSS（成片 / 分镜 / 前端）
 
 在 `backend/.env` 开启：

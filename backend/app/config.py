@@ -23,6 +23,8 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+asyncpg://printfilm:change-me-strong-db-password@127.0.0.1:15432/printfilm"
     database_url_sync: str = "postgresql+psycopg2://printfilm:change-me-strong-db-password@127.0.0.1:15432/printfilm"
+    # 连接已初始化的共享库时可关闭建表/补列/种子数据；仍加载数据库中的模型配置。
+    database_bootstrap_enabled: bool = True
     # Postgres 连接池（统一任务平台 / API 共用）
     db_pool_size: int = 5
     db_max_overflow: int = 5
@@ -70,6 +72,8 @@ class Settings(BaseSettings):
     kepu_seedance_sfx_audio: bool = True
 
     ark_mock: bool = False
+    # 本地连接共享测试库时关闭，避免本机和服务器同时消费、恢复同一队列。
+    task_runtime_enabled: bool = True
     # 内置任务平台的进程内并发上限（全站 Worker 槽位）。
     task_runtime_max_concurrency: int = 4
     # 单用户同时进行中的 Worker 槽位（不含 awaiting_poll 注册项）。

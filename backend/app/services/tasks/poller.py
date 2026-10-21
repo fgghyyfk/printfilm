@@ -12,6 +12,7 @@ from sqlalchemy import or_, select
 from app.config import get_settings
 from app.database import AsyncSessionLocal
 from app.models_tasks import TaskRun
+from app.services.billing.context import billing_scope
 from app.services.billing.settlement import settle_task
 from app.services.tasks.service import append_task_event
 
@@ -277,7 +278,9 @@ async def _poll_one_ephemeral_task(task_id: int, *, now, timeout_sec: float) -> 
         if not user or not provider_id:
             return
 
-        data = await poll_video_task(user, provider_id)
+        # 后台轮询与提交请求共用任务上下文，便于关联真实上游状态和计费。
+        async with billing_scope(task_id):
+            data = await poll_video_task(user, provider_id)
         status = str(data.get("status") or "").strip().lower()
         if status in {"", "running", "queued"}:
             task.next_action_at = now + timedelta(

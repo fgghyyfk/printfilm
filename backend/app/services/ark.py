@@ -16,6 +16,8 @@ from urllib.parse import urlparse
 
 import httpx
 
+from app.services.tasks.upstream import observed_request
+
 from app.config import Settings, get_settings
 from app.services.billing.pricing import parse_upstream_cost_fen, parse_usage_dict
 from app.schemas_routing import ResolvedModelRoute
@@ -1029,7 +1031,7 @@ class ArkGateway:
             async with httpx.AsyncClient(timeout=_upstream_timeout(IMAGE_GEN_READ_SEC)) as client:
                 async def _post():
                     # 单次上游 POST，限流重试由外层包住
-                    return await client.post(
+                    return await observed_request(client, "POST",
                         self._route_url(path, route),
                         headers=self._route_headers(route),
                         json=body,
@@ -1341,7 +1343,7 @@ class ArkGateway:
 
         try:
             async with httpx.AsyncClient(timeout=_upstream_timeout(VIDEO_CREATE_READ_SEC)) as client:
-                resp = await client.post(
+                resp = await observed_request(client, "POST",
                     self._route_url("/contents/generations/tasks", route),
                     headers=self._route_headers(route),
                     json=self._video_json(body, route),
@@ -1349,7 +1351,7 @@ class ArkGateway:
                 if resp.status_code >= 400 and prompt_as_json:
                     # Fallback: plain text prompt
                     body["content"][0]["text"] = plain
-                    resp = await client.post(
+                    resp = await observed_request(client, "POST",
                         self._route_url("/contents/generations/tasks", route),
                         headers=self._route_headers(route),
                         json=self._video_json(body, route),
@@ -1364,7 +1366,7 @@ class ArkGateway:
                         if cg_content is not None:
                             logger.warning("Seedance i2v text policy hit; retrying with CG style")
                             body = {**body, "content": cg_content}
-                            resp = await client.post(
+                            resp = await observed_request(client, "POST",
                                 self._route_url("/contents/generations/tasks", route),
                                 headers=self._route_headers(route),
                                 json=self._video_json(body, route),
@@ -1382,7 +1384,7 @@ class ArkGateway:
                         and "ratio" in body
                     ):
                         body.pop("ratio", None)
-                        resp = await client.post(
+                        resp = await observed_request(client, "POST",
                             self._route_url("/contents/generations/tasks", route),
                             headers=self._route_headers(route),
                             json=self._video_json(body, route),
@@ -1391,7 +1393,7 @@ class ArkGateway:
                     # 无目标画幅时的兼容回退；有竖屏目标时禁止 adaptive，避免再次出横屏
                     body["content"][1].pop("role", None)
                     body["ratio"] = "adaptive"
-                    resp = await client.post(
+                    resp = await observed_request(client, "POST",
                         self._route_url("/contents/generations/tasks", route),
                         headers=self._route_headers(route),
                         json=self._video_json(body, route),
@@ -1485,7 +1487,7 @@ class ArkGateway:
 
         try:
             async with httpx.AsyncClient(timeout=_upstream_timeout(VIDEO_CREATE_READ_SEC)) as client:
-                resp = await client.post(
+                resp = await observed_request(client, "POST",
                     self._route_url("/contents/generations/tasks", route),
                     headers=self._route_headers(route),
                     json=self._video_json(payload, route),
@@ -1510,7 +1512,7 @@ class ArkGateway:
                             project_id,
                         )
                         payload = {**payload, "content": cg_content}
-                        resp = await client.post(
+                        resp = await observed_request(client, "POST",
                             self._route_url("/contents/generations/tasks", route),
                             headers=self._route_headers(route),
                             json=self._video_json(payload, route),
@@ -1637,7 +1639,7 @@ class ArkGateway:
         async with httpx.AsyncClient(timeout=_upstream_timeout(VIDEO_POLL_READ_SEC, connect=15.0)) as client:
             while time.monotonic() < deadline:
                 try:
-                    resp = await client.get(
+                    resp = await observed_request(client, "GET",
                         self._url(f"/contents/generations/tasks/{task_id}"),
                         headers=self._headers(),
                     )
@@ -1695,7 +1697,7 @@ class ArkGateway:
             )
         try:
             async with httpx.AsyncClient(timeout=_upstream_timeout(VIDEO_FETCH_READ_SEC, connect=15.0)) as client:
-                resp = await client.get(
+                resp = await observed_request(client, "GET",
                     self._url(f"/contents/generations/tasks/{task_id}"),
                     headers=self._headers(),
                 )
@@ -1868,7 +1870,7 @@ class ArkGateway:
         if tokenfree_tts_uses_chat_audio(model_id):
             return await self._tts_openai_chat_audio(text, voice, dest, model=model_id)
         async with httpx.AsyncClient(timeout=120.0) as client:
-            resp = await client.post(
+            resp = await observed_request(client, "POST",
                 f"{base}/audio/speech",
                 headers=self._headers(),
                 json={
@@ -1914,7 +1916,7 @@ class ArkGateway:
             }
         )
         async with httpx.AsyncClient(timeout=120.0) as client:
-            resp = await client.post(f"{base}/chat/completions", headers=self._headers(), json=body)
+            resp = await observed_request(client, "POST", f"{base}/chat/completions", headers=self._headers(), json=body)
         if resp.status_code >= 400:
             logger.warning(
                 "OpenAI chat-audio HTTP %s model=%s: %s",

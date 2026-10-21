@@ -15,6 +15,8 @@ export type AdminTaskRow = {
   cancelable: boolean;
   current_step_key?: string | null;
   current_step_status?: string | null;
+  next_action_at?: string | null;
+  provider_task_id?: string | null;
   error_message?: string | null;
   project_id?: number | null;
   drama_project_id?: number | null;
@@ -25,6 +27,7 @@ export type AdminTaskRow = {
   created_at?: string | null;
   started_at?: string | null;
   finished_at?: string | null;
+  updated_at?: string | null;
   billing_estimate_fen?: number;
   billing_charged_fen?: number;
   billing_refunded_fen?: number;
@@ -33,6 +36,8 @@ export type AdminTaskRow = {
   payload?: Record<string, unknown> | null;
   /** 执行结果 */
   result_payload?: Record<string, unknown> | null;
+  steps?: AdminTaskStep[];
+  events?: AdminTaskEvent[];
 };
 
 export type AdminTaskStep = {
@@ -43,6 +48,8 @@ export type AdminTaskStep = {
   attempt_count: number;
   provider_name?: string | null;
   provider_task_id?: string | null;
+  input_payload?: Record<string, unknown> | null;
+  output_payload?: Record<string, unknown> | null;
   error_message?: string | null;
   started_at?: string | null;
   finished_at?: string | null;
@@ -85,6 +92,10 @@ export type AdminTaskDetail = AdminTaskRow & {
 
 export type AdminTaskStats = {
   pending_count: number;
+  pending_ready_count?: number;
+  pending_deferred_count?: number;
+  pending_delayed_count?: number;
+  oldest_ready_wait_sec?: number;
   active_count: number;
   leased_count: number;
   running_count: number;
@@ -95,6 +106,12 @@ export type AdminTaskStats = {
   cancelled_count: number;
   scheduler_running_jobs: number;
   max_concurrency: number;
+  scheduler?: string;
+  poller?: string;
+  watchdog?: string;
+  runtime_healthy?: boolean;
+  scheduler_success_age_sec?: number | null;
+  scheduler_consecutive_failures?: number;
   domains: Array<{
     domain: string;
     pending: number;

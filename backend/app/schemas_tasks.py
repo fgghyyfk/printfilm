@@ -306,6 +306,10 @@ class AdminTaskStatsOut(BaseModel):
     """Task platform aggregate stats for admin monitoring."""
 
     pending_count: int = 0
+    pending_ready_count: int = 0
+    pending_deferred_count: int = 0
+    pending_delayed_count: int = 0
+    oldest_ready_wait_sec: int = 0
     active_count: int = 0
     leased_count: int = 0
     running_count: int = 0
@@ -320,5 +324,7 @@ class AdminTaskStatsOut(BaseModel):
     poller: str = "stopped"
     watchdog: str = "stopped"
     runtime_healthy: bool = False
+    scheduler_success_age_sec: float | None = None
+    scheduler_consecutive_failures: int = 0
     domains: list[AdminTaskDomainStatsOut] = Field(default_factory=list)
     fetched_at: datetime | None = None

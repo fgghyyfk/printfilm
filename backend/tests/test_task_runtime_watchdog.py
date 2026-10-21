@@ -14,8 +14,12 @@ from app.services.tasks import scheduler as scheduler_mod
 
 
 @pytest.fixture(autouse=True)
-async def _reset_runtime_state():
+async def _reset_runtime_state(monkeypatch):
     """每个用例前后停掉调度/轮询/看门狗，避免泄漏协程。"""
+    monkeypatch.setattr(runtime_mod, "get_settings", lambda: SimpleNamespace(
+        task_runtime_enabled=True, task_runtime_watchdog_interval_sec=2,
+    ))
+    monkeypatch.setattr(scheduler_mod, "_run_maintenance_operation", AsyncMock())
     await runtime_mod.stop_task_runtime()
     scheduler_mod._running_jobs.clear()
     poller_mod._poll_inflight.clear()

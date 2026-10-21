@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.services.tasks.service import (
+    activate_next_sequential_task,
     _sequential_fragment_video_project_id,
     pick_sequential_episode_head,
     reconcile_sequential_batches,
@@ -213,3 +214,42 @@ async def test_reconcile_still_activates_non_fragment_sequential_head():
     assert other.next_action_at is not None
     append_event.assert_awaited()
     rebalance.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_activate_next_is_idempotent_for_already_ready_task():
+    """已激活的任务不能每秒更新时间并重复追加事件。"""
+    from datetime import UTC, datetime
+
+    ready_at = datetime.now(UTC)
+    shot = _task(id=12, next_action_at=ready_at, payload={"batch_index": 1})
+    db = SimpleNamespace(execute=AsyncMock(return_value=_rows([shot])), commit=AsyncMock())
+    event = AsyncMock()
+    with (
+        patch("app.services.tasks.service.append_task_event", new=event),
+        patch("app.services.drama.access.count_user_inflight_fragment_video_tasks", new=AsyncMock(return_value=0)),
+    ):
+        await activate_next_sequential_task(db, "batch", 0)
+    assert shot.next_action_at == ready_at
+    event.assert_not_awaited()
+    db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_video_batch_with_successful_predecessor_only_uses_episode_rebalance():
+    """分镜按前置视频/尾帧就绪激活，不能再被 batch 逐秒反复激活。"""
+    done = _task(id=10, status="succeeded", payload={"sequential": True, "batch_index": 0})
+    waiting = _task(id=11, payload={"sequential": True, "batch_index": 1})
+    db = SimpleNamespace(
+        execute=AsyncMock(side_effect=[_rows(["batch"]), _rows([done, waiting])]),
+        commit=AsyncMock(),
+    )
+    rebalance = AsyncMock(return_value={"pending": 1, "activated": 0, "deferred": 0})
+    activate = AsyncMock()
+    with (
+        patch("app.services.tasks.service.rebalance_project_fragment_video_queue", new=rebalance),
+        patch("app.services.tasks.service.activate_next_sequential_task", new=activate),
+    ):
+        await reconcile_sequential_batches(db)
+    activate.assert_not_awaited()
+    rebalance.assert_awaited_once()

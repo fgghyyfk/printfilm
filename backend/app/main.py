@@ -16,6 +16,7 @@ from app.config import get_settings
 from app.database import AsyncSessionLocal, engine, init_db
 from app.logging_setup import configure_logging
 from app.models import Template, User
+from app.startup_database_retry import run_database_startup_steps
 from app.services.tasks.runtime import runtime_summary, start_task_runtime, stop_task_runtime
 from app.services.templates_seed import TEMPLATES
 
@@ -94,17 +95,31 @@ app.include_router(drama_router, prefix="/api")
 app.include_router(admin_router, prefix="/api")
 
 
-@app.on_event("startup")
-async def on_startup() -> None:
-    await init_db()
-    await _apply_schema_patches()
+async def _load_startup_model_settings() -> None:
     async with AsyncSessionLocal() as db:
         from app.services.model_settings import load_model_settings_cache
 
         await load_model_settings_cache(db)
-    await seed_templates()
-    await bootstrap_admins()
-    await seed_agent_skills()
+
+
+@app.on_event("startup")
+async def on_startup() -> None:
+    database_steps = (_load_startup_model_settings,)
+    if settings.database_bootstrap_enabled:
+        database_steps = (
+            init_db,
+            _apply_schema_patches,
+            _load_startup_model_settings,
+            seed_templates,
+            bootstrap_admins,
+            seed_agent_skills,
+        )
+    else:
+        logger.info("Database bootstrap disabled; loading model settings from the existing database")
+    await run_database_startup_steps(
+        database_steps,
+        dispose=engine.dispose,
+    )
     try:
         from app.services import oss as oss_svc
 

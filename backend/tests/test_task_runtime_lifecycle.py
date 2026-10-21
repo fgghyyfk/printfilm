@@ -1,6 +1,7 @@
 """任务平台启动回滚、关闭清理与健康摘要的回归测试。"""
 
 import asyncio
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -12,12 +13,37 @@ from app.services.tasks import runtime
 def components(monkeypatch):
     """替换组件生命周期，避免测试连接数据库或启动后台任务。"""
     mocks = {}
+    monkeypatch.setattr(runtime, "get_settings", lambda: SimpleNamespace(task_runtime_enabled=True))
+    monkeypatch.setattr(runtime, "scheduler_diagnostics", lambda: {
+        "scheduler_success_age_sec": 0.0, "scheduler_consecutive_failures": 0,
+    })
     for name in ("scheduler", "poller", "watchdog"):
         for action in ("start", "stop"):
             key = f"{action}_{name}"
             mocks[key] = AsyncMock()
             monkeypatch.setattr(runtime, key, mocks[key])
     return mocks
+
+
+@pytest.mark.asyncio
+async def test_disabled_runtime_does_not_start_components(components, monkeypatch):
+    """共享数据库的本地 API 可以关闭任务消费，同时继续提供健康检查。"""
+    monkeypatch.setattr(runtime, "get_settings", lambda: SimpleNamespace(task_runtime_enabled=False))
+    await runtime.start_task_runtime()
+    for name in ("scheduler", "poller", "watchdog"):
+        components[f"start_{name}"].assert_not_awaited()
+    summary = runtime.runtime_summary()
+    assert summary["enabled"] is False
+    assert summary["healthy"] is True
+    assert [summary[name] for name in ("scheduler", "poller", "watchdog")] == ["disabled"] * 3
+
+
+@pytest.mark.asyncio
+async def test_missing_enabled_setting_preserves_existing_startup(components, monkeypatch):
+    """旧配置替身没有开关字段时，仍按启用处理。"""
+    monkeypatch.setattr(runtime, "get_settings", lambda: SimpleNamespace())
+    await runtime.start_task_runtime()
+    components["start_scheduler"].assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -67,6 +93,10 @@ def test_health_requires_live_components_and_fresh_heartbeats(
     monkeypatch, scheduler_running, poller_running, watchdog_running, scheduler_stale, poller_stale,
 ):
     """运行状态与心跳都正常时，健康摘要才能报告 healthy。"""
+    monkeypatch.setattr(runtime, "get_settings", lambda: SimpleNamespace(task_runtime_enabled=True))
+    monkeypatch.setattr(runtime, "scheduler_diagnostics", lambda: {
+        "scheduler_success_age_sec": 1.0, "scheduler_consecutive_failures": 0,
+    })
     for name, running in (("scheduler", scheduler_running), ("poller", poller_running), ("watchdog", watchdog_running)):
         monkeypatch.setattr(runtime, f"{name}_status", lambda running=running: "running" if running else "stopped")
     monkeypatch.setattr(runtime, "scheduler_tick_stale", lambda: scheduler_stale)

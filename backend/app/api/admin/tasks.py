@@ -73,6 +73,8 @@ async def admin_task_stats(
         poller=str(runtime.get("poller") or "stopped"),
         watchdog=str(runtime.get("watchdog") or "stopped"),
         runtime_healthy=bool(runtime.get("healthy")),
+        scheduler_success_age_sec=runtime.get("scheduler_success_age_sec"),
+        scheduler_consecutive_failures=int(runtime.get("scheduler_consecutive_failures") or 0),
         fetched_at=datetime.now(UTC),
     )
 

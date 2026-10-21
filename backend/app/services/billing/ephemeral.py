@@ -18,6 +18,7 @@ from app.services.billing.context import billing_scope
 from app.services.billing.settlement import freeze_for_task, settle_task
 from app.services.tasks.handlers import get_task_handler
 from app.services.tasks.service import append_task_event, build_task_event, build_task_step
+from app.services.tasks.upstream import upstream_event_session
 
 T = TypeVar("T")
 
@@ -138,7 +139,7 @@ async def run_billed_ephemeral(
 
     result: T
     try:
-        async with billing_scope(task.id):
+        async with billing_scope(task.id), upstream_event_session(db):
             result = await executor()
         task.status = "succeeded"
         task.progress_percent = 100
@@ -240,7 +241,7 @@ async def run_billed_ephemeral_deferred(
 
     result: T
     try:
-        async with billing_scope(task.id):
+        async with billing_scope(task.id), upstream_event_session(db):
             result = await executor()
         provider_id = _extract_provider_task_id(result)
         if not provider_id:

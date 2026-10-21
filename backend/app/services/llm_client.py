@@ -10,6 +10,7 @@ import httpx
 
 from app.config import get_settings
 from app.services.logical_model_router import resolve_logical_model, resolve_logical_model_id
+from app.services.tasks.upstream import observed_request
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +114,7 @@ async def chat_completions(
         max_tokens,
     )
     async with httpx.AsyncClient(timeout=timeout) as client:
-        res = await client.post(
+        res = await observed_request(client, "POST",
             f"{base}/chat/completions",
             headers={
                 "Authorization": f"Bearer {api_key}",
