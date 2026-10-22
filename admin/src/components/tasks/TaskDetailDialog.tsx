@@ -16,11 +16,12 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TaskUpstreamPanel } from "@/components/tasks/TaskUpstreamPanel";
 import { TaskEventsPanel } from "@/components/tasks/TaskEventsPanel";
+import { TaskDetailSummary } from "@/components/tasks/TaskDetailSummary";
 import { useTaskClock } from "@/hooks/useTaskClock";
 import { taskDomainLabel, taskStatusLabel, taskTypeLabel } from "@/lib/statusLabels";
 import { hasJsonContent, prettyJson } from "@/lib/jsonPreview";
 import { cn, fenToYuan } from "@/lib/utils";
-import { formatTaskDuration, redactTaskData, redactTaskText, taskBilling, taskDurations, taskUpstream } from "@/lib/taskObservability";
+import { redactTaskData, redactTaskText, taskBilling, taskStatusTone } from "@/lib/taskObservability";
 
 type TaskDetailDialogProps = {
   taskId: number | null;
@@ -68,15 +69,6 @@ function fmtJson(value: unknown): string {
 
 function money(value: number | null | undefined): string {
   return value == null ? "未记录" : `¥${fenToYuan(value)}`;
-}
-
-// 状态 pill 样式
-function statusClass(status: string): string {
-  if (status === "running" || status === "leased") return "is-run";
-  if (status === "succeeded") return "is-done";
-  if (status === "failed") return "is-fail";
-  if (status === "cancelled" || status === "cancel_requested") return "is-warn";
-  return "is-warn";
 }
 
 // 仅在有值时渲染一行定义列表项
@@ -139,9 +131,7 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
   const [tab, setTab] = useState<DetailTab>("overview");
   const [cancelling, setCancelling] = useState(false);
   const now = useTaskClock(open && Boolean(task) && !TERMINAL.has(task?.status || ""));
-  const duration = task ? taskDurations(task, now) : null;
   const billing = taskBilling(task || {});
-  const upstream = useMemo(() => taskUpstream(task || {}), [task]);
 
   async function loadDetail(id: number) {
     setLoading(true);
@@ -221,7 +211,7 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
       open={open}
       onOpenChange={onOpenChange}
       size="full"
-      className="task-detail-modal max-h-[90vh]"
+      className="task-detail-modal max-h-[92vh]"
       bodyClassName="p-0 overflow-hidden"
       title={title}
       subtitle={
@@ -259,6 +249,7 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
         </div>
       ) : task ? (
         <Tabs className="task-detail-body" value={tab} onValueChange={(value) => setTab(value as DetailTab)}>
+          <TaskDetailSummary task={task} now={now} onJump={setTab} />
           <TabsList className="task-detail-tabs !h-auto !justify-start !rounded-none !bg-white !p-0">
             {(
               [
@@ -283,61 +274,17 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
           <TabsContent value={tab} className="task-detail-panel !mt-0">
             {tab === "overview" ? (
               <div className="task-detail-grid">
-                <section className="task-detail-section">
-                  <h4>状态</h4>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className={`admin-status-pill ${statusClass(task.status)}`}>
-                      {waitingActivation ? "待激活" : taskStatusLabel(task.status)}
-                    </span>
-                    <span className="text-sm text-[#606266]">进度 {task.progress_percent}%</span>
-                  </div>
-                  {waitingActivation ? (
-                    <p className="task-detail-meta">任务尚未激活，等待前置条件或可用并发空位。</p>
-                  ) : null}
-                  {task.current_step_key ? (
-                    <p className="task-detail-meta">
-                      当前步骤 {task.current_step_key}
-                      {task.current_step_status ? ` · ${task.current_step_status}` : ""}
-                    </p>
-                  ) : null}
-                  {task.error_code || task.error_message ? (
-                    <pre className="task-detail-error">
-                      {redactTaskText([task.error_code, task.error_message].filter(Boolean).join(" · "))}
-                    </pre>
-                  ) : null}
-                </section>
-
-                <section className="task-detail-section">
-                  <h4>执行耗时 {duration?.live ? <span className="ml-2 text-xs font-normal text-[var(--admin-muted)]">实时计时</span> : null}</h4>
-                  <dl className="task-detail-dl tabular-nums">
-                    <div><dt>开始前等待</dt><dd>{formatTaskDuration(duration?.waitingMs)}</dd></div>
-                    <div><dt>运行</dt><dd>{duration?.runningMs == null && !task.started_at && duration?.live ? "尚未开始" : formatTaskDuration(duration?.runningMs)}</dd></div>
-                    <div><dt>总耗时</dt><dd className="font-semibold">{formatTaskDuration(duration?.totalMs)}</dd></div>
-                  </dl>
-                  <p className="task-detail-meta">运行包含准备、上游生成与结果写回；单次 HTTP 耗时见“上游请求”。</p>
-                </section>
-
-                <section className="task-detail-section">
-                  <h4>最近上游记录</h4>
-                  <Badge variant={upstream.latest?.phase === "failed" ? "destructive" : upstream.records.length ? "info" : "secondary"}>{upstream.phase}</Badge>
-                  <dl className="task-detail-dl mt-3">
-                    <div><dt>{upstream.modelFromRequest ? "实际模型" : "任务选择模型"}</dt><dd>{upstream.model || "未记录"}</dd></div>
-                    <div><dt>Provider</dt><dd>{upstream.provider || "未记录"}</dd></div>
-                    <div><dt>上游任务 ID</dt><dd className="break-all font-mono text-xs">{upstream.providerTaskId || "未记录"}</dd></div>
-                  </dl>
-                  <Button variant="outline" size="sm" className="mt-3" onClick={() => setTab("upstream")}>查看请求与响应</Button>
-                </section>
-
-                <section className="task-detail-section">
-                  <h4>计费与结算</h4>
-                  <Badge variant={billing.settled ? "success" : "warning"}>{billing.label}</Badge>
-                  <dl className="task-detail-dl mt-3">
-                    <div><dt>预估 / 当前冻结</dt><dd>{money(billing.estimateFen)} / {money(billing.frozenFen)}</dd></div>
-                    <div><dt>实扣</dt><dd>{billing.settled || (billing.chargedFen ?? 0) > 0 ? money(billing.chargedFen) : "尚未结算"}</dd></div>
-                    <div><dt>退还</dt><dd>{billing.settled || (billing.refundedFen ?? 0) > 0 ? money(billing.refundedFen) : "尚未结算"}</dd></div>
-                  </dl>
-                  <Button variant="outline" size="sm" className="mt-3" onClick={() => setTab("billing")}>查看用量与结算</Button>
-                </section>
+                {waitingActivation || task.error_code || task.error_message ? (
+                  <section className="task-detail-section task-detail-section--full">
+                    <h4>异常与提示</h4>
+                    {waitingActivation ? <p className="task-detail-meta !mt-0">任务尚未激活，等待前置条件或可用并发空位。</p> : null}
+                    {task.error_code || task.error_message ? (
+                      <pre className="task-detail-error">
+                        {redactTaskText([task.error_code, task.error_message].filter(Boolean).join(" · "))}
+                      </pre>
+                    ) : null}
+                  </section>
+                ) : null}
 
                 <DetailSection title="调度">
                   <DlRow label="优先级">{task.priority}</DlRow>
@@ -386,24 +333,21 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
 
                 <section className="task-detail-section task-detail-section--full">
                   <h4>时间线</h4>
-                  <dl className="task-detail-dl task-detail-dl--inline">
-                    <div>
-                      <dt>创建</dt>
-                      <dd>{fmtTime(task.created_at)}</dd>
-                    </div>
-                    <div>
-                      <dt>开始</dt>
-                      <dd>{fmtTime(task.started_at)}</dd>
-                    </div>
-                    <div>
-                      <dt>结束</dt>
-                      <dd>{fmtTime(task.finished_at)}</dd>
-                    </div>
-                    <div>
-                      <dt>更新</dt>
-                      <dd>{fmtTime(task.updated_at)}</dd>
-                    </div>
-                  </dl>
+                  <ol className="task-timeline">
+                    {(
+                      [
+                        ["创建", task.created_at],
+                        ["开始", task.started_at],
+                        ["结束", task.finished_at],
+                        ["更新", task.updated_at],
+                      ] as const
+                    ).map(([label, value]) => (
+                      <li key={label} className={cn(value && "is-reached")}>
+                        <span className="task-timeline-label">{label}</span>
+                        <span className="task-timeline-time">{fmtTime(value)}</span>
+                      </li>
+                    ))}
+                  </ol>
                 </section>
 
                 <section className="task-detail-section task-detail-section--full">
@@ -542,7 +486,7 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
                             <div className="text-[11px] text-[#909399]">{step.step_type}</div>
                           </td>
                           <td>
-                            <span className={`admin-status-pill ${statusClass(step.status)}`}>
+                            <span className={`admin-status-pill is-${taskStatusTone(step.status)}`}>
                               {taskStatusLabel(step.status)}
                             </span>
                           </td>

@@ -1,39 +1,24 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { Activity, Ban, Eye, Layers, Loader2, RefreshCw } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Activity, Ban, Layers, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { api, type AdminTaskListRes, type AdminTaskRow, type AdminTaskStats } from "@/api/client";
-import { AdminEntityLink } from "@/components/admin/AdminEntityLink";
 import { AdminSearchInput } from "@/components/admin/AdminSearchInput";
 import { AdminUserSearchSelect } from "@/components/admin/AdminUserSearchSelect";
 import { StatCard } from "@/components/admin/StatCard";
 import { PageSection } from "@/components/admin/PageSection";
 import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
-import { Badge } from "@/components/ui/badge";
+import { TaskListRow } from "@/components/tasks/TaskListRow";
 import { PageHeader, Toolbar } from "@/components/ui/page";
 import { PaginationBar } from "@/components/PaginationBar";
 import { useAdminDetailQuery } from "@/hooks/useAdminDetailQuery";
 import { useTaskClock } from "@/hooks/useTaskClock";
-import { formatTaskDuration, redactTaskText, taskBilling, taskDurations, taskUpstream } from "@/lib/taskObservability";
-import { cn, fenToYuan } from "@/lib/utils";
+import { canCancelTask, taskBilling, taskUpstream } from "@/lib/taskObservability";
+import { cn } from "@/lib/utils";
 import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
-import { taskDomainLabel, taskStatusLabel, taskTypeLabel } from "@/lib/statusLabels";
+import { taskDomainLabel, taskTypeLabel } from "@/lib/statusLabels";
 
 const REFRESH_MS = 15000;
 const TERMINAL_STATUSES = new Set(["succeeded", "failed", "cancelled"]);
-
-// 任务状态 → 样式
-function statusClass(status: string): string {
-  if (status === "running" || status === "leased") return "is-run";
-  if (status === "succeeded") return "is-done";
-  if (status === "failed") return "is-fail";
-  if (status === "cancelled" || status === "cancel_requested") return "is-warn";
-  return "is-warn";
-}
-
-function formatTime(value: string | null | undefined): string {
-  if (!value) return "—";
-  return new Date(value).toLocaleString();
-}
 
 function formatElapsed(seconds: number | null | undefined): string {
   if (seconds == null || !Number.isFinite(seconds)) return "暂无记录";
@@ -41,55 +26,6 @@ function formatElapsed(seconds: number | null | undefined): string {
   if (value < 60) return `${value}秒`;
   if (value < 3600) return `${Math.floor(value / 60)}分${value % 60}秒`;
   return `${Math.floor(value / 3600)}小时${Math.floor((value % 3600) / 60)}分`;
-}
-
-function queueStatusLabel(task: AdminTaskRow): string {
-  if (task.status !== "pending") return taskStatusLabel(task.status);
-  if (task.next_action_at === undefined) return "待处理";
-  if (task.next_action_at === null) return "待激活";
-  return new Date(task.next_action_at).getTime() > Date.now() ? "延时等待" : "待调度";
-}
-
-// 阻止冒泡到行 onClick，避免链接跳转时同时打开详情
-function stopRowClick(e: { stopPropagation: () => void }) {
-  e.stopPropagation();
-}
-
-function scopeLinks(task: AdminTaskRow): ReactNode {
-  const parts: ReactNode[] = [];
-  if (task.drama_project_id) {
-    parts.push(
-      <span key="drama" onClick={stopRowClick}>
-        <AdminEntityLink kind="drama" id={task.drama_project_id} />
-      </span>,
-    );
-  }
-  if (task.project_id) {
-    parts.push(
-      <span key="project" onClick={stopRowClick}>
-        <AdminEntityLink kind="project" id={task.project_id} />
-      </span>,
-    );
-  }
-  if (task.asset_id) {
-    parts.push(
-      <span key="asset" onClick={stopRowClick}>
-        <AdminEntityLink kind="drama_asset" id={task.asset_id} />
-      </span>,
-    );
-  }
-  if (task.episode_id) parts.push(<span key="ep">分集#{task.episode_id}</span>);
-  if (task.fragment_id) parts.push(<span key="frag">分镜#{task.fragment_id}</span>);
-  if (parts.length === 0) return <span className="text-[#909399]">—</span>;
-  return <div className="flex flex-wrap gap-1">{parts}</div>;
-}
-
-function canCancel(task: AdminTaskRow): boolean {
-  return task.cancelable && !TERMINAL_STATUSES.has(task.status);
-}
-
-function money(value: number | undefined): string {
-  return value == null ? "未记录" : `¥${fenToYuan(value)}`;
 }
 
 // 统一任务平台监控页
@@ -187,7 +123,7 @@ export function QueuesPage() {
 
   const handleCancel = useCallback(
     async (task: AdminTaskRow) => {
-      if (!canCancel(task)) return;
+      if (!canCancelTask(task)) return;
       if (!window.confirm(`确定取消任务 #${task.id}（${taskTypeLabel(task.task_type)}）？`)) return;
       setCancelLoading(task.id);
       try {
@@ -423,24 +359,22 @@ export function QueuesPage() {
             </Toolbar>
 
             <div className="admin-table-wrap">
-              <table>
+              <table className="task-table">
                 <thead>
                   <tr>
-                    <th>ID</th>
                     <th>任务 / 模型</th>
-                    <th>用户</th>
-                    <th>关联</th>
-                    <th>状态 / 当前阶段</th>
-                    <th>上游请求 / 最近记录</th>
-                    <th>计费 / 结算</th>
-                    <th>等待 / 运行 / 总耗时</th>
-                    <th>操作</th>
+                    <th>状态</th>
+                    <th>上游</th>
+                    <th>计费</th>
+                    <th>耗时</th>
+                    <th>用户 / 关联</th>
+                    <th className="text-right">操作</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(data?.items.length ?? 0) === 0 ? (
                     <tr>
-                      <td colSpan={9}>
+                      <td colSpan={7}>
                         <div className="admin-empty !py-10">
                           <div className="admin-empty-title">暂无任务</div>
                           <div className="admin-empty-desc">切换到「全部」查看历史任务</div>
@@ -448,89 +382,18 @@ export function QueuesPage() {
                       </td>
                     </tr>
                   ) : (
-                    taskViews.map(({ task, upstream, billing }) => {
-                      const duration = taskDurations(task, now);
-                      const error = task.error_message ? redactTaskText(task.error_message) : "";
-                      return (
-                      <tr
+                    taskViews.map(({ task, upstream, billing }) => (
+                      <TaskListRow
                         key={task.id}
-                        className="cursor-pointer hover:bg-[#f8faf9]"
-                        onClick={() => openDetail(task.id)}
-                      >
-                        <td className="font-mono text-xs">#{task.id}</td>
-                        <td>
-                          <div className="text-sm">{taskDomainLabel(task.domain)}</div>
-                          <div className="font-mono text-[11px] text-[#909399]">
-                            {taskTypeLabel(task.task_type)}
-                          </div>
-                          <div className="mt-2 max-w-[230px] break-all text-xs font-medium">{upstream.model || "模型未记录"}</div>
-                          <div className="text-[11px] text-[var(--admin-muted)]">{upstream.modelFromRequest ? "实际请求模型" : upstream.model ? "任务选择模型" : ""}{upstream.provider ? ` · ${upstream.provider}` : ""}</div>
-                        </td>
-                        <td onClick={stopRowClick}>
-                          <AdminEntityLink
-                            kind="user"
-                            id={task.requested_by}
-                            label={task.user_email ?? undefined}
-                            className="text-xs"
-                          />
-                        </td>
-                        <td className="max-w-[200px] text-xs" onClick={stopRowClick}>
-                          {scopeLinks(task)}
-                        </td>
-                        <td>
-                          <span className={`admin-status-pill ${statusClass(task.status)}`}>
-                            {queueStatusLabel(task)}
-                          </span>
-                          <div className="mt-2 text-xs">{task.current_step_key || "步骤未记录"}{task.current_step_status ? ` · ${task.current_step_status}` : ""}</div>
-                          <div className="mt-1 text-[11px] text-[var(--admin-muted)]">进度 {task.progress_percent}%</div>
-                          {error ? (
-                            <div className="mt-1 max-w-[200px] truncate text-[11px] text-[#f56c6c]" title={error}>
-                              {error}
-                            </div>
-                          ) : null}
-                        </td>
-                        <td className="max-w-[260px] text-xs">
-                          <Badge variant={upstream.latest?.phase === "failed" ? "destructive" : upstream.records.length ? "info" : "secondary"}>{upstream.phase}</Badge>
-                          {upstream.latest?.method || upstream.latest?.endpoint ? <div className="mt-2 break-all font-mono text-[11px]">{upstream.latest.method} {upstream.latest.endpoint}</div> : null}
-                          <div className="mt-2 break-all font-mono text-[11px] text-[var(--admin-muted)]">{upstream.providerTaskId ? `任务ID ${upstream.providerTaskId}` : "上游任务ID未记录"}</div>
-                          {upstream.latest?.elapsedMs != null ? <div className="mt-1 text-[11px] text-[var(--admin-muted)]">最近请求 {upstream.latest.elapsedMs}ms{upstream.latest.httpStatus ? ` · HTTP ${upstream.latest.httpStatus}` : ""}</div> : null}
-                        </td>
-                        <td className="min-w-[190px] text-xs">
-                          <Badge variant={billing.settled ? "success" : "warning"}>{billing.label}</Badge>
-                          <div className="mt-2">预估 {money(billing.estimateFen)} · 冻结 {money(billing.frozenFen)}</div>
-                          <div className="mt-1">实扣 {billing.settled || (billing.chargedFen ?? 0) > 0 ? money(billing.chargedFen) : "待结算"}</div>
-                          <div className="mt-1 text-[var(--admin-muted)]">退还 {billing.settled || (billing.refundedFen ?? 0) > 0 ? money(billing.refundedFen) : "待结算"}</div>
-                        </td>
-                        <td className="min-w-[160px] text-xs tabular-nums">
-                          <div>等待 {formatTaskDuration(duration.waitingMs)}</div>
-                          <div className="mt-1">运行 {duration.runningMs == null && !task.started_at && duration.live ? "尚未开始" : formatTaskDuration(duration.runningMs)}</div>
-                          <div className="mt-1 font-medium">总计 {formatTaskDuration(duration.totalMs)}{duration.live ? " · 计时中" : ""}</div>
-                          <div className="mt-2 text-[11px] text-[var(--admin-muted)]">创建 {formatTime(task.created_at)}</div>
-                        </td>
-                        <td onClick={(e) => e.stopPropagation()}>
-                          <div className="flex flex-wrap gap-1">
-                            <button
-                              type="button"
-                              className="admin-btn admin-btn-secondary !min-h-[28px] !px-2 !text-xs"
-                              onClick={() => openDetail(task.id)}
-                            >
-                              <Eye className="mr-1 inline h-3 w-3" />
-                              详情
-                            </button>
-                            {canCancel(task) ? (
-                              <button
-                                type="button"
-                                className="admin-btn admin-btn-danger !min-h-[28px] !px-2 !text-xs"
-                                disabled={cancelLoading === task.id}
-                                onClick={() => void handleCancel(task)}
-                              >
-                                {cancelLoading === task.id ? "取消中…" : "取消"}
-                              </button>
-                            ) : null}
-                          </div>
-                        </td>
-                      </tr>
-                    );})
+                        task={task}
+                        upstream={upstream}
+                        billing={billing}
+                        now={now}
+                        cancelling={cancelLoading === task.id}
+                        onOpen={openDetail}
+                        onCancel={(row) => void handleCancel(row)}
+                      />
+                    ))
                   )}
                 </tbody>
               </table>

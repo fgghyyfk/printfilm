@@ -38,6 +38,31 @@ export function redactTaskData(value: unknown, depth = 0): unknown {
   }));
 }
 
+/** 任务可取消：后端允许且未进入终态 */
+export function canCancelTask(task: Pick<AdminTaskRow, "cancelable" | "status">): boolean {
+  return task.cancelable && !TERMINAL.has(task.status);
+}
+
+export type TaskStatusTone = "run" | "done" | "fail" | "warn";
+
+/** 任务状态归为四种色调，列表色条、状态 pill 与详情摘要共用 */
+export function taskStatusTone(status: string): TaskStatusTone {
+  if (status === "running" || status === "leased" || status === "awaiting_poll") return "run";
+  if (status === "succeeded") return "done";
+  if (status === "failed") return "fail";
+  return "warn";
+}
+
+/** 列表只展示路径部分，域名固定为 TokenFree，完整地址放 title */
+export function shortEndpoint(endpoint: string): string {
+  try {
+    const url = new URL(endpoint);
+    return `${url.pathname}${url.search}`;
+  } catch {
+    return endpoint;
+  }
+}
+
 export function formatTaskDuration(milliseconds: number | null | undefined): string {
   if (milliseconds == null || !Number.isFinite(milliseconds)) return "未记录";
   const seconds = Math.max(0, Math.floor(milliseconds / 1000));
