@@ -327,7 +327,7 @@ export function formatDramaGenError(raw: string | null | undefined): DramaGenErr
     return {
       title: '成片下载中断',
       message: '视频已在上游生成，但下载到服务器时连接被中断。',
-      suggestion: '请直接重新生成该节点；系统会优先走直链并自动重试下载。',
+      suggestion: '系统会沿原任务自动重试下载，请勿重新生成该节点。',
     }
   }
 

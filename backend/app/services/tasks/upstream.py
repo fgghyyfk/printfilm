@@ -17,7 +17,6 @@ from sqlalchemy import select
 
 from app.database import AsyncSessionLocal
 from app.models_tasks import TaskEvent, TaskRun, TaskStep
-from app.services.billing.context import get_current_task_run_id
 from app.services.tokenfree_video import extract_video_task_id, unwrap_video_task_payload
 from app.services.upstream_sanitize import sanitize_upstream_value
 
@@ -148,6 +147,9 @@ async def observed_request(
     client: Any, method: str, endpoint: str, *, provider: str = "tokenfree", **kwargs: Any
 ) -> Any:
     """透明包装一次真实 HTTP 调用，保留参数、返回对象、异常和原重试策略。"""
+    # 延迟导入：billing 包 __init__ 会反向导入本模块，模块级导入会形成循环
+    from app.services.billing.context import get_current_task_run_id
+
     method = method.upper()
     send = getattr(client, method.lower())
     task_id = get_current_task_run_id()

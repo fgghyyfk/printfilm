@@ -59,10 +59,12 @@ async def test_tool_image_freeze_skips_estimate_buffer(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_asset_image_3k_clamps_to_2k_sunburst(monkeypatch):
-    """漫剧默认 3K 会在生成侧钳成 2K，预扣跟 2K 走，不误收 4K 档。"""
+    """Seedream Pro 下 3K 会在生成侧钳成 2K，预扣跟 2K 走，不误收 4K 档。"""
     from app.config import get_settings
 
     settings = get_settings()
+    # 只有 Pro 档钳制；默认标准档 seedream-5.0 不钳，需显式指定模型
+    monkeypatch.setattr(settings, "model_image", "doubao-seedream-5-0-pro")
     monkeypatch.setattr(settings, "billing_estimate_buffer", 1.2)
     monkeypatch.setattr(settings, "billing_markup", 1.0)
     monkeypatch.setattr(settings, "billing_kie_fen_per_credit", 3.5)

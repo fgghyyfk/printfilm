@@ -1827,7 +1827,27 @@ async def dispatch_asset_video_job(
     image_style_id: str | None = None,
     reference_asset_ids: list[int] | None = None,
 ) -> int:
-    """入队资产生视频任务。"""
+    """入队资产生视频任务。已有在途任务时沿用原任务，避免下载重试期间再生成一条。"""
+    inflight = (
+        await db.execute(
+            select(TaskRun.id)
+            .where(
+                TaskRun.task_type == "asset_video",
+                TaskRun.asset_id == asset_id,
+                TaskRun.status.in_(("pending", "leased", "running")),
+                TaskRun.cancel_requested.is_(False),
+            )
+            .order_by(TaskRun.id.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if inflight:
+        logger.info(
+            "画布视频仍在生成或下载，沿用任务 task_id=%s asset_id=%s",
+            inflight,
+            asset_id,
+        )
+        return int(inflight)
     task_id = await _enqueue_drama_task(
         db,
         user,
@@ -1865,6 +1885,8 @@ async def run_asset_video_job(
     duration_sec: int | None = None,
     image_style_id: str | None = None,
     reference_asset_ids: list[int] | None = None,
+    provider_task_id: str | None = None,
+    on_provider_task: Any | None = None,
 ) -> dict[str, Any]:
     logger.info(
         "开始资产生视频 project_id=%s asset_id=%s model=%s duration=%s",
@@ -1905,6 +1927,8 @@ async def run_asset_video_job(
                 duration_sec=duration_sec,
                 image_style_id=image_style_id,
                 reference_asset_ids=reference_asset_ids,
+                provider_task_id=provider_task_id,
+                on_provider_task=on_provider_task,
             )
             logger.info(
                 "资产生视频完成 project_id=%s asset_id=%s url=%s",
@@ -1914,7 +1938,39 @@ async def run_asset_video_job(
             )
             return {"ok": True, "asset_id": asset.id}
         except Exception as exc:  # noqa: BLE001
+            from app.services.drama.asset_video import DOWNLOAD_RETRY_MESSAGE
             from app.services.exc_format import format_exception_message
+            from app.services.storage import RetryableMediaDownloadError
+
+            if isinstance(exc, RetryableMediaDownloadError) and exc.provider_task_id:
+                asset = await db.get(DramaAsset, asset_id)
+                if asset:
+                    await db.refresh(asset)
+                    params = dict(asset.params or {})
+                    gen = params.get("generation") if isinstance(params.get("generation"), dict) else {}
+                    params["generation"] = {
+                        **gen,
+                        "status": "generating",
+                        "message": DOWNLOAD_RETRY_MESSAGE,
+                    }
+                    if (prompt or "").strip():
+                        params["visualPrompt"] = prompt.strip()
+                    asset.params = params
+                    await db.commit()
+                logger.warning(
+                    "画布视频下载中断，改为重试下载 project_id=%s asset_id=%s provider_task_id=%s err=%s",
+                    project_id,
+                    asset_id,
+                    exc.provider_task_id,
+                    exc,
+                )
+                return {
+                    "ok": True,
+                    "retry_download": True,
+                    "provider_task_id": exc.provider_task_id,
+                    "counts_attempt": bool(exc.counts_attempt),
+                    "error": str(exc)[:400],
+                }
 
             err_text = format_exception_message(exc, fallback="生视频失败", limit=500)
             asset = await db.get(DramaAsset, asset_id)

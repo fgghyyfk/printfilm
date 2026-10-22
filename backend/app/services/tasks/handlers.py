@@ -106,6 +106,22 @@ async def _run_drama_asset_video(task: TaskRun) -> dict[str, Any] | None:
     reference_asset_ids = payload.get("reference_asset_ids") or []
     if not isinstance(reference_asset_ids, list):
         raise ValueError("reference_asset_ids 必须为数组")
+    provider_task_id = str(payload.get("provider_task_id") or task.provider_task_id or "").strip() or None
+
+    async def _remember_provider_task(provider_id: str) -> None:
+        """上游任务一创建就落库，下载中断后下次只拉成片、不重新生成。"""
+        from app.database import AsyncSessionLocal
+
+        async with AsyncSessionLocal() as db:
+            row = await db.get(TaskRun, int(task.id))
+            if row is None:
+                return
+            stored = dict(row.payload or {})
+            stored["provider_task_id"] = provider_id
+            row.payload = stored
+            row.provider_task_id = provider_id
+            await db.commit()
+
     return await run_asset_video_job(
         _require_int(task.drama_project_id, "drama_project_id"),
         int(task.requested_by),
@@ -117,6 +133,8 @@ async def _run_drama_asset_video(task: TaskRun) -> dict[str, Any] | None:
         duration_sec=payload.get("duration_sec"),
         image_style_id=(payload.get("image_style_id") or None),
         reference_asset_ids=[int(item) for item in reference_asset_ids],
+        provider_task_id=provider_task_id,
+        on_provider_task=_remember_provider_task,
     )
 
 

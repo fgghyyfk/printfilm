@@ -601,31 +601,51 @@ class ArkGateway:
         return result
 
     async def download_result_media(self, url: str, dest: Path) -> None:
-        """下载生成媒体；TokenFree content 优先跟 302 直链，失败自动重试。"""
-        headers: dict[str, str] | None = None
-        timeout: float | httpx.Timeout = 300.0
-        download_url = (url or "").strip()
-        if is_tokenfree_content_url(download_url) or is_tokenfree_image_url(download_url):
-            api_key = self._ark_api_key()
-            headers = {"Authorization": f"Bearer {api_key}"}
-            timeout = httpx.Timeout(connect=30.0, read=600.0, write=60.0, pool=30.0)
-            if is_tokenfree_content_url(download_url):
-                resolved = await resolve_tokenfree_media_download_url(download_url, api_key=api_key)
-                if resolved and resolved != download_url:
-                    logger.info(
-                        "TokenFree content 改走直链 %s -> %s",
-                        download_url[:96],
-                        resolved[:140],
-                    )
-                    download_url = resolved
-                    headers = None  # TOS/CDN 签名直链无需 Bearer
-        await storage.download_to(
-            download_url,
-            dest,
-            headers=headers,
-            timeout=timeout,
-            retries=4,
-        )
+        """下载生成媒体；每次重试都重新解析 TokenFree 直链，避免沿用已断开的连接。"""
+        from app.services.storage import is_retryable_download_error
+
+        source = (url or "").strip()
+        last_exc: BaseException | None = None
+        for attempt in range(4):
+            headers: dict[str, str] | None = None
+            timeout: float | httpx.Timeout = 300.0
+            download_url = source
+            if is_tokenfree_content_url(download_url) or is_tokenfree_image_url(download_url):
+                api_key = self._ark_api_key()
+                headers = {"Authorization": f"Bearer {api_key}"}
+                timeout = httpx.Timeout(connect=30.0, read=600.0, write=60.0, pool=30.0)
+                if is_tokenfree_content_url(download_url):
+                    resolved = await resolve_tokenfree_media_download_url(download_url, api_key=api_key)
+                    if resolved and resolved != download_url:
+                        logger.info(
+                            "TokenFree content 改走直链 %s -> %s",
+                            download_url[:96],
+                            resolved[:140],
+                        )
+                        download_url = resolved
+                        headers = None  # TOS/CDN 签名直链无需 Bearer
+            try:
+                await storage.download_to(
+                    download_url,
+                    dest,
+                    headers=headers,
+                    timeout=timeout,
+                    retries=1,
+                )
+                return
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
+                if attempt >= 3 or not is_retryable_download_error(exc):
+                    raise
+                logger.warning(
+                    "成片下载中断，重新解析直链后重试 %s/4 url=%s err=%s",
+                    attempt + 1,
+                    download_url[:120],
+                    exc,
+                )
+                await asyncio.sleep(1.5 + attempt * 2.0)
+        if last_exc is not None:
+            raise last_exc
 
     async def chat_storyboard(
         self,
@@ -1542,6 +1562,7 @@ class ArkGateway:
         shot_no: int,
         max_attempts: int = 2,
         content_labels: list[str] | None = None,
+        on_task_created: Any | None = None,
     ) -> tuple[str, str | None, TaskResult]:
         """创建 Seedance 多模态任务并等待完成；返回 (本地视频 URL, 可选本地尾帧 URL, 任务结果)。"""
         def _is_audio_download_error(err: Exception) -> bool:
@@ -1616,6 +1637,17 @@ class ArkGateway:
                 if _audio_fallback(exc, accepted=False):
                     continue
                 raise
+            if on_task_created is not None:
+                try:
+                    await on_task_created(task_id)
+                except Exception as exc:  # noqa: BLE001
+                    from app.services.storage import RetryableMediaDownloadError
+
+                    raise RetryableMediaDownloadError(
+                        f"记录上游任务号失败: {exc}",
+                        provider_task_id=task_id,
+                        counts_attempt=False,
+                    ) from exc
             # 等待阶段失败：隐私/任务失败/超时等立即上抛；仅参考音频下载失败重提一次
             try:
                 return await self.wait_video_assets(
@@ -1624,6 +1656,18 @@ class ArkGateway:
             except Exception as exc:  # noqa: BLE001
                 if _audio_fallback(exc, accepted=True):
                     continue
+                # 成片已在上游生成：只标记可重试下载，禁止外层再建一条视频任务
+                from app.services.storage import (
+                    RetryableMediaDownloadError,
+                    is_retryable_download_error,
+                )
+
+                if isinstance(exc, RetryableMediaDownloadError):
+                    if not exc.provider_task_id:
+                        exc.provider_task_id = task_id
+                    raise
+                if is_retryable_download_error(exc):
+                    raise RetryableMediaDownloadError(str(exc), provider_task_id=task_id) from exc
                 raise
         raise RuntimeError(str(last_err) if last_err else "Seedance multimodal failed")
 

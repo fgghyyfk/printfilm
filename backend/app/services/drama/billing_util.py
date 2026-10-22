@@ -202,6 +202,9 @@ async def record_seedance_video_usage(
         resolution=resolution,
         tokens=stamp_tokens,
     )
+    if total_tokens <= 0 and fallback_tokens > 0 and raw is not None:
+        # 标明 tokens 是按时长本地估算，record_line 不得据此把用量判成上游实测
+        raw = {**raw, "usage": {**(raw.get("usage") or {}), "tokens_estimated": True}}
 
     from app.services.billing.pricing import parse_upstream_cost_fen
 
