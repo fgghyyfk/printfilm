@@ -94,6 +94,10 @@ async def records(kind: str, db: DB, user: Admin, status: str = "", user_id: int
         elif kind == "series":
             result = data(item, *[column.name for column in model.__table__.columns])
             episodes = list((await db.execute(select(SeriesEpisode).where(SeriesEpisode.series_id == item.id).order_by(SeriesEpisode.episode_no))).scalars().all())
+            from app.models import User
+            owner = await db.get(User, item.owner_id)
+            result["author"] = owner.nickname if owner and owner.nickname else "创作者"
+            result["episode_count"] = len(episodes)
             result["episodes"] = []
             for episode in episodes:
                 rights = (await db.execute(select(Rights).where(Rights.asset_id == episode.asset_id))).scalar_one_or_none() if episode.asset_id else None
