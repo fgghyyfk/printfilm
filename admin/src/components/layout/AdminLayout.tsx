@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useMarketplaceEnabled } from "@/features/marketplace/api";
 
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
@@ -143,7 +144,7 @@ const navGroups: NavGroup[] = [
 
 
 
-const titles: Record<string, string> = {
+const titles: Record<string, string> = {"/marketplace": "数字资产平台运营",
 
   "/": "仪表盘",
 
@@ -193,6 +194,7 @@ function resolveTitle(pathname: string): string {
 // Admin shell: dark sidebar + glass top bar
 
 export function AdminLayout() {
+  const marketplaceEnabled = useMarketplaceEnabled();
 
   const navigate = useNavigate();
 
@@ -260,7 +262,7 @@ export function AdminLayout() {
 
               {!collapsed ? <div className="admin-nav-group-label">{group.label}</div> : null}
 
-              {group.items.map((item) => (
+              {[...group.items, ...(group.label === "业务" && marketplaceEnabled ? [{ to: "/marketplace", label: "数字资产平台运营", icon: FileVideo } satisfies NavItem] : [])].map((item) => (
 
                 <NavLink
 
@@ -409,5 +411,3 @@ export function AdminLayout() {
   );
 
 }
-
-

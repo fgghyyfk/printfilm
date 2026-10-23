@@ -87,15 +87,21 @@ export function OssSettingsPanel() {
         <SettingsPanel
           className="settings-panel--compact"
           title="1. 阿里云 OSS"
-          description="生成文件先落本地，再异步上传 OSS"
+          description="原有生成业务与数字资产市场共用此处的 Bucket 和凭证"
         >
           <div className="settings-toggle-row">
             <div>
               <strong>启用 OSS</strong>
-              <span>关闭后仅使用本地静态目录</span>
+              <span>关闭后原生成业务使用本地目录；数字资产市场文件上传与播放不可用</span>
             </div>
             <Switch checked={form.oss_enabled} onCheckedChange={(v) => patchField("oss_enabled", v)} />
           </div>
+          <p className="mt-3 text-sm text-muted-foreground">
+            数字资产市场固定使用 marketplace/ 目录，不受下方原业务目录设置影响。
+            市场文件以私有权限上传，通过短时签名访问，不使用公开域名。
+            Bucket 须为私有且不得存在匿名 Allow 策略；此页保存配置不会自动修改 Bucket 权限。
+            “已就绪”仅表示配置完整，实际权限仍需云端验证。
+          </p>
           <div className="settings-field-grid mt-3">
             <LabeledControl label="Endpoint">
               <input

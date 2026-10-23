@@ -1,4 +1,5 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { lazy, Suspense } from 'react'
 import DialogHost from './components/ui/DialogHost'
 import BillingAlertHost from './components/billing/BillingAlertHost'
 import { DramaGenQueuePanel } from './components/drama/DramaGenQueuePanel'
@@ -30,10 +31,14 @@ import EpisodeStoryboardPage from './pages/drama/episodeCanvas/EpisodeStoryboard
 import './styles/printfilm.css'
 import './App.css'
 
+// 下游页面按需加载，不将媒体业务接入原工作台。
+const Marketplace = lazy(() => import('./features/marketplace/Marketplace'))
+
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+        <Route path="/marketplace/*" element={<Suspense fallback={<p>正在加载作品与招募…</p>}><Marketplace /></Suspense>} />
         <Route path="/" element={<HomePage />} />
         <Route path="/method" element={<MethodPage />} />
         <Route path="/auth" element={<AuthPage />} />

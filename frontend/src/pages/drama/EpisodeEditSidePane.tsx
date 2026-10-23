@@ -1,6 +1,7 @@
 /** 分集编辑右侧：分段视频预览 + 入口打开全屏分镜画布 */
 import { useState } from 'react'
 import { Download, Loader2 } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import type { DramaFragment } from '../../api/drama'
 import { DramaSubtitleBoard } from '../../components/drama/DramaSubtitleBoard'
 import { DramaFragmentSegmentedVideoPlayer } from '../../components/drama/DramaFragmentSegmentedVideoPlayer'
@@ -20,6 +21,7 @@ type Props = {
   onPlayingFragmentChange: (fragmentId: number) => void
   aspectRatio: string
   episodeId?: number
+  projectId?: string
   episodeName?: string
   subtitleMode: DramaSubtitleMode
   onOpenStoryboard: () => void
@@ -47,6 +49,7 @@ export function EpisodeEditSidePane({
   onPlayingFragmentChange,
   aspectRatio,
   episodeId,
+  projectId,
   episodeName = '本集',
   subtitleMode,
   onOpenStoryboard,
@@ -62,6 +65,7 @@ export function EpisodeEditSidePane({
    * composeProgress 拉取/拼接进度
    * composeError 失败原因
    */
+  const navigate = useNavigate()
   const [composeBusy, setComposeBusy] = useState(false)
   const [composeProgress, setComposeProgress] = useState<EpisodeComposeProgress | null>(null)
   const [composeError, setComposeError] = useState('')
@@ -124,6 +128,15 @@ export function EpisodeEditSidePane({
           )}
           {composeProgressLabel(composeProgress, composeBusy)}
         </button>
+        {projectId && episodeId && fragments.some(item => item.video) ? (
+          <button
+            type="button"
+            className="drama-ep-compose-btn drama-ep-compose-btn--header"
+            onClick={() => navigate(`/marketplace/from-printfilm?drama=${projectId}&episode=${episodeId}`)}
+          >
+            发布到数字资产市场
+          </button>
+        ) : null}
       </div>
       {composeError ? <p className="drama-ep-compose-error drama-ep-compose-error--header">{composeError}</p> : null}
 

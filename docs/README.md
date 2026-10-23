@@ -4,6 +4,10 @@ PRINTFILM（ai_movie）产品与工程文档。
 
 | 文档 | 说明 |
 |------|------|
+| [DIGITAL_ASSET_DEVELOPMENT.md](./DIGITAL_ASSET_DEVELOPMENT.md) | 数字资产市场分期：第一期 Web 广场与版权交易，第二期 App 持续收益；Word 版见同目录 docx |
+| [MARKETPLACE.md](./MARKETPLACE.md) | 单视频 + 短剧剧集数字资产市场、客服招募、版权核验、平台投放收益与私有 OSS：配置、接口、操作流程及验收边界 |
+| [LOCAL_DEVELOPMENT.md](./LOCAL_DEVELOPMENT.md) | 本机 Windows 环境、后台启停脚本、访问地址与日志位置 |
+| [PROJECT_ARCHITECTURE.md](./PROJECT_ARCHITECTURE.md) | 项目深入导读：业务流程、技术架构、任务时序、计费、数据关系、部署与源码阅读地图 |
 | [STANDARDS.md](./STANDARDS.md) | **全局规范**（注释、分层、前后端、Git、发布、安全） |
 | [BILLING.md](./BILLING.md) | 计费与易支付 |
 | [EPISODE_RULES.md](./EPISODE_RULES.md) | **漫剧分集主规范**（开幕/拆镜/脚本/资产/Seedance/门禁/后续清单） |

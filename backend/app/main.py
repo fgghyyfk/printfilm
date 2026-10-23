@@ -93,6 +93,10 @@ app.include_router(v1_router, prefix="/api")
 app.include_router(drama_router, prefix="/api")
 app.include_router(admin_router, prefix="/api")
 
+# 下游扩展仅注册独立路由和初始化，不改变原发布、生成及存储逻辑。
+from app.marketplace.bootstrap import install as install_marketplace
+install_marketplace(app)
+
 
 @app.on_event("startup")
 async def on_startup() -> None:
@@ -112,6 +116,13 @@ async def on_startup() -> None:
     except Exception:  # noqa: BLE001
         pass
     await start_task_runtime()
+    from app.marketplace.config import get_marketplace_settings
+    if get_marketplace_settings().enabled:
+        # 市场启动回调早于本函数里的补列，免费内容下架必须等列补齐后再查系列表。
+        from app.marketplace.previews import withdraw_unwatermarked_public
+        async with AsyncSessionLocal() as db:
+            await withdraw_unwatermarked_public(db)
+            await db.commit()
 
 
 @app.on_event("shutdown")
@@ -138,6 +149,11 @@ async def _pg_columns(conn, table: str) -> set[str]:
 async def _apply_schema_patches() -> None:
     """Lightweight additive migrations（仅 PostgreSQL）。"""
     async with engine.begin() as conn:
+        # Local unit tests may use SQLite, while production uses PostgreSQL.  The
+        # information_schema queries and ALTER TABLE syntax below are deliberately
+        # PostgreSQL-only; create_all() already handles a fresh SQLite database.
+        if conn.dialect.name != "postgresql":
+            return
         scols = await _pg_columns(conn, "shots")
         if "segment_script" not in scols:
             await conn.execute(text("ALTER TABLE shots ADD COLUMN segment_script TEXT DEFAULT ''"))
@@ -247,6 +263,60 @@ async def _apply_schema_patches() -> None:
                 continue
             await conn.execute(text(f"DROP INDEX IF EXISTS ix_task_runs_{col}"))
             await conn.execute(text(f"ALTER TABLE task_runs DROP COLUMN {col}"))
+
+        # Marketplace additive columns. The marketplace bootstrap creates new tables;
+        # these columns keep existing work drafts compatible with the new sale modes.
+        mcols = await _pg_columns(conn, "marketplace_works")
+        if mcols:
+            if "sale_type" not in mcols:
+                await conn.execute(text("ALTER TABLE marketplace_works ADD COLUMN sale_type VARCHAR(24) DEFAULT 'copyright_contact'"))
+            if "unlock_price_fen" not in mcols:
+                await conn.execute(text("ALTER TABLE marketplace_works ADD COLUMN unlock_price_fen BIGINT DEFAULT 0"))
+            if "share_bps" not in mcols:
+                await conn.execute(text("ALTER TABLE marketplace_works ADD COLUMN share_bps INTEGER"))
+
+        # The marketplace tables are intentionally created from their own metadata,
+        # but create_all() does not alter tables from an earlier deployment.  Keep
+        # upgrades additive and idempotent so a server can be restarted against an
+        # existing database without a manual migration step.  Defaults make these
+        # additions safe for historical rows; newly written records still use the
+        # ORM defaults and publication snapshots remain immutable.
+        marketplace_columns: dict[str, dict[str, str]] = {
+            "marketplace_series": {
+                "sale_type": "VARCHAR(24) DEFAULT 'copyright_contact'",
+                "copyright_price_fen": "BIGINT DEFAULT 0",
+                "share_bps": "INTEGER",
+                "free_episode_count": "INTEGER NOT NULL DEFAULT 0",
+            },
+            "marketplace_series_episodes": {
+                "source": "VARCHAR(30) NOT NULL DEFAULT 'external'",
+                "preview_status": "VARCHAR(24) DEFAULT 'none'",
+                "preview_key": "VARCHAR(512)",
+                "preview_attempts": "INTEGER DEFAULT 0",
+                "playback_status": "VARCHAR(24) DEFAULT 'none'",
+                "playback_manifest_key": "VARCHAR(512)",
+                "playback_attempts": "INTEGER DEFAULT 0",
+            },
+            "marketplace_publications": {
+                "preview_key": "VARCHAR(512)",
+                "preview_status": "VARCHAR(24) DEFAULT 'pending'",
+                "preview_attempts": "INTEGER DEFAULT 0",
+                "preview_error": "TEXT DEFAULT ''",
+                "playback_manifest_key": "VARCHAR(512)",
+                "playback_status": "VARCHAR(24) DEFAULT 'pending'",
+                "playback_attempts": "INTEGER DEFAULT 0",
+                "playback_error": "TEXT DEFAULT ''",
+            },
+        }
+        for table, additions in marketplace_columns.items():
+            columns = await _pg_columns(conn, table)
+            # A missing table is expected on a first boot before marketplace's
+            # startup handler runs create_all(); simply let that handler create it.
+            if not columns:
+                continue
+            for column, definition in additions.items():
+                if column not in columns:
+                    await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {definition}"))
 
 
 async def bootstrap_admins() -> None:

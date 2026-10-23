@@ -467,6 +467,15 @@ export default function HistoryPage() {
                     </button>
                     <button
                       type="button"
+                      className="pf-btn-text"
+                      disabled={!p.final_video_url}
+                      onClick={() => nav(`/marketplace/from-printfilm?project=${p.id}`)}
+                    >
+                      <IconSend size={14} />
+                      发布到市场
+                    </button>
+                    <button
+                      type="button"
                       className="pf-icon-btn danger"
                       disabled={busyId === p.id}
                       title={t('common.delete')}

@@ -11,6 +11,7 @@ import { USER_UPDATED_EVENT } from '../../lib/userEvents'
 import { GITHUB_REPO_URL } from '../../lib/siteLinks'
 import { useI18n } from '../../i18n'
 import LanguageSwitch from './LanguageSwitch'
+import { useMarketplace } from '../../features/marketplace/hooks'
 
 export type NavActive = 'home' | 'drama' | 'kepu' | 'tools' | 'assets' | 'pricing' | 'templates' | 'studio' | 'history'
 
@@ -38,6 +39,7 @@ function normalizeActive(active: NavActive | undefined, pathname: string): NavAc
 }
 
 export default function SiteNav({ active }: Props) {
+  const { capabilities: marketplace } = useMarketplace()
   const nav = useNavigate()
   const location = useLocation()
   const { t } = useI18n()
@@ -83,6 +85,7 @@ export default function SiteNav({ active }: Props) {
 
   const centerLinks = (
     <>
+      {marketplace?.enabled && <NavLink to="/marketplace">数字资产市场</NavLink>}
       <NavLink to="/" end className={() => isActive('home')}>
         {t('nav.workbench')}
       </NavLink>
