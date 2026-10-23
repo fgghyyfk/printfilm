@@ -289,6 +289,8 @@ async def _apply_schema_patches() -> None:
                 await conn.execute(text("ALTER TABLE marketplace_works ADD COLUMN unlock_price_fen BIGINT DEFAULT 0"))
             if "share_bps" not in mcols:
                 await conn.execute(text("ALTER TABLE marketplace_works ADD COLUMN share_bps INTEGER"))
+            if "deleted_at" not in mcols:
+                await conn.execute(text("ALTER TABLE marketplace_works ADD COLUMN deleted_at TIMESTAMPTZ"))
 
         # The marketplace tables are intentionally created from their own metadata,
         # but create_all() does not alter tables from an earlier deployment.  Keep
@@ -302,6 +304,7 @@ async def _apply_schema_patches() -> None:
                 "copyright_price_fen": "BIGINT DEFAULT 0",
                 "share_bps": "INTEGER",
                 "free_episode_count": "INTEGER NOT NULL DEFAULT 0",
+                "deleted_at": "TIMESTAMPTZ",
             },
             "marketplace_series_episodes": {
                 "source": "VARCHAR(30) NOT NULL DEFAULT 'external'",

@@ -168,7 +168,7 @@ async def run_preview_once():
                 event(db, work.owner_id, "work", work.id, "preview_ready", version=work.version)
                 notify(db, work.owner_id, f"作品《{work.title}》水印播放文件已生成，已进入待审核",
                        f"/marketplace/works/{work.id}/manage")
-            elif work and work.audit_status == "approved" and not work.blocked and not work.listed and key.startswith(expected):
+            elif work and not work.deleted_at and work.audit_status == "approved" and not work.blocked and not work.listed and key.startswith(expected):
                 work.listed = True
                 notify(db, work.owner_id, f"作品《{work.title}》完整水印已生成，已重新出现在作品广场",
                        f"/marketplace/works/{work.id}")

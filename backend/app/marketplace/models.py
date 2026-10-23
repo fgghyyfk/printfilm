@@ -95,6 +95,7 @@ class Work(Record, MarketBase):
     listed: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     blocked: Mapped[bool] = mapped_column(Boolean, default=False)
     reason: Mapped[str] = mapped_column(Text, default="")
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class RegistrationCase(Record, MarketBase):
@@ -207,6 +208,7 @@ class Series(Record, MarketBase):
     listed: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     blocked: Mapped[bool] = mapped_column(Boolean, default=False)
     reason: Mapped[str] = mapped_column(Text, default="")
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class SeriesEpisode(Record, MarketBase):

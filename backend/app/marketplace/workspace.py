@@ -12,8 +12,8 @@ router = APIRouter()
 
 async def owner_works(db, user, page_number: int, page_size: int) -> dict:
     """我的作品同时包含单视频和短剧，按创建时间分页。"""
-    work_part = select(Work.id.label("item_id"), literal("work").label("kind"), Work.created_at.label("sort_at"), Work.id.label("tie")).where(Work.owner_id == user.id)
-    series_part = select(Series.id.label("item_id"), literal("series").label("kind"), Series.created_at.label("sort_at"), Series.id.label("tie")).where(Series.owner_id == user.id)
+    work_part = select(Work.id.label("item_id"), literal("work").label("kind"), Work.created_at.label("sort_at"), Work.id.label("tie")).where(Work.owner_id == user.id, Work.deleted_at.is_(None))
+    series_part = select(Series.id.label("item_id"), literal("series").label("kind"), Series.created_at.label("sort_at"), Series.id.label("tie")).where(Series.owner_id == user.id, Series.deleted_at.is_(None))
     combined = union_all(work_part, series_part).subquery()
     total = (await db.execute(select(func.count()).select_from(combined))).scalar_one()
     rows = (await db.execute(select(combined).order_by(combined.c.sort_at.desc(), combined.c.tie.desc()).offset((page_number - 1) * page_size).limit(page_size))).all()
@@ -44,7 +44,10 @@ async def mine(kind: str, db: DB, user: Actor, page_number: int = Query(1, alias
              "assets": Asset, "rights": Rights, "notifications": Notification}.get(kind)
     if not model:
         fail("列表类型无效", 404)
-    rows, meta = await page(db, select(model).where(model.owner_id == user.id).order_by(model.id.desc()), page_number, page_size)
+    query = select(model).where(model.owner_id == user.id)
+    if kind == "series":
+        query = query.where(Series.deleted_at.is_(None))
+    rows, meta = await page(db, query.order_by(model.id.desc()), page_number, page_size)
     items = []
     for item in rows:
         if isinstance(item, Work):

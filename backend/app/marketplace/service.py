@@ -35,6 +35,37 @@ async def owned(db: AsyncSession, model, record_id: int, user: User, *, admin: b
     return record
 
 
+def ensure_kept(item) -> None:
+    """已软删的作品不再进入编辑、审核和上架。"""
+    if getattr(item, "deleted_at", None):
+        fail("作品已删除", 404)
+
+
+async def retire_owned(db: AsyncSession, item, user: User, kind: str) -> None:
+    """作者软删自己的单视频或短剧，撤下展示并保留文件与审核记录。"""
+    if item.owner_id != user.id:
+        fail("只能删除自己的作品", 403)
+    if item.deleted_at:
+        return
+    from .models import Publication, SeriesEpisode
+    item.deleted_at = now()
+    item.listed = False
+    publications = []
+    if kind == "series":
+        episodes = list((await db.execute(select(SeriesEpisode).where(SeriesEpisode.series_id == item.id).with_for_update())).scalars().all())
+        episode_ids = []
+        for episode in episodes:
+            episode.listed = False
+            episode_ids.append(episode.id)
+        if episode_ids:
+            publications = list((await db.execute(select(Publication).where(Publication.content_type == "series_episode", Publication.content_id.in_(episode_ids)).with_for_update())).scalars().all())
+    else:
+        publications = list((await db.execute(select(Publication).where(Publication.content_type == "work", Publication.content_id == item.id).with_for_update())).scalars().all())
+    for publication in publications:
+        publication.listed = False
+    event(db, user.id, kind, item.id, "deleted", version=getattr(item, "version", None))
+
+
 async def asset_owned(db: AsyncSession, asset_id: int, user: User, kinds: tuple[str, ...] = ("video",)) -> Asset:
     """只接受本人的已就绪媒体，不接受任意 URL 或上游资源。"""
     asset = await owned(db, Asset, asset_id, user)
@@ -90,7 +121,7 @@ def public_work_filters() -> tuple:
             WorkPreview.work_id == Work.id, WorkPreview.asset_id == Work.asset_id,
             WorkPreview.status == "done", WorkPreview.object_key.startswith(prefix)).exists()
 
-    return (Work.listed.is_(True), Work.blocked.is_(False), Work.audit_status == "approved",
+    return (Work.listed.is_(True), Work.blocked.is_(False), Work.deleted_at.is_(None), Work.audit_status == "approved",
             Asset.status == "ready", Rights.basic_status == "approved", Rights.full_status == "approved",
             # 免费作品可直接上架。标价为 0 的作品和收费作品只要已有水印文件就进入广场。
             or_(Work.sale_type == "free",

@@ -95,10 +95,8 @@ async def withdraw_unwatermarked_public(db) -> None:
     ))).scalars().all()
     for series in series_rows:
         episodes = (await db.execute(select(SeriesEpisode).where(SeriesEpisode.series_id == series.id))).scalars().all()
-        prefix = playback_prefix(series.sale_type, series.copyright_price_fen, episode=True)
         missing = False
         for episode in episodes:
-            episode.listed = False
             if not episode.asset_id:
                 missing = True
                 continue
@@ -106,14 +104,16 @@ async def withdraw_unwatermarked_public(db) -> None:
                 EpisodePreview.episode_id == episode.id, EpisodePreview.asset_id == episode.asset_id,
                 EpisodePreview.version == episode.version,
             ))).scalar_one_or_none()
-            ready = bool(item and item.status == "done" and (item.object_key or "").startswith(prefix))
+            # 免费集是完整水印，付费集是短试看。两种都算已生成，不能因前缀不同把成品清掉。
+            ready = bool(item and item.status == "done" and is_watermark_key(item.object_key))
             if ready:
                 continue
             missing = True
+            episode.listed = False
             if item is None:
                 db.add(EpisodePreview(episode_id=episode.id, asset_id=episode.asset_id, version=episode.version))
-            elif item.status != "running":
-                item.status, item.attempts, item.error, item.object_key = "pending", 0, "", None
+            elif item.status not in ("running", "pending") and not is_watermark_key(item.object_key):
+                item.status, item.attempts, item.error = "pending", 0, ""
                 item.lease_token, item.lease_until = None, None
         if missing:
             series.listed = False

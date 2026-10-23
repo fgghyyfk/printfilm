@@ -7,7 +7,7 @@ from .dependencies import Actor, DB, Visitor
 from .previews import prepare_preview, preview_ready, requires_preview
 from .models import Asset, PlaybackJob, Publication, Recruit, RegistrationCase, RevenueConfig, Rights, Series, Submission, Work
 from .schemas import CaseInput, RecruitInput, RecruitUpdate, RightsInput, Version, WorkInput, WorkUpdate
-from .service import (asset_owned, asset_owned_for_draft, check_version, data, event, fail, get_target, is_public_work, now,
+from .service import (asset_owned, asset_owned_for_draft, check_version, data, ensure_kept, event, fail, get_target, is_public_work, now,
                       notify, owned, page, public_recruit_filters, public_work_filters, recruit_data,
                       recruit_open, rights_for, rights_valid, submission_data, validate_rights, work_data)
 
@@ -74,8 +74,8 @@ async def works(db: DB, q: str = Query("", max_length=100), category: str = Quer
 async def work_detail(work_id: int, db: DB, user: Visitor):
     """作者和管理员可看草稿，公众仅可看满足全部条件的作品。"""
     item = await db.get(Work, work_id)
-    private = bool(item and user and (item.owner_id == user.id or user.role == "admin"))
-    if not item or (not private and not await is_public_work(db, work_id)):
+    private = bool(item and user and not item.deleted_at and (item.owner_id == user.id or user.role == "admin"))
+    if not item or item.deleted_at or (not private and not await is_public_work(db, work_id)):
         fail("作品不存在或未公开", 404)
     return await work_data(db, item, private)
 
@@ -103,6 +103,7 @@ async def create_work(body: WorkInput, db: DB, user: Actor):
 async def update_work(work_id: int, body: WorkUpdate, db: DB, user: Actor):
     """更新即撤下旧公开内容；权利范围变化重置完整核验。"""
     item = await owned(db, Work, work_id, user)
+    ensure_kept(item)
     check_version(item, body.version)
     from .categories import validate_category
     await validate_category(db, body.category, item.category)
@@ -131,6 +132,7 @@ async def update_work(work_id: int, body: WorkUpdate, db: DB, user: Actor):
 async def submit_work(work_id: int, body: Version, db: DB, user: Actor):
     """作品资料和版权信息一次提交，进入统一管理员审核。"""
     item = await owned(db, Work, work_id, user)
+    ensure_kept(item)
     check_version(item, body.version)
     if item.blocked:
         fail("作品已被管理员封禁")
@@ -213,6 +215,7 @@ async def submit_work(work_id: int, body: Version, db: DB, user: Actor):
 async def listing(work_id: int, body: Version, db: DB, user: Actor, listed: bool = True):
     """作者主动上下架，不允许自行解除管理员封禁。"""
     item = await owned(db, Work, work_id, user)
+    ensure_kept(item)
     check_version(item, body.version)
     if listed:
         if requires_preview(item.sale_type) and not await preview_ready(db, item):
@@ -232,6 +235,16 @@ async def listing(work_id: int, body: Version, db: DB, user: Actor, listed: bool
     event(db, user.id, "work", item.id, "listed" if listed else "unlisted", version=item.version)
     await db.commit()
     return await work_data(db, item, True)
+
+
+@router.delete("/works/{work_id}", response_model=dict)
+async def delete_work(work_id: int, db: DB, user: Actor):
+    """作者软删单视频。广场和我的作品不再展示，原片与审核记录保留。"""
+    item = await owned(db, Work, work_id, user)
+    from .service import retire_owned
+    await retire_owned(db, item, user, "work")
+    await db.commit()
+    return {"ok": True}
 
 
 @router.get("/assets/{asset_id}/rights", response_model=dict)

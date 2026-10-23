@@ -249,6 +249,8 @@ async def enqueue_series_import(series_id: int, body: PrintfilmEpisodeInput, db,
     from .series import _episode_data, _series
 
     series = await _series(db, series_id, user, lock=True)
+    from .service import ensure_kept
+    ensure_kept(series)
     if series.owner_id != user.id:
         fail("只能导入到自己的短剧", 403)
     jobs: list[tuple[str, str, int, str, str, str, str]] = []

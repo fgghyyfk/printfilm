@@ -1,6 +1,6 @@
 """下游运营 API；审核只操作独立记录，并强制版本匹配。"""
 from fastapi import APIRouter, Query
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 
 from .dependencies import Admin, DB
 from .models import Asset, EpisodePreview, Entitlement, Event, MediaJob, Publication, Recruit, RegistrationCase, Report, RevenueConfig, RevenueLedger, Payout, Rights, Series, SeriesEpisode, Submission, Support, Work, WorkPreview
@@ -45,7 +45,7 @@ MODELS = {"works": Work, "rights": Rights, "cases": RegistrationCase, "recruits"
 async def overview(db: DB, user: Admin):
     """运营计数不把咨询、候选或扫码计为成交。"""
     counts = {}
-    for name, model, condition in (("works_pending", Work, Work.audit_status == "pending"),
+    for name, model, condition in (("works_pending", Work, and_(Work.audit_status == "pending", Work.deleted_at.is_(None))),
                                     ("rights_pending", Rights, (Rights.basic_status == "pending") | (Rights.full_status == "pending")),
                                     ("recruits_pending", Recruit, Recruit.audit_status == "pending"),
                                     ("jobs_failed", MediaJob, MediaJob.status == "failed"),
@@ -63,6 +63,8 @@ async def records(kind: str, db: DB, user: Admin, status: str = "", user_id: int
     if not model:
         fail("记录类型无效", 404)
     query = select(model)
+    if kind in ("works", "series"):
+        query = query.where(model.deleted_at.is_(None))
     field = getattr(model, "audit_status", None) if kind in ("works", "recruits", "series") else getattr(model, "status", None)
     if status and field is not None:
         query = query.where(field == status)

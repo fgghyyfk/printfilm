@@ -227,7 +227,7 @@ body:has(.pf-market-shell) .pf-wx-fab-root { display:none; }
 .pf-market-buyer-price { display:flex; flex-direction:column; gap:8px; border-top:1px solid var(--pf-line); padding-top:20px; width:100%; }
 .pf-market-buyer-price>span { font-size:12px; color:var(--pf-muted); }
 .pf-market-buyer-price strong { font-size:32px; }
-.pf-market .pf-market-buyer-info>button:first-of-type { width:100%; background:var(--pf-lime); color:var(--pf-ink); border-color:transparent; padding:13px; font-weight:650; }
+.pf-market .pf-market-buyer-info > .pf-market-buy { width:100%; background:var(--pf-lime); color:var(--pf-ink); border-color:transparent; padding:13px; font-weight:650; }
 @media(max-width:850px) { .pf-market-buyer-layout { grid-template-columns:1fr; }.pf-market-buyer-player { min-height:220px; }.pf-market-buyer-info { padding:22px; } }
 .pf-episode-tools { display:flex; align-items:center; gap:8px; margin-bottom:12px; }
 .pf-episode-tools button { padding:6px 10px; font-size:12px; }

@@ -80,7 +80,7 @@ def public_series_filters():
         ).exists()),
     ).exists()
     has_episode = select(SeriesEpisode.id).where(SeriesEpisode.series_id == Series.id).exists()
-    return (Series.listed.is_(True), Series.blocked.is_(False), Series.audit_status == "approved", has_episode, not_(missing))
+    return (Series.listed.is_(True), Series.blocked.is_(False), Series.deleted_at.is_(None), Series.audit_status == "approved", has_episode, not_(missing))
 
 
 @router.get("/series", response_model=dict)
@@ -138,8 +138,8 @@ async def import_sources(db: DB, user: Actor):
 @router.get("/series/{series_id}", response_model=dict)
 async def get_series(series_id: int, db: DB, user: Visitor):
     item = await db.get(Series, series_id)
-    private = bool(item and user and (item.owner_id == user.id or user.role == "admin"))
-    if not item or (not private and item.blocked):
+    private = bool(item and user and not item.deleted_at and (item.owner_id == user.id or user.role == "admin"))
+    if not item or item.deleted_at or (not private and item.blocked):
         fail("系列不存在或未公开", 404)
     if not private:
         visible = (await db.execute(select(Series.id).where(Series.id == series_id, *public_series_filters()))).scalar_one_or_none()
@@ -167,6 +167,8 @@ async def create_series(body: SeriesInput, db: DB, user: Actor):
 @router.patch("/series/{series_id}", response_model=dict)
 async def update_series(series_id: int, body: SeriesUpdate, db: DB, user: Actor):
     item = await _series(db, series_id, user, lock=True)
+    from .service import ensure_kept
+    ensure_kept(item)
     check_version(item, body.version)
     from .categories import validate_category
     await validate_category(db, body.category, item.category)
@@ -249,9 +251,21 @@ async def import_episodes(series_id: int, body: ImportEpisodesInput, db: DB, use
     return await enqueue_series_import(series_id, payload, db, user)
 
 
+@router.delete("/series/{series_id}", response_model=dict)
+async def delete_series(series_id: int, db: DB, user: Actor):
+    """作者软删整部短剧。分集记录保留，但不再出现在广场和我的作品。"""
+    item = await _series(db, series_id, user, lock=True)
+    from .service import retire_owned
+    await retire_owned(db, item, user, "series")
+    await db.commit()
+    return {"ok": True}
+
+
 @router.post("/series/{series_id}/submit", response_model=dict)
 async def submit_series(series_id: int, body: Version, db: DB, user: Actor):
     series = await _series(db, series_id, user, lock=True)
+    from .service import ensure_kept
+    ensure_kept(series)
     check_version(series, body.version)
     if series.blocked:
         fail("系列已被管理员封禁")
@@ -353,6 +367,8 @@ async def submit_series(series_id: int, body: Version, db: DB, user: Actor):
 @router.post("/series/{series_id}/listing", response_model=dict)
 async def listing_series(series_id: int, body: Version, db: DB, user: Actor, listed: bool = True):
     series = await _series(db, series_id, user, lock=True)
+    from .service import ensure_kept
+    ensure_kept(series)
     check_version(series, body.version)
     # Lock and snapshot the current episode versions once.  Historical
     # publications are kept for entitlements but must never be relisted when a
