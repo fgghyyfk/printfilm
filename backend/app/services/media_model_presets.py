@@ -42,22 +42,29 @@ PRESET_MODELS: dict[LogicalModelCapability, tuple[dict[str, str], ...]] = {
             "id": "seedream-5.0",
             "label": "Seedream 5.0",
             "note": "标准静帧，质量与成本均衡",
-            "pricing_hint": "约 $0.045/张",
+            "pricing_hint": "约 ¥0.33/张",
             "eta_hint": "约 15–40 秒/张",
         },
         {
             "id": "seedream-5.0-flash",
             "label": "Seedream 5.0 Flash",
             "note": "更快更省，适合草稿与批量试错",
-            "pricing_hint": "更省 · 约 $0.025/张",
+            "pricing_hint": "更省 · 约 ¥0.18/张",
             "eta_hint": "约 10–25 秒/张",
         },
         {
             "id": "gpt-image-2",
             "label": "GPT Image 2",
             "note": "OpenAI 生图，光影与文字表现好，适合海报与精细静帧",
-            "pricing_hint": "约 $0.075/次",
+            "pricing_hint": "约 ¥0.55/次",
             "eta_hint": "约 30–90 秒/张",
+        },
+        {
+            "id": "gpt-image-2.5",
+            "label": "GPT Image 2.5",
+            "note": "OpenAI 新一代生图，细节与文字更稳，适合定妆与精细静帧",
+            "pricing_hint": "按次计费，通常高于 2.0",
+            "eta_hint": "约 30–120 秒/张",
         },
     ),
     "video": (
@@ -87,8 +94,8 @@ PRESET_MODELS: dict[LogicalModelCapability, tuple[dict[str, str], ...]] = {
         {
             "id": "MiniMax-H3",
             "label": "MiniMax H3",
-            "note": "节奏感强、人物生动；4–15 秒，仅 720p",
-            "pricing_hint": "出片偏慢 · 约 $0.06–0.10/秒",
+            "note": "节奏感强、人物生动；4–15 秒，480p / 768p",
+            "pricing_hint": "出片偏慢 · 约 ¥0.44–0.73/秒",
             "eta_hint": "偏慢，4s 约 15 分钟起",
         },
     ),
@@ -115,14 +122,16 @@ IMAGE_ASPECT_RATIOS: tuple[str, ...] = (
     "2:3",
     "21:9",
 )
-# Seedream：前端只给 1K/2K，避免选 3K 被静默降档
+# Seedream / GPT Image 2：前端只给 1K/2K，避免选更高档被静默降档
 IMAGE_RESOLUTIONS_STANDARD: tuple[str, ...] = ("1K", "2K")
+# GPT Image 2.5 支持到 4K
+IMAGE_RESOLUTIONS_GPT_IMAGE_25: tuple[str, ...] = ("1K", "2K", "4K")
 
 VIDEO_ASPECT_RATIOS: tuple[str, ...] = ("9:16", "16:9", "1:1")
 VIDEO_RESOLUTIONS_FULL: tuple[str, ...] = ("480p", "720p", "1080p")
 VIDEO_RESOLUTIONS_SAFE: tuple[str, ...] = ("480p", "720p")
-# MiniMax-H3 当前渠道仅 720p
-VIDEO_RESOLUTIONS_720_ONLY: tuple[str, ...] = ("720p",)
+# MiniMax-H3：TokenFree 枚举为小写 480p / 768p
+VIDEO_RESOLUTIONS_MINIMAX_H3: tuple[str, ...] = ("480p", "768p")
 
 
 # 历史友好别名 / 旧连字符 id → TokenFree 点分规范 id
@@ -147,8 +156,12 @@ PRESET_MODEL_ALIASES: dict[str, str] = {
     "seedream5": "seedream-5.0",
     "seedream-5-0-flash": "seedream-5.0-flash",
     "seedream-5.0-flash": "seedream-5.0-flash",
-    "gpt-image-2-5": "gpt-image-2",
-    "gpt-image-2.5": "gpt-image-2",
+    "gpt-image-2-5": "gpt-image-2.5",
+    "gpt-image-2.5": "gpt-image-2.5",
+    "gpt-image-2.5-sunburst": "gpt-image-2.5",
+    "gpt-image-2-5-sunburst": "gpt-image-2.5",
+    "gpt-image-2.5-flare": "gpt-image-2.5",
+    "gpt-image-2-5-flare": "gpt-image-2.5",
     "gemini-3.1-flash-tts": "qwen-tts-2025-05-22",
     "gemini-3.1-flash": "qwen-tts-2025-05-22",
 }
@@ -269,12 +282,17 @@ def model_generation_options(model_id: str | None) -> dict[str, Any]:
     image_ids = {normalize_model_name(x) for x in preset_ids("image")}
     video_ids = {normalize_model_name(x) for x in preset_ids("video")}
 
-    # 图像：Seedream 预设；历史 gpt-image 仍按同档参数兼容
+    # 图像：Seedream / GPT Image 2 为 1K·2K；GPT Image 2.5 开放 4K
     if mid in image_ids or "seedream" in mid or mid.startswith("gpt-image"):
+        resolutions = (
+            list(IMAGE_RESOLUTIONS_GPT_IMAGE_25)
+            if "gpt-image-2.5" in mid or "gpt-image-2-5" in mid
+            else list(IMAGE_RESOLUTIONS_STANDARD)
+        )
         return {
             "capability": "image",
             "allowed_aspect_ratios": list(IMAGE_ASPECT_RATIOS),
-            "allowed_resolutions": list(IMAGE_RESOLUTIONS_STANDARD),
+            "allowed_resolutions": resolutions,
         }
 
     # 视频：预设表与 Seedance / MiniMax 优先
@@ -292,7 +310,7 @@ def model_generation_options(model_id: str | None) -> dict[str, Any]:
             return {
                 "capability": "video",
                 "allowed_aspect_ratios": list(VIDEO_ASPECT_RATIOS),
-                "allowed_resolutions": list(VIDEO_RESOLUTIONS_720_ONLY),
+                "allowed_resolutions": list(VIDEO_RESOLUTIONS_MINIMAX_H3),
                 "duration_min": 4,
                 "duration_max": 15,
             }

@@ -104,7 +104,6 @@ def ensure_browser_cors() -> None:
     if pub and pub not in origins:
         origins.append(pub)
     try:
-        import oss2
         from oss2.models import BucketCors, CorsRule
 
         rule = CorsRule(

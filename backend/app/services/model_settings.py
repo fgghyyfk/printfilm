@@ -239,7 +239,6 @@ def _bootstrap_logical_from_channels(channels: list[SystemModelChannel]) -> tupl
     alias_models: list[LogicalModel] = []
 
     def _bindings_for_upstream(upstream: str) -> list:
-        from app.schemas_routing import LogicalModelBinding
         from app.services.tokenfree_pricing import canonicalize_channel_model_id
 
         wanted = {(upstream or "").strip(), canonicalize_channel_model_id(upstream)}
@@ -285,9 +284,26 @@ def _bootstrap_logical_from_channels(channels: list[SystemModelChannel]) -> tupl
         text_model=settings.model_llm,
         image_model=image_default,
         video_model=default_video,
-        audio_model=settings.model_audio or settings.volc_tts_speaker,
+        audio_model=settings.model_audio,
     )
     return merged, normalize_default_models(defaults, merged, channels)
+
+
+# 历史渠道协议已下线，读库时收成仍支持的值，避免校验失败
+_LIVE_CHANNEL_PROTOCOLS = {"openai", "auto"}
+_LIVE_API_FORMATS = {"openai"}
+
+
+def _coerce_channel_protocol(value: str | None) -> str:
+    """把已删除的渠道协议收成 auto。"""
+    raw = (value or "auto").strip().lower() or "auto"
+    return raw if raw in _LIVE_CHANNEL_PROTOCOLS else "auto"
+
+
+def _coerce_api_format(value: str | None) -> str:
+    """把已删除的调用格式收成 openai。"""
+    raw = (value or "openai").strip().lower() or "openai"
+    return raw if raw in _LIVE_API_FORMATS else "openai"
 
 
 # ORM 行转领域模型（admin 视图，密钥打码）
@@ -299,8 +315,8 @@ def _channel_row_to_admin(row: SystemModelChannelRow) -> SystemModelChannel:
         base_url=row.base_url or "",
         api_key="",
         has_api_key=bool(api_key),
-        api_format=row.api_format or "openai",
-        protocol=row.protocol or "auto",
+        api_format=_coerce_api_format(row.api_format),
+        protocol=_coerce_channel_protocol(row.protocol),
         models=list(row.models or []),
         enabled=bool(row.enabled),
         sort_order=int(row.sort_order or 0),
@@ -400,7 +416,7 @@ async def _ensure_tokenfree_channel(db: AsyncSession, existing: list[SystemModel
         current_key = migrated_key
     from app.services.media_model_presets import all_preset_channel_models
 
-    # 渠道 models 固定为站点预设并集（含 gpt-image-2 / 仅 qwen-tts）
+    # 渠道 models 固定为站点预设并集（含 gpt-image-2 / gpt-image-2.5 / 仅 qwen-tts）
     preset = all_preset_channel_models()
     if list(token_row.models or []) != preset:
         token_row.models = preset
@@ -556,7 +572,7 @@ def _build_readiness(
         "video": "video_model",
         "audio": "audio_model",
     }.items():
-        cap = capability  # type: LogicalModelCapability
+        cap: LogicalModelCapability = capability
         model_id = getattr(defaults, attr) or ""
         resolved = resolve_logical_model_config(logical_models, channels, cap, model_id) if model_id else None
         items.append(

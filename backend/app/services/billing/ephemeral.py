@@ -10,15 +10,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import User
 from app.models_tasks import TaskRun
-from app.schemas_tasks import TaskCreateRequest, TaskEventCreate, TaskStepCreate
+from app.schemas_tasks import TaskCreateRequest, TaskEventCreate
 from sqlalchemy import select
 
 from app.config import get_settings
 from app.services.billing.context import billing_scope
 from app.services.billing.settlement import freeze_for_task, settle_task
-from app.services.billing.usage import record_line
 from app.services.tasks.handlers import get_task_handler
 from app.services.tasks.service import append_task_event, build_task_event, build_task_step
+from app.services.tasks.upstream import upstream_event_session
 
 T = TypeVar("T")
 
@@ -139,7 +139,7 @@ async def run_billed_ephemeral(
 
     result: T
     try:
-        async with billing_scope(task.id):
+        async with billing_scope(task.id), upstream_event_session(db):
             result = await executor()
         task.status = "succeeded"
         task.progress_percent = 100
@@ -241,7 +241,7 @@ async def run_billed_ephemeral_deferred(
 
     result: T
     try:
-        async with billing_scope(task.id):
+        async with billing_scope(task.id), upstream_event_session(db):
             result = await executor()
         provider_id = _extract_provider_task_id(result)
         if not provider_id:

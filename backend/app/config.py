@@ -23,6 +23,8 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+asyncpg://printfilm:change-me-strong-db-password@127.0.0.1:15432/printfilm"
     database_url_sync: str = "postgresql+psycopg2://printfilm:change-me-strong-db-password@127.0.0.1:15432/printfilm"
+    # 连接已初始化的共享库时可关闭建表/补列/种子数据；仍加载数据库中的模型配置。
+    database_bootstrap_enabled: bool = True
     # Postgres 连接池（统一任务平台 / API 共用）
     db_pool_size: int = 5
     db_max_overflow: int = 5
@@ -47,17 +49,6 @@ class Settings(BaseSettings):
     seedance_duration_min: int = 4
     seedance_duration_max: int = 30
     model_audio: str = "qwen-tts-2025-05-22"
-    # 豆包语音（openspeech）— 与方舟 ARK_API_KEY 不同产品线
-    volc_tts_app_id: str = ""
-    volc_tts_access_key: str = ""
-    volc_tts_resource_id: str = "seed-tts-2.0"
-    volc_tts_speaker: str = "zh_female_cancan_uranus_bigtts"
-    volc_tts_url: str = "https://openspeech.bytedance.com/api/v3/tts/unidirectional"
-    # 新版控制台 API Key（与 app_id/access_key 二选一，优先 api_key）
-    volc_tts_api_key: str = ""
-    # 音色设计：控制台购买的 S_ 槽位，逗号分隔；配了且鉴权齐全则漫剧走 voice_design
-    volc_tts_voice_design_url: str = "https://openspeech.bytedance.com/api/v3/tts/voice_design"
-    volc_tts_voice_design_speaker_ids: str = ""
     # Seedream: 2k|3k|4k or WIDTHxHEIGHT，且总像素 >= 3686400（约 2560x1440）
     ark_image_size: str = "2k"
     ark_video_resolution: str = "480p"
@@ -81,6 +72,8 @@ class Settings(BaseSettings):
     kepu_seedance_sfx_audio: bool = True
 
     ark_mock: bool = False
+    # 本地连接共享测试库时关闭，避免本机和服务器同时消费、恢复同一队列。
+    task_runtime_enabled: bool = True
     # 内置任务平台的进程内并发上限（全站 Worker 槽位）。
     task_runtime_max_concurrency: int = 4
     # 单用户同时进行中的 Worker 槽位（不含 awaiting_poll 注册项）。

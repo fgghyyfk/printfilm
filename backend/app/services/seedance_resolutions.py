@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from app.services.model_routing_config import normalize_model_name
 
-# 全量 UI / 白名单最高档（不上 4k）
-ALL_VIDEO_RESOLUTIONS: tuple[str, ...] = ("480p", "720p", "1080p")
+# 全量 UI / 白名单（含 MiniMax 的 768p；不上 4k）
+ALL_VIDEO_RESOLUTIONS: tuple[str, ...] = ("480p", "720p", "768p", "1080p")
 # mini / fast：渠道明确仅两档
 SAFE_VIDEO_RESOLUTIONS: tuple[str, ...] = ("480p", "720p")
 FULL_VIDEO_RESOLUTIONS: tuple[str, ...] = ("480p", "720p", "1080p")
+MINIMAX_H3_VIDEO_RESOLUTIONS: tuple[str, ...] = ("480p", "768p")
 
 
 def allowed_video_resolutions(model_id: str | None) -> list[str]:
@@ -16,7 +17,7 @@ def allowed_video_resolutions(model_id: str | None) -> list[str]:
 
     优先读站点预设表；否则：
     - Seedance 2.5 → 含 1080p
-    - MiniMax-H3 → 仅 720p
+    - MiniMax-H3 → 480p / 768p
     - Seedance 2.0 / mini / fast / 其它 → 480p, 720p
     """
     mid = normalize_model_name(model_id or "")
@@ -28,13 +29,17 @@ def allowed_video_resolutions(model_id: str | None) -> list[str]:
     opts = model_generation_options(model_id)
     raw = opts.get("allowed_resolutions") if isinstance(opts, dict) else None
     if isinstance(raw, list) and raw:
-        filtered = [str(x).strip().lower() for x in raw if str(x).strip().lower() in ALL_VIDEO_RESOLUTIONS]
+        filtered = [
+            str(x).strip().lower()
+            for x in raw
+            if str(x).strip().lower() in ALL_VIDEO_RESOLUTIONS
+        ]
         if filtered:
             return filtered
 
-    # MiniMax H3：仅 720p（须先于其它启发式，避免被当成 mini）
+    # MiniMax H3：480p / 768p（须先于其它启发式，避免被当成 mini）
     if "minimax" in mid and "h3" in mid.replace("-", "").replace("_", ""):
-        return ["720p"]
+        return list(MINIMAX_H3_VIDEO_RESOLUTIONS)
 
     # 仅 Seedance 2.5 含 1080p
     if "seedance" in mid and ("2.5" in mid or "2-5" in mid):
@@ -49,8 +54,25 @@ def clamp_video_resolution(model_id: str | None, resolution: str | None) -> str:
     raw = (resolution or "").strip().lower()
     if raw in allowed:
         return raw
-    # 缺省 / 非法：取允许列表中最高档（通常 720p 或 1080p）
+    # MiniMax：历史 720p/1080p 就近落到 768p
+    mid = normalize_model_name(model_id or "")
+    if (
+        "minimax" in mid
+        and "h3" in mid.replace("-", "").replace("_", "")
+        and raw in {"720p", "1080p", "2k"}
+        and "768p" in allowed
+    ):
+        return "768p"
+    # 缺省 / 非法：取允许列表中最高档（通常 720p / 768p / 1080p）
     return allowed[-1]
+
+
+def format_video_resolution_for_upstream(model_id: str | None, resolution: str | None) -> str:
+    """提交上游的清晰度字符串。
+
+    TokenFree MiniMax 插件枚举只认小写 480p / 768p（大写 480P 会报 plugin_usage_invalid）。
+    """
+    return clamp_video_resolution(model_id, resolution)
 
 
 def video_duration_bounds(model_id: str | None) -> tuple[int, int]:

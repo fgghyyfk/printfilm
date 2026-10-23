@@ -4,7 +4,7 @@ import type { MediaModelOption, MediaModelsCatalog } from '../api'
 export type VideoGenerationModelId = string
 
 export type VideoAspectRatio = '9:16' | '16:9' | '1:1'
-export type VideoResolution = '480p' | '720p' | '1080p'
+export type VideoResolution = '480p' | '720p' | '768p' | '1080p'
 
 export type VideoGenerationOptions = {
   image_style_id?: string
@@ -15,7 +15,7 @@ export type VideoGenerationOptions = {
 }
 
 export const VIDEO_ASPECT_RATIO_OPTIONS: VideoAspectRatio[] = ['9:16', '16:9', '1:1']
-export const VIDEO_RESOLUTION_OPTIONS: VideoResolution[] = ['480p', '720p', '1080p']
+export const VIDEO_RESOLUTION_OPTIONS: VideoResolution[] = ['480p', '720p', '768p', '1080p']
 /** 目录未到 / 未知模型时的保守档（与后端 SAFE 一致） */
 export const SAFE_VIDEO_RESOLUTION_OPTIONS: VideoResolution[] = ['480p', '720p']
 /** 时长快捷档；按模型 duration_min/max 过滤（2.0≤15，2.5≤30） */

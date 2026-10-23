@@ -1,6 +1,7 @@
 import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { getCachedUser, getToken, isAdminUser } from "@/lib/auth";
+import { AdjustRecordsPage } from "@/pages/AdjustRecordsPage";
 import { FinanceListPage } from "@/pages/FinanceListPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { LoginPage } from "@/pages/LoginPage";
@@ -41,6 +42,7 @@ export default function App() {
           <Route index element={<DashboardPage />} />
           <Route path="users" element={<UsersPage />} />
           <Route path="orders" element={<OrdersPage />} />
+          <Route path="adjustments" element={<AdjustRecordsPage />} />
           <Route path="finance" element={<FinanceListPage />} />
           <Route path="projects" element={<ProjectsPage />} />
           <Route path="drama-projects" element={<DramaProjectsPage />} />

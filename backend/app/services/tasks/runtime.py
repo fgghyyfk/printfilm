@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from contextlib import AsyncExitStack
 
 from app.config import get_settings
 from app.services.tasks.poller import (
@@ -20,6 +21,7 @@ from app.services.tasks.scheduler import (
     scheduler_status,
     scheduler_tick_age_sec,
     scheduler_tick_stale,
+    scheduler_diagnostics,
     start_scheduler,
     stop_scheduler,
 )
@@ -33,16 +35,30 @@ _watchdog_intentionally_stopped: bool = True
 
 # 启动统一任务平台运行时（Worker 调度 + Selector 轮询 + 看门狗）。
 async def start_task_runtime() -> None:
-    await start_scheduler()
-    await start_poller()
-    await start_watchdog()
+    if not getattr(get_settings(), "task_runtime_enabled", True):
+        logger.info("task runtime disabled for this API process")
+        return
+    # 逐个登记已启动组件；后续启动失败或取消时按依赖逆序清理。
+    async with AsyncExitStack() as startup:
+        await start_scheduler()
+        startup.push_async_callback(stop_scheduler)
+        await start_poller()
+        startup.push_async_callback(stop_poller)
+        await start_watchdog()
+        startup.push_async_callback(stop_watchdog)
+        startup.pop_all()
 
 
 # 停止统一任务平台运行时。
 async def stop_task_runtime() -> None:
-    await stop_watchdog()
-    await stop_poller()
-    await stop_scheduler()
+    # 即使关闭某个组件失败，也必须继续释放其余后台协程。
+    try:
+        await stop_watchdog()
+    finally:
+        try:
+            await stop_poller()
+        finally:
+            await stop_scheduler()
 
 
 # 启动看门狗：调度/轮询循环退出或心跳过期时自动拉起。
@@ -102,11 +118,33 @@ async def _watchdog_once() -> None:
 
 # 返回任务平台运行时摘要（槽位 + 循环存活 + 心跳年龄）。
 def runtime_summary() -> dict[str, int | str | float | bool]:
+    if not getattr(get_settings(), "task_runtime_enabled", True):
+        return {
+            "enabled": False,
+            "healthy": True,
+            "scheduler": "disabled",
+            "poller": "disabled",
+            "watchdog": "disabled",
+            "scheduler_running_jobs": 0,
+            "scheduler_tick_age_sec": 0.0,
+            "scheduler_success_age_sec": 0.0,
+            "scheduler_consecutive_failures": 0,
+            "poller_tick_age_sec": 0.0,
+        }
     sched = scheduler_status()
     poll = poller_status()
     dog = watchdog_status()
-    healthy = sched == "running" and poll == "running" and dog == "running"
+    diagnostics = scheduler_diagnostics()
+    healthy = (
+        sched == "running"
+        and poll == "running"
+        and dog == "running"
+        and not scheduler_tick_stale()
+        and not poller_tick_stale()
+        and diagnostics["scheduler_consecutive_failures"] == 0
+    )
     return {
+        "enabled": True,
         "healthy": healthy,
         "scheduler": sched,
         "scheduler_running_jobs": running_count(),
@@ -114,4 +152,5 @@ def runtime_summary() -> dict[str, int | str | float | bool]:
         "poller": poll,
         "poller_tick_age_sec": round(poller_tick_age_sec(), 1),
         "watchdog": dog,
+        **diagnostics,
     }

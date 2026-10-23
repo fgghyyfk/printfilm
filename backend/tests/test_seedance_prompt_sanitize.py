@@ -326,6 +326,32 @@ def test_asset_colon_not_treated_as_speaker_dialogue():
     assert "@asset:9002" in formatted
 
 
+def test_canvas_music_audio_is_bound_as_reference_audio():
+    """画布独立音频要进 content，并在正文写成 @音频，否则 Seedance 不用这段配乐。"""
+    music = {
+        "id": 7881,
+        "type": "audio",
+        "assetType": "audio",
+        "name": "新音频",
+        "cover": "",
+        "url": "https://cdn.example.com/music.mp3",
+        "params": {},
+    }
+    scene = _scene(7877, "广场")
+    script = "【音效】脚步踏土声，音乐参考音频@asset:7881 【台词】无；口型：闭嘴。"
+    items = build_seedance_content_items(script, [scene, music], burn_subtitles=False)
+    audios = [
+        item["audio_url"]["url"]
+        for item in items
+        if item.get("type") == "audio_url" and item.get("role") == "reference_audio"
+    ]
+    assert audios == ["https://cdn.example.com/music.mp3"]
+    prompt = str(items[0]["text"])
+    assert "【强制约束：参考音乐】" in prompt
+    assert "@音频1" in prompt
+    assert "说出全部对白" not in prompt
+
+
 def test_hearsay_not_split_as_freeform_dialogue():
     """「据说/听说」不得被拆成【对白】。"""
     from app.services.drama.build_seedance_generate_body import normalize_canvas_freeform_speech

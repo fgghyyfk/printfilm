@@ -14,7 +14,6 @@ from __future__ import annotations
 from typing import Any
 
 from app.services.media_ref_limits import MAX_REFERENCE_IMAGES
-from app.services.tokenfree_gateway import TOKENFREE_CHANNEL_ID
 
 # 方舟原生异步视频任务前缀
 ARK_VIDEO_TASK_PREFIX = "/contents/generations/tasks"
@@ -27,15 +26,9 @@ VIDEO_FAILED_STATUSES = {"failed", "cancelled", "canceled", "expired", "failure"
 
 
 def uses_tokenfree_video(*, base_url: str = "", channel_id: str = "") -> bool:
-    """判断该基址/渠道是否走 New API 视频路径（而非方舟原生）。"""
-    if (channel_id or "").strip().lower() == TOKENFREE_CHANNEL_ID:
-        return True
-    raw = (base_url or "").strip().lower()
-    if "tokenfree.com" in raw:
-        return True
-    if "volces.com" in raw or "volcengineapi.com" in raw:
-        return False
-    return False
+    """视频只走 TokenFree / New API，不再按主机切方舟原生。"""
+    del base_url, channel_id
+    return True
 
 
 def remap_video_path(path: str, *, base_url: str = "", channel_id: str = "") -> str:
@@ -246,10 +239,9 @@ def prepare_video_create_body(
     base_url: str = "",
     channel_id: str = "",
 ) -> dict[str, Any]:
-    """按渠道决定是否包装 Seedance 请求体。"""
-    if uses_tokenfree_video(base_url=base_url, channel_id=channel_id):
-        return wrap_seedance_payload_for_newapi(body)
-    return body
+    """一律包装成 TokenFree POST /v1/videos 请求体。"""
+    del base_url, channel_id
+    return wrap_seedance_payload_for_newapi(body)
 
 
 def unwrap_video_task_payload(data: dict[str, Any] | None) -> dict[str, Any]:

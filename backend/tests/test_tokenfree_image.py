@@ -26,7 +26,7 @@ from app.services.tokenfree_gateway import TOKENFREE_BASE_URL, TOKENFREE_CHANNEL
 def test_uses_tokenfree_image_on_tokenfree_host():
     assert uses_tokenfree_image(base_url=TOKENFREE_BASE_URL) is True
     assert uses_tokenfree_image(channel_id=TOKENFREE_CHANNEL_ID) is True
-    assert uses_tokenfree_image(base_url="https://ark.cn-beijing.volces.com/api/v3") is False
+    assert uses_tokenfree_image(base_url="https://ark.cn-beijing.volces.com/api/v3") is True
 
 
 def test_build_tokenfree_image_body_matches_live_success():
@@ -78,6 +78,32 @@ def test_build_tokenfree_image_body_separates_style_and_subject_refs():
     assert "画风参考图（只借色调、笔触、光影，禁止抄主体与构图）：https://cdn.example.com/ghibli.png" in text
     assert "构图与主体参考：https://cdn.example.com/character.png" in text
     assert text.index("画风参考图") < text.index("构图与主体参考")
+
+
+def test_gpt_image_25_uses_openai_generations_body():
+    """2.5 必须走 images/generations 字段，并带 resolution 供 1K/2K/4K 计费。"""
+    from app.services.tokenfree_image import (
+        build_tokenfree_openai_image_body,
+        gpt_image_resolution_tier,
+        is_gpt_image_25,
+    )
+
+    assert is_gpt_image_25("gpt-image-2.5") is True
+    assert is_gpt_image_25("gpt-image-2") is False
+    assert gpt_image_resolution_tier("3520x4694") == "4K"
+    assert gpt_image_resolution_tier("1776x2368") == "2K"
+    body = build_tokenfree_openai_image_body(
+        model="gpt-image-2.5",
+        prompt="角色设定",
+        size="1776x2368",
+        aspect_ratio="3:4",
+    )
+    assert body["model"] == "gpt-image-2.5"
+    assert body["size"] == "1776x2368"
+    assert body["resolution"] == "2K"
+    assert body["response_format"] == "url"
+    assert "prompt" in body and "input" not in body
+    assert "3:4" in body["prompt"]
 
 
 def test_tokenfree_working_image_model_passthrough():
@@ -174,9 +200,11 @@ def test_sunburst_model_not_found_is_channel_dead():
         '"message":"分组 default 下模型 gpt-image-2-5-sunburst 无可用的渠道distributor"}}'
     )
     assert is_tokenfree_no_distributor(status_code=503, body=body) is True
-    assert "暂时失败" in tokenfree_image_user_error(
-        model="gpt-image-2-5-sunburst", status_code=503, body=body
+    msg = tokenfree_image_user_error(
+        model="gpt-image-2.5", status_code=503, body=body
     )
+    assert "未开通" in msg
+    assert "gpt-image-2.5" in msg
 
 
 def test_is_tokenfree_no_distributor():
@@ -294,8 +322,8 @@ async def test_post_retries_http200_server_error_then_ok():
 
 
 @pytest.mark.asyncio
-async def test_seedream_once_does_not_fall_back_to_kie(monkeypatch):
-    """TokenFree 协议失败时不再回退 api.kie.ai。"""
+async def test_seedream_once_protocol_error_raises(monkeypatch):
+    """TokenFree 协议失败时直接报错，不改打其它上游。"""
     from app.config import Settings
     from app.services.ark import ArkGateway
 

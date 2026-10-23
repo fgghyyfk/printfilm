@@ -42,8 +42,8 @@ EPISODE_BATCH_CONTENT_SYSTEM = """你是专业的短剧/网剧编剧，负责根
 2. episodeNumber 须与用户指定的集数一一对应，不得遗漏、不得额外生成
 3. 须携带并参考「已有剧集正文」保持剧情、人设与世界观连贯；首批次无已有正文时从第 1 集开篇写起
 4. 批次内各集之间须有因果衔接，末集结尾留追剧钩子
-5. 必须输出对象格式：{"episodes":[{"episodeNumber":数字,"title":"集名","creative":"本集创意","summary":"本集摘要","content":"..."}]}，不要直接输出数组
-6. creative 为本集 80-200 字创意梗概；summary 为本集 120-300 字剧情摘要；content 为正文主字段；不要把正文写得过短
+5. 必须输出对象格式：{"episodes":[{"episodeNumber":数字,"title":"集名","summary":"本集梗概","content":"..."}]}，不要直接输出数组
+6. summary 为本集 120-300 字事件梗概；content 为正文主字段；creative 为可选创作备注，没有额外要求就省略，禁止再生成一份同义梗概
 
 格式要求（每集 content 须严格遵守）：
 1. 按场次组织，场号格式为 ### 场{集数}-{场次}，如第 1 集第 2 场：### 场1-2
@@ -121,19 +121,41 @@ EPISODE_BODY_FROM_BRIEF_SYSTEM = """你是专业的短剧/网剧编剧，根据�
 {"episodes":[{"episodeNumber":数字,"title":"集名","content":"..."}]}"""
 
 
-# 已有正文 → 反推本集创意 + 摘要
-EPISODE_BRIEF_FROM_BODY_SYSTEM = """你是专业的短剧/网剧编剧策划。根据已有拍摄正文，反推本集「原始创意」与「剧情摘要」。
+# 已有正文 → 提取本集梗概，保留用户原有创作备注
+EPISODE_BRIEF_FROM_BODY_SYSTEM = """你是专业的短剧/网剧编剧策划。根据已有拍摄正文，提取本集剧情梗概。
 
 输出要求：
 1. 只输出用户指定的那一集，episodes 数组必须恰好 1 项
-2. creative 为本集 80-200 字原始创意：故事起点、核心冲突、看点；不要写成场戏
+2. 只提取本集正文已有事件，不反推或补写 creative 创作备注
 3. summary 为本集 120-300 字剧情摘要：人物、冲突、转折、结尾钩子；不要写成场戏正文
 4. 可顺带优化 title（4-12 字集名）；不要输出 content/body
 5. 须忠实于正文已有情节，不要另起故事
 6. 语言使用简体中文
 
 必须输出严格 JSON：
-{"episodes":[{"episodeNumber":数字,"title":"集名","creative":"...","summary":"..."}]}"""
+{"episodes":[{"episodeNumber":数字,"title":"集名","summary":"..."}]}"""
+
+
+# 所有正文入口共用：原始故事是事实依据，摘要与画面风格不得改变事件因果。
+_SCRIPT_ADAPTATION_RULES = """
+
+改编忠实度与可拍摄性（优先于通用戏剧化建议）：
+1. 用户提供完整故事或剧本时，保留原文事件顺序、人物关系、关键行为、动机与结局；摘要若与原文事实矛盾，以原文为准，用户明确提出的改编要求除外。只补充实现已有情节必需的可见动作，不擅自增加危机、冲突、旁白或象征性支线。
+2. 单集故事须完整覆盖原文的开端、过程、结果，不能为尾钩省略结局。多集按规划分配情节。儿童/治愈/童话保持自然易懂、温暖的语气，不把好奇提问强改为质疑，不把正常储粮改为饥荒求生。
+3. 每段动作只写人物此刻做什么及可见结果；外观设定由角色资产承载，不反复描写虹膜、毛发比例、五官或材质。服装佩戴位置不得与设定冲突。不得使用“身份跃迁”“时间折叠”等无法直接拍摄的抽象句作动作。
+4. 景别、运镜适量；3D/CGI 是画面风格，不是往剧情里增加发光网络、地下特效的理由。时间/季节变化写明转场，前后动作与道具状态衔接。
+5. creative 是可选创作备注，不要再复述 summary；summary 是本集事件梗概，正文是唯一拍摄依据。二者冲突时以本集梗概的事件安排为准，同时遵守原文事实。
+"""
+EPISODE_BATCH_CONTENT_SYSTEM += _SCRIPT_ADAPTATION_RULES
+EPISODE_BODY_FROM_BRIEF_SYSTEM += _SCRIPT_ADAPTATION_RULES
+EPISODE_OPTIMIZE_SYSTEM += _SCRIPT_ADAPTATION_RULES
+
+
+def _require_generated_episode_bodies(rows: list[dict[str, Any]]) -> None:
+    """拒绝重试后仍不合格的短正文，避免继续自动分镜并显示成功。"""
+    for row in rows:
+        if _content_char_len(str(row.get("body") or "")) < MIN_EPISODE_CONTENT_CHARS:
+            raise ValueError(f"第 {row.get('episodeNumber')} 集正文仍过短，请重试或手动完善剧本")
 
 
 def _format_neighbor_episode_briefs(episodes: list[dict[str, Any]], number: int, limit: int = 3) -> str:
@@ -339,6 +361,7 @@ async def run_episode_body_from_brief(
             row = normalized[0]
             row["creative"] = brief or str(row.get("creative") or "")
             row["summary"] = syn or str(row.get("summary") or "")
+    _require_generated_episode_bodies([row])
     return [row]
 
 
@@ -351,17 +374,22 @@ async def run_episode_full_from_creative(
     project_source: str = "",
     title: str | None = None,
     character_asset_names: list[str] | None = None,
+    summary: str = "",
 ) -> list[dict[str, Any]]:
-    """创意 → 摘要 → 正文（一键整集）。"""
-    summary_rows = await run_episode_summary_from_creative(
-        project_summary,
-        existing,
-        number,
-        creative,
-        project_source=project_source,
-        title=title,
-        character_asset_names=character_asset_names,
-    )
+    """优先按已确认梗概生成整集；无梗概时兼容旧创意→梗概→正文。"""
+    synopsis = (summary or "").strip()
+    if len(synopsis) >= 40:
+        summary_rows = [{"creative": creative, "summary": synopsis, "title": title}]
+    else:
+        summary_rows = await run_episode_summary_from_creative(
+            project_summary,
+            existing,
+            number,
+            creative,
+            project_source=project_source,
+            title=title,
+            character_asset_names=character_asset_names,
+        )
     syn_row = summary_rows[0]
     body_rows = await run_episode_body_from_brief(
         project_summary,
@@ -390,10 +418,10 @@ async def run_episode_brief_from_body(
     title: str | None = None,
     character_asset_names: list[str] | None = None,
 ) -> list[dict[str, Any]]:
-    """已有拍摄正文 → 反推本集 creative + summary（不改 body）。"""
+    """已有拍摄正文 → 提取 summary，保留原有 creative 和 body。"""
     script_body = (body or "").strip()
     if len(script_body) < 80:
-        raise ValueError("本集剧本内容过短，无法反推创意与摘要")
+        raise ValueError("本集剧本内容过短，无法提取梗概")
     title_text = (title or "").strip() or f"第 {number} 集"
     user_parts = [
         *build_single_episode_context(
@@ -406,7 +434,7 @@ async def run_episode_brief_from_body(
         f"当前集号：{number}",
         f"当前集名：{title_text}",
         f"本集拍摄正文：\n{script_body[:12000]}",
-        "请只输出本集 title、creative、summary；不要改写正文。",
+        "请只输出本集 title、summary；不要改写正文或补写创作备注。",
     ]
     data = await drama_chat_json(
         EPISODE_BRIEF_FROM_BODY_SYSTEM,
@@ -415,12 +443,14 @@ async def run_episode_brief_from_body(
     )
     episodes = data.get("episodes") if isinstance(data, dict) else None
     if not isinstance(episodes, list) or not episodes:
-        raise ValueError("模型未返回本集创意与摘要")
+        raise ValueError("模型未返回本集梗概")
     item = episodes[0] if isinstance(episodes[0], dict) else {}
-    out_creative = str(item.get("creative") or "").strip()
+    current = next(
+        (row for row in existing if isinstance(row, dict) and int(row.get("episodeNumber") or 0) == number),
+        {},
+    )
+    out_creative = str(current.get("creative") or "").strip()
     out_summary = str(item.get("summary") or item.get("synopsis") or "").strip()
-    if len(out_creative) < 20:
-        raise ValueError("反推的本集创意过短，请重试")
     if len(out_summary) < 40:
         raise ValueError("反推的本集摘要过短，请重试")
     out_title = str(item.get("title") or "").strip() or title_text
@@ -884,6 +914,7 @@ async def run_episode_script_batch(
 
     if not normalized:
         raise ValueError(f"模型未返回第 {start}–{end} 集正文")
+    _require_generated_episode_bodies(normalized)
     return normalized
 
 
@@ -962,6 +993,7 @@ async def run_episode_script_from_draft(
             normalized = _normalize_batch_episodes(retry_eps, number, number, title_by_num)
     if not normalized:
         raise ValueError(f"模型未返回第 {number} 集正文")
+    _require_generated_episode_bodies(normalized)
     origin_item = next(
         (
             item

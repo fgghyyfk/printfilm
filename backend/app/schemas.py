@@ -489,7 +489,9 @@ class AdminUserListOut(BaseModel):
 class AdminUserPatch(BaseModel):
     plan: str | None = None
     role: str | None = None
-    # Absolute target balance in fen; when set, write ledger delta
+    # 相对调账（分）：正数增加、负数减少；与 balance_fen 互斥，优先本字段
+    balance_delta_fen: int | None = None
+    # 兼容旧客户端：绝对目标余额（分）
     balance_fen: int | None = None
     balance_note: str | None = None
 
@@ -527,6 +529,8 @@ class AdminLedgerOut(BaseModel):
     ref_id: str
     note: str
     created_at: datetime
+    # 手动调账时 ref_type=admin，ref_id 为操作管理员 id
+    operator_email: str | None = None
 
     model_config = {"from_attributes": True}
 

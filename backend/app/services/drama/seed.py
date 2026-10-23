@@ -37,6 +37,7 @@ from app.services.drama.seed_asset_params import (
     build_named_image_params,
     build_scene_params,
 )
+from app.services.drama.summary_character_filter import partition_summary_characters
 
 logger = logging.getLogger(__name__)
 
@@ -467,11 +468,12 @@ async def seed_assets_from_script(
         len(existing),
     )
 
+    summary_by_name, excluded_character_names = partition_summary_characters(summary)
+    excluded_seed_names = {_character_name_for_seed(name) for name in excluded_character_names}
+
     # refresh：先把摘要人物/场景字段同步到已有资产
     if refresh_prompts:
-        for ch in summary.get("characters") or []:
-            if not isinstance(ch, dict):
-                continue
+        for ch in summary_by_name.values():
             name = str(ch.get("name") or "").strip()
             asset = existing_by_key.get(_asset_dedupe_key("character", name))
             if asset:
@@ -482,21 +484,13 @@ async def seed_assets_from_script(
 
     # Extract scene names from episode bodies
     bodies = _episode_bodies(script.episode_content)
-    # summary_by_name 摘要人物小传，优先用于建角色
-    summary_by_name: dict[str, dict[str, Any]] = {}
-    for ch in summary.get("characters") or []:
-        if not isinstance(ch, dict):
-            continue
-        name = str(ch.get("name") or "").strip()
-        if name:
-            summary_by_name[name] = ch
     # cast_names 分集「出场人物」全量名单（补摘要遗漏）
     cast_names = _extract_cast_names_from_bodies(bodies)
     # character_names 摘要 + 出场人物合并保序（跳过音色/声音标注名）
     character_names: list[str] = []
     for name in list(summary_by_name.keys()) + cast_names:
         seed_name = _character_name_for_seed(name)
-        if seed_name and seed_name not in character_names:
+        if seed_name and seed_name not in excluded_seed_names and seed_name not in character_names:
             character_names.append(seed_name)
 
     scene_names: list[str] = []
@@ -653,19 +647,14 @@ def collect_episode_seed_names(
     body: str,
 ) -> tuple[list[str], list[str], dict[str, dict[str, Any]]]:
     """收集本集 seed 用角色名/场景名，及摘要人物小传索引。"""
-    summary_by_name: dict[str, dict[str, Any]] = {}
-    for ch in summary.get("characters") or []:
-        if not isinstance(ch, dict):
-            continue
-        name = str(ch.get("name") or "").strip()
-        if name:
-            summary_by_name[name] = ch
+    summary_by_name, excluded_character_names = partition_summary_characters(summary)
+    excluded_seed_names = {_character_name_for_seed(name) for name in excluded_character_names}
 
     cast_names = _extract_cast_names_from_bodies([body or ""])
     character_names: list[str] = []
     for name in list(summary_by_name.keys()) + cast_names:
         seed_name = _character_name_for_seed(name)
-        if seed_name and seed_name not in character_names:
+        if seed_name and seed_name not in excluded_seed_names and seed_name not in character_names:
             character_names.append(seed_name)
 
     scene_names = _extract_scene_names_from_bodies([body or ""])[:40]

@@ -20,7 +20,7 @@ const OPEN_STORAGE_KEY = 'drama-gen-queue-fab-open'
 const POS_STORAGE_KEY = 'drama-gen-queue-fab-pos'
 
 const STATUS_LABEL: Record<string, string> = {
-  queued: '排队中',
+  queued: '待处理',
   running: '生成中',
   done: '已完成',
   failed: '失败',
@@ -75,19 +75,11 @@ export function DramaGenQueuePanel() {
   )
   const failed = useMemo(() => queue.filter((j) => j.status === 'failed'), [queue])
 
-  // 列表按入队时间倒序（最新在上）；排队序号仍按先入先出
+  // 列表按入队时间倒序；本地列表不代表服务端资源调度顺序。
   const sortedQueue = useMemo(
     () => [...queue].sort((a, b) => b.createdAt - a.createdAt),
     [queue],
   )
-  const queuedOnly = useMemo(
-    () =>
-      queue
-        .filter((j) => j.status === 'queued' || j.status === 'running')
-        .sort((a, b) => a.createdAt - b.createdAt),
-    [queue],
-  )
-
   useEffect(() => {
     try {
       localStorage.setItem(OPEN_STORAGE_KEY, open ? '1' : '0')
@@ -205,7 +197,6 @@ export function DramaGenQueuePanel() {
 
               <ul className="drama-gen-fab-list">
                 {sortedQueue.map((job) => {
-                  const queueIndex = queuedOnly.findIndex((j) => j.id === job.id)
                   const errView = job.status === 'failed' ? formatDramaGenError(job.error) : null
                   return (
                     <li key={job.id}>
@@ -227,11 +218,7 @@ export function DramaGenQueuePanel() {
                             ) : null}
                           </div>
                           <span className="drama-gen-fab-status">
-                            {job.status === 'queued' && queueIndex >= 0
-                              ? queuedOnly.length <= 1 || queueIndex === 0
-                                ? '排队中'
-                                : `排队 #${queueIndex + 1}`
-                              : STATUS_LABEL[job.status]}
+                            {STATUS_LABEL[job.status]}
                           </span>
                         </div>
                         {errView ? (

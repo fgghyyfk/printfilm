@@ -43,7 +43,7 @@ pytest tests/test_x.py::test_name       # 单测
 
 ### 统一任务平台（核心，易误判）
 
-代码里没有独立 worker 进程：Celery 仅是遗留依赖（`USE_CELERY` 代码已不读取，`workers/` 目录不存在）。实际运行时是 **随 FastAPI 启动的进程内三件套**（`app/services/tasks/`）：
+代码里没有独立 worker 进程，也不依赖 Celery（`USE_CELERY` 等旧配置已移除，`workers/` 目录不存在）。实际运行时是 **随 FastAPI 启动的进程内三件套**（`app/services/tasks/`）：
 
 - `scheduler.py`：定时租约到期任务（pending→leased→running），受全站槽位 `TASK_RUNTIME_MAX_CONCURRENCY` 与单用户槽位 `TASK_USER_MAX_CONCURRENCY` 限制；含孤儿任务回收
 - `executor.py`：执行 handler
@@ -64,7 +64,7 @@ pytest tests/test_x.py::test_name       # 单测
 
 开源版**只允许 TokenFree New API 一个上游**（OpenAI 兼容 `https://www.tokenfree.com/v1`，文本与图/视频共用），由 `services/tokenfree_gateway.py` 强制（渠道 Base URL/协议不可改）。Key 与模型在**管理后台「系统设置 → 模型」**配置，存 `system_model_channels` / `app_settings` 表；启动/保存后经 `model_settings.py` 生成 overlay，`config.get_settings()`（lru_cache）以 `model_copy(update=overlay)` 叠加到 env 配置之上——所以运行时配置以 DB overlay 优先，`.env` 仅首次导入。逻辑模型→渠道绑定（priority/weight/failover）解析在 `logical_model_router.py`。无 Key 联调设 `ARK_MOCK=true` 走本地 mock 素材。
 
-文本 `llm_client.py`；图/视频走 `ark.py` + `tokenfree_image.py` / `tokenfree_video.py`；配音豆包 openspeech（`VOLC_TTS_*`，与方舟 Key 不同），未配则回退 edge-tts。
+文本 `llm_client.py`；图/视频走 `ark.py` + `tokenfree_image.py` / `tokenfree_video.py`；配音走 TokenFree TTS，失败再回退 edge-tts。
 
 ### 计费：每个 TaskRun 走「预扣 → 用量行 → 结算」
 

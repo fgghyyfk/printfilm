@@ -200,3 +200,98 @@ def test_normalize_llm_splits_when_durations_exceed_hard_max():
         total = sum(int(m) for m in re.findall(r"@duration:(\d+)", draft["content"]))
         assert total <= 15
         assert draft["duration_sec"] == total
+
+
+def test_llm_short_duration_cannot_squeeze_long_dialogue():
+    import re
+
+    # 99 spoken characters need at least 33 seconds at the documented slow pace.
+    speech = "藏" * 99
+    drafts = normalize_llm_fragment_items(
+        [{"duration_sec": 4, "lines": [f"朵朵：{speech}"]}],
+        [],
+        allow_opening=False,
+    )
+    spoken_parts = []
+    durations = []
+    for draft in drafts:
+        assert draft["duration_sec"] <= 15
+        durations.extend(int(value) for value in re.findall(r"@duration:(\d+)", draft["content"]))
+        spoken_parts.extend(re.findall(r"朵朵：([^\n]+)", draft["content"]))
+    assert "".join(spoken_parts) == speech
+    assert sum(durations) >= 33
+    assert all(3 <= duration <= 12 for duration in durations)
+    assert len(drafts) >= 3
+
+
+def test_short_llm_duration_keeps_dialogue_and_visual_time():
+    drafts = normalize_llm_fragment_items(
+        [{"duration_sec": 4, "lines": ["近景：朵朵捧起一颗松果。", "朵朵：现在藏好松果，冬天就不会饿肚子了。"]}],
+        [],
+        allow_opening=False,
+    )
+    assert sum(draft["duration_sec"] for draft in drafts) >= 8
+    joined = "\n".join(draft["content"] for draft in drafts)
+    assert "朵朵捧起一颗松果" in joined
+    assert "现在藏好松果，冬天就不会饿肚子了。" in joined
+
+
+def test_long_narration_preserves_clauses_when_split_into_timed_beats():
+    import re
+
+    speech = "秋天到了，朵朵每天认真收集松果，把松果藏在不同的树下。冬天来了，它终于明白提前准备的重要，也愿意把找到的松果分给森林里的朋友。"
+    drafts = normalize_llm_fragment_items(
+        [{"duration_sec": 5, "lines": [f"旁白（VO）：{speech}"]}],
+        [],
+        allow_opening=False,
+    )
+    pieces = [
+        piece
+        for draft in drafts
+        for piece in re.findall(r"旁白（VO）：([^\n]+)", draft["content"])
+    ]
+    assert "".join(pieces) == speech
+    assert len(pieces) >= 2
+    assert sum(draft["duration_sec"] for draft in drafts) >= 19
+
+
+def test_asset_tokens_are_not_counted_as_spoken_markup():
+    assets = [SimpleNamespace(id=123456, type="character", name="朵朵", params={})]
+    drafts = normalize_llm_fragment_items(
+        [{"duration_sec": 4, "character_names": ["朵朵"], "lines": ["朵朵：朵朵最喜欢松果了。"]}],
+        assets,
+        allow_opening=False,
+    )
+    assert len(drafts) == 1
+    assert drafts[0]["duration_sec"] == 3
+    assert "@asset:123456" in drafts[0]["content"]
+
+
+def test_visual_shot_label_is_not_timed_as_a_speaking_character():
+    drafts = normalize_llm_fragment_items(
+        [{"duration_sec": 4, "lines": ["空镜：森林中松树层层叠叠，阳光穿过针叶照亮泥土，风吹叶动。"]}],
+        [],
+        allow_opening=False,
+    )
+    assert len(drafts) == 1
+    assert drafts[0]["duration_sec"] <= 4
+    assert "【画面·无配音仅环境音】空镜：" in drafts[0]["content"]
+
+
+def test_locked_fragment_summary_keeps_tagged_action_and_dialogue():
+    """续拆要知道已拍情节，不能把所有带【前缀的内容过滤掉。"""
+    from app.services.drama.fragment_dialogue import summarize_locked_fragment
+
+    content = (
+        "【BGM：钢琴】\n【字幕：关闭】\n【片头·集号叠字】第1集\n"
+        "@duration:5\n【画面·无配音仅环境音】近景：@asset:7埋好种子。\n"
+        "@duration:6\n【对白·慢速清晰】@asset:7：冬天就有粮食吃了。"
+    )
+    assets = [SimpleNamespace(id=7, name="朵朵")]
+    summary = summarize_locked_fragment(content, assets)
+    assert "朵朵埋好种子" in summary
+    assert "朵朵：冬天就有粮食吃了" in summary
+    assert "@asset" not in summary
+    assert "@duration" not in summary
+    assert "BGM" not in summary
+    assert "第1集" not in summary

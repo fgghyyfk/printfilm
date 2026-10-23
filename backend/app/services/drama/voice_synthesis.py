@@ -1,4 +1,4 @@
-"""漫剧音色资产：音色设计或 TTS 合成参考音频（供 Seedance reference_audio 使用）。"""
+"""漫剧音色资产：用 TokenFree / edge-tts 合成参考音频（供 Seedance reference_audio 使用）。"""
 from __future__ import annotations
 import logging
 import re
@@ -10,13 +10,6 @@ from app.models_drama import DramaAsset, DramaProject
 from app.services.ark import get_ark
 from app.services.logical_model_router import resolve_upstream_model
 from app.services.billing import record_line
-from app.services.drama.voice_design import (
-    design_voice,
-    parse_speaker_pool,
-    persist_demo_audio,
-    resolve_speaker_slot,
-    voice_design_enabled,
-)
 from app.services.drama.voice_reference_audio import finalize_voice_reference_url
 from app.services.voices import infer_drama_speaker_from_prompt
 logger = logging.getLogger(__name__)
@@ -63,67 +56,6 @@ def build_voice_sample_text(
     else:
         line = f"{name}：请听我的语气与声线。"
     return line[:180]
-# 解析可用于 voice_design image_prompt 的公网角色图 URL
-def resolve_character_image_url(character: DramaAsset | None) -> str | None:
-    if not character:
-        return None
-    from app.services import storage as storage_svc
-    for field in ("cover", "url"):
-        raw = str(getattr(character, field) or "").strip()
-        if not raw:
-            continue
-        if raw.startswith("https://"):
-            return raw
-        published = storage_svc.republish_url(raw, sync=True)
-        if published and str(published).startswith("https://"):
-            return str(published)
-    return None
-async def _synthesize_via_voice_design(
-    *,
-    settings,
-    project: DramaProject,
-    asset: DramaAsset,
-    prompt: str,
-    text: str,
-    display_name: str,
-    image_url: str | None,
-) -> tuple[str, str]:
-    """调用音色设计 API，返回 (audio_url, designed_speaker_id)。"""
-    pool = parse_speaker_pool(settings.volc_tts_voice_design_speaker_ids)
-    speaker_slot = resolve_speaker_slot(
-        asset.id,
-        asset.params if isinstance(asset.params, dict) else {},
-        pool,
-    )
-    logger.info(
-        "音色设计 project_id=%s asset_id=%s speaker=%s name=%s image=%s",
-        project.id,
-        asset.id,
-        speaker_slot,
-        display_name,
-        bool(image_url),
-    )
-    result = await design_voice(
-        speaker_id=speaker_slot,
-        text_prompt=prompt,
-        sample_text=text,
-        image_url=image_url,
-        settings=settings,
-    )
-    audio_url = await persist_demo_audio(
-        result.demo_audio_url,
-        project_id=project.id,
-        asset_id=asset.id,
-    )
-    logger.info(
-        "音色设计完成 project_id=%s asset_id=%s speaker=%s logid=%s url=%s",
-        project.id,
-        asset.id,
-        result.speaker_id,
-        result.log_id,
-        audio_url[:80],
-    )
-    return audio_url, result.speaker_id
 async def synthesize_voice_asset(
     db: AsyncSession,
     user: User,
@@ -145,73 +77,43 @@ async def synthesize_voice_asset(
     display_name = normalize_character_name(character_name or asset.name)
     # Seedance reference_audio 须 ≥1.8s（落盘目标 ≥2s）；默认用较长试听句
     text = (sample_text or "").strip() or build_voice_sample_text(prompt, display_name, short=False)
-    image_url = resolve_character_image_url(character_asset)
-    audio_url: str | None = None
     resolved_speaker = (speaker or "").strip()
-    voice_design_meta: dict[str, Any] = {}
-    if voice_design_enabled(settings) and not settings.ark_mock:
-        try:
-            audio_url, designed_speaker = await _synthesize_via_voice_design(
-                settings=settings,
-                project=project,
-                asset=asset,
-                prompt=prompt,
-                text=text,
-                display_name=display_name,
-                image_url=image_url,
-            )
-            resolved_speaker = designed_speaker
-            voice_design_meta = {"voiceDesign": True, "voiceDesignStatus": "success"}
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "音色设计失败，回退 preset TTS project_id=%s asset_id=%s err=%s",
-                project.id,
-                asset.id,
-                exc,
-            )
-            voice_design_meta = {
-                "voiceDesign": True,
-                "voiceDesignStatus": "fallback",
-                "voiceDesignError": str(exc)[:500],
-            }
-    if not audio_url:
-        if not resolved_speaker or not resolved_speaker.startswith("S_"):
-            resolved_speaker = infer_drama_speaker_from_prompt(
-                prompt,
-                character_name=display_name,
-                asset_id=asset.id,
-            )
-        logger.info(
-            "合成音色资产(TTS) project_id=%s asset_id=%s speaker=%s name=%s",
-            project.id,
-            asset.id,
-            resolved_speaker,
-            display_name,
+    if not resolved_speaker or resolved_speaker.startswith("S_"):
+        resolved_speaker = infer_drama_speaker_from_prompt(
+            prompt,
+            character_name=display_name,
+            asset_id=asset.id,
         )
-        audio_url = await ark.tts(
-            text,
-            resolved_speaker,
-            project_id=project.id,
-            shot_no=asset.id,
-            emotion_hint=prompt,
-        )
+    logger.info(
+        "合成音色资产(TTS) project_id=%s asset_id=%s speaker=%s name=%s",
+        project.id,
+        asset.id,
+        resolved_speaker,
+        display_name,
+    )
+    audio_url = await ark.tts(
+        text,
+        resolved_speaker,
+        project_id=project.id,
+        shot_no=asset.id,
+    )
     audio_url = finalize_voice_reference_url(
         audio_url or "",
         project_id=project.id,
         asset_id=asset.id,
     )
     asset.url = audio_url
-    asset.cover = asset.cover or audio_url
+    # 不把 mp3 写入 cover：避免 Seedance 把音色资产当成 reference_image
+    cover = (asset.cover or "").split("?", 1)[0].strip().lower()
+    if any(cover.endswith(ext) for ext in (".mp3", ".wav", ".m4a", ".aac", ".ogg", ".webm")):
+        asset.cover = ""
     params: dict[str, Any] = dict(asset.params or {})
     params["voicePrompt"] = prompt
     params["sampleText"] = text
     params["speaker"] = resolved_speaker
-    if resolved_speaker.startswith("S_"):
-        params["designedSpeakerId"] = resolved_speaker
     params["characterName"] = display_name
     if character_asset:
         params["sourceCharacterAssetId"] = character_asset.id
-    params.update(voice_design_meta)
     gen = params.get("generation") if isinstance(params.get("generation"), dict) else {}
     params["generation"] = {**gen, "status": "done", "url": audio_url}
     asset.params = params

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Awaitable, Callable
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,6 +29,34 @@ from app.services.drama.image_styles import (
 )
 
 logger = logging.getLogger(__name__)
+
+# 画布成片下载中断后的自动重试上限（沿原上游任务，不重新生成）
+MAX_ASSET_VIDEO_DOWNLOAD_ATTEMPTS = 8
+DOWNLOAD_RETRY_MESSAGE = "成片已生成，正在重试下载"
+
+
+def asset_video_download_retry_payload(
+    payload: dict | None,
+    *,
+    provider_task_id: str,
+    max_attempts: int = MAX_ASSET_VIDEO_DOWNLOAD_ATTEMPTS,
+) -> dict | None:
+    """记下上游任务号并累加重试次数。超过上限返回 None，调用方应失败且不要重新生成。"""
+    tid = (provider_task_id or "").strip()
+    if not tid:
+        return None
+    updated = dict(payload or {})
+    attempts = int(updated.get("download_attempts") or 0) + 1
+    if attempts > max_attempts:
+        return None
+    updated["provider_task_id"] = tid
+    updated["download_attempts"] = attempts
+    return updated
+
+
+def asset_video_download_retry_delay_sec(attempts: int) -> int:
+    """下载重试退避秒数，避免立刻打满同一条断开的连接。"""
+    return min(180, max(15, 20 * max(1, int(attempts))))
 
 
 # 合并正文 @asset:id 与显式传入的参考资产 ID（去重、排除自身）
@@ -61,6 +91,43 @@ async def load_reference_assets(
     return assets
 
 
+async def _download_existing_asset_video(
+    provider_task_id: str,
+    *,
+    project_id: int,
+    shot_no: int,
+):
+    """按已有上游任务号拉成片。未就绪或下载中断时抛出可重试错误，不新建任务。"""
+    from app.services.storage import RetryableMediaDownloadError, is_retryable_download_error
+
+    ark = get_ark()
+    result = await ark.fetch_task_once(provider_task_id)
+    result.provider_task_id = provider_task_id
+    if result.status in {"", "running", "queued"}:
+        raise RetryableMediaDownloadError(
+            "上游成片尚未就绪",
+            provider_task_id=provider_task_id,
+            counts_attempt=False,
+        )
+    if result.status != "succeeded" or not result.url:
+        raise RuntimeError(result.error or "上游生成失败")
+    try:
+        local_video, local_last_frame = await ark.save_video_assets_from_result(
+            result,
+            project_id=project_id,
+            shot_no=shot_no,
+        )
+    except Exception as exc:  # noqa: BLE001
+        if isinstance(exc, RetryableMediaDownloadError):
+            if not exc.provider_task_id:
+                exc.provider_task_id = provider_task_id
+            raise
+        if is_retryable_download_error(exc):
+            raise RetryableMediaDownloadError(str(exc), provider_task_id=provider_task_id) from exc
+        raise
+    return local_video, local_last_frame, result
+
+
 async def generate_asset_video(
     db: AsyncSession,
     user: User,
@@ -74,6 +141,8 @@ async def generate_asset_video(
     duration_sec: int | None = None,
     image_style_id: str | None = None,
     reference_asset_ids: list[int] | None = None,
+    provider_task_id: str | None = None,
+    on_provider_task: Callable[[str], Awaitable[None]] | None = None,
 ) -> DramaAsset:
     """为画布 video 资产生成 Seedance 视频（不是 Seedream 静帧）。"""
     settings = get_settings()
@@ -114,6 +183,53 @@ async def generate_asset_video(
     )
 
     t0 = time.time()
+    existing_task_id = (provider_task_id or "").strip()
+    if existing_task_id:
+        logger.info(
+            "画布视频沿原任务重试下载 project_id=%s asset_id=%s provider_task_id=%s",
+            project.id,
+            asset.id,
+            existing_task_id,
+        )
+        local_video, local_last_frame, task_result = await _download_existing_asset_video(
+            existing_task_id,
+            project_id=project.id,
+            shot_no=asset.id,
+        )
+        video_url = await _publish_asset_video(
+            project,
+            asset,
+            content,
+            local_video,
+            local_last_frame,
+            model_id=model_id,
+            ratio=ratio,
+            res=res,
+            duration=duration,
+            style_id=style_id,
+        )
+        await _bill_asset_video(
+            db,
+            user,
+            project,
+            model_id=model_id,
+            duration=duration,
+            res=res,
+            task_result=task_result,
+            settings_model=str(settings.model_video or ""),
+        )
+        await db.commit()
+        await db.refresh(asset)
+        logger.info(
+            "画布资产生视频完成 project_id=%s asset_id=%s secs=%.1f url=%s refs=%s",
+            project.id,
+            asset.id,
+            time.time() - t0,
+            (video_url or "")[:80],
+            [item.id for item in ref_assets],
+        )
+        return asset
+
     body = build_seedance_generate_body(
         {
             "content": content,
@@ -133,8 +249,57 @@ async def generate_asset_video(
         body,
         project_id=project.id,
         shot_no=asset.id,
+        on_task_created=on_provider_task,
     )
+    video_url = await _publish_asset_video(
+        project,
+        asset,
+        content,
+        local_video,
+        local_last_frame,
+        model_id=model_id,
+        ratio=ratio,
+        res=res,
+        duration=duration,
+        style_id=style_id,
+    )
+    await _bill_asset_video(
+        db,
+        user,
+        project,
+        model_id=model_id,
+        duration=duration,
+        res=res,
+        task_result=task_result,
+        settings_model=str(settings.model_video or ""),
+    )
+    await db.commit()
+    await db.refresh(asset)
+    logger.info(
+        "画布资产生视频完成 project_id=%s asset_id=%s secs=%.1f url=%s refs=%s",
+        project.id,
+        asset.id,
+        time.time() - t0,
+        (video_url or "")[:80],
+        [item.id for item in ref_assets],
+    )
+    return asset
 
+
+async def _publish_asset_video(
+    project: DramaProject,
+    asset: DramaAsset,
+    content: str,
+    local_video: str,
+    local_last_frame: str | None,
+    *,
+    model_id: str | None,
+    ratio: str,
+    res: str,
+    duration: int,
+    style_id: str | None,
+) -> str:
+    """落成片与封面，并写回资产参数。"""
     from app.services import storage as storage_svc
 
     video_url = storage_svc.republish_url(local_video, sync=True) or local_video
@@ -168,18 +333,28 @@ async def generate_asset_video(
         "image_style_id": style_id,
     }
     asset.params = params
+    return video_url
 
-    # 计费 model 必须用本次实际提交的 model_id，禁止落成站点默认 seedance-2.0
+
+async def _bill_asset_video(
+    db: AsyncSession,
+    user: User,
+    project: DramaProject,
+    *,
+    model_id: str | None,
+    duration: int,
+    res: str,
+    task_result: Any,
+    settings_model: str,
+) -> None:
+    """按本次实际提交的视频模型记一笔用量。"""
     from app.services.tokenfree_pricing import canonicalize_channel_model_id
 
-    # 有入参只用入参；空入参才与上游 resolve 一致走站点默认
     raw_billing = (model_id or "").strip()
     if raw_billing:
         billing_model = canonicalize_channel_model_id(raw_billing) or raw_billing
     else:
-        billing_model = canonicalize_channel_model_id(
-            str(settings.model_video or "").strip()
-        ) or "seedance-2.5"
+        billing_model = canonicalize_channel_model_id(settings_model.strip()) or "seedance-2.5"
     await record_seedance_video_usage(
         db,
         user_id=user.id,
@@ -192,14 +367,3 @@ async def generate_asset_video(
         provider_task_id=getattr(task_result, "provider_task_id", None),
         drama_project_id=project.id,
     )
-    await db.commit()
-    await db.refresh(asset)
-    logger.info(
-        "画布资产生视频完成 project_id=%s asset_id=%s secs=%.1f url=%s refs=%s",
-        project.id,
-        asset.id,
-        time.time() - t0,
-        (video_url or "")[:80],
-        [item.id for item in ref_assets],
-    )
-    return asset

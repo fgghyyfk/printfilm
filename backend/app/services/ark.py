@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import hashlib
 import json
 import logging
@@ -16,6 +15,8 @@ from typing import Any, NoReturn
 from urllib.parse import urlparse
 
 import httpx
+
+from app.services.tasks.upstream import observed_request
 
 from app.config import Settings, get_settings
 from app.services.billing.pricing import parse_upstream_cost_fen, parse_usage_dict
@@ -36,7 +37,6 @@ from app.services.tokenfree_audio import (
     tokenfree_tts_chat_model,
     tokenfree_tts_uses_chat_audio,
     tokenfree_tts_uses_omni_stream,
-    uses_tokenfree_audio,
     wrap_pcm_s16le_wav,
 )
 from app.services.tokenfree_image import (
@@ -49,7 +49,6 @@ from app.services.tokenfree_image import (
     raise_tokenfree_image_if_failed,
     tokenfree_image_slot,
     tokenfree_image_user_error,
-    uses_tokenfree_image,
 )
 from app.services.voices import edge_tts_voice_for_speaker
 from app.services.tokenfree_video import (
@@ -458,6 +457,18 @@ def _format_seedance_create_error(
         return "分镜文案未通过内容审核，请修改敏感表述后重试"
     if "resource download failed" in text and "audio" in text.lower():
         return "参考音频无法下载，请检查角色音色绑定后重试"
+    # 参考图槽位收到非图片（常见：音色 cover 写成 mp3）
+    if re.search(r"invalid image format", text, re.I) or (
+        re.search(r"File type not supported", text, re.I)
+        and re.search(r"content\[\d+\]", text, re.I)
+    ):
+        idx, label = _seedance_content_slot_label(text, content_labels)
+        who = label or (f"提交内容第 {idx + 1} 项 / content[{idx}]" if idx >= 0 else "某张参考图")
+        return (
+            f"参考图格式无效：{who}。"
+            "上游按图片校验失败（常见原因：音频文件被误当作参考图，或链接不是 PNG/JPG/WEBP）。"
+            "请检查本镜引用的角色/场景封面，确认音色资产未占用参考图槽位后重试。"
+        )
     # Seedance r2v：reference_audio 时长须 ≥ 1.8 秒
     if re.search(r"audio duration.*(?:1\.8|greater than or equal)", text, re.I) or (
         "audio duration" in text.lower() and "content[" in text.lower()
@@ -590,31 +601,51 @@ class ArkGateway:
         return result
 
     async def download_result_media(self, url: str, dest: Path) -> None:
-        """下载生成媒体；TokenFree content 优先跟 302 直链，失败自动重试。"""
-        headers: dict[str, str] | None = None
-        timeout: float | httpx.Timeout = 300.0
-        download_url = (url or "").strip()
-        if is_tokenfree_content_url(download_url) or is_tokenfree_image_url(download_url):
-            api_key = self._ark_api_key()
-            headers = {"Authorization": f"Bearer {api_key}"}
-            timeout = httpx.Timeout(connect=30.0, read=600.0, write=60.0, pool=30.0)
-            if is_tokenfree_content_url(download_url):
-                resolved = await resolve_tokenfree_media_download_url(download_url, api_key=api_key)
-                if resolved and resolved != download_url:
-                    logger.info(
-                        "TokenFree content 改走直链 %s -> %s",
-                        download_url[:96],
-                        resolved[:140],
-                    )
-                    download_url = resolved
-                    headers = None  # TOS/CDN 签名直链无需 Bearer
-        await storage.download_to(
-            download_url,
-            dest,
-            headers=headers,
-            timeout=timeout,
-            retries=4,
-        )
+        """下载生成媒体；每次重试都重新解析 TokenFree 直链，避免沿用已断开的连接。"""
+        from app.services.storage import is_retryable_download_error
+
+        source = (url or "").strip()
+        last_exc: BaseException | None = None
+        for attempt in range(4):
+            headers: dict[str, str] | None = None
+            timeout: float | httpx.Timeout = 300.0
+            download_url = source
+            if is_tokenfree_content_url(download_url) or is_tokenfree_image_url(download_url):
+                api_key = self._ark_api_key()
+                headers = {"Authorization": f"Bearer {api_key}"}
+                timeout = httpx.Timeout(connect=30.0, read=600.0, write=60.0, pool=30.0)
+                if is_tokenfree_content_url(download_url):
+                    resolved = await resolve_tokenfree_media_download_url(download_url, api_key=api_key)
+                    if resolved and resolved != download_url:
+                        logger.info(
+                            "TokenFree content 改走直链 %s -> %s",
+                            download_url[:96],
+                            resolved[:140],
+                        )
+                        download_url = resolved
+                        headers = None  # TOS/CDN 签名直链无需 Bearer
+            try:
+                await storage.download_to(
+                    download_url,
+                    dest,
+                    headers=headers,
+                    timeout=timeout,
+                    retries=1,
+                )
+                return
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
+                if attempt >= 3 or not is_retryable_download_error(exc):
+                    raise
+                logger.warning(
+                    "成片下载中断，重新解析直链后重试 %s/4 url=%s err=%s",
+                    attempt + 1,
+                    download_url[:120],
+                    exc,
+                )
+                await asyncio.sleep(1.5 + attempt * 2.0)
+        if last_exc is not None:
+            raise last_exc
 
     async def chat_storyboard(
         self,
@@ -969,27 +1000,43 @@ class ArkGateway:
         from app.services.style_lock import split_seedream_subject_style_refs
 
         subject_refs, style_refs = split_seedream_subject_style_refs(ref_urls, style_ref_urls)
-        refs = [*subject_refs, *style_refs]
-        channel_id = (route.channel_id if route else "") or ""
-        base = (route.base_url if route and route.base_url else self.settings.ark_base_url) or ""
-        on_tokenfree = uses_tokenfree_image(base_url=base, channel_id=channel_id)
         # TokenFree 按逻辑路由解析出的上游模型原样发送，不硬改模型名
         chosen = (upstream_model or "").strip()
-        if on_tokenfree and "gpt-image" in chosen.lower():
-            # Kie / gpt-image 实际按 1K·2K 档；画幅靠 aspect_ratio 自然语言约束。
-            # 无 aspect_ratio 时保留 WxH，避免把唯一画幅信号压成「清晰度2K」。
+        if "gpt-image" in chosen.lower():
+            from app.services.tokenfree_image import gpt_image_caps_at_2k
+
+            # GPT Image 2 只吃 1K/2K；2.5 保留 4K。画幅靠 aspect_ratio 自然语言约束。
             raw_size = str(resolved_size or "").strip()
             upper = raw_size.upper()
-            if upper in {"3K", "4K"}:
-                resolved_size = "2K"
-            elif "x" in raw_size.lower() and str(aspect_ratio or "").strip():
-                try:
-                    w_s, _, h_s = raw_size.lower().partition("x")
-                    area = int(w_s) * int(h_s)
-                    resolved_size = "2K" if area >= 1500 * 1500 else "1K"
-                except ValueError:
+            if gpt_image_caps_at_2k(chosen):
+                if upper in {"3K", "4K"}:
                     resolved_size = "2K"
-        if on_tokenfree:
+                elif "x" in raw_size.lower() and str(aspect_ratio or "").strip():
+                    try:
+                        w_s, _, h_s = raw_size.lower().partition("x")
+                        area = int(w_s) * int(h_s)
+                        resolved_size = "2K" if area >= 1500 * 1500 else "1K"
+                    except ValueError:
+                        resolved_size = "2K"
+            elif upper in {"3K", "4K"} or "x" in raw_size.lower():
+                resolved_size = raw_size
+        from app.services.tokenfree_image import (
+            build_tokenfree_openai_image_body,
+            is_gpt_image_25,
+        )
+
+        # 2.5 的渠道是 image-generation，走 /responses 会报 default 分组无 distributor
+        if is_gpt_image_25(chosen):
+            path = "/images/generations"
+            body = build_tokenfree_openai_image_body(
+                model=chosen,
+                prompt=full_prompt,
+                size=str(resolved_size or ""),
+                aspect_ratio=str(aspect_ratio or ""),
+                ref_urls=subject_refs,
+                style_ref_urls=style_refs,
+            )
+        else:
             path = "/responses"
             body = build_tokenfree_image_body(
                 model=chosen,
@@ -999,33 +1046,19 @@ class ArkGateway:
                 ref_urls=subject_refs,
                 style_ref_urls=style_refs,
             )
-        else:
-            path = "/images/generations"
-            body = {
-                "model": upstream_model,
-                "prompt": full_prompt,
-                "size": resolved_size,
-                "response_format": "url",
-                "watermark": False,
-            }
-            if refs:
-                body["image"] = refs if len(refs) > 1 else refs[0]
 
         try:
             async with httpx.AsyncClient(timeout=_upstream_timeout(IMAGE_GEN_READ_SEC)) as client:
                 async def _post():
                     # 单次上游 POST，限流重试由外层包住
-                    return await client.post(
+                    return await observed_request(client, "POST",
                         self._route_url(path, route),
                         headers=self._route_headers(route),
                         json=body,
                     )
 
-                if on_tokenfree:
-                    async with tokenfree_image_slot():
-                        resp = await post_until_not_rate_limited(_post)
-                else:
-                    resp = await _post()
+                async with tokenfree_image_slot():
+                    resp = await post_until_not_rate_limited(_post)
                 # 限流/4xx 走 HTTP 文案；200 + status=failed 留给 raise_tokenfree_image_if_failed
                 if resp.status_code >= 400 or is_tokenfree_rate_limit(
                     status_code=resp.status_code, body=resp.text
@@ -1034,14 +1067,13 @@ class ArkGateway:
                         resp.status_code,
                         resp.text,
                         model=chosen,
-                        tokenfree=on_tokenfree,
+                        tokenfree=True,
                     )
                 data = resp.json()
         except httpx.TimeoutException as exc:
             reraise_upstream_timeout(exc, kind="生图", read_sec=IMAGE_GEN_READ_SEC)
 
-        if on_tokenfree:
-            raise_tokenfree_image_if_failed(data)
+        raise_tokenfree_image_if_failed(data)
 
         usage_parsed = parse_usage_dict(data)
         raw_usage = data.get("usage") if isinstance(data.get("usage"), dict) else None
@@ -1054,7 +1086,7 @@ class ArkGateway:
         if upstream_cost_fen is None and raw_usage:
             upstream_cost_fen = parse_upstream_cost_fen({"usage": raw_usage})
 
-        remote = extract_tokenfree_image_url(data) if on_tokenfree else self._extract_image_url(data)
+        remote = extract_tokenfree_image_url(data)
         if not remote:
             remote = self._extract_image_url(data) or extract_tokenfree_image_url(data)
         if not remote:
@@ -1331,7 +1363,7 @@ class ArkGateway:
 
         try:
             async with httpx.AsyncClient(timeout=_upstream_timeout(VIDEO_CREATE_READ_SEC)) as client:
-                resp = await client.post(
+                resp = await observed_request(client, "POST",
                     self._route_url("/contents/generations/tasks", route),
                     headers=self._route_headers(route),
                     json=self._video_json(body, route),
@@ -1339,7 +1371,7 @@ class ArkGateway:
                 if resp.status_code >= 400 and prompt_as_json:
                     # Fallback: plain text prompt
                     body["content"][0]["text"] = plain
-                    resp = await client.post(
+                    resp = await observed_request(client, "POST",
                         self._route_url("/contents/generations/tasks", route),
                         headers=self._route_headers(route),
                         json=self._video_json(body, route),
@@ -1354,7 +1386,7 @@ class ArkGateway:
                         if cg_content is not None:
                             logger.warning("Seedance i2v text policy hit; retrying with CG style")
                             body = {**body, "content": cg_content}
-                            resp = await client.post(
+                            resp = await observed_request(client, "POST",
                                 self._route_url("/contents/generations/tasks", route),
                                 headers=self._route_headers(route),
                                 json=self._video_json(body, route),
@@ -1372,7 +1404,7 @@ class ArkGateway:
                         and "ratio" in body
                     ):
                         body.pop("ratio", None)
-                        resp = await client.post(
+                        resp = await observed_request(client, "POST",
                             self._route_url("/contents/generations/tasks", route),
                             headers=self._route_headers(route),
                             json=self._video_json(body, route),
@@ -1381,7 +1413,7 @@ class ArkGateway:
                     # 无目标画幅时的兼容回退；有竖屏目标时禁止 adaptive，避免再次出横屏
                     body["content"][1].pop("role", None)
                     body["ratio"] = "adaptive"
-                    resp = await client.post(
+                    resp = await observed_request(client, "POST",
                         self._route_url("/contents/generations/tasks", route),
                         headers=self._route_headers(route),
                         json=self._video_json(body, route),
@@ -1450,6 +1482,16 @@ class ArkGateway:
                 content,
                 project_id=project_id,
             )
+        # 提交上游前硬校验 reference_audio 时长，避免 InvalidParameter 才暴露
+        from app.services.drama.voice_reference_audio import (
+            validate_seedance_body_reference_audios,
+        )
+
+        await validate_seedance_body_reference_audios(
+            payload,
+            content_labels=content_labels,
+            project_id=project_id,
+        )
         payload["duration"] = self._seedance_duration(
             payload.get("duration", 8),
             model=str(payload.get("model") or ""),
@@ -1465,7 +1507,7 @@ class ArkGateway:
 
         try:
             async with httpx.AsyncClient(timeout=_upstream_timeout(VIDEO_CREATE_READ_SEC)) as client:
-                resp = await client.post(
+                resp = await observed_request(client, "POST",
                     self._route_url("/contents/generations/tasks", route),
                     headers=self._route_headers(route),
                     json=self._video_json(payload, route),
@@ -1490,7 +1532,7 @@ class ArkGateway:
                             project_id,
                         )
                         payload = {**payload, "content": cg_content}
-                        resp = await client.post(
+                        resp = await observed_request(client, "POST",
                             self._route_url("/contents/generations/tasks", route),
                             headers=self._route_headers(route),
                             json=self._video_json(payload, route),
@@ -1520,6 +1562,7 @@ class ArkGateway:
         shot_no: int,
         max_attempts: int = 2,
         content_labels: list[str] | None = None,
+        on_task_created: Any | None = None,
     ) -> tuple[str, str | None, TaskResult]:
         """创建 Seedance 多模态任务并等待完成；返回 (本地视频 URL, 可选本地尾帧 URL, 任务结果)。"""
         def _is_audio_download_error(err: Exception) -> bool:
@@ -1594,6 +1637,17 @@ class ArkGateway:
                 if _audio_fallback(exc, accepted=False):
                     continue
                 raise
+            if on_task_created is not None:
+                try:
+                    await on_task_created(task_id)
+                except Exception as exc:  # noqa: BLE001
+                    from app.services.storage import RetryableMediaDownloadError
+
+                    raise RetryableMediaDownloadError(
+                        f"记录上游任务号失败: {exc}",
+                        provider_task_id=task_id,
+                        counts_attempt=False,
+                    ) from exc
             # 等待阶段失败：隐私/任务失败/超时等立即上抛；仅参考音频下载失败重提一次
             try:
                 return await self.wait_video_assets(
@@ -1602,6 +1656,18 @@ class ArkGateway:
             except Exception as exc:  # noqa: BLE001
                 if _audio_fallback(exc, accepted=True):
                     continue
+                # 成片已在上游生成：只标记可重试下载，禁止外层再建一条视频任务
+                from app.services.storage import (
+                    RetryableMediaDownloadError,
+                    is_retryable_download_error,
+                )
+
+                if isinstance(exc, RetryableMediaDownloadError):
+                    if not exc.provider_task_id:
+                        exc.provider_task_id = task_id
+                    raise
+                if is_retryable_download_error(exc):
+                    raise RetryableMediaDownloadError(str(exc), provider_task_id=task_id) from exc
                 raise
         raise RuntimeError(str(last_err) if last_err else "Seedance multimodal failed")
 
@@ -1617,7 +1683,7 @@ class ArkGateway:
         async with httpx.AsyncClient(timeout=_upstream_timeout(VIDEO_POLL_READ_SEC, connect=15.0)) as client:
             while time.monotonic() < deadline:
                 try:
-                    resp = await client.get(
+                    resp = await observed_request(client, "GET",
                         self._url(f"/contents/generations/tasks/{task_id}"),
                         headers=self._headers(),
                     )
@@ -1675,7 +1741,7 @@ class ArkGateway:
             )
         try:
             async with httpx.AsyncClient(timeout=_upstream_timeout(VIDEO_FETCH_READ_SEC, connect=15.0)) as client:
-                resp = await client.get(
+                resp = await observed_request(client, "GET",
                     self._url(f"/contents/generations/tasks/{task_id}"),
                     headers=self._headers(),
                 )
@@ -1823,18 +1889,10 @@ class ArkGateway:
                 await asyncio.sleep(1.5 * (attempt + 1))
         raise RuntimeError(str(last_err) if last_err else "video generation failed")
 
-    def _openspeech_configured(self) -> bool:
-        """豆包 openspeech 是否已配置（新版 API Key 或旧版 AppId + AccessKey）。"""
-        if (self.settings.volc_tts_api_key or "").strip():
-            return True
-        return bool(self.settings.volc_tts_app_id and self.settings.volc_tts_access_key)
-
     def _resolved_audio_model(self) -> str:
         routed = (resolve_upstream_model("audio", None) or "").strip()
         mid = routed or (self.settings.model_audio or "").strip() or TOKENFREE_DEFAULT_TTS_MODEL
-        if uses_tokenfree_audio(base_url=self.settings.ark_base_url or ""):
-            return resolve_tokenfree_tts_model(mid)
-        return mid
+        return resolve_tokenfree_tts_model(mid)
 
     async def _tts_openai_speech(
         self,
@@ -1849,14 +1907,14 @@ class ArkGateway:
         key = (self.settings.ark_api_key or "").strip()
         if not base or not key:
             return False
-        model_id = (model or self._resolved_audio_model()).strip()
-        if uses_tokenfree_audio(base_url=base):
-            model_id = tokenfree_tts_chat_model(resolve_tokenfree_tts_model(model_id))
-            voice = tokenfree_speech_voice(voice, model_id)
-            if tokenfree_tts_uses_chat_audio(model_id):
-                return await self._tts_openai_chat_audio(text, voice, dest, model=model_id)
+        model_id = tokenfree_tts_chat_model(
+            resolve_tokenfree_tts_model((model or self._resolved_audio_model()).strip())
+        )
+        voice = tokenfree_speech_voice(voice, model_id)
+        if tokenfree_tts_uses_chat_audio(model_id):
+            return await self._tts_openai_chat_audio(text, voice, dest, model=model_id)
         async with httpx.AsyncClient(timeout=120.0) as client:
-            resp = await client.post(
+            resp = await observed_request(client, "POST",
                 f"{base}/audio/speech",
                 headers=self._headers(),
                 json={
@@ -1876,8 +1934,6 @@ class ArkGateway:
                 model_id,
                 (resp.text or "")[:300],
             )
-        if uses_tokenfree_audio(base_url=base) and tokenfree_tts_uses_chat_audio(model_id):
-            return await self._tts_openai_chat_audio(text, voice, dest, model=model_id)
         return False
 
     async def _tts_openai_chat_audio(
@@ -1904,7 +1960,7 @@ class ArkGateway:
             }
         )
         async with httpx.AsyncClient(timeout=120.0) as client:
-            resp = await client.post(f"{base}/chat/completions", headers=self._headers(), json=body)
+            resp = await observed_request(client, "POST", f"{base}/chat/completions", headers=self._headers(), json=body)
         if resp.status_code >= 400:
             logger.warning(
                 "OpenAI chat-audio HTTP %s model=%s: %s",
@@ -1929,19 +1985,6 @@ class ArkGateway:
             return False
         return await asyncio.to_thread(self._persist_tts_mp3, dest, wav)
 
-    @staticmethod
-    def _build_tts_additions(speaker: str, emotion_hint: str | None) -> str | None:
-        """组装 openspeech additions（S_ 克隆 + 语气 context_texts）。"""
-        additions: dict[str, Any] = {}
-        if speaker.startswith("S_"):
-            additions["model_type"] = 4
-        hint = (emotion_hint or "").strip()
-        if hint:
-            additions["context_texts"] = [f"用「{hint}」的语气朗读"]
-        if not additions:
-            return None
-        return json.dumps(additions, ensure_ascii=False)
-
     async def tts(
         self,
         text: str,
@@ -1950,9 +1993,8 @@ class ArkGateway:
         project_id: int | None = None,
         shot_no: int | None = None,
         duration_hint: float = 4.0,
-        emotion_hint: str | None = None,
     ) -> str:
-        """整片/单镜配音：豆包 openspeech → TokenFree 多 TTS → edge-tts；失败则抛错，不写静音。"""
+        """整片/单镜配音：TokenFree 多 TTS → edge-tts；失败则抛错，不写静音。"""
         voice_map = {
             "narrator_calm": "zh_female_cancan_uranus_bigtts",
             "warm_storyteller": "zh_female_tianmeixiaoyuan_uranus_bigtts",
@@ -1961,11 +2003,7 @@ class ArkGateway:
             "retro_host": "zh_male_shaonianzixin_uranus_bigtts",
             "guqin_narrator": "zh_female_vv_uranus_bigtts",
         }
-        speaker = (
-            voice_map.get(voice, voice)
-            or self.settings.volc_tts_speaker
-            or "zh_female_cancan_uranus_bigtts"
-        )
+        speaker = voice_map.get(voice, voice) or "zh_female_cancan_uranus_bigtts"
         clean = (text or "").strip() or "这一幕。"
 
         if self.mock:
@@ -1988,37 +2026,23 @@ class ArkGateway:
             return storage.publish_local(dest)
 
         audio_model = self._resolved_audio_model()
-        on_tokenfree = uses_tokenfree_audio(base_url=self.settings.ark_base_url or "")
-
-        # 豆包 openspeech：标准 speaker 优先，避免 /audio/speech 忽略音色 id
-        if self._openspeech_configured():
-            try:
-                ok = await self._tts_openspeech(clean, speaker, dest, emotion_hint=emotion_hint)
-                if ok:
-                    url = await _accept_if_audible("openspeech")
-                    if url:
-                        logger.info("TTS openspeech ok shot=%s speaker=%s", shot_no, speaker)
-                        return url
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("openspeech TTS failed: %s", exc)
 
         # TokenFree：默认模型 + Gemini / ElevenLabs / Qwen 其它 TTS 依次试
-        if on_tokenfree:
-            for model_id in iter_tokenfree_tts_models(audio_model):
-                try:
-                    ok = await self._tts_openai_speech(clean, speaker, dest, model=model_id)
-                    if ok:
-                        url = await _accept_if_audible("tokenfree-speech")
-                        if url:
-                            logger.info(
-                                "TTS tokenfree ok shot=%s model=%s bytes=%s",
-                                shot_no,
-                                model_id,
-                                dest.stat().st_size,
-                            )
-                            return url
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning("tokenfree speech failed model=%s: %s", model_id, exc)
+        for model_id in iter_tokenfree_tts_models(audio_model):
+            try:
+                ok = await self._tts_openai_speech(clean, speaker, dest, model=model_id)
+                if ok:
+                    url = await _accept_if_audible("tokenfree-speech")
+                    if url:
+                        logger.info(
+                            "TTS tokenfree ok shot=%s model=%s bytes=%s",
+                            shot_no,
+                            model_id,
+                            dest.stat().st_size,
+                        )
+                        return url
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("tokenfree speech failed model=%s: %s", model_id, exc)
 
         # edge-tts：按 speaker 映射不同 neural，上游都失败时仍能分出角色声线
         try:
@@ -2030,91 +2054,8 @@ class ArkGateway:
         except Exception as exc:  # noqa: BLE001
             logger.warning("edge-tts failed: %s", exc)
 
-        # 非 TokenFree 时再试 /audio/speech（方舟等）
-        if not on_tokenfree:
-            try:
-                ok = await self._tts_openai_speech(clean, speaker, dest, model=audio_model)
-                if ok:
-                    url = await _accept_if_audible("ark-speech")
-                    if url:
-                        return url
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("Ark TTS failed: %s", exc)
-
         logger.error("TTS all providers failed shot=%s", shot_no)
         raise RuntimeError("配音失败：语音服务暂不可用，请稍后重试")
-
-    def _tts_resource_id(self, speaker: str) -> str:
-        if speaker.startswith("S_"):
-            return "seed-icl-2.0"
-        if "_uranus_" in speaker or speaker.startswith("saturn_"):
-            return self.settings.volc_tts_resource_id or "seed-tts-2.0"
-        return "seed-tts-1.0"
-
-    async def _tts_openspeech(
-        self,
-        text: str,
-        speaker: str,
-        dest: Path,
-        *,
-        emotion_hint: str | None = None,
-    ) -> bool:
-        resource = self._tts_resource_id(speaker)
-        headers: dict[str, str] = {
-            "Content-Type": "application/json",
-            "X-Api-Resource-Id": resource,
-        }
-        api_key = (self.settings.volc_tts_api_key or "").strip()
-        if api_key:
-            headers["X-Api-Key"] = api_key
-        else:
-            headers["X-Api-App-Id"] = self.settings.volc_tts_app_id
-            headers["X-Api-Access-Key"] = self.settings.volc_tts_access_key
-        body: dict[str, Any] = {
-            "user": {"uid": "framecut"},
-            "req_params": {
-                "text": text,
-                "speaker": speaker,
-                "audio_params": {"format": "mp3", "sample_rate": 24000},
-            },
-        }
-        additions = self._build_tts_additions(speaker, emotion_hint)
-        if additions:
-            body["req_params"]["additions"] = additions
-
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            resp = await client.post(self.settings.volc_tts_url, headers=headers, json=body)
-            if resp.status_code >= 400:
-                logger.warning("openspeech HTTP %s: %s", resp.status_code, resp.text[:400])
-                return False
-            audio = self._parse_openspeech_ndjson(resp.content)
-            if not audio:
-                logger.warning("openspeech empty audio body")
-                return False
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_bytes(audio)
-            return True
-
-    @staticmethod
-    def _parse_openspeech_ndjson(raw: bytes) -> bytes:
-        chunks: list[bytes] = []
-        text = raw.decode("utf-8", errors="ignore")
-        for line in text.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            code = obj.get("code")
-            if code == 0 and obj.get("data"):
-                chunks.append(base64.b64decode(obj["data"]))
-            elif code in {20000000, 20000001}:
-                break
-            elif code not in (None, 0):
-                logger.warning("openspeech line error: %s", line[:300])
-        return b"".join(chunks)
 
     async def _tts_edge(self, text: str, dest: Path, voice_hint: str = "") -> None:
         """微软 edge-tts 兜底。国内连 api.msedgeservices.com 常超过默认 10s，拉长握手并重试。"""

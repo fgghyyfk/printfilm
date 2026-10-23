@@ -54,6 +54,9 @@ def test_parse_pricing_payload_per_call_and_token() -> None:
     image = rates["gpt-image-2-5"]
     assert image.billing == "per_call"
     assert image.cny_per_call == 4.375
+    # 点分 id 应能命中价目里的连字符键
+    assert lookup_rate("gpt-image-2.5", rates) is image
+    assert lookup_rate("gpt-image-2-5", rates) is image
     llm = rates["kimi-k2.6"]
     assert llm.billing == "token"
     assert abs(llm.cny_in_per_1m - 10.1866) < 0.01
@@ -187,6 +190,7 @@ def test_recommended_models_cover_text_image_video_audio() -> None:
         "kimi-k2.6",
         "seedream-5.0-pro",
         "gpt-image-2",
+        "gpt-image-2.5",
         "seedance-2.5",
         "seedance-2.0",
         "MiniMax-H3",
@@ -278,11 +282,12 @@ def test_charge_official_image_uses_sunburst_size_tiers() -> None:
     assert kie_sunburst_credits_for_size("4K") == 16
     assert charge_fen_official_image(settings, model="gpt-image-2", size="1K") == 21
     assert charge_fen_official_image(settings, model="gpt-image-2", size="2K") == 35
-    # 生成侧把 gpt-image 的 3K/4K 钳到 2K，计费同步为 2K 档
+    # GPT Image 2 的 4K 钳到 2K；2.5 保留 4K
     assert charge_fen_official_image(settings, model="gpt-image-2", size="4K") == 35
     assert kie_sunburst_credits_for_size("4K") == 16
     assert resolve_billing_image_size(settings, model="seedream-5-0-pro", size="3K") == "2K"
-    assert resolve_billing_image_size(settings, model="gpt-image-2-5-sunburst", size="4K") == "2K"
+    assert resolve_billing_image_size(settings, model="gpt-image-2", size="4K") == "2K"
+    assert resolve_billing_image_size(settings, model="gpt-image-2.5", size="4K") == "4K"
 
 
 def test_charge_official_video_720p() -> None:
@@ -383,7 +388,7 @@ def test_media_model_pricing_hint_lists_all_video_tiers() -> None:
     # 2.0 720p ≈ ¥1.52/秒（刊例 46×1.5×22k tok）
     assert "1.52" in h20 or "1.51" in h20 or "7.59" in h20
     assert "0.58" in h_mm or "0.584" in h_mm
-    assert "720p" in h_mm
+    assert "768p" in h_mm or "480p" in h_mm
 
 
 def test_charge_official_llm_uses_in_out_split() -> None:
@@ -411,6 +416,7 @@ def test_build_official_rate_rows_marks_video_vendor() -> None:
     rows = build_official_rate_rows(rates, settings)
     by_id = {row["id"]: row for row in rows}
     assert "gpt-image-2" in by_id
+    assert "gpt-image-2.5" in by_id
     assert by_id["seedream-5.0-pro"]["capability"] == "image"
     assert by_id["seedance-2.5"]["basis"] == "vendor_sec"
     assert "结算参考" in by_id["seedance-2.5"]["rate_label"]

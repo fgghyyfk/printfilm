@@ -146,6 +146,85 @@ def is_voice_duration_too_short(
     return float(duration) + 1e-6 < float(min_sec)
 
 
+def is_voice_duration_too_long(
+    duration: float | None,
+    *,
+    max_sec: float = SEEDANCE_REFERENCE_AUDIO_MAX_SEC,
+) -> bool:
+    """是否超过 Seedance reference_audio 上限。"""
+    if duration is None:
+        return False
+    return float(duration) > float(max_sec) + 1e-6
+
+
+def _reference_audio_slot_label(
+    index: int,
+    content_labels: list[str] | None,
+) -> str:
+    if content_labels and 0 <= index < len(content_labels):
+        label = str(content_labels[index] or "").strip()
+        if label:
+            return label
+    return f"提交内容第 {index + 1} 项 / content[{index}]"
+
+
+async def validate_seedance_body_reference_audios(
+    body: dict[str, Any],
+    *,
+    content_labels: list[str] | None = None,
+    project_id: int = 0,
+    min_sec: float = SEEDANCE_REFERENCE_AUDIO_MIN_SEC,
+    max_sec: float = SEEDANCE_REFERENCE_AUDIO_MAX_SEC,
+) -> None:
+    """提交上游前校验 content[] 内 reference_audio 时长；不合规则抛中文 RuntimeError。"""
+    content = body.get("content") if isinstance(body, dict) else None
+    if not isinstance(content, list):
+        return
+
+    work_dir = storage_svc.project_dir(project_id or 0) / "voice_probe"
+    work_dir.mkdir(parents=True, exist_ok=True)
+    duration_by_url: dict[str, float | None] = {}
+
+    for index, item in enumerate(content):
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") != "audio_url":
+            continue
+        role = str(item.get("role") or "").strip()
+        if role and role != "reference_audio":
+            continue
+        audio = item.get("audio_url") if isinstance(item.get("audio_url"), dict) else {}
+        url = str((audio or {}).get("url") or "").strip()
+        if not url:
+            who = _reference_audio_slot_label(index, content_labels)
+            raise RuntimeError(
+                f"参考音频地址为空：{who}。请重新绑定角色/旁白试听后再生成该分镜。"
+            )
+
+        if url not in duration_by_url:
+            duration_by_url[url] = await probe_voice_url_duration(url, work_dir=work_dir)
+        duration = duration_by_url[url]
+        who = _reference_audio_slot_label(index, content_labels)
+
+        if duration is None:
+            raise RuntimeError(
+                f"无法读取参考音频时长：{who}。"
+                "请检查音色文件是否可访问，或重新上传/生成试听后再生成该分镜。"
+            )
+        if is_voice_duration_too_short(duration, min_sec=min_sec):
+            raise RuntimeError(
+                f"参考音频过短：{who}，当前约 {duration:.1f} 秒，"
+                f"Seedance 要求时长 ≥ {min_sec:g} 秒。"
+                "请打开对应角色或旁白，重新生成或上传更长的试听音频（建议 ≥ 2 秒）后再生成该分镜。"
+            )
+        if is_voice_duration_too_long(duration, max_sec=max_sec):
+            raise RuntimeError(
+                f"参考音频过长：{who}，当前约 {duration:.1f} 秒，"
+                f"Seedance 要求时长 ≤ {max_sec:g} 秒。"
+                "请截短试听音频后再生成该分镜。"
+            )
+
+
 # 合成完成后：过短补足、过长截断，并重新发布
 def finalize_voice_reference_url(
     url: str,
@@ -273,7 +352,13 @@ async def backfill_long_voice_references(
             )
             if changed:
                 asset.url = new_url
-                asset.cover = new_url
+                # 音色 cover 勿写音频 URL，否则会误进 Seedance reference_image
+                cover = (asset.cover or "").split("?", 1)[0].strip().lower()
+                if any(
+                    cover.endswith(ext)
+                    for ext in (".mp3", ".wav", ".m4a", ".aac", ".ogg", ".webm")
+                ) or not (asset.cover or "").strip():
+                    asset.cover = ""
                 params = dict(asset.params or {}) if isinstance(asset.params, dict) else {}
                 params["referenceAudioTrimmed"] = True
                 asset.params = params

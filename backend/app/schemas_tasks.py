@@ -227,10 +227,22 @@ class MockDelayTaskRequest(BaseModel):
 
 
 class AdminTaskRunOut(TaskRunOut):
-    """Admin task view with requester email."""
+    """管理员任务投影，事件数组有界，完整历史通过分页接口获取。"""
 
     user_email: str | None = None
     usage_lines: list["AdminUsageEventBriefOut"] = Field(default_factory=list)
+    events_total: int = 0
+    upstream_events: list[TaskEventOut] = Field(default_factory=list)
+    upstream_events_total: int = 0
+
+
+class AdminTaskEventListOut(BaseModel):
+    """按 ID 倒序分页的管理员任务事件历史。"""
+
+    items: list[TaskEventOut] = Field(default_factory=list)
+    total: int = 0
+    page: int = 1
+    page_size: int = 50
 
 
 class AdminUsageEventBriefOut(BaseModel):
@@ -306,6 +318,10 @@ class AdminTaskStatsOut(BaseModel):
     """Task platform aggregate stats for admin monitoring."""
 
     pending_count: int = 0
+    pending_ready_count: int = 0
+    pending_deferred_count: int = 0
+    pending_delayed_count: int = 0
+    oldest_ready_wait_sec: int = 0
     active_count: int = 0
     leased_count: int = 0
     running_count: int = 0
@@ -320,5 +336,7 @@ class AdminTaskStatsOut(BaseModel):
     poller: str = "stopped"
     watchdog: str = "stopped"
     runtime_healthy: bool = False
+    scheduler_success_age_sec: float | None = None
+    scheduler_consecutive_failures: int = 0
     domains: list[AdminTaskDomainStatsOut] = Field(default_factory=list)
     fetched_at: datetime | None = None

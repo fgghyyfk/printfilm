@@ -14,6 +14,7 @@ export const PRESET_MODELS: Record<ModelCapability, PresetModelOption[]> = {
     { id: "seedream-5.0", label: "Seedream 5.0" },
     { id: "seedream-5.0-flash", label: "Seedream 5.0 Flash" },
     { id: "gpt-image-2", label: "GPT Image 2" },
+    { id: "gpt-image-2.5", label: "GPT Image 2.5" },
   ],
   video: [
     { id: "seedance-2.5", label: "Seedance 2.5" },
@@ -67,8 +68,12 @@ const PRESET_MODEL_ALIASES: Record<string, string> = {
   "seedream5.0": "seedream-5.0",
   seedream5: "seedream-5.0",
   "seedream-5-0-flash": "seedream-5.0-flash",
-  "gpt-image-2-5": "gpt-image-2",
-  "gpt-image-2.5": "gpt-image-2",
+  "gpt-image-2-5": "gpt-image-2.5",
+  "gpt-image-2.5": "gpt-image-2.5",
+  "gpt-image-2.5-sunburst": "gpt-image-2.5",
+  "gpt-image-2-5-sunburst": "gpt-image-2.5",
+  "gpt-image-2.5-flare": "gpt-image-2.5",
+  "gpt-image-2-5-flare": "gpt-image-2.5",
   "gemini-3.1-flash-tts": "qwen-tts-2025-05-22",
 };
 

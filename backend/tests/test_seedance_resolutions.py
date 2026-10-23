@@ -34,11 +34,19 @@ def test_unknown_defaults_safe() -> None:
     assert allowed_video_resolutions("some-other-video") == ["480p", "720p"]
 
 
-def test_minimax_h3_only_720p() -> None:
-    assert allowed_video_resolutions("MiniMax-H3") == ["720p"]
-    assert allowed_video_resolutions("minimax-h3") == ["720p"]
-    assert clamp_video_resolution("MiniMax-H3", "1080p") == "720p"
-    assert clamp_video_resolution("MiniMax-H3", "480p") == "720p"
+def test_minimax_h3_480_768() -> None:
+    assert allowed_video_resolutions("MiniMax-H3") == ["480p", "768p"]
+    assert allowed_video_resolutions("minimax-h3") == ["480p", "768p"]
+    assert clamp_video_resolution("MiniMax-H3", "1080p") == "768p"
+    assert clamp_video_resolution("MiniMax-H3", "720p") == "768p"
+    assert clamp_video_resolution("MiniMax-H3", "480p") == "480p"
+    from app.services.seedance_resolutions import format_video_resolution_for_upstream
+
+    # TokenFree 插件枚举要小写；勿写成 480P
+    assert format_video_resolution_for_upstream("MiniMax-H3", "480p") == "480p"
+    assert format_video_resolution_for_upstream("MiniMax-H3", "768p") == "768p"
+    assert format_video_resolution_for_upstream("MiniMax-H3", "720p") == "768p"
+    assert format_video_resolution_for_upstream("seedance-2.5", "720p") == "720p"
 
 
 def test_clamp_1080p_on_mini_to_720p() -> None:
@@ -103,10 +111,10 @@ def test_catalog_video_row_has_allowed_resolutions() -> None:
         defaults=DefaultModels(video_model="seedance-2-0-mini"),
     )
     by_id = {row["id"]: row for row in payload["video_models"]}
-    assert by_id["seedance-2-0-mini"]["allowed_resolutions"] == ["480p", "720p"]
-    assert by_id["seedance-2-5"]["allowed_resolutions"] == ["480p", "720p", "1080p"]
-    assert by_id["seedance-2-5"]["label"] == "Seedance 2.5"
-    # 别名 / 上游长 id 归一后不应再单独占一行 1080p 的 2.0
-    assert "seedance-2.5" not in by_id
-    assert by_id["seedance-2-0"]["allowed_resolutions"] == ["480p", "720p"]
-    assert by_id["seedance-2-0"]["label"] == "Seedance 2.0"
+    # mini / 连字符 id 已别名到点分规范 id
+    assert "seedance-2-0-mini" not in by_id
+    assert "seedance-2-5" not in by_id
+    assert by_id["seedance-2.5"]["allowed_resolutions"] == ["480p", "720p", "1080p"]
+    assert by_id["seedance-2.5"]["label"] == "Seedance 2.5"
+    assert by_id["seedance-2.0"]["allowed_resolutions"] == ["480p", "720p"]
+    assert by_id["seedance-2.0"]["label"] == "Seedance 2.0"

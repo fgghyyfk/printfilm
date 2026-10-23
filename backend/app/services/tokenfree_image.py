@@ -1,4 +1,4 @@
-"""TokenFree / New API 生图：KIE 渠道走 POST /v1/responses，不是方舟 /images/generations。"""
+"""TokenFree / New API 生图：Seedream 与 GPT Image 2 走 POST /v1/responses，不是方舟 /images/generations。"""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ import re
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from app.services.tokenfree_gateway import TOKENFREE_CHANNEL_ID
 from app.services.tokenfree_video import uses_tokenfree_video
 
 logger = logging.getLogger(__name__)
@@ -32,6 +31,70 @@ def is_seedream_family(model: str) -> bool:
     """模型名是否属于 Seedream 族（计费/尺寸钳制用）。"""
     mid = (model or "").strip().lower()
     return "seedream" in mid
+
+
+def gpt_image_caps_at_2k(model: str) -> bool:
+    """GPT Image 2 仅 1K/2K；2.5 支持到 4K，不降档。"""
+    mid = (model or "").strip().lower()
+    if "gpt-image" not in mid:
+        return False
+    return "2.5" not in mid and "2-5" not in mid
+
+
+def is_gpt_image_25(model: str) -> bool:
+    """GPT Image 2.5：TokenFree 只在 image-generation 渠道放行，不走 /responses。"""
+    mid = (model or "").strip().lower()
+    return "gpt-image-2.5" in mid or "gpt-image-2-5" in mid
+
+
+def gpt_image_resolution_tier(size: str) -> str:
+    """把 1K/2K/4K 或像素面积收成计费档（价目表达式读 resolution）。"""
+    raw = (size or "").strip().upper().replace(" ", "")
+    if raw in {"1K", "2K", "4K"}:
+        return raw
+    if "X" not in raw:
+        return "2K"
+    left, _, right = raw.partition("X")
+    if not left.isdigit() or not right.isdigit():
+        return "2K"
+    width, height = int(left), int(right)
+    longest = max(width, height)
+    if longest >= 3000:
+        return "4K"
+    if longest >= 1600:
+        return "2K"
+    return "1K"
+
+
+def build_tokenfree_openai_image_body(
+    *,
+    model: str,
+    prompt: str,
+    size: str = "",
+    aspect_ratio: str = "",
+    ref_urls: list[str] | None = None,
+    style_ref_urls: list[str] | None = None,
+) -> dict[str, Any]:
+    """GPT Image 2.5：POST /images/generations（openai 渠道），并带上 resolution 供计费。"""
+    narrative = build_tokenfree_image_body(
+        model=model,
+        prompt=prompt,
+        size=size,
+        aspect_ratio=aspect_ratio,
+        ref_urls=ref_urls,
+        style_ref_urls=style_ref_urls,
+    )
+    pixel = (size or "").strip()
+    if not _is_pixel_size(pixel):
+        pixel = "1024x1024"
+    return {
+        "model": narrative["model"],
+        "prompt": narrative["input"],
+        "size": pixel,
+        "n": 1,
+        "resolution": gpt_image_resolution_tier(size),
+        "response_format": "url",
+    }
 
 
 def tokenfree_working_image_model(model: str) -> str:
@@ -218,7 +281,7 @@ def is_tokenfree_rate_limit(*, status_code: int = 0, body: str = "") -> bool:
 
 
 def is_tokenfree_protocol_error(*, status_code: int = 0, body: str = "") -> bool:
-    """KIE / New API 任务协议失败（含 Invalid task protocol request）。"""
+    """New API 任务协议失败（含 Invalid task protocol request）。"""
     text = (body or "").lower()
     if (
         "task_protocol_error" in text
@@ -301,7 +364,11 @@ def tokenfree_image_user_error(*, model: str = "", status_code: int = 0, body: s
             )
         return "出图通道暂时失败，请稍后再点「生成画面」"
     if is_tokenfree_no_distributor(status_code=status_code, body=body):
-        return "出图通道暂时失败，请稍后再点「生成画面」"
+        who = (model or "该图像模型").strip() or "该图像模型"
+        return (
+            f"当前 TokenFree 分组未开通 {who}（无可用渠道）。"
+            "请在 TokenFree 控制台为 default 分组配置该模型后再生成。"
+        )
     payload = _parse_json_object(body)
     if payload and is_tokenfree_image_task_failed(payload):
         return tokenfree_image_failed_task_message(payload)

@@ -31,7 +31,7 @@ function extractContentIndex(raw: string): number | null {
 
 /** 判断文案是否像「具体根因」（优先于「重试上限」等包装句） */
 function looksLikeRootCause(text: string): boolean {
-  return /PrivacyInformation|InputImageSensitive|SensitiveContentDetected|参考图疑似|参考音频过短|may contain real person|Seedance create error|上一镜失败|无法衔接|分镜已变更|分镜上下文|InputTextSensitive|resource download failed|audio_url|audio duration|Credits insufficient|File type not supported|参考图格式不支持/i.test(
+  return /PrivacyInformation|InputImageSensitive|SensitiveContentDetected|参考图疑似|参考音频过短|参考音频过长|无法读取参考音频时长|may contain real person|Seedance create error|上一镜失败|无法衔接|分镜已变更|分镜上下文|InputTextSensitive|resource download failed|audio_url|audio duration|Credits insufficient|File type not supported|参考图格式不支持|invalid image format|参考图格式无效|未开通/i.test(
     text,
   )
 }
@@ -79,7 +79,7 @@ export function formatDramaGenError(raw: string | null | undefined): DramaGenErr
     }
   }
 
-  if (/网络错误|ConnectError|ConnectTimeout|无法连接上游|tokenfree\.com|api\.kie\.ai/i.test(text)) {
+  if (/网络错误|ConnectError|ConnectTimeout|无法连接上游|tokenfree\.com/i.test(text)) {
     return {
       title: '无法连接图片/视频服务',
       message: text.length > 200 ? `${text.slice(0, 200)}…` : text,
@@ -183,16 +183,49 @@ export function formatDramaGenError(raw: string | null | undefined): DramaGenErr
     }
   }
 
+  if (/无法读取参考音频时长|参考音频地址为空/i.test(text)) {
+    const named = extractNamedSlot(text)
+    return {
+      title: '参考音频无法校验',
+      message: named
+        ? `无法读取 ${named} 的参考音频时长或地址无效。`
+        : text.length > 160
+          ? `${text.slice(0, 160)}…`
+          : text,
+      suggestion: '请检查角色/旁白试听文件是否可访问，重新上传或生成后再生成该分镜。',
+    }
+  }
+
+  if (/参考音频过长/i.test(text)) {
+    const named = extractNamedSlot(text)
+    const dur = text.match(/当前约\s*([\d.]+)\s*秒/)
+    return {
+      title: '参考音频过长',
+      message: named
+        ? `${named} 参考音频过长${dur ? `（约 ${dur[1]} 秒）` : ''}，须 ≤ 30 秒。`
+        : text.length > 160
+          ? `${text.slice(0, 160)}…`
+          : text,
+      suggestion: '请截短对应角色/旁白试听音频后再生成该分镜。这不是参考图问题。',
+    }
+  }
+
   // Seedance r2v：reference_audio 须 ≥ 1.8 秒（不是参考图）
-  if (/audio duration|参考音频过短|1\.8/i.test(text) && /audio|音色|reference_audio|content\[/i.test(text)) {
+  if (
+    /参考音频过短/i.test(text) ||
+    (/audio duration|1\.8/i.test(text) && /audio|音色|reference_audio|content\[/i.test(text))
+  ) {
     const idx = extractContentIndex(text)
     const named = extractNamedSlot(text)
+    const dur = text.match(/当前约\s*([\d.]+)\s*秒/)
     const where =
       named ||
       (idx != null ? `提交内容第 ${idx + 1} 项 / content[${idx}]（参考音频，不是图片）` : '某条角色/旁白音色')
     return {
       title: '参考音频过短',
-      message: `视频服务要求参考音频时长 ≥ 1.8 秒，当前过短：${where}。`,
+      message: dur
+        ? `${where} 参考音频约 ${dur[1]} 秒，须 ≥ 1.8 秒。`
+        : `视频服务要求参考音频时长 ≥ 1.8 秒，当前过短：${where}。`,
       suggestion:
         '打开左侧对应角色或旁白资产，重新生成/上传更长的试听音频（建议 ≥ 2 秒）后再生成该分镜。这不是参考图问题。',
     }
@@ -215,6 +248,14 @@ export function formatDramaGenError(raw: string | null | undefined): DramaGenErr
     }
   }
 
+  if (/未开通|无可用渠道|distributor/i.test(text)) {
+    return {
+      title: '图像模型未开通',
+      message: text.length > 180 ? `${text.slice(0, 180)}…` : text,
+      suggestion: '请管理员在 TokenFree 控制台为 default 分组开通该模型（如 GPT Image 2.5）后再生成。',
+    }
+  }
+
   if (/File type not supported|参考图格式不支持|不支持 SVG/i.test(text)) {
     return {
       title: '参考图格式不支持',
@@ -227,6 +268,21 @@ export function formatDramaGenError(raw: string | null | undefined): DramaGenErr
     }
   }
 
+  // 参考图槽位收到非图片（常见：音色 mp3 误进 image_url）
+  if (/invalid image format|参考图格式无效/i.test(text)) {
+    const idx = extractContentIndex(text)
+    const named = extractNamedSlot(text)
+    const where =
+      named ||
+      (idx != null ? `提交内容第 ${idx + 1} 项 / content[${idx}]` : '某张参考图')
+    return {
+      title: '参考图格式无效',
+      message: `视频服务按图片校验失败：${where}。这不是参考音频时长问题。`,
+      suggestion:
+        '请检查本镜角色/场景封面是否为 PNG/JPG/WEBP；若画布上挂了独立音色节点，确认它只作参考音频、不要占用参考图。修好素材后重新生成该分镜。',
+    }
+  }
+
   if (/Seedance create error\s*400|Kie createTask error/i.test(text)) {
     const idx = extractContentIndex(text)
     const named = extractNamedSlot(text)
@@ -236,7 +292,8 @@ export function formatDramaGenError(raw: string | null | undefined): DramaGenErr
     return {
       title: '视频服务拒绝请求',
       message: `上游返回参数或内容错误，未能创建生成任务${where}。`,
-      suggestion: '检查本镜参考图、参考音频时长（须 ≥ 1.8 秒）与脚本后重试；若持续失败请联系客服并提供任务号。',
+      suggestion:
+        '优先检查本镜参考图是否为可访问的 PNG/JPG/WEBP；若错误原文含 audio duration 再查参考音频是否 ≥ 1.8 秒。持续失败请联系客服并提供任务号。',
     }
   }
 
@@ -270,7 +327,7 @@ export function formatDramaGenError(raw: string | null | undefined): DramaGenErr
     return {
       title: '成片下载中断',
       message: '视频已在上游生成，但下载到服务器时连接被中断。',
-      suggestion: '请直接重新生成该节点；系统会优先走直链并自动重试下载。',
+      suggestion: '系统会沿原任务自动重试下载，请勿重新生成该节点。',
     }
   }
 

@@ -251,7 +251,7 @@ class DramaVoiceGenerateRequest(BaseModel):
     speaker: str | None = Field(default=None, description="可选 TTS speaker 覆盖")
     character_asset_id: int | None = Field(
         default=None,
-        description="关联角色资产 ID，用于 voice_design image_prompt",
+        description="关联角色资产 ID",
     )
 
 

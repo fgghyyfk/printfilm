@@ -76,25 +76,35 @@ async def patch_user(
             raise HTTPException(status_code=400, detail="不能降低自己的管理员权限")
         user.role = role
 
-    if body.balance_fen is not None:
+    if body.balance_delta_fen is not None and body.balance_fen is not None:
+        raise HTTPException(status_code=400, detail="请只传 balance_delta_fen 或 balance_fen 之一")
+
+    current = int(user.balance_fen or 0)
+    delta: int | None = None
+    if body.balance_delta_fen is not None:
+        delta = int(body.balance_delta_fen)
+    elif body.balance_fen is not None:
         target = int(body.balance_fen)
         if target < 0:
             raise HTTPException(status_code=400, detail="余额不能为负")
-        current = int(user.balance_fen or 0)
         delta = target - current
-        if delta != 0:
-            user.balance_fen = target
-            db.add(
-                WalletLedger(
-                    user_id=user.id,
-                    delta_fen=delta,
-                    balance_after=target,
-                    kind="adjust" if delta < 0 else "grant",
-                    ref_type="admin",
-                    ref_id=str(admin.id),
-                    note=(body.balance_note or "").strip() or "admin_adjust",
-                )
+
+    if delta is not None and delta != 0:
+        target = current + delta
+        if target < 0:
+            raise HTTPException(status_code=400, detail="余额不能减为负数")
+        user.balance_fen = target
+        db.add(
+            WalletLedger(
+                user_id=user.id,
+                delta_fen=delta,
+                balance_after=target,
+                kind="adjust" if delta < 0 else "grant",
+                ref_type="admin",
+                ref_id=str(admin.id),
+                note=(body.balance_note or "").strip() or "admin_adjust",
             )
+        )
 
     await db.commit()
     await db.refresh(user)

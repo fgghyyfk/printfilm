@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -121,15 +122,15 @@ VENDOR_VIDEO_YUAN_5S_BY_RES.update(
 )
 # Seedance 秒价表硬底：仅挡住低于旧错误表 ¥0.50/秒 的脏数据
 SEEDANCE_VENDOR_FLOOR_YUAN_PER_SEC = 0.5
-# MiniMax-H3：约 $0.08/秒（768P）；本站仅开放 720p；人民币按 billing_usd_cny 折算
-MINIMAX_H3_USD_PER_SEC_720P = 0.08
+# MiniMax-H3：约 $0.08/秒（768P 档参考）；开放 480p / 768p；人民币按 billing_usd_cny 折算
+MINIMAX_H3_USD_PER_SEC = 0.08
 
 
 def minimax_h3_yuan_per_sec(settings: Settings | None = None) -> float:
-    """MiniMax-H3 720p 结算参考秒价（人民币）。"""
+    """MiniMax-H3 结算参考秒价（人民币，按 768P 档）。"""
     s = settings or get_settings()
     fx = float(getattr(s, "billing_usd_cny", 0) or 7.3)
-    return MINIMAX_H3_USD_PER_SEC_720P * fx
+    return MINIMAX_H3_USD_PER_SEC * fx
 
 
 # 兼容旧逻辑：480P 秒价（= 5 秒价 / 5）
@@ -142,9 +143,10 @@ VENDOR_VIDEO_YUAN_PER_SEC_480P = {
 VIDEO_RESOLUTION_MULT = {
     "480p": 1.0,
     "720p": 2.0,
+    "768p": 2.0,
     "1080p": 4.0,
 }
-_VIDEO_RES_ORDER = ("480p", "720p", "1080p")
+_VIDEO_RES_ORDER = ("480p", "720p", "768p", "1080p")
 # Kie sunburst 控制台档（USD / credits）；公开 /api/pricing 往往只有笼统 gpt-image-2-5
 KIE_SUNBURST_USD_1K = 0.03
 KIE_SUNBURST_USD_2K = 0.05
@@ -201,7 +203,14 @@ RECOMMENDED_MODELS: tuple[dict[str, Any], ...] = (
         "id": "gpt-image-2",
         "capability": "image",
         "label": "GPT Image 2",
-        "note": "OpenAI 生图，约 $0.075/次",
+        "note": "OpenAI 生图，约 ¥0.55/次",
+        "recommended": False,
+    },
+    {
+        "id": "gpt-image-2.5",
+        "capability": "image",
+        "label": "GPT Image 2.5",
+        "note": "OpenAI 新一代生图，细节与文字更稳",
         "recommended": False,
     },
     {
@@ -222,7 +231,7 @@ RECOMMENDED_MODELS: tuple[dict[str, Any], ...] = (
         "id": "MiniMax-H3",
         "capability": "video",
         "label": "MiniMax H3",
-        "note": "4–15 秒，仅 720p",
+        "note": "4–15 秒，480p / 768p",
         "recommended": False,
     },
     {
@@ -412,18 +421,44 @@ def parse_pricing_payload(payload: dict[str, Any], settings: Settings | None = N
     return out
 
 
+def _gpt_image_id_variants(model: str) -> list[str]:
+    """gpt-image-2.5 ↔ gpt-image-2-5 等目录写法互查。"""
+    mid = (model or "").strip()
+    if not mid:
+        return []
+    out: list[str] = [mid]
+    dotted = re.sub(r"(?i)gpt-image-2-5", "gpt-image-2.5", mid)
+    hyphen = re.sub(r"(?i)gpt-image-2\.5", "gpt-image-2-5", mid)
+    for alt in (dotted, hyphen):
+        if alt and alt not in out:
+            out.append(alt)
+    return out
+
+
 def lookup_rate(model: str, rates: dict[str, OfficialRate] | None = None) -> OfficialRate | None:
-    """按模型 id 精确或忽略大小写查找。"""
+    """按模型 id 精确或忽略大小写查找（含 gpt-image 点分/连字符）。"""
     mid = (model or "").strip()
     table = rates if rates is not None else cached_rates()
     if not mid or not table:
         return None
-    hit = table.get(mid)
-    if hit:
-        return hit
-    key = mid.lower()
+    candidates = _gpt_image_id_variants(mid)
+    try:
+        from app.services.media_model_presets import resolve_preset_alias
+
+        aliased = resolve_preset_alias(mid)
+        if aliased:
+            for alt in _gpt_image_id_variants(aliased):
+                if alt not in candidates:
+                    candidates.append(alt)
+    except Exception:  # noqa: BLE001
+        pass
+    for cand in candidates:
+        hit = table.get(cand)
+        if hit:
+            return hit
+    keys = {c.lower() for c in candidates}
     for name, row in table.items():
-        if name.lower() == key:
+        if name.lower() in keys:
             return row
     return None
 
@@ -547,11 +582,9 @@ def resolve_billing_image_size(settings: Settings, *, model: str = "", size: str
     # z-image / qwen 等生成侧强制 1K，计费同步
     if _is_compact_tokenfree_image_model(working) or _is_compact_tokenfree_image_model(upstream):
         return "1K"
-    if (
-        is_seedream_pro_model(upstream)
-        or "sunburst" in working.lower()
-        or "gpt-image" in working.lower()
-    ):
+    from app.services.tokenfree_image import gpt_image_caps_at_2k
+
+    if is_seedream_pro_model(upstream) or gpt_image_caps_at_2k(working) or gpt_image_caps_at_2k(upstream):
         if raw.strip().upper() in {"3K", "4K"}:
             return "2K"
     return raw
@@ -639,7 +672,7 @@ def charge_fen_official_llm(tokens: int, settings: Settings, *, model: str = "")
 
 
 def normalize_video_resolution(resolution: str | None, settings: Settings | None = None) -> str:
-    """预估用清晰度：只认 480p/720p/1080p。"""
+    """预估用清晰度：认 480p/720p/768p/1080p。"""
     raw = (resolution or "").strip().lower()
     if raw in VIDEO_RESOLUTION_MULT:
         return raw
@@ -744,7 +777,7 @@ def format_video_pricing_hint(model: str) -> str:
     if expr_parts:
         return "按清晰度×时长 · " + " · ".join(expr_parts)
     if _is_minimax_video_model(mid):
-        return f"约 ¥{minimax_h3_yuan_per_sec():.2f}/秒 · 仅 720p"
+        return f"约 ¥{minimax_h3_yuan_per_sec():.2f}/秒 · 480p/768p"
     key = _resolve_vendor_video_key(mid)
     tiers = VENDOR_VIDEO_YUAN_5S_BY_RES.get(key)
     if not tiers:

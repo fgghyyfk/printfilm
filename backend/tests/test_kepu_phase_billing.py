@@ -65,8 +65,9 @@ def test_resolve_phase_videos_when_continuous_audio_ok(monkeypatch) -> None:
     assert resolve_kepu_billing_phase(_project(shots)) == "videos"
 
 
-def test_resolve_phase_videos_when_native_audio_and_images() -> None:
+def test_resolve_phase_videos_when_native_audio_and_images(monkeypatch) -> None:
     """Seedance 内置口播：有图即可进 videos，不依赖外部 TTS 文件。"""
+    monkeypatch.setattr(get_settings(), "kepu_seedance_native_audio", True)
     shots = [_shot(image_url="/i.png") for _ in range(3)]
     assert resolve_kepu_billing_phase(_project(shots)) == "videos"
 
@@ -129,20 +130,23 @@ def test_videos_estimate_only_remaining_shots() -> None:
     assert abs(two - one * 2) <= 1
 
 
-def test_videos_estimate_hd_doubles_480p_preview() -> None:
-    """HD 且配置 480p 时预扣按 720p（×2）。"""
+def test_videos_estimate_hd_upgrades_480p_to_720p() -> None:
+    """HD 且配置 480p 时预扣按 720p 计价（Seedance 按像素 token，720p≈480p×2.2）。"""
     settings = get_settings()
-    settings.ark_video_resolution = "480p"
     settings.billing_estimate_buffer = 1.0
     settings.model_video = "seedance-2-5"
     shots = [_shot(image_url="/i.png", audio_url="/a.wav", duration=5)]
+    settings.ark_video_resolution = "720p"
+    native_720p = estimate_phase_fen(_project(shots), "videos", settings=settings)
+    settings.ark_video_resolution = "480p"
     preview = estimate_phase_fen(_project(shots), "videos", settings=settings)
     hd = estimate_phase_fen(
         _project(shots, resolution_mode="hd"),
         "videos",
         settings=settings,
     )
-    assert hd == preview * 2
+    assert hd == native_720p
+    assert hd > preview
 
 
 @pytest.mark.asyncio
@@ -165,7 +169,11 @@ async def test_shot_regen_video_estimate_uses_project_hd() -> None:
     hd = await estimate_task_fen(db, task, settings=settings)
     db.get = AsyncMock(return_value=SimpleNamespace(resolution_mode="preview"))
     preview = await estimate_task_fen(db, task, settings=settings)
-    assert hd == preview * 2
+    settings.ark_video_resolution = "720p"
+    native_720p = await estimate_task_fen(db, task, settings=settings)
+    settings.ark_video_resolution = "480p"
+    assert hd == native_720p
+    assert hd > preview
 
 
 def test_normalize_produce_maps_to_current_phase(monkeypatch) -> None:

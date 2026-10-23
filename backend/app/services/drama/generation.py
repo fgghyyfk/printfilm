@@ -16,14 +16,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.models import User
 from app.models_drama import DramaAsset, DramaEpisode, DramaEpisodeFragment, DramaFragmentAssetRef, DramaProject
-from app.services.ark import get_ark
+from app.services.ark import TaskResult, get_ark
 from app.services.drama.billing_util import record_seedance_video_usage, record_seedream_image_usage, seedance_billing_key
 from app.services.drama.output_settings import (
     infer_aspect_ratio_from_pixels,
     resolve_episode_video_output,
     seedream_still_size_for_video_ratio,
 )
-from app.services.billing import record_line
 from app.services.drama.build_seedance_generate_body import (
     ASSET_MENTION_TOKEN_PATTERN,
     SEEDANCE_ATTACH_REFERENCE_AUDIO,
@@ -1419,8 +1418,6 @@ class FragmentVideoPrepared:
     generate_audio: bool = True
     content_labels: list[str] | None = None
     model_id: str | None = None
-    # 旧 payload 字段，反序列化仍读取；新任务不再写入
-    kie_api_kind: str | None = None
 
 
 # Worker 准备阶段：参考图 / 衔接帧 / 请求体（可耗时，但不等待上游成片）。
@@ -1539,6 +1536,23 @@ async def prepare_fragment_video_for_submit(
                 ),
             }
         )
+        content_labels = describe_seedance_content_slots(
+            ref_payloads,
+            continuity_url,
+            has_text=bool((prompt or "").strip()),
+            style_board_url=video_board_url or None,
+            content=prompt,
+        )
+        # 准备阶段先校验时长，过短/过长直接失败并提示（提交阶段 ark 仍会再拦一次）
+        from app.services.drama.voice_reference_audio import (
+            validate_seedance_body_reference_audios,
+        )
+
+        await validate_seedance_body_reference_audios(
+            body,
+            content_labels=content_labels,
+            project_id=project.id,
+        )
         return FragmentVideoPrepared(
             submit_mode="seedance_body",
             seedance_body=body,
@@ -1546,13 +1560,7 @@ async def prepare_fragment_video_for_submit(
             duration=duration,
             ratio=ratio,
             resolution=resolution,
-            content_labels=describe_seedance_content_slots(
-                ref_payloads,
-                continuity_url,
-                has_text=bool((prompt or "").strip()),
-                style_board_url=video_board_url or None,
-                content=prompt,
-            ),
+            content_labels=content_labels,
             model_id=mid,
         )
 
@@ -1626,7 +1634,6 @@ def serialize_fragment_video_prepared(prepared: FragmentVideoPrepared) -> dict[s
         "generate_audio": prepared.generate_audio,
         "content_labels": prepared.content_labels,
         "model_id": prepared.model_id,
-        "kie_api_kind": prepared.kie_api_kind,
     }
 
 
@@ -1658,7 +1665,6 @@ def deserialize_fragment_video_prepared(raw: dict[str, Any]) -> FragmentVideoPre
         generate_audio=bool(raw.get("generate_audio", True)),
         content_labels=labels,
         model_id=str(raw.get("model_id") or "") or None,
-        kie_api_kind=str(raw.get("kie_api_kind") or "") or None,
     )
 
 

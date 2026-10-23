@@ -55,6 +55,10 @@ SEEDANCE_SCENE_SECTION_HEADER = (
     "【强制约束：场景】以下场景的空间结构、环境陈设、光影氛围必须与对应参考图严格一致，"
     "严禁替换为其他场景或大幅偏离参考画面："
 )
+SEEDANCE_MUSIC_SECTION_HEADER = (
+    "【强制约束：参考音乐】以下音频是全片背景音乐参考，不是角色对白音色。"
+    "配乐的旋律、节奏与情绪必须贴合对应参考音频；无台词镜头保持闭嘴，禁止把这段音乐念成对白："
+)
 SEEDANCE_PROP_SECTION_HEADER = (
     "【强制约束：道具】以下道具的外形、材质与关键细节必须与对应参考图严格一致，"
     "严禁替换为其他物品或丢失标志性特征："
@@ -186,17 +190,45 @@ def read_asset_voice_audio_url(params: Any) -> str | None:
     return None
 
 
-# 解析资产可用的图片 URL
+# 音频后缀：禁止当作 reference_image（音色 cover 常被写成 mp3）
+_AUDIO_URL_SUFFIXES = (
+    ".mp3",
+    ".wav",
+    ".m4a",
+    ".aac",
+    ".ogg",
+    ".flac",
+    ".opus",
+    ".webm",
+)
+
+
+def _looks_like_audio_url(url: str) -> bool:
+    """URL 路径是否像音频文件（忽略 query）。"""
+    path = (url or "").split("?", 1)[0].strip().lower()
+    return any(path.endswith(suffix) for suffix in _AUDIO_URL_SUFFIXES)
+
+
+# 解析资产可用的图片 URL（绝不返回音频；voice/audio 资产不进参考图）
 def resolve_reference_image_url(asset: dict[str, Any]) -> str | None:
     cover = (asset.get("cover") or "").strip()
     url = (asset.get("url") or "").strip()
-    asset_type = asset.get("assetType")
-    category_type = asset.get("type")
+    asset_type = str(asset.get("assetType") or "").strip().lower()
+    category_type = str(asset.get("type") or "").strip().lower()
 
-    if asset_type == "image" or category_type in ("character", "scene", "prop", "material"):
-        return cover or url or None
+    # 音色/音频节点：cover 可能被写成试听 URL，绝不能进 image_url
+    if asset_type in {"audio", "voice"} or category_type in {"audio", "voice", "narration"}:
+        return None
 
-    return cover or None
+    candidate = ""
+    if asset_type == "image" or category_type in ("character", "scene", "prop", "material", "image"):
+        candidate = cover or url
+    else:
+        candidate = cover
+
+    if not candidate or _looks_like_audio_url(candidate):
+        return None
+    return candidate
 
 
 # 解析写入提示词的资产名称
@@ -699,6 +731,19 @@ def _name_is_token_prefix(text: str, name: str) -> bool:
     return (not rest) or rest[0] in _NAME_TOKEN_BOUNDARIES
 
 
+def _mention_audio_index(
+    asset: dict[str, Any] | None,
+    catalog: SeedanceReferenceCatalog,
+) -> int | None:
+    """角色/旁白音色与画布独立音频都要写成 @音频N，否则上游不使用该参考音频。"""
+    if not asset or asset.get("id") is None:
+        return None
+    kind = str(asset.get("type") or "").lower()
+    if kind not in {"character", "narration", "audio", "voice"}:
+        return None
+    return (getattr(catalog, "audio_index_by_asset_id", {}) or {}).get(int(asset["id"]))
+
+
 # 将单个 @asset 占位符替换为正文描述
 def replace_asset_mention_token(
     asset_id: int,
@@ -709,11 +754,7 @@ def replace_asset_mention_token(
     if not asset:
         return ""
     image_index = (getattr(catalog, "image_index_by_asset_id", {}) or {}).get(int(asset["id"]))
-    audio_index = None
-    if str(asset.get("type") or "").lower() in {"character", "narration"}:
-        audio_index = (getattr(catalog, "audio_index_by_asset_id", {}) or {}).get(
-            int(asset["id"])
-        )
+    audio_index = _mention_audio_index(asset, catalog)
     return format_body_asset_mention(
         _asset_prompt_name_for_mention(asset),
         image_index,
@@ -741,9 +782,7 @@ def replace_asset_mentions_without_duplicate_names(
             parts: list[str] = []
             if image_index is not None:
                 parts.append(f"@图片{image_index}/参考图{image_index}")
-            if audio_index is not None and str(
-                (asset_by_id.get(asset_id) or {}).get("type") or ""
-            ).lower() in {"character", "narration"}:
+            if _mention_audio_index(asset_by_id.get(asset_id), catalog) is not None:
                 parts.append(f"@音频{audio_index}/参考音频{audio_index}")
             token = f"（{'，'.join(parts)}）" if parts else ""
         end = match.end()
@@ -823,6 +862,35 @@ def build_reference_index_section(
     if not lines:
         return None
     return "\n".join([header, *lines])
+
+
+def build_music_reference_section(
+    reference: list[dict[str, Any]] | None,
+    catalog: SeedanceReferenceCatalog,
+) -> str | None:
+    """独立音频节点写成背景音乐口令；角色音色仍走对白约束，避免互相覆盖。"""
+    if not SEEDANCE_ATTACH_REFERENCE_AUDIO:
+        return None
+    lines: list[str] = []
+    seen: set[int] = set()
+    for asset in reference or []:
+        if str(asset.get("type") or "").lower() not in {"audio", "voice"}:
+            continue
+        asset_id = int(asset["id"])
+        if asset_id in seen:
+            continue
+        seen.add(asset_id)
+        audio_index = (catalog.audio_index_by_asset_id or {}).get(asset_id)
+        if audio_index is None:
+            continue
+        name = resolve_other_asset_prompt_name(asset)
+        lines.append(
+            f"背景音乐使用@音频{audio_index}（参考音频{audio_index}）「{name}」，"
+            "贯穿有配乐的镜头，不要当作任何人声对白"
+        )
+    if not lines:
+        return None
+    return "\n".join([SEEDANCE_MUSIC_SECTION_HEADER, *lines])
 
 
 # 将分镜脚本转为正文提示词
@@ -934,6 +1002,7 @@ def build_seedance_prompt_text(
             if SEEDANCE_ATTACH_REFERENCE_AUDIO
             else []
         ),
+        build_music_reference_section(reference, resolved_catalog),
         build_reference_index_section(
             reference,
             "character",
@@ -1086,10 +1155,10 @@ def resolve_seedance_resolution(
     *,
     model_id: str | None = None,
 ) -> str:
-    """解析并按模型能力钳制清晰度。"""
-    from app.services.seedance_resolutions import clamp_video_resolution
+    """解析并按模型能力钳制清晰度（MiniMax 提交小写 480p/768p）。"""
+    from app.services.seedance_resolutions import format_video_resolution_for_upstream
 
-    return clamp_video_resolution(model_id, resolution)
+    return format_video_resolution_for_upstream(model_id, resolution)
 
 
 # 将分镜参数转为 Seedance 请求体

@@ -29,6 +29,8 @@ import {
 
   Receipt,
 
+  Scale,
+
   Settings,
 
   Shapes,
@@ -90,6 +92,9 @@ const navGroups: NavGroup[] = [
       { to: "/users", label: "用户管理", icon: Users },
 
       { to: "/orders", label: "订单流水", icon: Receipt },
+
+      { to: "/adjustments", label: "手动调账", icon: Scale },
+
       { to: "/finance", label: "财务列表", icon: Wallet },
 
       { to: "/projects", label: "科普项目", icon: Clapperboard },
@@ -151,6 +156,9 @@ const titles: Record<string, string> = {"/marketplace": "数字资产平台运�
   "/users": "用户管理",
 
   "/orders": "订单流水",
+
+  "/adjustments": "手动调账",
+
   "/finance": "财务列表",
 
   "/projects": "科普项目",

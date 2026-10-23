@@ -13,7 +13,11 @@ from app.services.pipeline import (
 )
 
 
-def test_native_audio_default_on_for_full() -> None:
+def test_native_audio_default_on_for_full(monkeypatch) -> None:
+    # 固定为代码默认值，避免本机 .env 的 KEPU_SEEDANCE_* 改变结果
+    settings = get_settings()
+    monkeypatch.setattr(settings, "kepu_seedance_native_audio", True)
+    monkeypatch.setattr(settings, "kepu_seedance_sfx_audio", False)
     project = SimpleNamespace(pipeline_mode="full")
     assert _kepu_seedance_native_audio(project) is True
     assert _kepu_seedance_sfx_audio(project) is False

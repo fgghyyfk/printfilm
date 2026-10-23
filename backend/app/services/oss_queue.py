@@ -44,7 +44,6 @@ def enqueue_oss_upload(local_url: str) -> bool:
     if not oss_svc.oss_enabled():
         return False
 
-    settings = get_settings()
     key = _ENQUEUE_KEY.format(digest=_digest(url))
     try:
         r = _redis()

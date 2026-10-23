@@ -1,35 +1,10 @@
 import { throwApiError } from '../lib/apiError'
+import { createJsonRequester } from './client'
 
-function defaultApiBase() {
-  if (typeof window !== 'undefined' && window.location?.hostname) {
-    const { protocol, hostname } = window.location
-    return `${protocol}//${hostname}:8000`
-  }
-  return 'http://127.0.0.1:8000'
-}
-
-const _viteApiBase = import.meta.env.VITE_API_BASE
-const API_BASE =
-  _viteApiBase === undefined || _viteApiBase === null ? defaultApiBase() : String(_viteApiBase)
-
-function authHeaders(): HeadersInit {
-  const token = localStorage.getItem('token')
-  return token
-    ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
-    : { 'Content-Type': 'application/json' }
-}
-
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: { ...authHeaders(), ...(init?.headers || {}) },
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }))
-    throwApiError(res.status, err.detail, `HTTP ${res.status}`)
-  }
-  return res.json() as Promise<T>
-}
+/** 任务 API 沿用 HTTP 状态回退文案，共用统一传输层。 */
+const request = createJsonRequester((response, detail) =>
+  throwApiError(response.status, detail, `HTTP ${response.status}`),
+)
 
 export type TaskEventOut = {
   id: number

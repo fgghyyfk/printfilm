@@ -53,8 +53,6 @@ def infer_model_capability(model: str) -> LogicalModelCapability:
         or "veo" in mid
         or "video" in mid
         or "i2v" in mid
-        or mid.startswith("kie-veo")
-        or mid.startswith("kie-seedance")
         or "minimax-h" in mid
         or "hailuo" in mid
     ):
@@ -67,7 +65,6 @@ def infer_model_capability(model: str) -> LogicalModelCapability:
         or mid.startswith("gpt-image")
         or "grok-imagine" in mid
         or "image" in mid
-        or mid.startswith("kie-")
     ):
         return "image"
     return "text"
@@ -77,11 +74,6 @@ def infer_model_capability(model: str) -> LogicalModelCapability:
 def channel_connection_ready(channel: SystemModelChannel) -> bool:
     if not channel.enabled:
         return False
-    if channel.protocol == "volc_tts":
-        return bool(channel.has_api_key or channel.base_url)
-    if channel.protocol == "kie":
-        # Base URL 可缺省为官方默认
-        return bool(channel.has_api_key or (channel.api_key or "").strip())
     return bool(channel.base_url and channel.has_api_key)
 
 
@@ -103,10 +95,8 @@ def channel_supports_model(channel: SystemModelChannel, upstream_model: str) -> 
 def resolve_channel_model_capability(channel: SystemModelChannel, upstream_model: str) -> LogicalModelCapability:
     protocol = (channel.protocol or "auto").lower()
     # TokenFree / New API 也标 openai，不能整渠道路径判成 text；走价目+名字推断
-    if protocol in {"openai", "ark", "kie", "auto"}:
+    if protocol in {"openai", "auto"}:
         return infer_model_capability(upstream_model)
-    if protocol == "volc_tts":
-        return "audio"
     advanced = channel.advanced_config
     if advanced:
         if advanced.text_model and normalize_model_name(upstream_model) == normalize_model_name(advanced.text_model):

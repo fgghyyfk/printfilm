@@ -83,20 +83,25 @@ async def save_canvas(
             asset.asset_type = asset_type
             if url:
                 asset.url = str(url)
-                asset.cover = str(url)
+                # 音频/音色节点勿把媒体 URL 写进 cover（否则 Seedance 会当参考图）
+                if asset_type in {"audio", "voice"} or kind in {"audio", "voice"}:
+                    asset.cover = None
+                else:
+                    asset.cover = str(url)
             params = dict(asset.params or {})
             params["canvas"] = node
             params["canvas_node_id"] = nid
             asset.params = params
             existing[nid] = asset
         else:
+            is_audio_node = asset_type in {"audio", "voice"} or kind in {"audio", "voice"}
             db.add(
                 DramaAsset(
                     project_id=project.id,
                     type=kind if kind else "none",
                     asset_type=asset_type,
                     name=name,
-                    cover=str(url) if url else None,
+                    cover=None if is_audio_node else (str(url) if url else None),
                     url=str(url) if url else None,
                     params={"canvas_node_id": nid, "canvas": node},
                 )

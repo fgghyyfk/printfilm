@@ -5,7 +5,6 @@ from app.services.drama.voice_synthesis import (
     build_voice_sample_text,
     normalize_character_name,
 )
-from app.services.ark import ArkGateway
 from app.services.voices import infer_drama_speaker_from_prompt, infer_speaker_gender
 
 
@@ -113,18 +112,4 @@ def test_build_voice_sample_text_uses_role_lines() -> None:
     assert "禹" in yu
     assert "两岸百姓" in crowd
     assert yu != crowd
-
-
-def test_build_tts_additions_includes_context_texts() -> None:
-    raw = ArkGateway._build_tts_additions("zh_female_vv_uranus_bigtts", "清亮少女音")
-    assert raw is not None
-    assert "context_texts" in raw
-    assert "清亮少女音" in raw
-
-
-def test_build_tts_additions_speaker_clone() -> None:
-    raw = ArkGateway._build_tts_additions("S_abc123", "低沉男声")
-    assert raw is not None
-    assert "model_type" in raw
-    assert "context_texts" in raw
 

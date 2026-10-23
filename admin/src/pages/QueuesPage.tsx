@@ -1,88 +1,31 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { Activity, Ban, Eye, Layers, Loader2, RefreshCw } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Activity, Ban, Layers, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { api, type AdminTaskListRes, type AdminTaskRow, type AdminTaskStats } from "@/api/client";
-import { AdminEntityLink } from "@/components/admin/AdminEntityLink";
 import { AdminSearchInput } from "@/components/admin/AdminSearchInput";
 import { AdminUserSearchSelect } from "@/components/admin/AdminUserSearchSelect";
 import { StatCard } from "@/components/admin/StatCard";
 import { PageSection } from "@/components/admin/PageSection";
 import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
+import { TaskListRow } from "@/components/tasks/TaskListRow";
 import { PageHeader, Toolbar } from "@/components/ui/page";
 import { PaginationBar } from "@/components/PaginationBar";
 import { useAdminDetailQuery } from "@/hooks/useAdminDetailQuery";
-import { compactJsonPreview, hasJsonContent } from "@/lib/jsonPreview";
-import { cn, fenToYuan } from "@/lib/utils";
+import { useTaskClock } from "@/hooks/useTaskClock";
+import { canCancelTask, taskBilling, taskUpstream } from "@/lib/taskObservability";
+import { cn } from "@/lib/utils";
 import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
-import { taskDomainLabel, taskStatusLabel, taskTypeLabel } from "@/lib/statusLabels";
+import { taskDomainLabel, taskTypeLabel } from "@/lib/statusLabels";
 
 const REFRESH_MS = 15000;
 const TERMINAL_STATUSES = new Set(["succeeded", "failed", "cancelled"]);
 
-// 任务状态 → 样式
-function statusClass(status: string): string {
-  if (status === "running" || status === "leased") return "is-run";
-  if (status === "succeeded") return "is-done";
-  if (status === "failed") return "is-fail";
-  if (status === "cancelled" || status === "cancel_requested") return "is-warn";
-  return "is-warn";
-}
-
-function formatTime(value: string | null | undefined): string {
-  if (!value) return "—";
-  return new Date(value).toLocaleString();
-}
-
-// 阻止冒泡到行 onClick，避免链接跳转时同时打开详情
-function stopRowClick(e: { stopPropagation: () => void }) {
-  e.stopPropagation();
-}
-
-function scopeLinks(task: AdminTaskRow): ReactNode {
-  const parts: ReactNode[] = [];
-  if (task.drama_project_id) {
-    parts.push(
-      <span key="drama" onClick={stopRowClick}>
-        <AdminEntityLink kind="drama" id={task.drama_project_id} />
-      </span>,
-    );
-  }
-  if (task.project_id) {
-    parts.push(
-      <span key="project" onClick={stopRowClick}>
-        <AdminEntityLink kind="project" id={task.project_id} />
-      </span>,
-    );
-  }
-  if (task.asset_id) {
-    parts.push(
-      <span key="asset" onClick={stopRowClick}>
-        <AdminEntityLink kind="drama_asset" id={task.asset_id} />
-      </span>,
-    );
-  }
-  if (task.episode_id) parts.push(<span key="ep">分集#{task.episode_id}</span>);
-  if (task.fragment_id) parts.push(<span key="frag">分镜#{task.fragment_id}</span>);
-  if (parts.length === 0) return <span className="text-[#909399]">—</span>;
-  return <div className="flex flex-wrap gap-1">{parts}</div>;
-}
-
-function canCancel(task: AdminTaskRow): boolean {
-  return task.cancelable && !TERMINAL_STATUSES.has(task.status);
-}
-
-// 列表单元格：参数/结果单行摘要；title 也截断，避免巨 payload 塞进 DOM
-function jsonCell(value: Record<string, unknown> | null | undefined) {
-  if (!hasJsonContent(value)) {
-    return <span className="text-[#909399]">—</span>;
-  }
-  const preview = compactJsonPreview(value, 72);
-  const tip = compactJsonPreview(value, 280);
-  return (
-    <pre className="task-list-json" title={tip}>
-      {preview}
-    </pre>
-  );
+function formatElapsed(seconds: number | null | undefined): string {
+  if (seconds == null || !Number.isFinite(seconds)) return "暂无记录";
+  const value = Math.max(0, Math.floor(seconds));
+  if (value < 60) return `${value}秒`;
+  if (value < 3600) return `${Math.floor(value / 60)}分${value % 60}秒`;
+  return `${Math.floor(value / 3600)}小时${Math.floor((value % 3600) / 60)}分`;
 }
 
 // 统一任务平台监控页
@@ -112,7 +55,10 @@ export function QueuesPage() {
   const [taskType, setTaskType] = useState("");
   const [viewTab, setViewTab] = useState<"all" | "active">("all");
   const [cancelLoading, setCancelLoading] = useState<number | null>(null);
+  const apiOnlyNode = stats?.scheduler === "disabled";
   const taskDetail = useAdminDetailQuery("task");
+  const taskViews = useMemo(() => (data?.items || []).map((task) => ({ task, upstream: taskUpstream(task), billing: taskBilling(task) })), [data]);
+  const now = useTaskClock(data?.items.some((task) => !TERMINAL_STATUSES.has(task.status)) ?? false);
 
   const loadStats = useCallback(async () => {
     const res = await api<AdminTaskStats>("/api/admin/tasks/stats");
@@ -177,7 +123,7 @@ export function QueuesPage() {
 
   const handleCancel = useCallback(
     async (task: AdminTaskRow) => {
-      if (!canCancel(task)) return;
+      if (!canCancelTask(task)) return;
       if (!window.confirm(`确定取消任务 #${task.id}（${taskTypeLabel(task.task_type)}）？`)) return;
       setCancelLoading(task.id);
       try {
@@ -201,7 +147,7 @@ export function QueuesPage() {
   return (
     <div className="admin-page">
       <PageHeader
-        description={`统一任务平台 · 自动刷新 ${REFRESH_MS / 1000}s · 并发 ${stats?.scheduler_running_jobs ?? 0}/${stats?.max_concurrency ?? 0}`}
+        description={`统一任务平台 · 自动刷新 ${REFRESH_MS / 1000}s · ${apiOnlyNode ? "本节点仅 API / 队列由执行节点处理" : `本节点并发 ${stats?.scheduler_running_jobs ?? 0}/${stats?.max_concurrency ?? 0}`}`}
         actions={
           <button
             type="button"
@@ -224,28 +170,28 @@ export function QueuesPage() {
         <>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <StatCard
-              label="排队中"
+              label="待处理"
               value={stats?.pending_count ?? 0}
-              hint="含待调度 pending"
+              hint={`待调度 ${stats?.pending_ready_count ?? "—"} · 待激活 ${stats?.pending_deferred_count ?? "—"} · 延时 ${stats?.pending_delayed_count ?? "—"}`}
               icon={Layers}
               tone="warn"
             />
             <StatCard
               label="进行中"
               value={stats?.active_count ?? 0}
-              hint={`执行 ${stats?.running_count ?? 0} · 轮询 ${stats?.awaiting_poll_count ?? 0}`}
+              hint={`执行 ${stats?.running_count ?? 0} · 轮询 ${stats?.awaiting_poll_count ?? 0} · 取消中 ${stats?.cancel_requested_count ?? 0}`}
               icon={Activity}
               tone="info"
             />
             <StatCard
-              label="运行时槽位"
+              label="本节点执行槽位"
               value={
-                <>
+                apiOnlyNode ? <span className="text-lg">仅 API</span> : <>
                   {stats?.scheduler_running_jobs ?? 0}
                   <span className="text-lg text-[var(--admin-muted)]"> / {stats?.max_concurrency ?? 0}</span>
                 </>
               }
-              hint={`已租约 ${stats?.leased_count ?? 0}`}
+              hint={apiOnlyNode ? "队列由执行节点处理" : `全站已租约 ${stats?.leased_count ?? 0}`}
               icon={RefreshCw}
             />
             <div className="admin-panel admin-stat-card tone-success">
@@ -261,6 +207,19 @@ export function QueuesPage() {
                 更新 {stats?.fetched_at ? new Date(stats.fetched_at).toLocaleTimeString() : "—"}
               </div>
             </div>
+          </div>
+
+          <div className="admin-panel mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3 text-xs text-[var(--admin-muted)]">
+            <span className={cn("admin-status-pill", stats?.runtime_healthy === undefined ? "" : stats.runtime_healthy ? "is-done" : "is-fail")}>
+              {apiOnlyNode ? "本节点仅 API" : `运行时${stats?.runtime_healthy === undefined ? "状态未知" : stats.runtime_healthy ? "正常" : "异常"}`}
+            </span>
+            {apiOnlyNode ? <span>本节点仅 API / 队列由执行节点处理</span> : <>
+              <span>调度器 {stats?.scheduler ?? "—"} · 轮询器 {stats?.poller ?? "—"} · 看门狗 {stats?.watchdog ?? "—"}</span>
+              <span>最近成功调度：{stats?.scheduler_success_age_sec == null ? "暂无记录" : `${formatElapsed(stats.scheduler_success_age_sec)}前`}</span>
+              <span>连续失败：{stats?.scheduler_consecutive_failures ?? "—"}</span>
+            </>}
+            <span>最老到期待调度已等待：{formatElapsed(stats?.oldest_ready_wait_sec)}</span>
+            <span>待激活表示前置条件或并发空位尚未满足；延时表示尚未到调度时间。</span>
           </div>
 
           {(stats?.domains.length ?? 0) > 0 ? (
@@ -283,7 +242,7 @@ export function QueuesPage() {
                       </span>
                     </div>
                     <div className="mt-2 text-xs text-[var(--admin-muted)]">
-                      排队 {d.pending} · 进行 {d.active} · 成功 {d.succeeded}
+                      待处理 {d.pending} · 进行 {d.active} · 成功 {d.succeeded}
                     </div>
                   </div>
                 ))}
@@ -297,7 +256,7 @@ export function QueuesPage() {
               <div className="flex flex-wrap gap-2">
                 {(
                   [
-                    ["active", `进行中 (${stats?.pending_count ?? 0}+${stats?.active_count ?? 0})`],
+                    ["active", `未结束 (${stats?.pending_count ?? 0}+${stats?.active_count ?? 0})`],
                     ["all", "全部"],
                   ] as const
                 ).map(([key, label]) => (
@@ -345,7 +304,7 @@ export function QueuesPage() {
               >
                 <option value="">全部状态</option>
                 {Object.entries({
-                  pending: "排队中",
+                  pending: "待处理",
                   leased: "已租约",
                   running: "执行中",
                   awaiting_poll: "等待轮询",
@@ -400,26 +359,22 @@ export function QueuesPage() {
             </Toolbar>
 
             <div className="admin-table-wrap">
-              <table>
+              <table className="task-table">
                 <thead>
                   <tr>
-                    <th>ID</th>
-                    <th>领域 / 类型</th>
-                    <th>用户</th>
-                    <th>关联</th>
+                    <th>任务 / 模型</th>
                     <th>状态</th>
-                    <th>进度</th>
-                    <th>费用</th>
-                    <th>提交参数</th>
-                    <th>结果</th>
-                    <th>时间</th>
-                    <th>操作</th>
+                    <th>上游</th>
+                    <th>计费</th>
+                    <th>耗时</th>
+                    <th>用户 / 关联</th>
+                    <th className="text-right">操作</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(data?.items.length ?? 0) === 0 ? (
                     <tr>
-                      <td colSpan={11}>
+                      <td colSpan={7}>
                         <div className="admin-empty !py-10">
                           <div className="admin-empty-title">暂无任务</div>
                           <div className="admin-empty-desc">切换到「全部」查看历史任务</div>
@@ -427,77 +382,17 @@ export function QueuesPage() {
                       </td>
                     </tr>
                   ) : (
-                    data?.items.map((task) => (
-                      <tr
+                    taskViews.map(({ task, upstream, billing }) => (
+                      <TaskListRow
                         key={task.id}
-                        className="cursor-pointer hover:bg-[#f8faf9]"
-                        onClick={() => openDetail(task.id)}
-                      >
-                        <td className="font-mono text-xs">#{task.id}</td>
-                        <td>
-                          <div className="text-sm">{taskDomainLabel(task.domain)}</div>
-                          <div className="font-mono text-[11px] text-[#909399]">
-                            {taskTypeLabel(task.task_type)}
-                          </div>
-                        </td>
-                        <td onClick={stopRowClick}>
-                          <AdminEntityLink
-                            kind="user"
-                            id={task.requested_by}
-                            label={task.user_email ?? undefined}
-                            className="text-xs"
-                          />
-                        </td>
-                        <td className="max-w-[200px] text-xs" onClick={stopRowClick}>
-                          {scopeLinks(task)}
-                        </td>
-                        <td>
-                          <span className={`admin-status-pill ${statusClass(task.status)}`}>
-                            {taskStatusLabel(task.status)}
-                          </span>
-                          {task.error_message ? (
-                            <div className="mt-1 max-w-[200px] truncate text-[11px] text-[#f56c6c]" title={task.error_message}>
-                              {task.error_message}
-                            </div>
-                          ) : null}
-                        </td>
-                        <td className="text-xs">{task.progress_percent}%</td>
-                        <td className="text-xs">
-                          {task.billing_charged_fen != null && task.billing_charged_fen > 0
-                            ? `¥${fenToYuan(task.billing_charged_fen)}`
-                            : task.billing_status === "frozen"
-                              ? `预扣 ¥${fenToYuan(task.billing_estimate_fen ?? 0)}`
-                              : "—"}
-                        </td>
-                        <td className="task-list-json-cell">{jsonCell(task.payload)}</td>
-                        <td className="task-list-json-cell">{jsonCell(task.result_payload)}</td>
-                        <td className="text-xs text-[#909399]">
-                          <div>创建 {formatTime(task.created_at)}</div>
-                          {task.started_at ? <div>开始 {formatTime(task.started_at)}</div> : null}
-                        </td>
-                        <td onClick={(e) => e.stopPropagation()}>
-                          <div className="flex flex-wrap gap-1">
-                            <button
-                              type="button"
-                              className="admin-btn admin-btn-secondary !min-h-[28px] !px-2 !text-xs"
-                              onClick={() => openDetail(task.id)}
-                            >
-                              <Eye className="mr-1 inline h-3 w-3" />
-                              详情
-                            </button>
-                            {canCancel(task) ? (
-                              <button
-                                type="button"
-                                className="admin-btn admin-btn-danger !min-h-[28px] !px-2 !text-xs"
-                                disabled={cancelLoading === task.id}
-                                onClick={() => void handleCancel(task)}
-                              >
-                                {cancelLoading === task.id ? "取消中…" : "取消"}
-                              </button>
-                            ) : null}
-                          </div>
-                        </td>
-                      </tr>
+                        task={task}
+                        upstream={upstream}
+                        billing={billing}
+                        now={now}
+                        cancelling={cancelLoading === task.id}
+                        onOpen={openDetail}
+                        onCancel={(row) => void handleCancel(row)}
+                      />
                     ))
                   )}
                 </tbody>

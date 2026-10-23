@@ -8,18 +8,22 @@ import time
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import and_, or_, select, update
+from sqlalchemy import and_, func, or_, select, update
+from sqlalchemy.orm import aliased
 
 from app.config import get_settings
 from app.database import AsyncSessionLocal
 from app.models_tasks import TaskRun
 from app.services.billing.settlement import reconcile_terminal_frozen_tasks
-from app.services.tasks.executor import execute_task_run
+from app.services.tasks.executor import _mark_cancelled, execute_task_run
 from app.services.tasks.service import (
+    FINALIZING_UNTIL_KEY,
     append_task_event,
     count_user_active_runtime_tasks,
+    get_task_for_runtime,
     reconcile_sequential_batches,
     reconcile_stale_pending_tasks,
+    task_finalizing_window_open,
 )
 
 logger = logging.getLogger("app.tasks.scheduler")
@@ -27,21 +31,34 @@ logger = logging.getLogger("app.tasks.scheduler")
 # 调度循环句柄、进程内执行槽、停机信号、心跳与孤儿扫描时间戳
 _scheduler_task: asyncio.Task | None = None
 _running_jobs: dict[int, asyncio.Task] = {}
+_cancel_jobs: dict[int, asyncio.Task] = {}
+_maintenance_task: asyncio.Task | None = None
 _stop_event = asyncio.Event()
 _last_tick_mono: float = 0.0
-_last_orphan_check_mono: float = 0.0
+_last_success_mono: float = 0.0
+_loop_started_mono: float = 0.0
+_consecutive_failures: int = 0
 _intentionally_stopped: bool = True
+_MAINTENANCE_TIMEOUT_SEC = 5.0
+_MAX_CLAIM_PAGES = 4
+_MAX_CANDIDATES_PER_PAGE = 128
+_MAX_CANCEL_JOBS = 16
 
 
 # 启动任务调度循环。
 async def start_scheduler() -> None:
     global _scheduler_task, _intentionally_stopped, _last_tick_mono
+    global _last_success_mono, _consecutive_failures
+    global _loop_started_mono
     if _scheduler_task and not _scheduler_task.done():
         return
     _intentionally_stopped = False
-    await recover_orphaned_tasks()
     _stop_event.clear()
     _last_tick_mono = time.monotonic()
+    _loop_started_mono = _last_tick_mono
+    _last_success_mono = 0.0
+    _consecutive_failures = 0
+    _ensure_maintenance_loop()
     _scheduler_task = asyncio.create_task(_scheduler_loop(), name="task-scheduler")
 
 
@@ -56,31 +73,35 @@ async def stop_scheduler() -> None:
             await _scheduler_task
         except asyncio.CancelledError:
             pass
-    running_jobs = list(_running_jobs.values())
+    if _maintenance_task and not _maintenance_task.done():
+        _maintenance_task.cancel()
+        await asyncio.gather(_maintenance_task, return_exceptions=True)
+    running_jobs = list(_running_jobs.values()) + list(_cancel_jobs.values())
     for task in running_jobs:
         if not task.done():
             task.cancel()
     if running_jobs:
         await asyncio.gather(*running_jobs, return_exceptions=True)
     _running_jobs.clear()
+    _cancel_jobs.clear()
 
 
 # 仅重启调度循环（保留进程内仍在跑的 job），用于看门狗拉起卡死 tick。
 async def restart_scheduler_loop(*, reason: str = "watchdog") -> None:
-    global _scheduler_task, _intentionally_stopped, _last_tick_mono
+    global _scheduler_task, _intentionally_stopped
+    global _loop_started_mono
     if _intentionally_stopped:
         return
     logger.warning("restarting task scheduler loop reason=%s", reason)
-    _stop_event.set()
     if _scheduler_task and not _scheduler_task.done():
         _scheduler_task.cancel()
         try:
             await _scheduler_task
         except asyncio.CancelledError:
             pass
-    await recover_orphaned_tasks()
     _stop_event.clear()
-    _last_tick_mono = time.monotonic()
+    _ensure_maintenance_loop()
+    _loop_started_mono = time.monotonic()
     _scheduler_task = asyncio.create_task(_scheduler_loop(), name="task-scheduler")
 
 
@@ -105,12 +126,23 @@ def scheduler_tick_age_sec() -> float:
     return max(0.0, time.monotonic() - _last_tick_mono)
 
 
+# 返回最近成功调度的年龄与连续失败数；失败不能伪装成成功心跳。
+def scheduler_diagnostics() -> dict[str, int | float]:
+    age = time.monotonic() - _last_success_mono if _last_success_mono > 0 else 1e9
+    return {
+        "scheduler_success_age_sec": round(max(0.0, age), 1),
+        "scheduler_consecutive_failures": _consecutive_failures,
+    }
+
+
 # 是否因心跳过期应视为卡死（供看门狗判断）。
 def scheduler_tick_stale() -> bool:
     if _intentionally_stopped:
         return False
     stale_sec = max(15, int(get_settings().task_runtime_tick_stale_sec))
-    return scheduler_tick_age_sec() > stale_sec
+    # 重启保留真实失败记录，但给新循环一次完整执行机会，避免 watchdog 连续掐断重试。
+    heartbeat = max(_last_tick_mono, _loop_started_mono)
+    return time.monotonic() - heartbeat > stale_sec
 
 
 # 本地是否仍持有该任务的执行协程。
@@ -121,46 +153,73 @@ def _job_alive(task_id: int) -> bool:
 
 # 周期扫描到期任务并交给执行器。
 async def _scheduler_loop() -> None:
-    global _last_tick_mono
+    global _last_tick_mono, _last_success_mono, _consecutive_failures
     while not _stop_event.is_set():
-        _last_tick_mono = time.monotonic()
         timeout = max(20.0, float(get_settings().task_runtime_tick_stale_sec) - 10.0)
         try:
             await asyncio.wait_for(_tick(), timeout=timeout)
         except asyncio.TimeoutError:
+            _consecutive_failures += 1
             logger.error("task scheduler tick timed out after %.0fs", timeout)
         except asyncio.CancelledError:
             raise
         except Exception:  # noqa: BLE001
+            _consecutive_failures += 1
             logger.exception("task scheduler tick failed")
-        finally:
+        else:
             _last_tick_mono = time.monotonic()
+            _last_success_mono = _last_tick_mono
+            _consecutive_failures = 0
         await asyncio.sleep(1.0)
+
+
+# 保持唯一维护协程；watchdog 只重启调度循环时复用仍存活的维护任务。
+def _ensure_maintenance_loop() -> None:
+    global _maintenance_task
+    if _maintenance_task is None or _maintenance_task.done():
+        _maintenance_task = asyncio.create_task(_maintenance_loop(), name="task-maintenance")
+
+
+# 每项维护独占短事务；超时退出时由 session 上下文回滚，释放已持有的锁。
+async def _run_maintenance_operation(name: str) -> None:
+    if name == "orphan_recovery":
+        await recover_orphaned_tasks()
+        return
+    operations = {
+        "sequential_queue": reconcile_sequential_batches,
+        "stale_fragments": reconcile_stale_pending_tasks,
+        "billing_reconcile": reconcile_terminal_frozen_tasks,
+    }
+    async with AsyncSessionLocal() as db:
+        await operations[name](db)
+
+
+# 低频维护与任务领取隔离，单项锁等待不得阻塞新任务和取消请求。
+async def _maintenance_loop() -> None:
+    while not _stop_event.is_set():
+        for name in ("orphan_recovery", "sequential_queue", "stale_fragments", "billing_reconcile"):
+            try:
+                await asyncio.wait_for(_run_maintenance_operation(name), timeout=_MAINTENANCE_TIMEOUT_SEC)
+            except asyncio.CancelledError:
+                raise
+            except asyncio.TimeoutError:
+                logger.warning("task maintenance timed out operation=%s", name)
+            except Exception:  # noqa: BLE001
+                logger.exception("task maintenance failed operation=%s", name)
+        interval = max(5, int(get_settings().task_runtime_orphan_check_sec))
+        await asyncio.sleep(interval)
 
 
 # 扫描并租约抢占可执行任务。
 async def _tick() -> None:
-    global _last_orphan_check_mono
     now = datetime.now(UTC)
-    orphan_every = max(5, int(get_settings().task_runtime_orphan_check_sec))
-    if time.monotonic() - _last_orphan_check_mono >= orphan_every:
-        await recover_orphaned_tasks()
-        # 低频对账：收敛 settle 异常中断遗留的"终态 + frozen"任务（幂等）
-        async with AsyncSessionLocal() as reconcile_db:
-            await reconcile_terminal_frozen_tasks(reconcile_db)
-        _last_orphan_check_mono = time.monotonic()
-
-    async with AsyncSessionLocal() as db:
-        await reconcile_sequential_batches(db)
-        await reconcile_stale_pending_tasks(db)
     for task_id, job in list(_running_jobs.items()):
         if job.done():
             _running_jobs.pop(task_id, None)
-    async with AsyncSessionLocal() as db:
-        cancel_stmt = select(TaskRun.id).where(TaskRun.status == "cancel_requested")
-        cancel_ids = [int(item) for item in (await db.execute(cancel_stmt)).scalars().all()]
-    for task_id in cancel_ids:
-        await cancel_running_task(task_id)
+    for task_id, job in list(_cancel_jobs.items()):
+        if job.done():
+            _cancel_jobs.pop(task_id, None)
+    await _claim_cancel_requests()
 
     capacity = max(1, int(get_settings().task_runtime_max_concurrency))
     user_limit = max(1, int(get_settings().task_user_max_concurrency))
@@ -170,55 +229,69 @@ async def _tick() -> None:
 
     claimed_ids: list[int] = []
     async with AsyncSessionLocal() as db:
-        stmt = (
-            select(TaskRun.id, TaskRun.status, TaskRun.requested_by)
-            .where(
-                TaskRun.status.in_(("pending", "cancel_requested")),
-                TaskRun.next_action_at.is_not(None),
-                TaskRun.next_action_at <= now,
-            )
-            .order_by(TaskRun.priority.asc(), TaskRun.created_at.asc(), TaskRun.id.asc())
-            .limit(max(available_slots * 4, available_slots))
-        )
-        candidates = list((await db.execute(stmt)).all())
         user_active_cache: dict[int, int] = {}
-        for row in candidates:
-            if len(claimed_ids) >= available_slots:
+        seen_ids: set[int] = set()
+        full_users: set[int] = set()
+        active = aliased(TaskRun)
+        active_count = (
+            select(func.count(active.id))
+            .where(active.requested_by == TaskRun.requested_by, active.status.in_(("leased", "running")))
+            .correlate(TaskRun)
+            .scalar_subquery()
+        )
+        for _ in range(_MAX_CLAIM_PAGES):
+            remaining = available_slots - len(claimed_ids)
+            if remaining <= 0:
                 break
-            task_id = int(row.id)
-            current_status = str(row.status)
-            user_id = int(row.requested_by)
-            if task_id in _running_jobs and not _running_jobs[task_id].done():
-                continue
-            if user_id not in user_active_cache:
-                user_active_cache[user_id] = await count_user_active_runtime_tasks(db, user_id)
-            if user_active_cache[user_id] >= user_limit:
-                continue
-            lease_token = uuid.uuid4().hex
-            next_status = "leased" if current_status != "cancel_requested" else "cancel_requested"
-            claim = (
-                update(TaskRun)
-                .where(TaskRun.id == task_id, TaskRun.status == current_status)
-                .values(
-                    status=next_status,
-                    lease_token=lease_token,
-                    lease_until=now + timedelta(minutes=10),
+            stmt = (
+                select(TaskRun.id, TaskRun.status, TaskRun.requested_by)
+                .where(
+                    TaskRun.status == "pending",
+                    TaskRun.cancel_requested.is_(False),
+                    TaskRun.next_action_at.is_not(None),
+                    TaskRun.next_action_at <= now,
+                    active_count < user_limit,
                 )
+                .order_by(TaskRun.priority.asc(), TaskRun.created_at.asc(), TaskRun.id.asc())
+                .limit(min(_MAX_CANDIDATES_PER_PAGE, max(remaining * 4, remaining)))
+                .with_for_update(skip_locked=True, of=TaskRun)
             )
-            result = await db.execute(claim)
-            if int(result.rowcount or 0) != 1:
-                continue
-            task = await db.get(TaskRun, task_id)
-            await append_task_event(
-                db,
-                task_id,
-                event_type="task.leased",
-                status=next_status,
-                phase=getattr(task, "current_step_key", None),
-                message="任务已被调度器领取",
-            )
-            claimed_ids.append(task_id)
-            user_active_cache[user_id] += 1
+            if seen_ids:
+                stmt = stmt.where(TaskRun.id.not_in(sorted(seen_ids)))
+            if full_users:
+                stmt = stmt.where(TaskRun.requested_by.not_in(sorted(full_users)))
+            candidates = list((await db.execute(stmt)).all())
+            if not candidates:
+                break
+            for row in candidates:
+                if len(claimed_ids) >= available_slots:
+                    break
+                task_id = int(row.id)
+                seen_ids.add(task_id)
+                user_id = int(row.requested_by)
+                if _job_alive(task_id):
+                    continue
+                if user_id not in user_active_cache:
+                    user_active_cache[user_id] = await count_user_active_runtime_tasks(db, user_id)
+                if user_active_cache[user_id] >= user_limit:
+                    full_users.add(user_id)
+                    continue
+                result = await db.execute(
+                    update(TaskRun)
+                    .where(TaskRun.id == task_id, TaskRun.status == "pending", TaskRun.cancel_requested.is_(False))
+                    .values(status="leased", lease_token=uuid.uuid4().hex, lease_until=now + timedelta(minutes=10))
+                )
+                if int(result.rowcount or 0) != 1:
+                    continue
+                task = await db.get(TaskRun, task_id)
+                await append_task_event(
+                    db, task_id, event_type="task.leased", status="leased",
+                    phase=getattr(task, "current_step_key", None), message="任务已被调度器领取",
+                )
+                claimed_ids.append(task_id)
+                user_active_cache[user_id] += 1
+                if user_active_cache[user_id] >= user_limit:
+                    full_users.add(user_id)
         if claimed_ids:
             await db.commit()
 
@@ -226,6 +299,52 @@ async def _tick() -> None:
         if task_id in _running_jobs and not _running_jobs[task_id].done():
             continue
         _running_jobs[task_id] = asyncio.create_task(_run_one(task_id))
+
+
+# 取消使用独立且有上限的槽位，满额用户或普通队列积压不能阻挡取消。
+async def _claim_cancel_requests() -> None:
+    available = max(0, _MAX_CANCEL_JOBS - len(_cancel_jobs))
+    if available <= 0:
+        return
+    claimed: list[int] = []
+    async with AsyncSessionLocal() as db:
+        stmt = (
+            select(TaskRun.id)
+            .where(
+                TaskRun.status == "cancel_requested",
+                or_(TaskRun.next_action_at.is_(None), TaskRun.next_action_at <= datetime.now(UTC)),
+            )
+            .order_by(TaskRun.id.asc())
+            .limit(available)
+            .with_for_update(skip_locked=True, of=TaskRun)
+        )
+        if _cancel_jobs:
+            stmt = stmt.where(TaskRun.id.not_in(sorted(_cancel_jobs)))
+        ids = [int(item) for item in (await db.execute(stmt)).scalars().all()]
+        for task_id in ids:
+            if await cancel_running_task(task_id):
+                continue
+            claimed.append(task_id)
+    for task_id in claimed:
+        _cancel_jobs[task_id] = asyncio.create_task(_run_cancel_request(task_id), name=f"task-cancel-{task_id}")
+
+
+# 取消路径只调用状态/结算收敛，绝不进入业务 handler 或重新提交上游。
+async def _run_cancel_request(task_id: int) -> None:
+    try:
+        async with AsyncSessionLocal() as db:
+            task = await get_task_for_runtime(db, task_id)
+            if task and task.status == "cancel_requested":
+                if task_finalizing_window_open(task):
+                    until = datetime.fromisoformat(str(task.payload[FINALIZING_UNTIL_KEY]))
+                    task.next_action_at = until if until.tzinfo else until.replace(tzinfo=UTC)
+                    await db.commit()
+                    return
+                await _mark_cancelled(db, task)
+    except Exception:  # noqa: BLE001
+        logger.exception("task cancellation failed task_id=%s", task_id)
+    finally:
+        _cancel_jobs.pop(task_id, None)
 
 
 # 包装执行器并在结束后释放运行槽位。
@@ -251,8 +370,6 @@ async def recover_orphaned_tasks() -> int:
     grace_sec = max(5, int(get_settings().task_runtime_recover_grace_sec))
     stale_before = now - timedelta(seconds=grace_sec)
     async with AsyncSessionLocal() as db:
-        await reconcile_sequential_batches(db)
-        await reconcile_stale_pending_tasks(db)
         stmt = select(TaskRun).where(
             or_(
                 and_(

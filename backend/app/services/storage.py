@@ -94,12 +94,65 @@ def _download_timeout(timeout: float | httpx.Timeout) -> httpx.Timeout:
     return httpx.Timeout(connect=min(30.0, seconds), read=seconds, write=60.0, pool=30.0)
 
 
-def _is_retryable_download_error(exc: BaseException) -> bool:
-    """连接被对端掐断 / 读超时 / 不完整体，适合短暂重试。"""
-    if isinstance(exc, (httpx.RemoteProtocolError, httpx.ReadTimeout, httpx.ConnectError, httpx.ConnectTimeout)):
-        return True
-    text = str(exc or "")
-    return "peer closed" in text.lower() or "incomplete download" in text.lower() or "complete message body" in text.lower()
+class RetryableMediaDownloadError(RuntimeError):
+    """上游成片已成功，下载被中断。调用方应沿原任务重试下载，不要重新生成。"""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        provider_task_id: str = "",
+        counts_attempt: bool = True,
+    ) -> None:
+        super().__init__(message)
+        self.provider_task_id = (provider_task_id or "").strip()
+        # 正文下载失败才计入次数；查询抖动或「尚未就绪」不消耗下载额度
+        self.counts_attempt = bool(counts_attempt)
+
+
+def _walk_download_errors(exc: BaseException):
+    """沿着 cause/context 看一小段，避免只看最外层包装。"""
+    current: BaseException | None = exc
+    seen: list[int] = []
+    while current is not None and id(current) not in seen and len(seen) < 6:
+        seen.append(id(current))
+        yield current
+        current = current.__cause__ or current.__context__
+
+
+def is_retryable_download_error(exc: BaseException) -> bool:
+    """连接被对端掐断、读超时或不完整体，适合沿原任务重试下载。"""
+    retryable_types = (
+        httpx.RemoteProtocolError,
+        httpx.ReadTimeout,
+        httpx.ConnectError,
+        httpx.ConnectTimeout,
+        httpx.ReadError,
+        httpx.WriteError,
+        httpx.NetworkError,
+        httpx.PoolTimeout,
+    )
+    markers = (
+        "peer closed",
+        "incomplete download",
+        "complete message body",
+        "connection reset",
+        "connection aborted",
+        "broken pipe",
+        "10054",
+    )
+    for current in _walk_download_errors(exc):
+        if isinstance(current, RetryableMediaDownloadError):
+            return True
+        if isinstance(current, retryable_types):
+            return True
+        text = str(current or "").lower()
+        if any(marker in text for marker in markers):
+            return True
+    return False
+
+
+_is_retryable_download_error = is_retryable_download_error
 
 
 # 下载远程文件到 dest；TokenFree 成片 URL 可传 Bearer headers

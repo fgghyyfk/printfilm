@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -59,7 +58,8 @@ async def record_line(
         raw if isinstance(raw, dict) else {}
     )
     real_tok = 0
-    if isinstance(usage_parsed, dict):
+    # 本地按时长估算写入的 tokens 带 tokens_estimated 标记，不算上游实测
+    if isinstance(usage_parsed, dict) and not usage_parsed.get("tokens_estimated"):
         for key in ("tokens", "total_tokens", "completion_tokens"):
             try:
                 real_tok = int(usage_parsed.get(key) or 0)

@@ -8,7 +8,7 @@ from typing import Any
 
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import raiseload, selectinload
 
 from app.models import Project, Shot, User
 from app.models_drama import DramaAsset, DramaEpisode, DramaEpisodeFragment, DramaProject, DramaScript
@@ -182,9 +182,9 @@ async def create_task(
 
 
 # 串行 batch 中上一镜完成后激活下一镜任务。
-async def activate_next_sequential_task(db: AsyncSession, batch_key: str | None, completed_index: int) -> None:
+async def activate_next_sequential_task(db: AsyncSession, batch_key: str | None, completed_index: int) -> bool:
     if not batch_key:
-        return
+        return False
     from app.config import get_settings
     from app.services.drama.access import count_user_inflight_fragment_video_tasks
 
@@ -194,18 +194,23 @@ async def activate_next_sequential_task(db: AsyncSession, batch_key: str | None,
         .where(
             TaskRun.batch_key == batch_key,
             TaskRun.status == "pending",
+            TaskRun.next_action_at.is_(None),
+            TaskRun.cancel_requested.is_(False),
         )
         .order_by(TaskRun.id.asc())
+        .with_for_update(skip_locked=True)
     )
     rows = list((await db.execute(stmt)).scalars().all())
     for task in rows:
+        if task.next_action_at is not None or task.cancel_requested:
+            continue
         payload = task.payload if isinstance(task.payload, dict) else {}
         if int(payload.get("batch_index", -1)) != next_index:
             continue
         limit = max(1, int(get_settings().drama_user_video_job_limit or 12))
         inflight = await count_user_inflight_fragment_video_tasks(db, int(task.requested_by))
         if inflight >= limit:
-            return
+            return False
         task.next_action_at = datetime.now(UTC)
         await append_task_event(
             db,
@@ -216,7 +221,8 @@ async def activate_next_sequential_task(db: AsyncSession, batch_key: str | None,
             message=f"前置分镜已完成，激活 batch 第 {next_index + 1} 镜",
         )
         await db.commit()
-        return
+        return True
+    return False
 
 
 # 串行 batch 中某一镜失败后，终止后续仍 pending 的兄弟任务。
@@ -622,18 +628,17 @@ async def reconcile_sequential_batches(db: AsyncSession) -> int:
             )
             continue
 
+        if uses_episode_rebalance:
+            # 分镜仅按真实镜序及前置尾帧重排，不能同时由 batch 分支重复点亮。
+            continue
+
         succeeded_indices = [
             int((t.payload or {}).get("batch_index", -1))
             for t in tasks
             if t.status == "succeeded" and isinstance(t.payload, dict)
         ]
         if succeeded_indices:
-            await activate_next_sequential_task(db, batch_key, max(succeeded_indices))
-            changed += 1
-            continue
-
-        if uses_episode_rebalance:
-            # 无论能否登记项目，都不要把连续点击当成独立首镜点亮
+            changed += int(await activate_next_sequential_task(db, batch_key, max(succeeded_indices)))
             continue
 
         first = by_index.get(0)
@@ -1014,6 +1019,20 @@ async def cancel_task_for_user(db: AsyncSession, user: User, task_id: int) -> Ta
     return await get_task_for_user(db, user, task.id)
 
 
+# 共用用户隔离、活动态筛选和详情加载，保证单项目与列表查询语义一致。
+def _active_owner_tasks_statement(user_id: int, *scope_filters) -> Select:
+    return (
+        select(TaskRun)
+        .options(*task_detail_options())
+        .where(
+            TaskRun.requested_by == user_id,
+            TaskRun.status.in_(tuple(ACTIVE_TASK_STATUSES)),
+            or_(*scope_filters),
+        )
+        .order_by(TaskRun.created_at.desc())
+    )
+
+
 async def list_active_tasks_for_owner(
     db: AsyncSession,
     user_id: int,
@@ -1021,6 +1040,7 @@ async def list_active_tasks_for_owner(
     project_id: int | None = None,
     drama_project_id: int | None = None,
 ) -> list[TaskRun]:
+    """读取用户在指定项目范围内的活动任务，按创建时间倒序返回。"""
     scope_filters = []
     if project_id is not None:
         scope_filters.append(TaskRun.project_id == project_id)
@@ -1028,13 +1048,25 @@ async def list_active_tasks_for_owner(
         scope_filters.append(TaskRun.drama_project_id == drama_project_id)
     if not scope_filters:
         return []
-    filters = [
-        TaskRun.requested_by == user_id,
-        TaskRun.status.in_(tuple(ACTIVE_TASK_STATUSES)),
-        or_(*scope_filters),
-    ]
-    stmt = select(TaskRun).options(*task_detail_options()).where(*filters).order_by(TaskRun.created_at.desc())
+    stmt = _active_owner_tasks_statement(user_id, *scope_filters)
     return list((await db.execute(stmt)).scalars().unique().all())
+
+
+async def list_active_tasks_for_projects(
+    db: AsyncSession,
+    user_id: int,
+    project_ids: list[int],
+) -> dict[int, list[TaskRun]]:
+    """一次读取一页科普项目的活动任务，分组后仍保持各项目的新任务优先。"""
+    # 去重后的映射也为暂无活动任务的项目保留空列表；空页不访问数据库。
+    grouped: dict[int, list[TaskRun]] = {int(project_id): [] for project_id in project_ids}
+    if not grouped:
+        return grouped
+    stmt = _active_owner_tasks_statement(user_id, TaskRun.project_id.in_(list(grouped)))
+    tasks = (await db.execute(stmt)).scalars().unique().all()
+    for task in tasks:
+        grouped[task.project_id].append(task)
+    return grouped
 
 
 async def cancel_tasks_for_scope(
@@ -1085,14 +1117,22 @@ async def cancel_tasks_for_scope(
 
 
 async def get_task_for_runtime(db: AsyncSession, task_id: int) -> TaskRun | None:
-    """Load one task with full details for runtime loops."""
-    stmt = select(TaskRun).options(*task_detail_options()).where(TaskRun.id == task_id)
+    """执行器仅加载步骤与目标，避免重复读取整段上游/激活事件历史。"""
+    stmt = (
+        select(TaskRun)
+        .options(selectinload(TaskRun.steps), selectinload(TaskRun.targets))
+        .where(TaskRun.id == task_id)
+    )
     return (await db.execute(stmt)).scalar_one_or_none()
 
 
 async def get_task_admin(db: AsyncSession, task_id: int) -> TaskRun:
-    """Load one task for admin without ownership check."""
-    stmt = select(TaskRun).options(*task_detail_options()).where(TaskRun.id == task_id)
+    """管理员读取任务执行数据；完整历史由独立的有界事件查询提供。"""
+    stmt = (
+        select(TaskRun)
+        .options(selectinload(TaskRun.steps), selectinload(TaskRun.targets), raiseload(TaskRun.events))
+        .where(TaskRun.id == task_id)
+    )
     task = (await db.execute(stmt)).scalar_one_or_none()
     if not task:
         raise LookupError("任务不存在")
@@ -1144,7 +1184,7 @@ async def list_tasks_admin(
 
     total = int((await db.execute(count_stmt)).scalar_one() or 0)
     stmt = (
-        base_stmt.options(*task_detail_options())
+        base_stmt.options(selectinload(TaskRun.steps), selectinload(TaskRun.targets), raiseload(TaskRun.events))
         .order_by(TaskRun.created_at.desc(), TaskRun.id.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
@@ -1180,10 +1220,27 @@ async def cancel_task_admin(db: AsyncSession, task_id: int) -> TaskRun:
 
 async def get_task_stats_admin(db: AsyncSession) -> dict[str, Any]:
     """Aggregate task platform stats for admin dashboard."""
+    now = datetime.now(UTC)
     status_rows = (
         await db.execute(select(TaskRun.status, func.count()).group_by(TaskRun.status))
     ).all()
     status_counts = {str(status): int(count) for status, count in status_rows}
+
+    ready_count, deferred_count, delayed_count, oldest_ready_at = (
+        await db.execute(
+            select(
+                func.count().filter(TaskRun.next_action_at <= now),
+                func.count().filter(TaskRun.next_action_at.is_(None)),
+                func.count().filter(TaskRun.next_action_at > now),
+                func.min(TaskRun.next_action_at).filter(TaskRun.next_action_at <= now),
+            ).where(TaskRun.status == "pending")
+        )
+    ).one()
+    oldest_ready_wait_sec = 0
+    if oldest_ready_at is not None:
+        if oldest_ready_at.tzinfo is None:
+            oldest_ready_at = oldest_ready_at.replace(tzinfo=UTC)
+        oldest_ready_wait_sec = max(0, int((now - oldest_ready_at).total_seconds()))
 
     domain_rows = (
         await db.execute(
@@ -1212,6 +1269,10 @@ async def get_task_stats_admin(db: AsyncSession) -> dict[str, Any]:
 
     return {
         "pending_count": status_counts.get("pending", 0),
+        "pending_ready_count": int(ready_count),
+        "pending_deferred_count": int(deferred_count),
+        "pending_delayed_count": int(delayed_count),
+        "oldest_ready_wait_sec": oldest_ready_wait_sec,
         "active_count": sum(status_counts.get(s, 0) for s in ACTIVE_TASK_STATUSES if s != "pending"),
         "leased_count": status_counts.get("leased", 0),
         "running_count": status_counts.get("running", 0),

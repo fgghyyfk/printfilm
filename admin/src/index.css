@@ -3767,7 +3767,388 @@ textarea.admin-control {
 
 /* 任务详情弹窗 */
 .task-detail-modal.admin-modal--full {
-  max-width: min(960px, calc(100vw - 32px)) !important;
+  max-width: min(1120px, calc(100vw - 32px)) !important;
+}
+
+/* 任务中心列表：每格主值 + 次要信息，失败/运行行左侧色条 */
+.task-table td {
+  vertical-align: top;
+  padding-top: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #f0f2f1 !important;
+}
+
+.task-table tbody tr.task-row td:first-child {
+  box-shadow: inset 3px 0 0 transparent;
+}
+
+.task-table tbody tr.task-row.is-fail td:first-child {
+  box-shadow: inset 3px 0 0 #ef4444;
+}
+
+.task-table tbody tr.task-row.is-run td:first-child {
+  box-shadow: inset 3px 0 0 #3b82f6;
+}
+
+.task-table tbody tr.task-row.is-fail td {
+  background: #fffafa;
+}
+
+.task-cell-main {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--admin-text);
+  line-height: 1.4;
+}
+
+.task-cell-sub {
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--admin-muted);
+}
+
+.task-model-chip {
+  display: inline-block;
+  max-width: 220px;
+  margin-top: 6px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: #f3f5f4;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: #475569;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: top;
+}
+
+.task-progress {
+  height: 4px;
+  margin-top: 8px;
+  max-width: 180px;
+  border-radius: 999px;
+  background: #eef1ef;
+  overflow: hidden;
+}
+
+.task-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--admin-accent);
+  transition: width 0.3s;
+}
+
+.task-live-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 6px;
+  border-radius: 999px;
+  background: #3b82f6;
+  vertical-align: middle;
+  animation: task-live-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes task-live-pulse {
+  50% { opacity: 0.3; }
+}
+
+.task-icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  background: #fff;
+  color: #606266;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.task-icon-btn:hover {
+  border-color: var(--admin-accent);
+  color: var(--admin-forest);
+}
+
+.task-icon-btn.is-danger:hover {
+  border-color: #fca5a5;
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.task-icon-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 详情顶部指标条 */
+.task-summary {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1.2fr 0.9fr 0.9fr;
+  border-bottom: 1px solid var(--admin-border);
+  background: #fff;
+  box-shadow: inset 3px 0 0 var(--admin-border);
+}
+
+.task-summary.is-fail { box-shadow: inset 3px 0 0 #ef4444; }
+.task-summary.is-run { box-shadow: inset 3px 0 0 #3b82f6; }
+.task-summary.is-done { box-shadow: inset 3px 0 0 var(--admin-accent); }
+
+.task-summary-item {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 14px 18px;
+  border-left: 1px solid #f0f2f1;
+}
+
+.task-summary-item:first-child {
+  border-left: 0;
+}
+
+.task-summary-item .task-progress {
+  width: 100%;
+  margin-top: 0;
+}
+
+.task-summary-label {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #909399;
+}
+
+.task-summary-jump {
+  border: 0;
+  background: none;
+  padding: 0;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--admin-forest);
+  cursor: pointer;
+}
+
+.task-summary-jump:hover {
+  text-decoration: underline;
+}
+
+.task-summary-value {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--admin-text);
+}
+
+.task-summary-sub {
+  max-width: 100%;
+  font-size: 11px;
+  color: var(--admin-muted);
+}
+
+.task-copy {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+  gap: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.task-copy button {
+  flex: none;
+  border: 0;
+  background: none;
+  padding: 2px;
+  border-radius: 4px;
+  color: #909399;
+  cursor: pointer;
+}
+
+.task-copy button:hover {
+  background: #f0f2f1;
+  color: var(--admin-forest);
+}
+
+/* 时间线：已到达节点高亮 */
+.task-timeline {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.task-timeline li {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 16px;
+}
+
+.task-timeline li::before {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: #eef1ef;
+}
+
+.task-timeline li::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  border: 2px solid #d5dbd8;
+  background: #fff;
+}
+
+.task-timeline li.is-reached::before { background: var(--admin-accent-soft); }
+.task-timeline li.is-reached::after { border-color: var(--admin-accent); background: var(--admin-accent); }
+
+.task-timeline-label {
+  font-size: 11px;
+  color: #909399;
+}
+
+.task-timeline-time {
+  font-size: 12px;
+  color: var(--admin-text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 上游请求卡片 */
+.task-upstream-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #fafbfa;
+  border: 1px solid var(--admin-border);
+}
+
+.task-upstream-card {
+  padding: 12px 14px;
+  border: 1px solid var(--admin-border);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: inset 3px 0 0 #93c5fd;
+}
+
+.task-upstream-card.is-fail {
+  box-shadow: inset 3px 0 0 #ef4444;
+}
+
+.task-upstream-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.task-upstream-endpoint {
+  min-width: 0;
+  max-width: 420px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: #334155;
+}
+
+.task-http-chip {
+  padding: 1px 7px;
+  border-radius: 6px;
+  background: rgba(61, 154, 114, 0.12);
+  color: var(--admin-forest);
+  font-weight: 600;
+}
+
+.task-http-chip.is-fail {
+  background: rgba(239, 68, 68, 0.1);
+  color: #dc2626;
+}
+
+.task-upstream-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px 16px;
+  margin: 10px 0;
+  font-size: 12px;
+}
+
+.task-upstream-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+}
+
+.task-upstream-steps li {
+  display: inline-flex;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: #f5f7f6;
+  font-size: 11px;
+}
+
+.task-json-toggle {
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  background: #fafbfa;
+}
+
+.task-json-toggle > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.task-json-toggle > summary > span {
+  font-size: 10px;
+  font-weight: 500;
+  color: #909399;
+}
+
+.task-json-toggle[open] > summary {
+  border-bottom: 1px solid var(--admin-border);
+}
+
+.task-json-toggle > .task-detail-json,
+.task-json-toggle > p {
+  margin: 8px !important;
+}
+
+@media (max-width: 960px) {
+  .task-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .task-summary-item { border-left: 0; border-top: 1px solid #f0f2f1; }
+  .task-upstream-meta { grid-template-columns: 1fr; }
+  .task-timeline { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 12px; }
 }
 
 .task-detail-loading {

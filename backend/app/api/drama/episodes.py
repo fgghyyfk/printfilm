@@ -66,6 +66,7 @@ from app.services.drama.jobs import (
 )
 from app.config import get_settings
 from app.services.drama.seed import (
+    _script_body_fingerprint,
     require_confirmable_episode_body,
     seed_assets_from_script,
     seed_episodes_from_script,
@@ -103,12 +104,25 @@ def _fragment_out(frag: DramaEpisodeFragment) -> DramaFragmentOut:
     )
 
 
-def _episode_out(ep: DramaEpisode) -> DramaEpisodeOut:
+def _episode_out(
+    ep: DramaEpisode,
+    *,
+    script_bodies: dict[int, str] | None = None,
+) -> DramaEpisodeOut:
+    """序列化分集；有当前正文时附加旧分镜标识，不修改数据库状态。"""
     frags = sorted(ep.fragments or [], key=lambda f: f.sort_order)
+    params = dict(ep.params or {})
+    if script_bodies is not None:
+        number = int(params.get("episodeNumber") or 0)
+        stored_fp = str(params.get("fragment_source_fp") or "")
+        current_body = script_bodies.get(number, "")
+        params["fragment_script_changed"] = bool(
+            frags and stored_fp and stored_fp != _script_body_fingerprint(current_body)
+        )
     return DramaEpisodeOut(
         id=ep.id,
         name=ep.name,
-        params=ep.params,
+        params=params,
         project_id=ep.project_id,
         fragments=[_fragment_out(f) for f in frags],
         active_tasks=list(getattr(ep, "active_tasks", []) or []),
@@ -198,7 +212,7 @@ async def list_episodes(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[DramaEpisodeOut]:
-    await get_owned_drama_project(db, project_id, user)
+    project = await get_owned_drama_project(db, project_id, user, with_script=True)
     from app.services.drama.seed import merge_duplicate_episodes_by_number
 
     # 打开分镜页时顺手合并同号重复行
@@ -228,7 +242,14 @@ async def list_episodes(
         by_episode_id.setdefault(int(task.episode_id), []).append(task)
     for ep in episodes:
         ep.active_tasks = _expand_episode_task_items(by_episode_id.get(int(ep.id), []))
-    return [_episode_out(ep) for ep in episodes]
+    content = project.script.episode_content if project.script else None
+    rows = content.get("episodes", []) if isinstance(content, dict) else content
+    script_bodies = {
+        int(row.get("episodeNumber") or 0): str(row.get("body") or row.get("content") or "")
+        for row in (rows or [])
+        if isinstance(row, dict)
+    }
+    return [_episode_out(ep, script_bodies=script_bodies) for ep in episodes]
 
 
 @router.post("/episodes/seed_from_script", response_model=list[DramaEpisodeOut])

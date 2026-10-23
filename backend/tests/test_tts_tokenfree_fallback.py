@@ -16,18 +16,15 @@ def _tts_settings() -> Settings:
         ark_mock=False,
         ark_api_key="sk-test",
         ark_base_url="https://www.tokenfree.com/v1",
-        volc_tts_app_id="app",
-        volc_tts_access_key="key",
     )
 
 
 async def test_tts_tokenfree_falls_back_to_edge(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """豆包 403、TokenFree seed-tts 无渠道时，用 edge-tts 产出可听文件。"""
+    """TokenFree 语音失败时，用 edge-tts 产出可听文件。"""
     gw = ArkGateway(settings=_tts_settings())
     monkeypatch.setattr("app.services.storage.project_dir", lambda _pid: tmp_path)
     monkeypatch.setattr("app.services.storage.publish_local", lambda p: f"/static/{Path(p).name}")
     monkeypatch.setattr(gw, "_ark_api_key", lambda: "sk-test")
-    monkeypatch.setattr(gw, "_tts_openspeech", AsyncMock(return_value=False))
     monkeypatch.setattr(gw, "_tts_openai_speech", AsyncMock(return_value=False))
     monkeypatch.setattr("app.services.ark.is_near_silent_audio", lambda _p: False)
 
@@ -51,7 +48,6 @@ async def test_tts_tokenfree_qwen_skips_speech_endpoint(tmp_path: Path, monkeypa
     monkeypatch.setattr("app.services.storage.project_dir", lambda _pid: tmp_path)
     monkeypatch.setattr("app.services.storage.publish_local", lambda p: f"/static/{Path(p).name}")
     monkeypatch.setattr(gw, "_ark_api_key", lambda: "sk-test")
-    monkeypatch.setattr(gw, "_tts_openspeech", AsyncMock(return_value=False))
     monkeypatch.setattr("app.services.ark.is_near_silent_audio", lambda _p: False)
     captured: dict = {}
 
@@ -83,12 +79,11 @@ async def test_tts_tokenfree_qwen_skips_speech_endpoint(tmp_path: Path, monkeypa
 
 
 async def test_tts_tokenfree_tried_before_edge_for_doubao_speaker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """豆包 speaker 也会走 TokenFree 多模型；成功则不再落到 edge-tts。"""
+    """预设音色走 TokenFree；成功则不再落到 edge-tts。"""
     gw = ArkGateway(settings=_tts_settings())
     monkeypatch.setattr("app.services.storage.project_dir", lambda _pid: tmp_path)
     monkeypatch.setattr("app.services.storage.publish_local", lambda p: f"/static/{Path(p).name}")
     monkeypatch.setattr(gw, "_ark_api_key", lambda: "sk-test")
-    monkeypatch.setattr(gw, "_tts_openspeech", AsyncMock(return_value=False))
     speech = AsyncMock(return_value=True)
     monkeypatch.setattr(gw, "_tts_openai_speech", speech)
     monkeypatch.setattr("app.services.ark.is_near_silent_audio", lambda _p: False)
@@ -117,7 +112,6 @@ async def test_tts_raises_when_all_providers_fail(tmp_path: Path, monkeypatch: p
     gw = ArkGateway(settings=_tts_settings())
     monkeypatch.setattr("app.services.storage.project_dir", lambda _pid: tmp_path)
     monkeypatch.setattr(gw, "_ark_api_key", lambda: "sk-test")
-    monkeypatch.setattr(gw, "_tts_openspeech", AsyncMock(return_value=False))
     monkeypatch.setattr(gw, "_tts_openai_speech", AsyncMock(return_value=False))
 
     async def fake_edge(text: str, dest: Path, voice_hint: str = "") -> None:
