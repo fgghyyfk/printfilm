@@ -37,6 +37,7 @@ class TaskCreateRequest(BaseModel):
     )
     payload: dict[str, Any] | None = None
     result_payload: dict[str, Any] | None = None
+    team_id: int | None = Field(default=None, ge=1)
     project_id: int | None = Field(default=None, ge=1)
     drama_project_id: int | None = Field(default=None, ge=1)
     script_id: int | None = Field(default=None, ge=1)
@@ -139,7 +140,11 @@ class TaskRunBriefOut(BaseModel):
 
     id: int
     domain: str
+    team_id: int | None = None
     task_type: str
+    queue_type: str = "text"
+    provider_name: str | None = None
+    provider_status: str | None = None
     status: str
     current_step_key: str | None = None
     current_step_status: str | None = None
@@ -164,7 +169,12 @@ class TaskRunOut(BaseModel):
 
     id: int
     domain: str
+    team_id: int | None = None
     task_type: str
+    queue_type: str = "text"
+    execution_mode: str = "queued"
+    provider_name: str | None = None
+    provider_status: str | None = None
     status: str
     priority: int
     requested_by: int
@@ -196,9 +206,9 @@ class TaskRunOut(BaseModel):
     updated_at: datetime | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None
-    billing_estimate_fen: int = 0
-    billing_charged_fen: int = 0
-    billing_refunded_fen: int = 0
+    billing_estimate_fen: int | None = 0
+    billing_charged_fen: int | None = 0
+    billing_refunded_fen: int | None = 0
     billing_status: str = "none"
     steps: list[TaskStepOut] = Field(default_factory=list)
     targets: list[TaskTargetOut] = Field(default_factory=list)
@@ -230,6 +240,7 @@ class AdminTaskRunOut(TaskRunOut):
     """管理员任务投影，事件数组有界，完整历史通过分页接口获取。"""
 
     user_email: str | None = None
+    billing_snapshot: dict | None = None
     usage_lines: list["AdminUsageEventBriefOut"] = Field(default_factory=list)
     events_total: int = 0
     upstream_events: list[TaskEventOut] = Field(default_factory=list)
@@ -246,6 +257,8 @@ class AdminTaskEventListOut(BaseModel):
 
 
 class AdminUsageEventBriefOut(BaseModel):
+    billing_detail: dict | None = None
+    cost_status: str | None = None
     """Compact usage line for task billing tab."""
 
     id: int
@@ -314,7 +327,17 @@ class AdminTaskDomainStatsOut(BaseModel):
     cancelled: int = 0
 
 
+class TaskQueueStatsOut(BaseModel):
+    name: str
+    label: str
+    max_concurrency: int
+    pending: int = 0
+    active: int = 0
+    awaiting_poll: int = 0
+
+
 class AdminTaskStatsOut(BaseModel):
+    queues: list[TaskQueueStatsOut] = Field(default_factory=list)
     """Task platform aggregate stats for admin monitoring."""
 
     pending_count: int = 0

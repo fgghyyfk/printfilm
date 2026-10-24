@@ -134,7 +134,11 @@ async def _select_and_poll_due() -> None:
             select(TaskRun.id)
             .where(
                 TaskRun.status == "awaiting_poll",
-                TaskRun.task_type == "fragment_video",
+                or_(
+                    TaskRun.task_type == "fragment_video",
+                    (TaskRun.domain == "studio") & (TaskRun.task_type == "tool_video") &
+                    TaskRun.payload["run_id"].as_integer().is_not(None),
+                ),
                 TaskRun.next_action_at.is_not(None),
                 TaskRun.next_action_at <= now,
             )
@@ -192,7 +196,11 @@ async def _poll_one_task(task_id: int) -> None:
             return
 
     try:
-        await poll_fragment_video_task(task_id)
+        if task.domain == "studio" and (task.payload or {}).get("run_id"):
+            from app.services.studio_generation import poll_generation_video
+            await poll_generation_video(task_id)
+        else:
+            await poll_fragment_video_task(task_id)
     except Exception:  # noqa: BLE001
         logger.exception("selector poll failed task_id=%s", task_id)
         async with AsyncSessionLocal() as db:
@@ -221,6 +229,8 @@ async def _poll_ephemeral_deferred_tasks() -> None:
                 TaskRun.status == "awaiting_poll",
                 TaskRun.domain.in_(["api", "studio"]),
                 TaskRun.billing_status == "frozen",
+                or_(TaskRun.domain != "studio", TaskRun.task_type != "tool_video",
+                    TaskRun.payload["run_id"].as_integer().is_(None)),
                 or_(TaskRun.next_action_at.is_(None), TaskRun.next_action_at <= now),
             )
             .order_by(TaskRun.next_action_at.asc().nullsfirst(), TaskRun.id.asc())
@@ -243,7 +253,7 @@ async def _poll_ephemeral_deferred_tasks() -> None:
 async def _poll_one_ephemeral_task(task_id: int, *, now, timeout_sec: float) -> None:
     from app.models import User
     from app.services.billing.ephemeral import settle_deferred_video_poll
-    from app.services.studio_tools import poll_video_task
+    from app.services.studio_tools import poll_video_task, update_tool_run_task
 
     async with AsyncSessionLocal() as db:
         task = await db.get(TaskRun, task_id)
@@ -258,6 +268,9 @@ async def _poll_one_ephemeral_task(task_id: int, *, now, timeout_sec: float) -> 
             task.error_code = "poll_timeout"
             task.error_message = "视频轮询超时，预扣已退回"
             task.finished_at = now
+            if task.domain == "studio" and task.provider_task_id:
+                await update_tool_run_task(db, task.requested_by, task.provider_task_id,
+                                           {"status": "failed", "error": task.error_message})
             await append_task_event(
                 db,
                 task.id,
@@ -279,7 +292,7 @@ async def _poll_one_ephemeral_task(task_id: int, *, now, timeout_sec: float) -> 
             return
 
         # 后台轮询与提交请求共用任务上下文，便于关联真实上游状态和计费。
-        async with billing_scope(task_id):
+        async with billing_scope(task_id, team_id=task.team_id, snapshot=task.billing_snapshot):
             data = await poll_video_task(user, provider_id)
         status = str(data.get("status") or "").strip().lower()
         if status in {"", "running", "queued"}:
@@ -300,4 +313,7 @@ async def _poll_one_ephemeral_task(task_id: int, *, now, timeout_sec: float) -> 
             completion_tokens=int((data.get("usage") or {}).get("completion_tokens") or 0),
             raw_usage=data.get("raw_usage") if isinstance(data.get("raw_usage"), dict) else None,
         )
+        task.result_payload = data
+        if task.domain == "studio":
+            await update_tool_run_task(db, user.id, provider_id, data)
         await db.commit()

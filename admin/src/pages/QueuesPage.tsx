@@ -222,6 +222,13 @@ export function QueuesPage() {
             <span>待激活表示前置条件或并发空位尚未满足；延时表示尚未到调度时间。</span>
           </div>
 
+          {stats?.queues?.length ? <PageSection title="调度队列" bodyClassName="!pt-0">
+            <div className="grid gap-3 md:grid-cols-3">{stats.queues.map((queue) => <div key={queue.name} className="admin-panel px-4 py-3">
+              <div className="text-sm font-medium">{queue.label}队列 <span className="font-mono text-xs text-[var(--admin-muted)]">{queue.name}</span></div>
+              <div className="mt-2 text-xs text-[var(--admin-muted)]">排队 {queue.pending} · 在途 {queue.active} · 并发 {queue.max_concurrency}</div>
+              {queue.awaiting_poll ? <div className="mt-1 text-xs text-[var(--admin-muted)]">等待上游 {queue.awaiting_poll}</div> : null}
+            </div>)}</div>
+          </PageSection> : null}
           {(stats?.domains.length ?? 0) > 0 ? (
             <PageSection title="各领域任务" bodyClassName="!pt-0">
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">

@@ -14,6 +14,7 @@ from app.schemas_tasks import AdminTaskEventListOut, AdminTaskListOut, AdminTask
 from app.services.billing.display import billing_basis_label, resolve_billing_basis
 from app.services.tasks.admin_events import AdminEventSummary, list_admin_task_events, load_admin_event_summaries
 from app.services.tasks.runtime import runtime_summary
+from app.services.tasks.queues import QUEUE_TYPES, queue_capacity, queue_stats, task_queue
 from app.services.tasks.service import cancel_task_admin, get_task_admin, get_task_stats_admin, list_tasks_admin
 
 router = APIRouter()
@@ -29,10 +30,12 @@ def _task_to_admin_out(
     """组装有界响应，不读取或替换 ORM events，避免全历史加载与孤儿删除。"""
     # 单独提取其余字段，Pydantic 不会访问被禁用的 events 懒加载关系。
     fields = {name: getattr(task, name) for name in TaskRunOut.model_fields if name != "events"}
+    fields["queue_type"] = fields.get("queue_type") or task_queue(task.task_type, task.payload)
     summary = event_summary or AdminEventSummary()
     return AdminTaskRunOut(
         **fields,
         user_email=user_email,
+        billing_snapshot=getattr(task, "billing_snapshot", None),
         usage_lines=usage_lines or [],
         events=summary.events,
         events_total=summary.events_total,
@@ -51,10 +54,12 @@ async def _load_usage_lines(db: AsyncSession, task_id: int) -> list[AdminUsageEv
     ).scalars().all()
     items: list[AdminUsageEventBriefOut] = []
     for row in rows:
-        basis = resolve_billing_basis(estimated=bool(row.estimated), raw_usage_json=row.raw_usage_json)
+        basis = "fixed_media" if (row.billing_detail or {}).get("mode") == "fixed_media" else resolve_billing_basis(estimated=bool(row.estimated), raw_usage_json=row.raw_usage_json)
         items.append(
             AdminUsageEventBriefOut(
                 id=row.id,
+                  billing_detail=row.billing_detail,
+                  cost_status=row.cost_status,
                 billing_key=row.billing_key,
                 capability=row.capability,
                 model=row.model or "",
@@ -82,7 +87,8 @@ async def admin_task_stats(
     return AdminTaskStatsOut(
         **stats,
         scheduler_running_jobs=int(runtime.get("scheduler_running_jobs") or 0),
-        max_concurrency=int(settings.task_runtime_max_concurrency),
+        max_concurrency=sum(queue_capacity(settings, queue) for queue in QUEUE_TYPES),
+        queues=await queue_stats(db, settings),
         scheduler=str(runtime.get("scheduler") or "stopped"),
         poller=str(runtime.get("poller") or "stopped"),
         watchdog=str(runtime.get("watchdog") or "stopped"),

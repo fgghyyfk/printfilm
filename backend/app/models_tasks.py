@@ -15,12 +15,25 @@ class TaskRun(Base):
 
     __tablename__ = "task_runs"
 
+    @property
+    def execution_mode(self) -> str:
+        """文字任务保留记录，但不属于调度队列。"""
+        from app.services.tasks.execution_policy import execution_mode
+        return execution_mode(self.domain, self.task_type, self.payload)
+
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     domain: Mapped[str] = mapped_column(String(32), index=True, default="drama")
     task_type: Mapped[str] = mapped_column(String(64), index=True)
+    queue_type: Mapped[str] = mapped_column(String(16), index=True, default="text")
+    provider_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    provider_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
     status: Mapped[str] = mapped_column(String(32), index=True, default="pending")
     priority: Mapped[int] = mapped_column(Integer, default=100)
     requested_by: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id"), nullable=True, index=True)
+    billing_enabled_snapshot: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    billing_period: Mapped[str | None] = mapped_column(String(7), nullable=True)
+    billing_payer_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
     client_request_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     dedupe_key: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     batch_key: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
@@ -63,6 +76,8 @@ class TaskRun(Base):
     billing_charged_fen: Mapped[int] = mapped_column(Integer, default=0)
     billing_refunded_fen: Mapped[int] = mapped_column(Integer, default=0)
     billing_status: Mapped[str] = mapped_column(String(16), default="none", index=True)
+    billing_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    media_provider_tasks: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     targets: Mapped[list["TaskTarget"]] = relationship(
         back_populates="task", cascade="all, delete-orphan"

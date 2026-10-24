@@ -271,6 +271,11 @@ async def _noop_ephemeral(task: TaskRun) -> dict[str, Any] | None:
     return {"ok": True, "ephemeral": True}
 
 
+async def _run_studio_generation(task: TaskRun) -> dict[str, Any] | None:
+    from app.services.studio_generation import execute_generation
+    return await execute_generation(task)
+
+
 # 确保关键主键字段存在。
 def _require_int(value: int | None, field_name: str) -> int:
     if isinstance(value, int) and value > 0:
@@ -290,12 +295,14 @@ TASK_HANDLERS: dict[tuple[str, str], TaskHandler] = {
     ("drama", "skill_optimize"): TaskHandler("drama", "skill_optimize", _noop_ephemeral),
     ("drama", "voice_prompt"): TaskHandler("drama", "voice_prompt", _noop_ephemeral),
     ("drama", "voice_synthesis"): TaskHandler("drama", "voice_synthesis", _noop_ephemeral),
+    ("drama", "episode_compose"): TaskHandler("drama", "episode_compose", _noop_ephemeral),
     ("kepu", "content_expand"): TaskHandler("kepu", "content_expand", _noop_ephemeral),
     ("api", "v1_image"): TaskHandler("api", "v1_image", _noop_ephemeral),
     ("api", "v1_video"): TaskHandler("api", "v1_video", _noop_ephemeral),
     ("api", "v1_seedance"): TaskHandler("api", "v1_seedance", _noop_ephemeral),
-    ("studio", "tool_image"): TaskHandler("studio", "tool_image", _noop_ephemeral),
-    ("studio", "tool_video"): TaskHandler("studio", "tool_video", _noop_ephemeral),
+    ("studio", "tool_image"): TaskHandler("studio", "tool_image", _run_studio_generation),
+    ("studio", "tool_video"): TaskHandler("studio", "tool_video", _run_studio_generation),
+    ("studio", "tool_audio"): TaskHandler("studio", "tool_audio", _run_studio_generation),
     ("kepu", "project_pipeline"): TaskHandler("kepu", "project_pipeline", _run_kepu_project_pipeline),
     ("kepu", "shot_regen_image"): TaskHandler("kepu", "shot_regen_image", _run_kepu_shot_image),
     ("kepu", "shot_regen_video"): TaskHandler("kepu", "shot_regen_video", _run_kepu_shot_video),

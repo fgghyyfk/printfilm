@@ -30,8 +30,9 @@ async def execute_task_run(task_id: int) -> None:
             task.error_code = "handler_missing"
             task.error_message = f"未注册任务处理器: {task.domain}/{task.task_type}"
             task.finished_at = datetime.now(UTC)
-            # 未进入预扣，保持 none
-            task.billing_status = "none"
+            # Team queue reservations must be released even when a handler is unavailable.
+            if task.team_id is None:
+                task.billing_status = "none"
             await append_task_event(
                 db,
                 task.id,
@@ -40,6 +41,8 @@ async def execute_task_run(task_id: int) -> None:
                 phase=task.current_step_key,
                 message=task.error_message,
             )
+            if task.team_id is not None:
+                await settle_task(db, task.id)
             await db.commit()
             return
 
@@ -48,6 +51,11 @@ async def execute_task_run(task_id: int) -> None:
         step = task.steps[0] if task.steps else None
 
         try:
+            if task.team_id is not None and not task.provider_task_id:
+                from app.services.tasks.team_scope import ensure_task_may_submit
+                await ensure_task_may_submit(db, task)
+                from app.services.teams.edit_locks import validate_task_locks
+                await validate_task_locks(db, task)
             await freeze_for_task(db, task)
         except ValueError as exc:
             # 余额不足：可预期失败，专用错误码便于前端引导充值
@@ -73,7 +81,7 @@ async def execute_task_run(task_id: int) -> None:
         task.status = "running"
         task.started_at = task.started_at or now
         task.next_action_at = None
-        task.lease_until = None
+        task.lease_until = now + timedelta(minutes=10)
         set_task_step_state(task, step, status="submitting", now=now)
         await append_task_event(
             db,
@@ -86,7 +94,7 @@ async def execute_task_run(task_id: int) -> None:
         await db.commit()
 
     try:
-        async with billing_scope(task_id):
+        async with billing_scope(task_id, team_id=task.team_id, snapshot=task.billing_snapshot):
             async with AsyncSessionLocal() as db:
                 task = await get_task_for_runtime(db, task_id)
                 if not task:
@@ -168,7 +176,7 @@ async def _fail_task_before_start(db, task, step, *, error_code: str, message: s
     task.error_message = message[:500]
     task.finished_at = now
     # frozen 之后的异常（如落流水失败）保留 frozen 交 settle_task 对账；未预扣成功保持 none
-    if task.billing_status != "frozen":
+    if task.billing_status not in {"frozen", "reserved"}:
         task.billing_status = "none"
     await append_task_event(
         db,

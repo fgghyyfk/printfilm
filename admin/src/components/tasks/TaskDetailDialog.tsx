@@ -415,6 +415,10 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
 
                 <section className="task-detail-section task-detail-section--full">
                   <h4>用量明细</h4>
+                  {task.billing_snapshot && <div className="mb-3 text-xs text-[var(--admin-muted)]">
+                    <p>受理时计费模式：{task.billing_snapshot.mode === 'fixed_media' ? `站内价格 #${task.billing_snapshot.price_version}` : '原计费规则'} · 路由固定，失败不自动切换</p>
+                    {task.billing_snapshot.items.map((item, index) => <p key={index}>{item.model_id} · {item.params.resolution} · {item.params.duration ? `${item.params.duration} 秒` : `${item.params.count} 张`} · {item.route.channel_name || item.route.channel_id} → {item.route.upstream_model}</p>)}
+                  </div>}
                   <p className="mb-3 text-xs text-[var(--admin-muted)]">用量记录表示调用计费依据；钱包实际扣款与退还以任务结算摘要为准。</p>
                   <div className="admin-table-wrap">
                     <table>
@@ -446,8 +450,11 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
                               <td className="max-w-[120px] truncate text-xs">{line.model || "—"}</td>
                               <td>{line.total_tokens ?? 0}</td>
                               <td>¥{fenToYuan(line.charge_fen ?? 0)}</td>
-                              <td>¥{fenToYuan(line.cost_fen ?? 0)}</td>
-                              <td>{line.billing_basis_label ?? (line.estimated ? "估算" : "实测")}</td>
+                              <td>{line.cost_status === 'pending' ? '待核实' : `¥${fenToYuan(line.cost_fen ?? 0)}`}</td>
+                              <td>{line.billing_detail?.mode === 'fixed_media' ? <>
+                                <div>{line.billing_detail.resolution} · ¥{line.billing_detail.unit_price_yuan} × {line.billing_detail.duration ?? 1}{line.billing_detail.duration ? ' 秒' : ' 张'}</div>
+                                <div className="text-xs text-[var(--admin-muted)]">价格 #{line.billing_detail.price_version} · {line.billing_detail.route.channel_name || line.billing_detail.route.channel_id} · {line.billing_detail.delivered ? '已交付' : '未交付'}</div>
+                              </> : line.billing_basis_label ?? (line.estimated ? "估算" : "实测")}</td>
                             </tr>
                           ))
                         )}

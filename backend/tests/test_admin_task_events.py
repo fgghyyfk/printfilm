@@ -150,7 +150,7 @@ def test_admin_serializer_does_not_touch_or_replace_events_relationship():
 @pytest.mark.asyncio
 async def test_cancel_reads_no_history_and_writes_one_new_event(monkeypatch):
     """取消只读取任务和执行数据，不因历史膨胀阻塞取消。"""
-    task = SimpleNamespace(id=6807, cancelable=True, status="running", current_step_key="submit")
+    task = SimpleNamespace(id=6807, domain="tools", task_type="mock_delay", payload={}, cancelable=True, status="running", current_step_key="submit")
     db = SimpleNamespace(add=AsyncMock(), commit=AsyncMock())
     db.add = lambda _event: None
     load = AsyncMock(return_value=task)

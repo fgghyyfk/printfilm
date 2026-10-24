@@ -28,6 +28,10 @@ export type TaskRunOut = {
   id: number
   domain: string
   task_type: string
+  execution_mode?: 'direct' | 'queued'
+  queue_type?: 'text' | 'image' | 'video'
+  provider_name?: string | null
+  provider_status?: string | null
   status: string
   progress_percent?: number
   current_step_key?: string | null
@@ -64,6 +68,7 @@ export const tasksApi = {
     page_size?: number
     domain?: string
     task_type?: string
+    queue_type?: 'text' | 'image' | 'video'
     status?: string
     target_type?: string
     target_id?: number
@@ -74,6 +79,7 @@ export const tasksApi = {
     if (params.page_size) q.set('page_size', String(params.page_size))
     if (params.domain) q.set('domain', params.domain)
     if (params.task_type) q.set('task_type', params.task_type)
+    if (params.queue_type) q.set('queue_type', params.queue_type)
     if (params.status) q.set('status', params.status)
     if (params.target_type) q.set('target_type', params.target_type)
     if (params.target_id) q.set('target_id', String(params.target_id))
