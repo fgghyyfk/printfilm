@@ -16,7 +16,7 @@ from app.models import User
 from app.marketplace import api, commerce, series as series_api, storage
 from app.marketplace.dependencies import optional_user
 from app.marketplace.models import (
-    Asset, ContentOrder, Entitlement, EpisodePreview, Event, Handoff, MarketBase, Publication,
+    Asset, Authorization, ContentOrder, Entitlement, EpisodePreview, Event, Handoff, MarketBase, Publication,
     RevenueConfig, RevenueLedger, Rights, Series, SeriesEpisode, Work, WorkPreview,
 )
 from conftest import _ensure_test_database, _resolve_test_database_url
@@ -375,3 +375,47 @@ async def test_work_submission_freezes_default_share_and_never_rewrites_approved
     assert len(publications) == 2 and publications[1].version == 2
     assert publications[0].share_bps == 2345 and publications[0].playback_manifest_key
     assert publications[1].share_bps == 2100
+
+
+async def test_replacing_imported_printfilm_video_detaches_source_and_reuses_account_authorization(publication_ctx):
+    from app.marketplace.authorization import VERSION
+
+    ctx = publication_ctx
+    content = await make_publication(ctx)
+    ctx.user = ctx.owner
+    old_handoff = Handoff(owner_id=ctx.owner.id, idempotency_key=uuid.uuid4().hex,
+        source_kind="drama_episode", source_id=123, source_version="original-source-version",
+        target_kind="series_episode", target_id=content.item.id, series_id=content.series.id,
+        asset_id=content.asset.id, status="ready")
+    new_video = Asset(owner_id=ctx.owner.id, kind="video", filename="replacement.mp4", content_type="video/mp4",
+        size_bytes=200, object_key="marketplace/manual/replacement.mp4", status="ready")
+    cover = Asset(owner_id=ctx.owner.id, kind="image", filename="cover.png", content_type="image/png",
+        size_bytes=10, object_key="marketplace/manual/cover.png", status="ready")
+    authorization = Authorization(owner_id=ctx.owner.id, template_version=VERSION, signer_name="测试签署人",
+        body="test authorization", body_hash="a" * 64, letter_key="marketplace/auth/letter.png",
+        signature_key="marketplace/auth/signature.png", client_ip="127.0.0.1", user_agent="test")
+    ctx.db.add_all([old_handoff, new_video, cover, authorization, RevenueConfig(id=1, platform_share_bps=2100)])
+    await ctx.db.flush()
+    content.item.source, content.item.source_type = "printfilm", "drama_import"
+    content.item.source_snapshot = {"source_kind": "drama_episode", "drama_episode_id": 123,
+        "last_handoff_id": old_handoff.id, "imported_source_version": "original-source-version"}
+    content.item.preview_status, content.item.preview_key = "done", "marketplace/old/preview.mp4"
+    content.item.playback_status, content.item.playback_manifest_key = "done", "marketplace/hls/old/index.m3u8"
+    await ctx.db.flush()
+    response = await ctx.client.patch(f"/api/marketplace/series/{content.series.id}/episodes/{content.item.id}", json={
+        "episode_no": 1, "title": "替换后的PrintFilm视频", "version": 1, "source": "printfilm",
+        "asset_id": new_video.id, "cover_asset_id": cover.id, "unlock_price_fen": 999})
+    assert response.status_code == 200, response.text
+    assert content.item.source_type == "upload" and content.item.source_snapshot == {}
+    assert content.item.preview_status == "none" and content.item.preview_key is None
+    assert content.item.playback_status == "none" and content.item.playback_manifest_key is None
+    assert old_handoff.status == "ready" and old_handoff.asset_id == content.asset.id
+    response = await ctx.client.post(f"/api/marketplace/series/{content.series.id}/submit", json={"version": content.series.version})
+    assert response.status_code == 200, response.text
+    proof = (await ctx.db.execute(select(Rights).where(Rights.asset_id == new_video.id))).scalar_one()
+    assert proof.details["source"] == "printfilm" and proof.details["authorization_id"] == str(authorization.id)
+    assert proof.details["authorization_version"] == VERSION and not proof.certificate_asset_id
+    assert proof.basic_status == "pending" and proof.full_status == "pending"
+    assert content.publication.asset_id == content.asset.id and content.publication.version == 1
+    assert content.publication.share_bps == 2345 and content.publication.audit_status == "approved"
+    assert content.publication.playback_manifest_key == "marketplace/hls/old/index.m3u8"

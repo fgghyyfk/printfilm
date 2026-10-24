@@ -74,10 +74,28 @@ export async function media(kind: string, id: number, purpose: string) {
   return (await request<{ url: string }>(`/media/${kind}/${id}/${purpose}`)).url
 }
 
+// 续传键只用本地指纹。HTTPS 用 SHA-256；HTTP 页面没有 crypto.subtle，改用同一段字节的纯计算。
+async function sampleDigest(sample: ArrayBuffer): Promise<string> {
+  const subtle = globalThis.crypto?.subtle
+  if (subtle) {
+    const hash = await subtle.digest('SHA-256', sample)
+    return Array.from(new Uint8Array(hash), value => value.toString(16).padStart(2, '0')).join('')
+  }
+  const bytes = new Uint8Array(sample)
+  let high = 0x811c9dc5
+  let low = 0x01000193
+  for (let index = 0; index < bytes.length; index++) {
+    high = Math.imul(high ^ bytes[index], 0x01000193)
+    low = Math.imul(low ^ bytes[bytes.length - 1 - index], 0x01000193)
+  }
+  const hex = (value: number) => (value >>> 0).toString(16).padStart(8, '0')
+  return hex(high) + hex(low)
+}
+
 // 保留用户选择的文件；使用首尾片段指纹区分续传，不读取整段视频。
 export async function upload(file: File, kind: string, progress: (percent: number) => void, signal?: AbortSignal): Promise<number> {
   const sample = await new Blob([file.slice(0, 65536), file.slice(-65536)]).arrayBuffer()
-  const digest = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', sample)), value => value.toString(16).padStart(2, '0')).join('')
+  const digest = await sampleDigest(sample)
   const key = `marketplace-upload:${file.name}:${file.size}:${file.lastModified}:${digest}`
   type Session = { id: number; asset_id: number; state: string; part_size: number; uploaded_parts: number[]; expires_at: string }
   let session: Session | undefined

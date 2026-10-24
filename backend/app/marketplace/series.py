@@ -245,8 +245,15 @@ async def update_episode(series_id: int, episode_id: int, body: EpisodeUpdate, d
         await asset_owned_for_draft(db, body.asset_id, user)
     if body.cover_asset_id:
         await asset_owned(db, body.cover_asset_id, user, ("image",))
+    asset_changed = body.asset_id != item.asset_id
     for key, value in body.model_dump(exclude={"version"}).items():
         setattr(item, key, value)
+    if asset_changed:
+        # A manually replaced video no longer represents the frozen imported
+        # source. Keep historical tasks/publications, but detach the live mapping.
+        item.source_type, item.source_snapshot = "upload", {}
+        item.preview_status, item.preview_key, item.preview_attempts = "none", None, 0
+        item.playback_status, item.playback_manifest_key, item.playback_attempts = "none", None, 0
     item.version += 1
     item.audit_status, item.listed, item.reason = "draft", False, ""
     series.version += 1

@@ -21,6 +21,11 @@ ACTIVE = ("pending", "leased", "running", "awaiting_poll", "awaiting_review")
 BUSY = ("queued", "running", "generating", "pending", "leased")
 
 
+def terminal_source_task(item) -> bool:
+    return bool(item and item.status == "failed" and any(code in (item.error or "") for code in (
+        "SOURCE_CHANGED", "TARGET_CHANGED", "SOURCE_INCOMPATIBLE", "重新选择分集")))
+
+
 def digest(value) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()
 
@@ -128,7 +133,7 @@ async def publish_context(project_id: int, db: DB, user: Actor):
                 Handoff.target_kind == "series_episode", Handoff.target_id == episode.id,
                 Handoff.source_kind == "drama_episode").order_by(Handoff.id.desc()).limit(1))).scalar_one_or_none()
             frozen = (handoff.source_snapshot or {}) if handoff else {}
-            reusable = bool(handoff and frozen.get("schema_version") == 2 and (
+            reusable = bool(handoff and not terminal_source_task(handoff) and frozen.get("schema_version") == 2 and (
                 (handoff.status == "ready" and handoff.asset_id == episode.asset_id and mapping.get("last_handoff_id") == handoff.id)
                 or (handoff.status in ("pending", "running", "failed") and mapping.get("pending_handoff_id") == handoff.id
                     and frozen.get("target_version") == episode.version and frozen.get("original_asset_id") == episode.asset_id)))
@@ -241,7 +246,7 @@ async def publish_selected(project_id: int, body: DramaPublishInput, db, user):
             .order_by(Handoff.id.desc()).limit(1))).scalar_one_or_none() if target else None
         previous_snapshot = previous.source_snapshot or {} if previous else {}
         mapping = target.source_snapshot or {} if target else {}
-        previous_matches = bool(previous and ((previous.status == "ready" and previous.asset_id == target.asset_id
+        previous_matches = bool(previous and not terminal_source_task(previous) and ((previous.status == "ready" and previous.asset_id == target.asset_id
                 and mapping.get("last_handoff_id") == previous.id)
             or (previous.status in ("pending", "running", "failed") and previous_snapshot.get("target_version") == target.version
                 and previous_snapshot.get("original_asset_id") == target.asset_id and mapping.get("pending_handoff_id") == previous.id)))

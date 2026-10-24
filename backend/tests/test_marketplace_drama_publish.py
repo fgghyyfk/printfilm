@@ -317,6 +317,25 @@ async def test_source_file_change_is_detected_before_worker_binding(drama_publis
     assert existing.target.asset_id is None
 
 
+async def test_terminal_same_source_can_be_explicitly_resynced(drama_publish_ctx):
+    """源恢复原状后仍能重新确认，不永远复用终止的旧任务。"""
+    ctx = drama_publish_ctx
+    existing = await published(ctx)
+    existing.task.status = "failed"
+    existing.task.error = "MARKETPLACE_SOURCE_CHANGED:源分集曾在同步时重新生成"
+    await ctx.db.commit()
+    context = (await ctx.client.get(f"/api/marketplace/printfilm/dramas/{existing.project.id}/publish-context")).json()
+    target = next(row for row in context["series"] if row["id"] == existing.series.id)
+    assert target["imports"][0]["requires_update"] is True
+    payload = await publish_payload(ctx, existing.project, existing.episodes, series=existing.series, update=True)
+    response = await post_publish(ctx, existing.project, payload)
+    assert response.status_code == 200, response.text
+    assert response.json()["items"][0]["id"] == existing.target.id
+    assert response.json()["handoffs"][0]["id"] != existing.task.id
+    assert response.json()["handoffs"][0]["status"] == "pending"
+    assert await ctx.db.scalar(select(func.count()).select_from(SeriesEpisode)) == 1
+
+
 @pytest.mark.parametrize("case", ["success", "source_changed", "target_changed", "lease_stolen", "resume_expired_lease"])
 async def test_worker_recovery_and_final_binding_guards(drama_publish_ctx, monkeypatch, case):
     """实际执行领取/阶段/终态；仅替换远端存储与媒体制作，不伪造任务状态。"""
