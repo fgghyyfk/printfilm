@@ -70,3 +70,23 @@ async def test_empty_page_skips_task_and_publish_queries(monkeypatch):
     assert page.stats.total == 0
     batch.assert_not_awaited()
     assert db.execute.await_count == 6
+
+
+async def test_listing_preserves_projects_without_a_template(monkeypatch):
+    """历史项目模板为空时仍返回完整列表，使用空字符串表示未选模板。"""
+    rows = [_project(12), _project(20)]
+    rows[0].template_id = None
+    monkeypatch.setattr(
+        kepu_projects, "list_active_tasks_for_projects",
+        AsyncMock(return_value={12: [], 20: []}),
+    )
+    db = SimpleNamespace(execute=AsyncMock(
+        side_effect=[_result(value) for value in [2, rows, [], 2, 0, 2, 0]],
+    ))
+
+    page = await kepu_projects.list_project_page(db, 7, page=1, page_size=8)
+
+    assert [item.id for item in page.items] == [12, 20]
+    assert [item.template_id for item in page.items] == ["", "test"]
+    assert rows[0].template_id is None
+    assert page.meta.total == page.stats.total == 2

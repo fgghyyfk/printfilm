@@ -1,5 +1,9 @@
 # PRINTFILM 计费说明
 
+> 图视频现支持模型策略与站内固定价格版本。后台发布价格后，新任务按成功交付图片张数、提交视频秒数结算；上游费用只更新成本，失败不自动切换路由。未发布价格及旧历史任务沿用下述原计费规则。部署、启停和接口详见 [模型策略与站内定价](MEDIA_MODEL_STRATEGIES.md)。
+
+团队模式使用独立钱包和按成员的上海自然月额度，任务受理时预留、执行时冻结、完成后按实结算。个人钱包不为团队垫付，充值订单与费用始终固定原团队归属。详见 [TEAM_MODE.md](./TEAM_MODE.md)。
+
 ## 原则
 
 - 按上游 **真实 TokenFree 成本**（或无法拿到 usage 时的保守估价）计费。
@@ -221,3 +225,6 @@ EPAY_RETURN_URL=https://your-site.example.com/pricing?paid=1
 5. Seedance 视频成功后 `usage_events.estimated=false` 且 `total_tokens` 与官方任务查询一致。
 6. 配置 TokenFree API Key 后，管理端可刷新并查看近 30 日官方/本地成本对照。
 7. 单次调用若带 New API `quota` / `quota_consumed`，按额度折人民币后按官方成本 1:1 扣费；管理端可查询 TokenFree 余额。
+
+
+团队模式现按所有者个人账户统一付款，同时限制团队总月额度与成员月额度；任务保存受理时付款人，转让不改变旧任务扣款对象。团队充值/独立调账入口已停用，历史账目兼容规则见 [TEAM_MODE.md](TEAM_MODE.md)。

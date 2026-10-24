@@ -24,7 +24,7 @@ from app.services.billing import (
     settle_deferred_video_poll,
 )
 from app.services.drama.billing_util import record_seedream_image_usage
-from app.services.studio_tools import poll_video_task, ratio_to_size
+from app.services.studio_tools import poll_video_task
 from app.services import storage
 
 router = APIRouter(prefix="/v1", tags=["public-api"])
@@ -51,56 +51,57 @@ async def generate_image(
 ) -> V1GenerationOut:
     """文生图 / 图生图（Seedream）。"""
 
-    async def _exec() -> str:
+    async def _exec() -> list[str]:
         ark = get_ark()
         refs: list[str] | None = None
         prompt = body.prompt.strip()
         if body.image_url:
             refs = [body.image_url.strip()]
             prompt = f"{prompt}。在保持主体可识别的前提下适度改变风格"
-        size = ratio_to_size(body.ratio)
-        try:
+        urls = []
+        for _ in range(body.count):
             result = await ark.gen_image(
                 prompt,
                 body.negative,
                 refs,
                 project_id=0,
                 shot_no=user.id,
-                size=size,
+                size=body.resolution,
+                model=body.model,
+                aspect_ratio=body.ratio,
             )
-        except Exception as exc:  # noqa: BLE001
-            raise HTTPException(status_code=502, detail=str(exc)[:400]) from exc
-
-        await record_seedream_image_usage(
-            db,
-            user_id=user.id,
-            model=get_settings().model_image,
-            domain="api",
-            image_result=result,
-            extra_raw={"source": "api_v1_image"},
-        )
-        url = result.local_url or result.remote_url or ""
-        if url:
+            url = result.local_url or result.remote_url or ""
+            if not url:
+                raise RuntimeError("生图结果为空")
             url = storage.republish_url(url, sync=True) or url
-        return url
+            urls.append(url)
+            from app.services.billing.context import get_current_task_run_id
+            task_row = await db.get(TaskRun, get_current_task_run_id())
+            task_row.result_payload = {"kind": "image", "urls": list(urls)}
+            await record_seedream_image_usage(
+                db, user_id=user.id, model=body.model or get_settings().model_image,
+                domain="api", image_result=result, extra_raw={"source": "api_v1_image"},
+            )
+        return urls
 
     try:
-        task, url = await run_billed_ephemeral(
+        task, urls = await run_billed_ephemeral(
             db,
             user,
             domain="api",
             task_type="v1_image",
             executor=_exec,
-            payload={"prompt_len": len(body.prompt or "")},
+            payload=body.model_dump(exclude_none=True),
             commit=True,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=402, detail=str(exc)) from exc
+        from app.services.billing.http import http_exception_for_value_error
+        raise http_exception_for_value_error(exc) from exc
 
     return V1GenerationOut(
         status="succeeded",
         kind="image",
-        urls=[url] if url else [],
+        urls=urls,
         task_id=str(task.id),
     )
 
@@ -122,6 +123,8 @@ async def generate_video(
                 body.duration,
                 resolution=body.resolution,
                 generate_audio=body.generate_audio,
+                model=body.model,
+                ratio=body.ratio,
             )
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=502, detail=str(exc)[:400]) from exc
@@ -135,11 +138,12 @@ async def generate_video(
             domain="api",
             task_type="v1_video",
             executor=_exec,
-            payload={"duration": body.duration},
+            payload=body.model_dump(exclude_none=True),
             commit=True,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=402, detail=str(exc)) from exc
+        from app.services.billing.http import http_exception_for_value_error
+        raise http_exception_for_value_error(exc) from exc
 
     return V1GenerationOut(
         status="queued",
@@ -161,7 +165,7 @@ async def forward_seedance(
         raise HTTPException(status_code=400, detail="content 不能为空")
     settings = get_settings()
     payload: dict = {
-        "model": settings.model_video,
+        "model": body.model or settings.model_video,
         "content": body.content,
         "resolution": body.resolution,
         "watermark": body.watermark,
@@ -189,11 +193,12 @@ async def forward_seedance(
             domain="api",
             task_type="v1_seedance",
             executor=_exec,
-            payload={"duration": body.duration},
+            payload={**body.model_dump(exclude_none=True), "prepared": {"seedance_body": payload}},
             commit=True,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=402, detail=str(exc)) from exc
+        from app.services.billing.http import http_exception_for_value_error
+        raise http_exception_for_value_error(exc) from exc
 
     return V1GenerationOut(status="queued", kind="video", task_id=upstream_id, urls=[])
 
@@ -218,7 +223,10 @@ async def get_task(
     ).scalar_one_or_none()
     if owned is None:
         raise HTTPException(status_code=404, detail="任务不存在")
-    data = await poll_video_task(user, tid)
+    from app.services.billing.context import billing_scope
+    owned_task = await db.get(TaskRun, owned)
+    async with billing_scope(owned, snapshot=owned_task.billing_snapshot):
+        data = await poll_video_task(user, tid)
     await settle_deferred_video_poll(
         db,
         user,

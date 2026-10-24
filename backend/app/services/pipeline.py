@@ -93,6 +93,7 @@ async def _record_seedream_usage(
     image_result,
     model: str,
     shot_id: int | None = None,
+    delivered: bool = True,
 ) -> None:
     try:
         from app.services.drama.billing_util import record_seedream_image_usage
@@ -107,6 +108,7 @@ async def _record_seedream_usage(
                 model=model,
                 domain="kepu",
                 image_result=image_result,
+                delivered=delivered,
                 project_id=project_id,
                 shot_id=shot_id,
             )
@@ -123,6 +125,7 @@ async def _record_seedance_usage(
     task_result,
     fallback_duration_sec: float,
     shot_id: int | None = None,
+    delivered: bool = True,
 ) -> None:
     try:
         from app.services.drama.billing_util import record_seedance_video_usage
@@ -131,9 +134,8 @@ async def _record_seedance_usage(
             project = await db.get(Project, project_id)
             if not project:
                 return
-            res = str(getattr(get_settings(), "ark_video_resolution", "") or "480p")
-            if str(getattr(project, "resolution_mode", "") or "") == "hd" and res.strip().lower() == "480p":
-                res = "720p"
+            from app.services.seedance_resolutions import project_video_resolution
+            res = project_video_resolution(project)
             await record_seedance_video_usage(
                 db,
                 user_id=project.user_id,
@@ -141,6 +143,7 @@ async def _record_seedance_usage(
                 model=model,
                 domain="kepu",
                 task_result=task_result,
+                delivered=delivered,
                 fallback_duration_sec=fallback_duration_sec,
                 resolution=res,
                 provider_task_id=getattr(task_result, "provider_task_id", None),
@@ -429,6 +432,14 @@ async def run_pipeline(project_id: int, *, phase: str | None = None) -> None:
                     "message": "分镜已生成，请确认修改后手动继续",
                 },
             )
+            return
+
+        if requested == "script":
+            # 文字任务直接执行时也不能因已有分镜而落入媒体生成分支。
+            await publish_progress(project_id, {
+                "event": "paused", "stage": "SCRIPT_READY", "percent": 15,
+                "message": "分镜脚本已就绪，请确认后继续生成素材",
+            })
             return
 
         logger.info(
@@ -820,6 +831,9 @@ def _effective_extra(project: Project) -> str:
 
 
 def _image_size_for(project: Project) -> str | None:
+    explicit = str(getattr(project, "image_resolution", "") or "").strip().upper()
+    if explicit:
+        return explicit
     ratio = _project_output_ratio(project)
     return _IMAGE_SIZE_BY_RATIO.get(ratio)
 
@@ -970,6 +984,11 @@ async def _parallel_image_and_audio(project_id: int) -> None:
                     )
                 elif not shot.video_url:
                     shot.status = ShotStatus.IMAGE_READY
+                from app.services.media_models.runtime import current_snapshot
+                if (current_snapshot.get() or {}).get("mode") == "fixed_media":
+                    from app.services.drama.billing_util import record_seedream_image_usage
+                    await record_seedream_image_usage(db, user_id=project.user_id, model=image_model or get_settings().model_image,
+                        domain="kepu", image_result=img, project_id=project_id, shot_id=shot.id)
                 await db.commit()
         await bump_images()
 
@@ -999,14 +1018,11 @@ async def _parallel_image_and_audio(project_id: int) -> None:
                 model=image_model,
                 aspect_ratio=output_ratio or None,
             )
-        s = get_settings()
-        await _record_seedream_usage(
-            project_id,
-            image_result=img,
-            model=s.model_image,
-            shot_id=meta["id"],
-        )
         await persist_image(meta, img)
+        from app.services.media_models.runtime import current_snapshot
+        if (current_snapshot.get() or {}).get("mode") != "fixed_media":
+            await _record_seedream_usage(project_id, image_result=img,
+                model=get_settings().model_image, shot_id=meta["id"])
         return SimpleNamespace(image_ark_url=img.remote_url, image_url=img.local_url)
 
     async def run_images() -> None:
@@ -1123,9 +1139,8 @@ async def _parallel_videos(project_id: int) -> None:
             tpl.seedance_config.get("character_consistency", True)
         )
         motion = str(tpl.seedance_config.get("motion_bias", ""))
-        resolution = cfg.ark_video_resolution
-        if project.resolution_mode == "hd" and resolution == "480p":
-            resolution = "720p"
+        from app.services.seedance_resolutions import project_video_resolution
+        resolution = project_video_resolution(project, cfg)
         ratio = _project_output_ratio(project) or cfg.ark_video_ratio
         shot_meta = [
             {
@@ -1284,14 +1299,6 @@ async def _parallel_videos(project_id: int) -> None:
         s = get_settings()
         dur = max(float(dur), 2.0)
         billing_key = "seedance2:video0" if generate_audio else "seedance2:video1"
-        await _record_seedance_usage(
-            project_id,
-            billing_key=billing_key,
-            model=s.model_video,
-            task_result=task_result,
-            fallback_duration_sec=dur,
-            shot_id=meta["id"],
-        )
         async with _db_write_lock():
             async with AsyncSessionLocal() as db:
                 shot = await db.get(Shot, meta["id"])
@@ -1300,7 +1307,24 @@ async def _parallel_videos(project_id: int) -> None:
                 shot.video_url = local_video
                 shot.last_frame_url = last
                 shot.status = ShotStatus.VIDEO_READY
+                from app.services.media_models.runtime import current_snapshot
+                if (current_snapshot.get() or {}).get("mode") == "fixed_media":
+                    from app.services.drama.billing_util import record_seedance_video_usage
+                    await record_seedance_video_usage(db, user_id=project.user_id, billing_key=billing_key,
+                        model=video_model or get_settings().model_video, domain="kepu", task_result=task_result,
+                        fallback_duration_sec=dur, resolution=resolution, provider_task_id=task_result.provider_task_id,
+                        project_id=project_id, shot_id=shot.id)
                 await db.commit()
+        from app.services.media_models.runtime import current_snapshot
+        if (current_snapshot.get() or {}).get("mode") != "fixed_media":
+            await _record_seedance_usage(
+                project_id,
+                billing_key=billing_key,
+                model=s.model_video,
+                task_result=task_result,
+                fallback_duration_sec=dur,
+                shot_id=meta["id"],
+            )
         done += 1
         pct = 55 + int(30 * done / max(total, 1))
         async with _db_write_lock():
@@ -1582,6 +1606,7 @@ async def regen_shot_image(project_id: int, shot_id: int) -> None:
         image_result=img,
         model=s.model_image,
         shot_id=shot_id,
+        delivered=not cancelled,
     )
     if cancelled:
         raise PipelineCancelled(f"project {project_id} cancelled during regen image")
@@ -1611,9 +1636,8 @@ async def regen_shot_video(project_id: int, shot_id: int) -> None:
         consistency = template_consistency_mode(project.template) == "character" and bool(
             project.template.seedance_config.get("character_consistency", True)
         )
-        resolution = cfg.ark_video_resolution
-        if project.resolution_mode == "hd" and resolution == "480p":
-            resolution = "720p"
+        from app.services.seedance_resolutions import project_video_resolution
+        resolution = project_video_resolution(project, cfg)
         script = (getattr(shot, "segment_script", "") or shot.video_prompt or "").strip()
         prompt = _kepu_video_prompt(
             script,
@@ -1678,6 +1702,7 @@ async def regen_shot_video(project_id: int, shot_id: int) -> None:
         task_result=task_result,
         fallback_duration_sec=max(float(dur), 2.0),
         shot_id=shot_id,
+        delivered=not cancelled,
     )
     if cancelled:
         raise PipelineCancelled(f"project {project_id} cancelled during regen video")

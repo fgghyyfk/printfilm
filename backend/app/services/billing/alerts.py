@@ -27,7 +27,7 @@ async def _user_total_charge_fen(db: AsyncSession, user_id: int) -> int:
     row = (
         await db.execute(
             select(func.coalesce(func.sum(UsageEvent.charge_fen), 0)).where(
-                UsageEvent.user_id == int(user_id),
+                func.coalesce(UsageEvent.billing_payer_user_id, UsageEvent.user_id) == int(user_id),
                 UsageEvent.settled.is_(True),
             )
         )

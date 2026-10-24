@@ -90,6 +90,8 @@ const navGroups: NavGroup[] = [
 
       { to: "/users", label: "用户管理", icon: Users },
 
+      { to: "/teams", label: "团队管理", icon: Users, matchPrefix: true },
+
       { to: "/orders", label: "订单流水", icon: Receipt },
 
       { to: "/adjustments", label: "手动调账", icon: Scale },
@@ -154,6 +156,8 @@ const titles: Record<string, string> = {
 
   "/users": "用户管理",
 
+  "/teams": "团队管理",
+
   "/orders": "订单流水",
 
   "/adjustments": "手动调账",
@@ -183,6 +187,8 @@ const titles: Record<string, string> = {
 
 
 function resolveTitle(pathname: string): string {
+
+  if (pathname.startsWith("/teams/")) return "团队详情";
 
   if (pathname.startsWith("/drama-projects/")) return "漫剧项目详情";
 

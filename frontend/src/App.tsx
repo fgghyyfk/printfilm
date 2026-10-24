@@ -1,4 +1,5 @@
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { useLayoutEffect, useSyncExternalStore } from 'react'
 import DialogHost from './components/ui/DialogHost'
 import BillingAlertHost from './components/billing/BillingAlertHost'
 import { DramaGenQueuePanel } from './components/drama/DramaGenQueuePanel'
@@ -21,18 +22,34 @@ import StyleConfigPage from './pages/studio/StyleConfigPage'
 import StoryboardPage from './pages/studio/StoryboardPage'
 import EditorPage from './pages/studio/EditorPage'
 import DramaListPage from './pages/drama/DramaListPage'
+import CanvasListPage from './pages/drama/CanvasListPage'
 import AssetLibraryPage from './pages/drama/AssetLibraryPage'
 import ProjectWorkspacePage from './pages/drama/ProjectWorkspacePage'
 import EpisodeEditPage from './pages/drama/EpisodeEditPage'
 import EpisodesPage from './pages/drama/EpisodesPage'
 import CanvasPage from './pages/drama/canvas/CanvasPage'
 import EpisodeStoryboardPage from './pages/drama/episodeCanvas/EpisodeStoryboardPage'
+import TeamInvitationPage from './features/teams/TeamInvitationPage'
+import RequireAuth from './pages/drama/RequireAuth'
+import { setWorkspaceTeam, subscribeWorkspace, workspaceScope } from './features/teams/workspaceScope'
+import TeamPage from './features/teams/TeamPage'
+import { TeamPreviewProvider } from './features/teams/TeamPreviewContext'
 import './styles/printfilm.css'
 import './App.css'
 
+/** 生成队列支持个人和团队空间，余额引导仅在个人业务空间展示。 */
+function PersonalBusinessOverlays() {
+  const { pathname } = useLocation()
+  const teamId = useSyncExternalStore(subscribeWorkspace, () => workspaceScope.teamId)
+  useLayoutEffect(() => { if (!/^\/teams\/\d+/.test(pathname) && !/^\/drama\/projects\/\d+/.test(pathname)) setWorkspaceTeam(null) }, [pathname])
+  const personal = teamId === null && pathname !== '/teams' && !pathname.startsWith('/teams/') && pathname !== '/team-invitations'
+  return <><DramaGenQueuePanel />{personal && <BillingAlertHost />}</>
+}
+
+/** 用户端路由及全局交互宿主，团队界面使用真实认证服务。 */
 export default function App() {
   return (
-    <BrowserRouter>
+    <TeamPreviewProvider><BrowserRouter>
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/method" element={<MethodPage />} />
@@ -40,12 +57,17 @@ export default function App() {
         <Route path="/templates" element={<TemplatesPage />} />
         <Route path="/tools" element={<ToolsPage />} />
         <Route path="/tools/:toolId" element={<ToolDetailPage />} />
+        <Route path="/tasks" element={<Navigate to="/settings?tab=tools" replace />} />
         <Route path="/assets" element={<AssetLibraryPage />} />
         <Route path="/help" element={<HelpPage />} />
         <Route path="/terms" element={<TermsPage />} />
         <Route path="/privacy" element={<PrivacyPage />} />
         <Route path="/contact" element={<ContactPage />} />
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/teams" element={<RequireAuth><TeamPage /></RequireAuth>} />
+        <Route path="/teams/join" element={<TeamInvitationPage />} />
+        <Route path="/team-invitations" element={<TeamInvitationPage />} />
+        <Route path="/teams/:teamId" element={<RequireAuth><TeamPage /></RequireAuth>} />
         <Route path="/pricing" element={<PricingPage />} />
         <Route path="/history" element={<HistoryPage />} />
         <Route path="/studio/new" element={<CreateProjectPage />} />
@@ -55,6 +77,7 @@ export default function App() {
         <Route path="/studio" element={<StudioPage />} />
         {/* Agent home (mirrors novel agent entry) */}
         <Route path="/drama" element={<DramaListPage />} />
+        <Route path="/canvas" element={<CanvasListPage />} />
         <Route path="/drama/dramas" element={<DramaListPage />} />
         <Route path="/drama/assets" element={<AssetLibraryPage />} />
         <Route path="/drama/projects/:projectId" element={<ProjectWorkspacePage />} />
@@ -68,9 +91,8 @@ export default function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <WeChatGroupFab />
-      <DramaGenQueuePanel />
-      <BillingAlertHost />
+      <PersonalBusinessOverlays />
       <DialogHost />
-    </BrowserRouter>
+    </BrowserRouter></TeamPreviewProvider>
   )
 }

@@ -288,7 +288,9 @@
 }
 
 /* ---- Admin console shell ---- */
-.admin-app {
+/* 弹窗通过 Portal 挂载，需在自身继承同一套后台主题变量。 */
+.admin-app,
+.admin-modal {
   --admin-bg: #e9eef5;
   --admin-bg-subtle: #dfe6f0;
   --admin-card: #ffffff;
@@ -312,6 +314,9 @@
   --admin-sidebar-w: 232px;
   --admin-radius: 12px;
   --admin-shadow: 0 1px 3px rgba(15, 23, 42, 0.04), 0 8px 24px rgba(15, 23, 42, 0.05);
+}
+
+.admin-app {
   display: flex;
   min-height: 100vh;
   background:

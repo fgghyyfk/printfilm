@@ -17,6 +17,7 @@ import { pageCountOf } from '../lib/pagination'
 const PAGE_SIZE_DEFAULT = 8
 
 const STATUS_CN: Record<string, string> = {
+  cancelled: '已取消',
   queued: '生成中',
   running: '生成中',
   succeeded: '已完成',
@@ -172,7 +173,7 @@ export default function SettingsToolRunsPanel() {
               <li key={item.id}>
                 <div className="pf-settings-list-row pf-settings-tool-row">
                   <button type="button" className="pf-settings-tool-main" onClick={() => void openDetail(item)}>
-                    {cover ? (
+                    {cover && item.kind !== 'audio' ? (
                       video && !item.preview_url ? (
                         <video className="pf-settings-thumb" src={cover} muted />
                       ) : (
@@ -263,7 +264,7 @@ export default function SettingsToolRunsPanel() {
           <div className="pf-tool-run-detail">
             <div className="pf-tool-run-media">
               {detail.urls.length || detail.preview_url ? (
-                isVideoRecord(detail) && (detail.urls[0] || '').match(/\.mp4/i) ? (
+                detail.kind === 'audio' ? <audio src={resolveToolMediaUrl(detail.urls[0])} controls /> : isVideoRecord(detail) && (detail.urls[0] || '').match(/\.mp4/i) ? (
                   <video src={resolveToolMediaUrl(detail.urls[0])} controls playsInline />
                 ) : (
                   <img

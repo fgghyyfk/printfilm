@@ -1,8 +1,15 @@
 /** HTTP 基础能力：地址、登录态和响应解析；不依赖浏览器全局配置或业务模块。 */
+import { getMediaPriceVersion, setMediaPriceVersion } from '../lib/mediaPriceVersion.ts'
+
+/** 空间/路由切换的主动取消不属于业务失败，不能显示为红色报错。 */
+export function isRequestAborted(cause: unknown): boolean {
+  return cause !== null && typeof cause === 'object' && 'name' in cause && cause.name === 'AbortError'
+}
 
 /** 将 FastAPI 的字符串或校验错误数组转换为可展示文案。 */
 export function apiErrorMessage(detail: unknown, fallback: string): string {
   if (typeof detail === 'string') return detail || fallback
+  if (detail && typeof detail === 'object' && 'message' in detail) return String(detail.message || fallback)
   if (Array.isArray(detail)) {
     const message = detail.map((item) => {
       if (item && typeof item === 'object' && 'msg' in item) {
@@ -43,12 +50,24 @@ export function createHttpTransport(options: {
   ): Promise<Response> {
     /* 每次请求重新读取 token，登录、登出后无需重建客户端。 */
     const headers = new Headers()
+    const priceVersion = getMediaPriceVersion()
+    if (priceVersion !== null && init?.method && init.method.toUpperCase() !== 'GET') {
+      headers.set('X-Media-Price-Version', String(priceVersion))
+    }
     const token = options.getToken()
     if (token) headers.set('Authorization', `Bearer ${token}`)
     if (!(init?.body instanceof FormData)) headers.set('Content-Type', 'application/json')
     new Headers(init?.headers).forEach((value, key) => headers.set(key, value))
-    const result = await fetch(`${options.baseUrl}${path}`, { ...init, headers })
+    let result: Response
+    try {
+      result = await fetch(`${options.baseUrl}${path}`, { ...init, headers })
+    } catch (cause) {
+      // 浏览器有时把中断显示为 TypeError/Failed to fetch；仍按原始取消原因处理。
+      if (init?.signal?.aborted) throw init.signal.reason || new DOMException('请求已取消', 'AbortError')
+      throw cause
+    }
     if (!result.ok) {
+      if (result.status === 409 && typeof window !== 'undefined') window.dispatchEvent(new Event('media-prices-changed'))
       const error = await result.json().catch(() => ({ detail: result.statusText }))
       onError(result, error?.detail)
     }
@@ -61,7 +80,9 @@ export function createHttpTransport(options: {
     init?: RequestInit,
     onError?: ApiErrorHandler,
   ): Promise<T> {
-    return (await response(path, init, onError)).json() as Promise<T>
+    const data = await (await response(path, init, onError)).json()
+    if (path === '/api/media-models') setMediaPriceVersion(data.price_version ?? 0)
+    return data as T
   }
 
   return { response, json }

@@ -252,6 +252,11 @@ export const enPages = {
       notLoggedIn: 'Not signed in',
     },
     items: {
+      audio: {
+        title: 'Audio generation', desc: 'Give your words a voice',
+        panelHint: 'Enter text and choose a voice.', cta: 'Generate speech',
+        fields: { prompt: { label: 'Text to read', placeholder: 'Enter the text you want to read…' } },
+      },
       t2i: {
         title: 'Text to image',
         desc: 'Describe a scene and generate a still',
@@ -435,6 +440,9 @@ export const enPages = {
   },
   dramaList: {
     title: 'My drama projects',
+    description: 'Manage your series from the first story idea to the storyboard.',
+    emptyTitle: 'No drama projects yet',
+    emptyDescription: 'Write a story idea to create your first drama.',
     assets: 'Asset library',
     canvas: 'Free canvas',
     creating: 'Creating…',
@@ -463,6 +471,16 @@ export const enPages = {
     deleteOne: 'Delete “{title}”? Episodes, scripts, and assets will be removed and cannot be undone.',
     deleteMany: 'Delete {count} selected projects, including episodes, scripts, and assets? This cannot be undone.',
     deleteFailed: 'Delete failed',
+  },
+  canvasList: {
+    title: 'Free canvas',
+    description: 'Bring ideas, images, and videos together. Connect them your way.',
+    newCanvas: 'New canvas',
+    searchPlaceholder: 'Search canvases',
+    emptyFilter: 'Empty',
+    emptyTitle: 'Start with a blank canvas',
+    emptyDescription: 'Add references and connect images and videos at your own pace.',
+    usageTitle: 'Total canvas costs and generations',
   },
   legal: {
     updatedAt: 'Updated {date}',

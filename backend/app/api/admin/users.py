@@ -61,7 +61,7 @@ async def patch_user(
     db: AsyncSession = Depends(get_db),
 ) -> AdminUserOut:
     # Update plan / role; balance changes write WalletLedger
-    user = await db.get(User, user_id)
+    user = (await db.execute(select(User).where(User.id == user_id).with_for_update().execution_options(populate_existing=True))).scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
 

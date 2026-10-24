@@ -1,10 +1,19 @@
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, BeforeValidator, EmailStr, Field, field_validator
 
 from app.schemas_common import PageMeta
 from app.schemas_tasks import TaskRunBriefOut
+
+
+def _normalize_project_template_id(value: Any) -> Any:
+    """历史项目可能没有模板；响应沿用字符串契约，不改写数据库。"""
+    return "" if value is None else value
+
+
+# 仅用于项目响应，创建和更新请求仍使用各自的模板校验。
+ProjectTemplateIdOut = Annotated[str, BeforeValidator(_normalize_project_template_id)]
 
 
 # ---- Auth ----
@@ -131,6 +140,8 @@ class ShotUpdate(BaseModel):
 
 
 class ProjectCreate(BaseModel):
+    image_resolution: str = Field(default="", max_length=16)
+    video_resolution: str = Field(default="", max_length=16)
     template_id: str
     title: str = "未命名作品"
     source_type: str = Field(default="theme", pattern="^(theme|script)$")
@@ -152,6 +163,8 @@ class ProjectCreate(BaseModel):
 
 
 class ProjectUpdate(BaseModel):
+    image_resolution: str | None = Field(default=None, max_length=16)
+    video_resolution: str | None = Field(default=None, max_length=16)
     title: str | None = Field(default=None, max_length=200)
     source_type: str | None = Field(default=None, pattern="^(theme|script)$")
     source_text: str | None = Field(default=None, min_length=2, max_length=20000)
@@ -176,8 +189,10 @@ class ProjectUpdate(BaseModel):
 
 
 class ProjectOut(BaseModel):
+    image_resolution: str = ""
+    video_resolution: str = ""
     id: int
-    template_id: str
+    template_id: ProjectTemplateIdOut
     title: str
     source_type: str
     source_text: str
@@ -210,7 +225,7 @@ class ProjectOut(BaseModel):
 class ProjectListItem(BaseModel):
     id: int
     title: str
-    template_id: str
+    template_id: ProjectTemplateIdOut
     status: str
     progress: int
     cover_url: str | None
@@ -443,6 +458,8 @@ class AdminQueueSummaryOut(BaseModel):
     name: str
     label: str
     pending: int
+    active: int = 0
+    max_concurrency: int = 0
     sample: list[AdminQueueTaskOut]
 
 
@@ -544,7 +561,7 @@ class AdminProjectOut(BaseModel):
     id: int
     user_id: int
     user_email: str | None = None
-    template_id: str
+    template_id: ProjectTemplateIdOut
     title: str
     status: str
     progress: int

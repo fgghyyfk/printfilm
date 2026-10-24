@@ -11,6 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { useAdminModelSettings } from "@/hooks/useAdminModelSettings";
 import { api } from "@/api/client";
+import { MediaPriceSettings } from "./MediaPriceSettings";
 
 // 易支付与 Token 计费配置
 export function PaymentSettingsPanel() {
@@ -150,6 +151,7 @@ export function PaymentSettingsPanel() {
 
   return (
     <SettingsTabShell onSave={() => void handleSave()} saving={saving}>
+      <MediaPriceSettings />
       <SettingsStatusBar
         title="支付就绪状态"
         items={[
@@ -236,7 +238,7 @@ export function PaymentSettingsPanel() {
         <SettingsPanel
           className="settings-panel--compact"
           title="2. Token 计费"
-          description="按 TokenFree 官方成本 1:1 扣费，不再加价"
+          description="图视频发布价格后按站内价格收费；上游费用单独记录为成本。LLM、TTS 沿用现有规则。"
         >
           <div className="settings-toggle-row">
             <div>

@@ -17,6 +17,7 @@ from app.config import get_settings
 from app.services.billing.context import billing_scope
 from app.services.billing.settlement import freeze_for_task, settle_task
 from app.services.tasks.handlers import get_task_handler
+from app.services.tasks.queues import task_queue
 from app.services.tasks.service import append_task_event, build_task_event, build_task_step
 from app.services.tasks.upstream import upstream_event_session
 
@@ -38,6 +39,14 @@ async def create_ephemeral_task_row(
     episode_id: int | None = None,
 ) -> TaskRun:
     """创建并立即执行的轻量任务行（不经过调度器排队）。"""
+    payload = {key: value for key, value in (payload or {}).items() if not key.startswith("_team_")}
+    if drama_project_id is not None:
+        from app.services.tasks.team_scope import prepare_background_task
+        user = await prepare_background_task(db, int(drama_project_id), user)
+    from app.services.tasks.service import _validate_task_scope
+    from app.services.billing.settlement import ensure_balance_for_task
+    scope = TaskCreateRequest(domain=domain, task_type=task_type, project_id=project_id, drama_project_id=drama_project_id, shot_id=shot_id, fragment_id=fragment_id, asset_id=asset_id, episode_id=episode_id)
+    await _validate_task_scope(db, user, scope)
     handler = get_task_handler(domain, task_type)
     planned = handler.plan_steps(TaskCreateRequest(domain=domain, task_type=task_type)) if handler else []
     first = planned[0] if planned else None
@@ -45,6 +54,7 @@ async def create_ephemeral_task_row(
     task = TaskRun(
         domain=domain,
         task_type=task_type,
+        queue_type=task_queue(task_type, payload),
         status="pending",
         priority=1,
         requested_by=user.id,
@@ -55,14 +65,22 @@ async def create_ephemeral_task_row(
         next_action_at=now,
         payload=payload or {},
         project_id=project_id,
-        drama_project_id=drama_project_id,
+        drama_project_id=scope.drama_project_id,
         shot_id=shot_id,
         fragment_id=fragment_id,
         asset_id=asset_id,
-        episode_id=episode_id,
+        episode_id=scope.episode_id,
+        team_id=scope.team_id,
     )
+    from app.services.media_models.planning import prepare_task_media
+    await prepare_task_media(db, task)
+    if task.team_id is not None:
+        task.billing_estimate_fen = await ensure_balance_for_task(db, user, task)
     db.add(task)
     await db.flush()
+    if task.team_id is not None:
+        from app.services.teams.edit_locks import claim_task_locks
+        await claim_task_locks(db, task, user.id)
     if first:
         db.add(build_task_step(task.id, first))
     db.add(
@@ -137,14 +155,20 @@ async def run_billed_ephemeral(
     )
     await db.flush()
 
+    if task.team_id is not None or task.billing_snapshot is not None:
+        # Accepted team work is durable before network I/O; release the shared
+        # team/member/project/wallet admission locks even for commit=False callers.
+        await db.commit()
+
     result: T
     try:
-        async with billing_scope(task.id), upstream_event_session(db):
+        async with billing_scope(task.id, team_id=task.team_id, snapshot=task.billing_snapshot), upstream_event_session(db):
             result = await executor()
         task.status = "succeeded"
         task.progress_percent = 100
         task.finished_at = datetime.now(UTC)
-        task.result_payload = {"ok": True} if result is None else {"ok": True, "result": str(type(result))}
+        task.result_payload = {**(task.result_payload or {}), "ok": True,
+                               **({"result": str(type(result))} if result is not None else {})}
         await append_task_event(
             db,
             task.id,
@@ -165,12 +189,12 @@ async def run_billed_ephemeral(
             message=str(exc)[:200],
         )
         await settle_task(db, task.id)
-        if commit:
+        if commit or task.team_id is not None:
             await db.commit()
         raise
 
     await settle_task(db, task.id)
-    if commit:
+    if commit or task.team_id is not None:
         await db.commit()
     await db.refresh(task)
     return task, result
@@ -239,9 +263,12 @@ async def run_billed_ephemeral_deferred(
     )
     await db.flush()
 
+    if task.team_id is not None or task.billing_snapshot is not None:
+        await db.commit()
+
     result: T
     try:
-        async with billing_scope(task.id), upstream_event_session(db):
+        async with billing_scope(task.id, team_id=task.team_id, snapshot=task.billing_snapshot), upstream_event_session(db):
             result = await executor()
         provider_id = _extract_provider_task_id(result)
         if not provider_id:
@@ -272,11 +299,11 @@ async def run_billed_ephemeral_deferred(
             message=str(exc)[:200],
         )
         await settle_task(db, task.id)
-        if commit:
+        if commit or task.team_id is not None:
             await db.commit()
         raise
 
-    if commit:
+    if commit or task.team_id is not None:
         await db.commit()
     await db.refresh(task)
     return task, result
@@ -335,13 +362,13 @@ async def settle_deferred_video_poll(
     now = datetime.now(UTC)
     if terminal == "succeeded":
         payload = task.payload if isinstance(task.payload, dict) else {}
-        async with billing_scope(task.id):
+        async with billing_scope(task.id, team_id=task.team_id, snapshot=task.billing_snapshot):
             from app.services.drama.billing_util import record_seedance_video_usage, seedance_billing_key
 
             generate_audio = bool(payload.get("generate_audio", True))
             key = billing_key or seedance_billing_key(generate_audio=generate_audio)
             task_result = None
-            if usage_tokens > 0:
+            if usage_tokens > 0 or (task.billing_snapshot or {}).get("mode") == "fixed_media":
                 from app.services.ark import TaskResult
 
                 task_result = TaskResult(

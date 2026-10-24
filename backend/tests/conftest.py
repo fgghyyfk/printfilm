@@ -22,6 +22,13 @@ from app.database import Base
 from app.models import User
 from app.models_tasks import TaskRun
 
+
+@pytest.fixture(autouse=True)
+def isolate_direct_llm_launch(monkeypatch):
+    """普通测试不启动真实模型后台调用；执行生命周期用例显式替换此入口。"""
+    from unittest.mock import Mock
+    monkeypatch.setattr("app.services.tasks.direct.launch_direct_task", Mock())
+
 _DB_NAME_RE = re.compile(r"^[A-Za-z0-9_]+$")
 
 
@@ -92,6 +99,9 @@ async def db_session(billing_enabled: None) -> AsyncIterator[AsyncSession]:
     import app.models_drama  # noqa: F401
     import app.models_settings  # noqa: F401
     import app.models_tasks  # noqa: F401
+    import app.models_teams  # noqa: F401
+    import app.models_team_billing  # noqa: F401
+    import app.models_team_locks  # noqa: F401
 
     url = (get_settings().database_url or "").strip()
     if not url.startswith("postgresql"):

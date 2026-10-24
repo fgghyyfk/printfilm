@@ -29,6 +29,7 @@ class LogicalModel(BaseModel):
     id: str
     name: str = ""
     capability: LogicalModelCapability
+    strategy_id: str | None = None
     enabled: bool = True
     bindings: list[LogicalModelBinding] = Field(default_factory=list)
 

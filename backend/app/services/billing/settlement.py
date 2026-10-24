@@ -6,7 +6,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, get_settings
@@ -92,8 +92,10 @@ async def pending_task_commitment_fen(
 ) -> int:
     """汇总用户进行中、尚未预扣冻结的任务估算占用（分）。"""
     stmt = select(TaskRun).where(
-        TaskRun.requested_by == int(user_id),
-        TaskRun.billing_status == "none",
+        or_(
+            and_(TaskRun.requested_by == int(user_id), TaskRun.team_id.is_(None), TaskRun.billing_status == "none"),
+            and_(TaskRun.billing_payer_user_id == int(user_id), TaskRun.team_id.is_not(None), TaskRun.billing_status == "reserved"),
+        ),
         TaskRun.status.in_(_PENDING_BILLING_TASK_STATUSES),
     )
     if exclude_task_id is not None:
@@ -110,6 +112,11 @@ async def pending_task_commitment_fen(
 
 async def ensure_balance_for_task(db: AsyncSession, user: User, task: TaskRun) -> int:
     """入队前同步校验余额（含排队中未冻结估算），不足抛 ValueError；返回本任务估算分。"""
+    if task.team_id is not None:
+        from app.services.billing.team import check_team_budget
+        need = await estimate_task_fen(db, task) if billing_active(user) else 0
+        summary = await check_team_budget(db, task, need, reserve=True)
+        return summary["unit_estimate_fen"]
     if not billing_active(user):
         return 0
     locked = await _lock_user(db, int(user.id))
@@ -139,6 +146,13 @@ async def ensure_balance_for_task_batch(
     count: int,
 ) -> dict[str, int]:
     """批量入队前校验：pending + unit*count。不足抛 ValueError。"""
+    if task.id is None and task.billing_snapshot is None:
+        from app.services.media_models.planning import prepare_task_media
+        await prepare_task_media(db, task)
+    if task.team_id is not None:
+        from app.services.billing.team import check_team_budget
+        unit = await estimate_task_fen(db, task) if billing_active(user) else 0
+        return await check_team_budget(db, task, unit, count=count)
     if not billing_active(user):
         return {"unit_estimate_fen": 0, "required_total_fen": 0}
     qty = max(1, int(count))
@@ -175,6 +189,9 @@ async def freeze_for_task(db: AsyncSession, task: TaskRun) -> int:
     if locked_task is not task:
         task.billing_status = locked_task.billing_status
         task.billing_estimate_fen = locked_task.billing_estimate_fen
+    if task.team_id is not None:
+        from app.services.billing.team import freeze_team_task
+        return await freeze_team_task(db, task)
     if task.billing_status == "frozen":
         return int(task.billing_estimate_fen or 0)
 
@@ -215,6 +232,16 @@ async def settle_task(db: AsyncSession, task_id: int) -> dict[str, int]:
             "charged": int(task.billing_charged_fen or 0),
             "refunded": int(task.billing_refunded_fen or 0),
         }
+
+    from app.services.media_models.failure_costs import record_failed_costs
+    await record_failed_costs(db, task)
+    if task.team_id is not None:
+        from app.services.billing.team import settle_team_task
+        result = await settle_team_task(db, task)
+        if task.status in {"succeeded", "failed", "cancelled"}:
+            from app.services.teams.edit_locks import release_task_locks
+            await release_task_locks(db, int(task.id))
+        return result
 
     # 钱包侧幂等：已有 unfreeze/settle 流水则只对齐状态，禁止二次退还
     if task.billing_status == "frozen":
@@ -393,7 +420,7 @@ async def reconcile_terminal_frozen_tasks(db: AsyncSession, *, limit: int = 100)
     stmt = (
         select(TaskRun)
         .where(
-            TaskRun.billing_status == "frozen",
+            TaskRun.billing_status.in_(("frozen", "reserved")),
             TaskRun.status.in_(_RECONCILABLE_TERMINAL_STATUSES),
             TaskRun.finished_at.is_not(None),
             TaskRun.finished_at < cutoff,
@@ -437,6 +464,7 @@ async def close_expired_pending_orders(
     *,
     user_id: int | None = None,
     out_trade_no: str | None = None,
+    team_id: int | None = None,
 ) -> int:
     from datetime import datetime, timezone
 
@@ -444,8 +472,10 @@ async def close_expired_pending_orders(
 
     now = datetime.now(timezone.utc)
     stmt = select(Order).where(Order.status == "pending")
-    if user_id is not None:
-        stmt = stmt.where(Order.user_id == user_id)
+    if team_id is not None:
+        stmt = stmt.where(Order.team_id == team_id)
+    elif user_id is not None:
+        stmt = stmt.where(Order.user_id == user_id, Order.team_id.is_(None))
     if out_trade_no is not None:
         stmt = stmt.where(Order.out_trade_no == out_trade_no)
     rows = (await db.execute(stmt)).scalars().all()

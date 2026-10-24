@@ -129,6 +129,8 @@ class Project(Base):
     # 科普图/视频模型；空则走后台 TokenFree 默认
     image_model: Mapped[str] = mapped_column(String(64), default="")
     video_model: Mapped[str] = mapped_column(String(64), default="")
+    image_resolution: Mapped[str] = mapped_column(String(16), default="")
+    video_resolution: Mapped[str] = mapped_column(String(16), default="")
     ref_image_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -210,6 +212,8 @@ class UsageEvent(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    billing_payer_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id"), nullable=True, index=True)
     project_id: Mapped[int | None] = mapped_column(
         ForeignKey("projects.id", ondelete="SET NULL"), nullable=True, index=True
     )
@@ -230,6 +234,9 @@ class UsageEvent(Base):
     estimated: Mapped[bool] = mapped_column(Boolean, default=False)
     settled: Mapped[bool] = mapped_column(Boolean, default=False)
     raw_usage_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    billing_detail: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    delivery_key: Mapped[str | None] = mapped_column(String(192), nullable=True, unique=True)
+    cost_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -268,6 +275,7 @@ class Order(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     out_trade_no: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id"), nullable=True, index=True)
     sku_id: Mapped[str] = mapped_column(String(64))
     amount_fen: Mapped[int] = mapped_column(Integer)
     credit_fen: Mapped[int] = mapped_column(Integer)

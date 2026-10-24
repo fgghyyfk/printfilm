@@ -1,3 +1,4 @@
+import { workspaceScope } from './features/teams/workspaceScope'
 import { API_BASE, createJsonRequester, requestResponse, uploadFile } from './api/client'
 import { apiErrorMessage } from './api/http'
 
@@ -65,6 +66,7 @@ export function defaultsFromTemplate(t: Template): {
 }
 
 export type Shot = {
+  video_skip_reason?: string | null
   id: number
   shot_no: number
   duration: number
@@ -126,6 +128,8 @@ export type Project = {
   extra_prompt?: string
   image_model?: string
   video_model?: string
+  image_resolution?: string
+  video_resolution?: string
   ref_image_url: string | null
   created_at: string
   updated_at: string
@@ -154,6 +158,15 @@ export type MediaModelOption = {
   description: string
   provider: string
   recommended?: boolean
+  strategy_id?: string
+  strategy_version?: number
+  billing_unit?: 'image' | 'second'
+  prices?: Record<string, string>
+  price_version?: number | null
+  available?: boolean
+  available_resolutions?: string[]
+  reference_limits?: { images: number; audios: number; videos: number }
+  defaults?: { resolution: string; aspect_ratio: string; duration?: number; count: number }
   /** 该模型允许的清晰度 */
   allowed_resolutions?: string[]
   /** 该模型允许的画幅比例 */
@@ -169,6 +182,9 @@ export type MediaModelOption = {
 }
 
 export type MediaModelsCatalog = {
+  generation_defaults?: { image_resolution: string; video_resolution: string }
+  price_version?: number | null
+  billing_mode?: 'fixed_media' | 'legacy'
   image_models: MediaModelOption[]
   video_models: MediaModelOption[]
   defaults: {
@@ -367,6 +383,8 @@ export const api = {
       extra_prompt?: string
       image_model?: string
       video_model?: string
+      image_resolution?: string
+      video_resolution?: string
       bgm_lock?: string
       subtitle_preset?: string
       cover_url?: string | null
@@ -587,6 +605,7 @@ export const api = {
       task_type: params.task_type,
       count: String(params.count ?? 1),
     })
+    if (workspaceScope.teamId !== null && params.domain === 'drama') q.set('team_id', String(workspaceScope.teamId))
     return request<BillingPreflight>(`/api/billing/preflight?${q.toString()}`)
   },
   eventsUrl(projectId: number) {

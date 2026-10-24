@@ -82,11 +82,12 @@ async def get_voices() -> list[dict]:
 
 
 @router.get("/media-models")
-async def get_media_models() -> dict:
+async def get_media_models(db: AsyncSession = Depends(get_db)) -> dict:
     """科普前台可选图/视频模型目录（TokenFree 已勾选模型）。"""
     from app.services.media_catalog import catalog_payload
 
-    return catalog_payload()
+    from app.services.media_models.catalog import priced_catalog
+    return await priced_catalog(db, catalog_payload())
 
 
 @router.post("/voices/preview", response_model=VoicePreviewOut)
@@ -270,6 +271,8 @@ async def create_project(
         extra_prompt=(body.extra_prompt or "").strip(),
         image_model=(body.image_model or "").strip(),
         video_model=(body.video_model or "").strip(),
+        image_resolution=body.image_resolution.strip().upper(),
+        video_resolution=body.video_resolution.strip().lower(),
         ref_image_url=body.ref_image_url,
         status=ProjectStatus.DRAFT,
     )
@@ -428,7 +431,7 @@ async def update_project(
         url = str(data["cover_url"]).strip()
         if not (url.startswith("/static/") or url.startswith("http://") or url.startswith("https://")):
             raise HTTPException(status_code=400, detail="无效封面地址")
-    for key in ("style_prompt", "character_prompt", "extra_prompt", "image_model", "video_model"):
+    for key in ("style_prompt", "character_prompt", "extra_prompt", "image_model", "video_model", "image_resolution", "video_resolution"):
         if key in data:
             data[key] = str(data[key] or "").strip()
     if "image_model" in data and data["image_model"]:

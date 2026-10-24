@@ -10,7 +10,8 @@
 
 | 区域 | 主要文件 |
 |------|----------|
-| 顶栏 | `frontend/src/components/layout/SiteNav.tsx` |
+| 左侧主导航 / 窄屏抽屉 | `frontend/src/components/layout/SiteNav.tsx`、`AppShell.tsx` |
+| 漫剧 / 自由画布列表 | `frontend/src/pages/drama/DramaListPage.tsx`、`CanvasListPage.tsx` |
 | 帮助抽屉 | `frontend/src/components/ui/HelpCenter.tsx`、`Modal.tsx`（`variant=drawer`） |
 | 新建 | `frontend/src/pages/studio/CreateProjectPage.tsx` |
 | 风格 | `frontend/src/pages/studio/StyleConfigPage.tsx` |
@@ -30,6 +31,8 @@
 | G-02 | 帮助中心（侧边抽屉） | 已完成待部署 | P0 | 代码已改为右侧抽屉；需前端 build 上线 |
 | G-03 | 通知中心 | 待开发 | P2 | 顶栏 disabled |
 | G-04 | 用户资料下拉（设置/账单） | 待开发 | P2 | 当前头像点击为退出 |
+| G-05 | 顶部主菜单改为左侧分组导航 | 已完成待部署 | P0 | 创作组：工作台、漫剧、自由画布、AI 短视频、小工具；资源协作组：资产、团队、定价；帮助、GitHub、语言和账户放底部。窄屏使用导航抽屉，全屏分镜/画布编辑器保留独立布局 |
+| G-06 | 自由画布提升为一级入口 | 已完成待部署 | P0 | 新增 `/canvas` 独立画布列表；`/drama` 只展示剧本项目。共用现有 `workflow` 服务端筛选、项目管理与个人/团队权限；旧 API 不传 `workflow` 仍返回全部可访问项目，现有编辑地址兼容 |
 
 ---
 
@@ -124,7 +127,7 @@
 | P-01 | 套餐 SKU 展示 | 已完成 | P1 | 定价页充值包 |
 | P-02 | 支付与订单 | 已完成 | P1 | 易支付 alipay/wxpay，见 docs/BILLING.md |
 | P-03 | 额度扣减与高清导出权限 | 部分完成 | P1 | token×1.5 预扣结算；hd 门禁可后续 |
-| P-04 | 团队空间 | 待开发 | P3 | |
+| P-04 | 团队空间 | 已接真实后端 | P3 | `/teams`：空间隔离、成员邀请、项目迁入、独立钱包/月额度、任务计费与编辑占用；见 `TEAM_MODE.md` |
 
 ---
 
@@ -150,6 +153,8 @@
 | X-03 | 取消中途视频失败错误信息为空 | 待开发 | P1 | `RuntimeError('')` 日志难排查 |
 | X-04 | 帮助中心 / 状态文案前端上线 | 已完成待部署 | P0 | `npm run build` + 静态发布 |
 | X-05 | 视频阶段卡住时允许「仅补缺镜」 | 待开发 | P1 | 可走 `regen-video` + `compose`，避免整管线重入队 |
+| X-06 | 媒体计费重构上线前迁移与结构校验 | 已完成待部署 | P0 | 必须先备份、对目标库执行 `prepare_media_schema.py`，再以 `--check` 验证成功后重启 API/Worker；认证业务接口冒烟通过后开放流量，不能只检查 `/api/health`。见[发布与兼容](./MEDIA_MODEL_STRATEGIES.md#发布与兼容) |
+| X-07 | 分集编辑页移除右侧字幕板及 SRT 导出 | 已完成待部署 | P1 | 删除专用预览、导出逻辑及样式，保留顶部字幕生成模式设置。 |
 
 ---
 
@@ -196,3 +201,15 @@ PricingPage      整页定价方案
 ```
 
 统计（约）：**UI 占位入口 40+**；其中本迭代建议优先落地 **约 10～12 项**（Sprint A–C）。
+
+---
+
+## 14. 故障记录与上线约束
+
+### 2026-10-24：媒体计费数据库结构漏迁移
+
+本地 `GET /api/drama/episodes?project_id=422` 返回 500，报错 `UndefinedColumnError`。原因是 `DATABASE_BOOTSTRAP_ENABLED=false`，代码更新后未执行媒体计费增量迁移，`task_runs.billing_snapshot`、`media_provider_tasks` 等七列，以及媒体价格版本表和交付唯一索引未准备齐全。
+
+已在本地执行 `backend/scripts/prepare_media_schema.py`；修复后接口连续两次返回 200、读取 12 集，相关回归 16 条通过。项目 ID 422 仅为本次故障示例；后续上线须使用目标环境的可访问项目冒烟。本地修复不表示线上数据库已经完成迁移。
+
+上线顺序固定为：**备份 → 用目标库凭证执行迁移 → `--check` 成功 → 重启 API/Worker → 认证业务接口冒烟**。迁移或校验失败不得继续，`/api/health` 正常不能代替业务验证。价格发布独立于结构迁移，未启用新计费也必须补齐结构。命令、结构清单和发布记录要求见[媒体模型发布说明](./MEDIA_MODEL_STRATEGIES.md#发布与兼容)。

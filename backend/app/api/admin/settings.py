@@ -28,6 +28,43 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+class MediaPricePublishBody(BaseModel):
+    prices: dict[str, dict[str, str]]
+    expected_version: int | None = Field(default=None, ge=1)
+
+
+class MediaPriceActivationBody(BaseModel):
+    enabled: bool
+    expected_version: int = Field(ge=1)
+
+
+@router.patch("/settings/billing/media-prices/activation")
+async def activate_media_prices(body: MediaPriceActivationBody, _admin: User = Depends(get_current_admin), db: AsyncSession = Depends(get_db)):
+    from app.services.media_models.prices import set_pricing_enabled
+    await set_pricing_enabled(db, enabled=body.enabled, expected_version=body.expected_version)
+    await db.commit()
+    return {"enabled": body.enabled}
+
+
+@router.get("/settings/billing/media-prices")
+async def get_media_prices(_admin: User = Depends(get_current_admin), db: AsyncSession = Depends(get_db)):
+    from app.services.media_models import strategies
+    from app.services.media_models.prices import active_book, initial_draft
+    book = await active_book(db, include_disabled=True)
+    return {"active_version": book["version"] if book else None,
+            "enabled": book["enabled"] if book else False,
+            "prices": book["prices"] if book else initial_draft(),
+            "strategies": [{"id": strategy.model_id, **strategy.describe()} for strategy in strategies()]}
+
+
+@router.post("/settings/billing/media-prices")
+async def publish_media_prices(body: MediaPricePublishBody, admin: User = Depends(get_current_admin), db: AsyncSession = Depends(get_db)):
+    from app.services.media_models.prices import publish_book
+    result = await publish_book(db, prices=body.prices, expected_version=body.expected_version, user_id=admin.id)
+    await db.commit()
+    return result
+
+
 class AdminUpstreamModelsRequest(BaseModel):
     """按渠道凭证拉取上游 /models 目录。"""
 

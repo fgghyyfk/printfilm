@@ -15,6 +15,33 @@ from typing import Any
 
 from app.services.media_ref_limits import MAX_REFERENCE_IMAGES
 
+
+async def post_video_create(client: Any, method: str, url: str, *, request_call: Any = None, **kwargs: Any) -> Any:
+    """MiniMax 插件明确拒绝分辨率枚举时，仅转换大小写重试一次。"""
+    if request_call is None:
+        from app.services.tasks.upstream import observed_request
+
+        request_call = observed_request
+    response = await request_call(client, method, url, **kwargs)
+    body = kwargs.get("json")
+    if response.status_code != 400 or not isinstance(body, dict):
+        return response
+    if str(body.get("model") or "").lower() != "minimax-h3":
+        return response
+    try:
+        error = response.json()
+    except ValueError:
+        return response
+    if not isinstance(error, dict) or error.get("code") != "plugin_usage_invalid" or extract_video_task_id(error):
+        return response
+    metadata = body.get("metadata")
+    resolution = metadata.get("resolution") if isinstance(metadata, dict) else None
+    alternatives = {"480p": "480P", "768p": "768P", "480P": "480p", "768P": "768p"}
+    if resolution not in alternatives:
+        return response
+    retry_body = {**body, "metadata": {**metadata, "resolution": alternatives[resolution]}}
+    return await request_call(client, method, url, **{**kwargs, "json": retry_body})
+
 # 方舟原生异步视频任务前缀
 ARK_VIDEO_TASK_PREFIX = "/contents/generations/tasks"
 # TokenFree OpenAI Videos 兼容前缀（相对 /v1）

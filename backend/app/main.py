@@ -6,8 +6,10 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.api import auth, billing, projects, tasks, templates, tools
+from app.api import teams, team_billing, team_content, team_edit_locks
 from app.api import api_keys as user_api_keys
 from app.api.v1 import router as v1_router
 from app.api.admin import router as admin_router
@@ -26,6 +28,29 @@ configure_logging(level="INFO", sql_echo=settings.sql_echo)
 logger = logging.getLogger("app.http")
 
 app = FastAPI(title=settings.app_name, version="0.2.0")
+
+
+@app.middleware("http")
+async def media_price_context(request: Request, call_next):
+    from app.services.media_models.prices import expected_price_version
+    from fastapi.responses import JSONResponse
+    raw = request.headers.get("X-Media-Price-Version")
+    if raw is not None and (not raw.isdigit() or len(raw) > 18):
+        return JSONResponse(status_code=422, content={"detail": "无效的媒体价格版本"})
+    token = expected_price_version.set(int(raw) if raw is not None else None)
+    try:
+        return await call_next(request)
+    finally:
+        expected_price_version.reset(token)
+
+
+from app.services.media_models import MediaValidationError
+
+
+@app.exception_handler(MediaValidationError)
+async def media_validation_error(_request, exc):
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=422, content={"detail": [{"loc": ["body", exc.field], "msg": str(exc), "type": "media_parameter"}]})
 
 origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
 # Allow LAN devices (phone/tablet) hitting Vite on private IPs
@@ -92,6 +117,12 @@ app.include_router(tools.router, prefix="/api")
 app.include_router(user_api_keys.router, prefix="/api")
 app.include_router(v1_router, prefix="/api")
 app.include_router(drama_router, prefix="/api")
+app.include_router(teams.router, prefix="/api")
+app.include_router(teams.invitation_router, prefix="/api")
+app.include_router(team_billing.router, prefix="/api")
+app.include_router(team_content.router, prefix="/api")
+app.include_router(team_content.personal_router, prefix="/api")
+app.include_router(team_edit_locks.router, prefix="/api")
 app.include_router(admin_router, prefix="/api")
 
 
@@ -150,9 +181,15 @@ async def _pg_columns(conn, table: str) -> set[str]:
     return {row[0] for row in result.fetchall()}
 
 
-async def _apply_schema_patches() -> None:
+async def _apply_schema_patches(engine_override: AsyncEngine | None = None) -> None:
     """Lightweight additive migrations（仅 PostgreSQL）。"""
-    async with engine.begin() as conn:
+    target_engine = engine_override if engine_override is not None else engine
+    async with target_engine.begin() as conn:
+        from app.team_schema import apply_team_schema_patches
+
+        await apply_team_schema_patches(conn)
+        from app.media_schema import apply_media_schema_patches
+        await apply_media_schema_patches(conn)
         scols = await _pg_columns(conn, "shots")
         if "segment_script" not in scols:
             await conn.execute(text("ALTER TABLE shots ADD COLUMN segment_script TEXT DEFAULT ''"))
@@ -220,6 +257,20 @@ async def _apply_schema_patches() -> None:
 
         # Task platform additive columns
         trcols = await _pg_columns(conn, "task_runs")
+        if "queue_type" not in trcols:
+            await conn.execute(text("ALTER TABLE task_runs ADD COLUMN queue_type VARCHAR(16) NOT NULL DEFAULT 'text'"))
+            await conn.execute(text("""
+                UPDATE task_runs SET queue_type = CASE
+                    WHEN task_type = 'project_pipeline' AND payload->>'phase' = 'assets' THEN 'image'
+                    WHEN task_type = 'project_pipeline' AND payload->>'phase' IN ('videos', 'compose', 'produce') THEN 'video'
+                    WHEN task_type LIKE '%video%' OR task_type IN ('v1_seedance', 'project_compose_only') THEN 'video'
+                    WHEN task_type LIKE '%image%' THEN 'image'
+                    ELSE 'text' END
+            """))
+        if "provider_name" not in trcols:
+            await conn.execute(text("ALTER TABLE task_runs ADD COLUMN provider_name VARCHAR(64)"))
+        if "provider_status" not in trcols:
+            await conn.execute(text("ALTER TABLE task_runs ADD COLUMN provider_status VARCHAR(32)"))
         if "dedupe_key" not in trcols:
             await conn.execute(text("ALTER TABLE task_runs ADD COLUMN dedupe_key VARCHAR(128)"))
         if "batch_key" not in trcols:
@@ -244,6 +295,7 @@ async def _apply_schema_patches() -> None:
             await conn.execute(text("ALTER TABLE task_runs ADD COLUMN billing_refunded_fen INTEGER DEFAULT 0"))
         if "billing_status" not in trcols:
             await conn.execute(text("ALTER TABLE task_runs ADD COLUMN billing_status VARCHAR(16) DEFAULT 'none'"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_task_runs_queue_due ON task_runs (queue_type, status, next_action_at, priority, id)"))
 
         # Drop leftover worker-era columns that block the new task platform.
         legacy_task_run_cols = (

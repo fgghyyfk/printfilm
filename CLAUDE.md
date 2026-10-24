@@ -75,6 +75,7 @@ pytest tests/test_x.py::test_name       # 单测
 - 异步引擎 asyncpg（`AsyncSessionLocal`，业务全异步）；同步引擎 psycopg2 仅少量场景
 - ORM 按域拆文件：`models.py`（users/projects/shots/templates/计费/订单/tool_runs 等）、`models_drama.py`、`models_tasks.py`、`models_api.py`（API Key）、`models_agent.py`（导演 Skill）、`models_settings.py`
 - **没有 Alemantic 类迁移工具**：启动时 `init_db()` 做 `create_all`，新增列必须手写进 `main.py` 的 `_apply_schema_patches()`（只允许 additive 的 PG DDL；conftest 里的测试 schema 也要同步）。线上建议 uvicorn 单 worker 以规避建表竞态
+- **发布前先迁移并检查**：2026-10-24 因 `DATABASE_BOOTSTRAP_ENABLED=false` 且漏跑媒体迁移，分集查询缺少 `task_runs.billing_snapshot` 返回 500。后续发布必须先备份目标库，运行 `backend/scripts/prepare_media_schema.py`，再加 `--check` 只读验证；任一步非零就停止发布，成功后才重启 API/任务执行节点，并用已登录业务接口冒烟。未发布新价格也必须迁移，`/api/health` 成功不能代替结构或业务检查。详见 `docs/MEDIA_MODEL_STRATEGIES.md` 与本机 `docs/DEPLOY.md`。
 - 启动还会执行：模板 seed（只插缺失，不覆盖后台改动）、内置 Skill seed、`ADMIN_BOOTSTRAP_EMAILS` 提权（只提升已注册用户，不造号，需重启）
 
 ### 媒体与 OSS

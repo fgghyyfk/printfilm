@@ -245,6 +245,11 @@ export const zhPages = {
       notLoggedIn: '未登录',
     },
     items: {
+      audio: {
+        title: '音频生成', desc: '选择音色，让文字成为有温度的声音',
+        panelHint: '输入文字，选择音色，生成配音。', cta: '生成语音',
+        fields: { prompt: { label: '朗读文字', placeholder: '输入你想朗读的文字…' } },
+      },
       t2i: {
         title: '文生图',
         desc: '用文字描述生成高质量画面',
@@ -428,6 +433,9 @@ export const zhPages = {
   },
   dramaList: {
     title: '我的漫剧项目',
+    description: '从故事到分镜，管理你的系列漫剧创作。',
+    emptyTitle: '还没有漫剧项目',
+    emptyDescription: '写下故事创意，创建你的第一部漫剧。',
     assets: '资产库',
     canvas: '自由画布',
     creating: '创建中…',
@@ -456,6 +464,16 @@ export const zhPages = {
     deleteOne: '确定删除「{title}」？分集、剧本与资产将一并删除，且无法恢复。',
     deleteMany: '将删除已选择的 {count} 个项目，包含分集、剧本与资产等数据，删除后无法恢复。',
     deleteFailed: '删除失败',
+  },
+  canvasList: {
+    title: '自由画布',
+    description: '把灵感、图片和视频放进同一张画布，自由连接与创作。',
+    newCanvas: '新建画布',
+    searchPlaceholder: '搜索画布名称',
+    emptyFilter: '空画布',
+    emptyTitle: '从一张空白画布开始',
+    emptyDescription: '放入参考素材，连接图片与视频，按自己的节奏展开创作。',
+    usageTitle: '此画布累计费用与生成次数',
   },
   legal: {
     updatedAt: '更新日期：{date}',

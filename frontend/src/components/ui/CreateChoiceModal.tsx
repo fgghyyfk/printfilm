@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom'
-import { Clapperboard, Video } from 'lucide-react'
+import { Clapperboard, PanelsTopLeft, Video } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import Modal from './Modal'
 
@@ -8,7 +8,7 @@ type Props = {
   onClose: () => void
 }
 
-/** 开始创作：在漫剧与科普之间选择入口 */
+/** 开始创作：选择漫剧、自由画布或短视频。 */
 export default function CreateChoiceModal({ open, onClose }: Props) {
   const nav = useNavigate()
   const { t } = useI18n()
@@ -31,6 +31,11 @@ export default function CreateChoiceModal({ open, onClose }: Props) {
           </span>
           <strong>{t('create.drama')}</strong>
           <span className="pf-muted">{t('create.dramaHint')}</span>
+        </button>
+        <button type="button" className="pf-create-choice-card" onClick={() => go('/canvas')}>
+          <span className="pf-ws-product-icon" aria-hidden><PanelsTopLeft size={24} strokeWidth={1.6} /></span>
+          <strong>{t('create.canvas')}</strong>
+          <span className="pf-muted">{t('create.canvasHint')}</span>
         </button>
         <button type="button" className="pf-create-choice-card" onClick={() => go('/studio/new')}>
           <span className="pf-ws-product-icon" aria-hidden>

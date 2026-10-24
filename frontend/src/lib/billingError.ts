@@ -1,4 +1,5 @@
 import { dialog } from './dialog'
+import { workspaceScope } from '../features/teams/workspaceScope'
 
 export const PRICING_PATH = '/pricing'
 
@@ -10,7 +11,7 @@ export function isBillingError(message: string) {
 /** 跳转定价页充值 */
 export function goToTopup() {
   if (typeof window !== 'undefined') {
-    window.location.assign(PRICING_PATH)
+    window.location.assign(workspaceScope.teamId === null ? PRICING_PATH : `/teams/${workspaceScope.teamId}?tab=billing`)
   }
 }
 
@@ -24,6 +25,10 @@ export async function handleBillingError(
 ): Promise<boolean> {
   const message = err instanceof Error ? err.message : String(err || '')
   if (!isBillingError(message)) return false
+  if (workspaceScope.teamId !== null) {
+    await dialog.alert({ title: '团队消费受限', message: `${message}。请在团队钱包查看本人额度；团队余额与充值由所有者管理。`, confirmText: '知道了' })
+    return true
+  }
   const go = await dialog.confirm({
     title: '余额不足',
     message: message || '当前余额不足以开始生成，请先充值。',

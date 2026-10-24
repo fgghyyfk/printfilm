@@ -22,6 +22,11 @@ class ApiKeyCreatedOut(ApiKeyOut):
 
 
 class V1ImageGenerateRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+    model: str | None = Field(default=None, max_length=128)
+    resolution: str = "2K"
+    count: int = Field(default=1, ge=1, le=100)
+    price_version: int | None = Field(default=None, ge=1)
     prompt: str = Field(min_length=1, max_length=4000)
     negative: str = Field(default="", max_length=2000)
     ratio: str = Field(default="1:1", description="1:1 | 16:9 | 9:16")
@@ -29,17 +34,24 @@ class V1ImageGenerateRequest(BaseModel):
 
 
 class V1VideoGenerateRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+    model: str | None = Field(default=None, max_length=128)
+    ratio: str = "9:16"
+    price_version: int | None = Field(default=None, ge=1)
     prompt: str = Field(min_length=1, max_length=8000)
     image_url: str = Field(min_length=8, description="首帧图公网 URL")
-    duration: int = Field(default=5, ge=4, le=15)
+    duration: int = Field(default=5, ge=4, le=30)
     resolution: str = Field(default="480p")
     generate_audio: bool = False
 
 
 class V1SeedanceTaskRequest(BaseModel):
     """接近火山 Seedance 的任务体，服务端补全 model 并转发。"""
+    model_config = {"extra": "forbid"}
 
     content: list[dict]
+    model: str | None = Field(default=None, max_length=128)
+    price_version: int | None = Field(default=None, ge=1)
     duration: int | None = Field(default=None, ge=4, le=30)
     resolution: str = Field(default="480p")
     ratio: str | None = None
