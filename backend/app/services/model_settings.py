@@ -653,6 +653,9 @@ async def patch_admin_model_settings(
     app_row.config_json = config
     await db.commit()
     await load_model_settings_cache(db)
+    if "marketplace_enabled" in applied:
+        from app.marketplace.bootstrap import apply_marketplace_switch
+        await apply_marketplace_switch()
     channels, logical_models, defaults, flat, app_row = await _compose_runtime_state(db)
     admin_channels = await _load_channels(db, runtime=False)
     return _to_admin_flat_out(flat, source="db", updated_at=app_row.updated_at, channels=admin_channels, logical_models=logical_models, defaults=defaults), applied

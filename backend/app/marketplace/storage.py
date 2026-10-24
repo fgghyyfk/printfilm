@@ -162,6 +162,45 @@ def copy_private(source_key: str, dest_key: str, content_type: str) -> int:
 
 
 @transport
+def discard_generated(key: str) -> None:
+    """只清理本次同步生成且未绑定的精确 UUID 对象，绝不删除上游媒体。"""
+    import re
+    if not re.fullmatch(r"marketplace/series/u\d+/\d+/(?:cover-)?[0-9a-f]{32}\.(?:mp4|png)", key):
+        raise ValueError("拒绝清理非市场同步对象")
+    bucket().delete_object(key)
+
+
+def source_metadata(key: str) -> dict:
+    """读取上游对象版本；只供服务端的漫剧快照使用。"""
+    try:
+        result = bucket().head_object(key)
+        etag = str(result.etag or "").strip('"')
+        if not etag:
+            raise ValueError("MARKETPLACE_SOURCE_NOT_READY:源视频没有可校验的版本")
+        return {"etag": etag, "size_bytes": int(result.content_length)}
+    except (HTTPException, ValueError):
+        raise
+    except Exception as exc:
+        if getattr(exc, "status", None) == 404:
+            raise ValueError("MARKETPLACE_SOURCE_NOT_READY:源视频不存在") from exc
+        raise unavailable() from exc
+
+
+def download_version(key: str, path: Path, etag: str) -> None:
+    """按冻结的 ETag 下载；上游覆盖同名视频时明确终止旧快照。"""
+    try:
+        bucket().get_object_to_file(key, str(path), headers={"If-Match": etag})
+    except HTTPException:
+        raise
+    except Exception as exc:
+        if getattr(exc, "status", None) == 412:
+            raise ValueError("MARKETPLACE_SOURCE_CHANGED:源视频已更新，请重新选择") from exc
+        if getattr(exc, "status", None) == 404:
+            raise ValueError("MARKETPLACE_SOURCE_NOT_READY:源视频不存在") from exc
+        raise unavailable() from exc
+
+
+@transport
 def signed(key: str, content_type: str = "application/octet-stream") -> str:
     """使用上传时的对象 Content-Type；不覆盖响应头，避免 OSS 拒绝预览。"""
     return bucket().sign_url("GET", key, get_marketplace_settings().signed_url_seconds,

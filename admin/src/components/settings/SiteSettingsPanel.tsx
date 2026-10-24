@@ -5,6 +5,7 @@ import {
   SettingsStatusBar,
   SettingsTabShell,
 } from "@/components/settings/SettingsPanel";
+import { Switch } from "@/components/ui/switch";
 import { useAdminModelSettings } from "@/hooks/useAdminModelSettings";
 
 /** 站点公网地址与媒体工具路径 */
@@ -18,6 +19,7 @@ export function SiteSettingsPanel() {
         public_base_url: form.public_base_url,
         ffmpeg_path: form.ffmpeg_path,
         ffprobe_path: form.ffprobe_path,
+        marketplace_enabled: form.marketplace_enabled,
       },
       "站点配置已保存",
     );
@@ -56,6 +58,13 @@ export function SiteSettingsPanel() {
             ready: hasFfprobe,
             readyText: form.ffprobe_path || "已配置",
             pendingText: "使用默认 PATH",
+          },
+          {
+            id: "marketplace",
+            label: "数字资产市场",
+            ready: form.marketplace_enabled,
+            readyText: "已启用",
+            pendingText: "未启用",
           },
         ]}
       />
@@ -106,6 +115,23 @@ export function SiteSettingsPanel() {
                 onChange={(e) => patchField("ffprobe_path", e.target.value)}
               />
             </LabeledControl>
+          </div>
+        </SettingsPanel>
+
+        <SettingsPanel
+          className="settings-panel--compact"
+          title="3. 数字资产市场"
+          description="线上没有环境文件时，在这里打开入口"
+        >
+          <div className="settings-toggle-row">
+            <div>
+              <strong>启用数字资产市场</strong>
+              <span>保存后用户端出现「数字资产市场」，管理端「业务」出现「数字资产平台运营」。上传仍使用「存储 OSS」。</span>
+            </div>
+            <Switch
+              checked={form.marketplace_enabled}
+              onCheckedChange={(value) => patchField("marketplace_enabled", value)}
+            />
           </div>
         </SettingsPanel>
       </div>

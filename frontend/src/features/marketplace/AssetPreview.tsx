@@ -12,7 +12,7 @@ export function PreviewContent({ url, filename, video = false, onReady, onFailur
   </div>
 }
 
-export default function AssetPreview({ id, onReady, hideMedia = false }: { id: number; onReady?: (id: number) => void; hideMedia?: boolean }) {
+export default function AssetPreview({ id, onReady, onMediaReady, hideMedia = false }: { id: number; onReady?: (id: number) => void; onMediaReady?: (id: number) => void; hideMedia?: boolean }) {
   const [asset, setAsset] = useState<Row | null>(null)
   const [url, setUrl] = useState('')
   const [error, setError] = useState('')
@@ -33,7 +33,7 @@ export default function AssetPreview({ id, onReady, hideMedia = false }: { id: n
             // temporary local preview closes without another manual click.
             onReady?.(id)
           }
-        }
+        } else if (item.status === 'failed') onMediaReady?.(id)
       } catch (e) { if (active) setError((e as Error).message) }
     }
     void load()
@@ -45,7 +45,7 @@ export default function AssetPreview({ id, onReady, hideMedia = false }: { id: n
     return () => window.clearTimeout(timer)
   }, [asset])
   return <div className="pf-market-asset-preview"><p>{asset?.filename || `文件 #${id}`} · {labels[asset?.status || ''] || '正在读取'}</p>
-    {url && <div hidden={hideMedia}><PreviewContent key={url} url={url} filename={asset?.filename || ''} video={asset?.kind === 'video'} onReady={() => onReady?.(id)} onFailure={() => { if (hideMedia) setError('云端预览加载失败，已保留本地预览，可刷新预览链接重试。') }} /></div>}
+    {url && <div hidden={hideMedia}><PreviewContent key={url} url={url} filename={asset?.filename || ''} video={asset?.kind === 'video'} onReady={() => { onReady?.(id); onMediaReady?.(id) }} onFailure={() => { onMediaReady?.(id); if (hideMedia) setError('云端预览加载失败，已保留本地预览，可刷新预览链接重试。') }} /></div>}
     {asset?.status === 'processing' && <p>文件已上传，正在生成兼容浏览器的预览，请稍后刷新。</p>}
     {asset?.error && <p role="alert">{asset.error}</p>}{error && <p role="alert">{error}</p>}
     <button type="button" onClick={() => setRevision(v => v + 1)}>刷新预览链接</button>

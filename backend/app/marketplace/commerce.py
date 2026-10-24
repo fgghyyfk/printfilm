@@ -4,18 +4,21 @@ from __future__ import annotations
 import time
 import uuid
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import PlainTextResponse
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert
 
 from app.config import get_settings
+from app.models import User
 from app.services import epay
 from . import storage
 from .dependencies import Actor, DB, Visitor, storage_ready
-from .models import Asset, ContentOrder, Entitlement, Publication, RevenueConfig, RevenueLedger, SeriesEpisode, Work
+from .models import Asset, ContentOrder, Entitlement, Publication, RevenueConfig, RevenueLedger, Rights, Series, SeriesEpisode, Work
 from .schemas import ContentOrderInput
-from .service import data, fail, now
+from .service import data, event, fail, now, rights_valid
 
 router = APIRouter()
 
@@ -30,7 +33,76 @@ def _payment_ready() -> bool:
 
 
 def _publication_public(item: Publication) -> bool:
-    return bool(item.audit_status == "approved" and item.listed and item.sale_type == "platform_unlock" and item.unlock_price_fen > 0 and item.playback_manifest_key)
+    return bool(item.audit_status == "approved" and item.listed and item.sale_type == "platform_unlock" and item.unlock_price_fen > 0 and item.playback_status == "done" and item.playback_manifest_key)
+
+
+async def _publication_restriction(db: DB, publication: Publication) -> str:
+    """购买后的播放保留旧快照，但实时执行封禁与该版本资产的权属限制。"""
+    owner = await db.get(User, publication.owner_id)
+    if not owner:
+        return "作者账号不可用"
+    # 账号模型当前没有封禁字段；不引入或修改原用户表。
+    if publication.content_type == "work":
+        item = await db.get(Work, publication.content_id)
+        if not item or item.owner_id != publication.owner_id:
+            return "作品不可用"
+        if item.blocked:
+            return "作品已被限制播放"
+    elif publication.content_type == "series_episode":
+        item = await db.get(SeriesEpisode, publication.content_id)
+        series = await db.get(Series, item.series_id) if item else None
+        if not item or not series or item.owner_id != publication.owner_id or series.owner_id != publication.owner_id:
+            return "分集不可用"
+        if item.blocked or series.blocked:
+            return "系列或分集已被限制播放"
+    else:
+        return "不支持的发布内容"
+    rights = (await db.execute(select(Rights).where(Rights.asset_id == publication.asset_id))).scalar_one_or_none()
+    if not rights or rights.owner_id != publication.owner_id or rights.blocked or (rights.valid_until and rights.valid_until <= now()):
+        return "该发布版本的权属已受限制"
+    return ""
+
+
+async def _current_sale(db: DB, publication: Publication) -> bool:
+    """Publication.listed 只是快照标记，不能代替父内容当前可售状态。"""
+    if not _publication_public(publication) or await _publication_restriction(db, publication):
+        return False
+    if publication.share_bps is None or not 0 <= publication.share_bps <= 10000:
+        return False
+    if publication.content_type == "work":
+        item = await db.get(Work, publication.content_id)
+        parent = item
+    else:
+        item = await db.get(SeriesEpisode, publication.content_id)
+        parent = await db.get(Series, item.series_id)
+    if (item.version != publication.version or item.asset_id != publication.asset_id
+            or item.audit_status != "approved" or not item.listed
+            or parent.audit_status != "approved" or not parent.listed
+            or parent.deleted_at or parent.sale_type != "platform_unlock"):
+        return False
+    asset = await db.get(Asset, publication.asset_id)
+    rights = (await db.execute(select(Rights).where(Rights.asset_id == publication.asset_id))).scalar_one_or_none()
+    return bool(asset and asset.owner_id == publication.owner_id and asset.status == "ready" and rights_valid(rights, full=True))
+
+
+async def _publication_playback(db: DB, user: User, publication: Publication) -> dict:
+    entitlement = (await db.execute(select(Entitlement).where(
+        Entitlement.user_id == user.id, Entitlement.publication_id == publication.id,
+        Entitlement.active.is_(True)))).scalar_one_or_none()
+    if not entitlement:
+        fail("MARKETPLACE_ENTITLEMENT_REQUIRED", 403)
+    restriction = await _publication_restriction(db, publication)
+    if restriction:
+        fail(restriction, 403)
+    if publication.sale_type != "platform_unlock" or publication.audit_status != "approved":
+        fail("该发布版本不可播放", 403)
+    asset = await db.get(Asset, publication.asset_id)
+    if not asset or asset.owner_id != publication.owner_id or asset.status != "ready" or publication.playback_status != "done" or not publication.playback_manifest_key:
+        fail("MARKETPLACE_EPISODE_NOT_READY", 409)
+    await storage_ready()
+    manifest = await _signed_hls_manifest(publication)
+    from .config import get_marketplace_settings
+    return {"publication_id": publication.id, "manifest": manifest, "kind": "hls", "expires_in": get_marketplace_settings().signed_url_seconds}
 
 
 async def _signed_hls_manifest(publication: Publication) -> str:
@@ -80,7 +152,7 @@ async def platform_episode(episode_id: int, db: DB, user: Visitor):
         Publication.version == episode.version, Publication.audit_status == "approved",
         Publication.listed.is_(True), Publication.sale_type == "platform_unlock",
     ))).scalar_one_or_none()
-    if not publication or publication.sale_type != "platform_unlock":
+    if not publication or not await _current_sale(db, publication):
         fail("分集尚未公开", 404)
     entitled = bool(user and (await db.execute(select(Entitlement.id).where(Entitlement.user_id == user.id, Entitlement.publication_id == publication.id, Entitlement.active.is_(True)))).scalar_one_or_none())
     return {**data(publication, "id", "content_type", "content_id", "version", "sale_type", "copyright_price_fen", "unlock_price_fen", "created_at"), "entitled": entitled, "playback_ready": bool(publication.playback_manifest_key)}
@@ -96,7 +168,7 @@ async def platform_work(work_id: int, db: DB, user: Visitor):
         Publication.content_type == "work", Publication.content_id == work.id,
         Publication.version == work.version, Publication.audit_status == "approved",
         Publication.listed.is_(True), Publication.sale_type == "platform_unlock"))).scalar_one_or_none()
-    if not publication or publication.sale_type != "platform_unlock":
+    if not publication or not await _current_sale(db, publication):
         fail("作品尚未公开", 404)
     entitled = bool(user and (await db.execute(select(Entitlement.id).where(
         Entitlement.user_id == user.id, Entitlement.publication_id == publication.id,
@@ -108,20 +180,33 @@ async def platform_work(work_id: int, db: DB, user: Visitor):
 async def create_content_order(body: ContentOrderInput, request: Request, db: DB, user: Actor):
     if not _payment_ready():
         fail("MARKETPLACE_PAYMENT_UNAVAILABLE", 503)
-    publication = await db.get(Publication, body.publication_id)
-    if not publication or not _publication_public(publication):
+    prior = (await db.execute(select(ContentOrder).where(ContentOrder.idempotency_key == body.idempotency_key).with_for_update())).scalar_one_or_none()
+    if prior:
+        if prior.user_id != user.id or prior.publication_id != body.publication_id or prior.pay_type != body.pay_type:
+            fail("幂等键与原请求不一致", 409)
+        return {"out_trade_no": prior.out_trade_no, "status": prior.status, "amount_fen": prior.amount_fen}
+    publication = (await db.execute(select(Publication).where(Publication.id == body.publication_id).with_for_update())).scalar_one_or_none()
+    if not publication:
         fail("内容尚未开放购买", 409)
     existing = (await db.execute(select(Entitlement).where(Entitlement.user_id == user.id, Entitlement.publication_id == publication.id, Entitlement.active.is_(True)))).scalar_one_or_none()
     if existing:
         return {"entitled": True, "publication_id": publication.id, "status": "paid"}
-    prior = (await db.execute(select(ContentOrder).where(ContentOrder.idempotency_key == body.idempotency_key).with_for_update())).scalar_one_or_none()
-    if prior:
-        if prior.user_id != user.id:
-            fail("幂等键已被其他账号使用", 409)
-        return {"out_trade_no": prior.out_trade_no, "status": prior.status, "amount_fen": prior.amount_fen}
+    if not await _current_sale(db, publication):
+        fail("内容尚未开放购买", 409)
     out_trade_no = f"MKT{int(time.time())}{user.id:04d}{uuid.uuid4().hex[:10]}"
-    order = ContentOrder(out_trade_no=out_trade_no, user_id=user.id, publication_id=publication.id, episode_id=publication.content_id if publication.content_type == "series_episode" else None, amount_fen=int(publication.unlock_price_fen), pay_type=body.pay_type, idempotency_key=body.idempotency_key)
-    db.add(order)
+    inserted = await db.execute(insert(ContentOrder).values(
+        out_trade_no=out_trade_no, user_id=user.id, publication_id=publication.id,
+        episode_id=publication.content_id if publication.content_type == "series_episode" else None,
+        amount_fen=int(publication.unlock_price_fen), pay_type=body.pay_type,
+        idempotency_key=body.idempotency_key,
+    ).on_conflict_do_nothing(index_elements=[ContentOrder.idempotency_key]).returning(ContentOrder.id))
+    order_id = inserted.scalar_one_or_none()
+    if order_id is None:
+        prior = (await db.execute(select(ContentOrder).where(ContentOrder.idempotency_key == body.idempotency_key))).scalar_one()
+        if prior.user_id != user.id or prior.publication_id != publication.id or prior.pay_type != body.pay_type:
+            fail("幂等键与原请求不一致", 409)
+        return {"out_trade_no": prior.out_trade_no, "status": prior.status, "amount_fen": prior.amount_fen}
+    order = await db.get(ContentOrder, order_id)
     await db.commit()
     try:
         notify_url = f"{get_settings().public_base_url.rstrip('/')}/api/marketplace/payments/epay/notify"
@@ -161,24 +246,7 @@ async def episode_playback(episode_id: int, db: DB, user: Actor):
     ))).scalar_one_or_none()
     if not publication or publication.sale_type != "platform_unlock":
         fail("分集尚未公开", 404)
-    # Playback always goes through the configured private bucket.  Keep this
-    # explicit because the route opts out of the router dependency list so the
-    # entitlement check can return a precise 403 first.
-    await storage_ready()
-    if publication.sale_type == "platform_unlock":
-        entitlement = (await db.execute(select(Entitlement).where(Entitlement.user_id == user.id, Entitlement.publication_id == publication.id, Entitlement.active.is_(True)))).scalar_one_or_none()
-        if not entitlement:
-            fail("MARKETPLACE_ENTITLEMENT_REQUIRED", 403)
-        if not publication.playback_manifest_key:
-            fail("MARKETPLACE_EPISODE_NOT_READY", 409)
-        manifest = await _signed_hls_manifest(publication)
-        # 返回重写后的清单文本和过期时间；客户端应创建 Blob URL 播放，分片签名与清单同周期。
-        return {"manifest": manifest, "kind": "hls", "expires_in": 300}
-    asset = await db.get(Asset, publication.asset_id)
-    if not asset or asset.status != "ready":
-        fail("媒体尚未就绪", 409)
-    url = await __import__("asyncio").to_thread(storage.signed, asset.object_key, asset.content_type)
-    return {"url": url, "kind": "original", "expires_in": 300}
+    return await _publication_playback(db, user, publication)
 
 
 @router.get("/platform/works/{work_id}/playback", response_model=dict, dependencies=[])
@@ -192,22 +260,16 @@ async def work_playback(work_id: int, db: DB, user: Actor):
         Publication.listed.is_(True), Publication.sale_type == "platform_unlock"))).scalar_one_or_none()
     if not publication or publication.sale_type != "platform_unlock":
         fail("作品尚未公开", 404)
-    # Same storage boundary as episode playback; no local/static fallback is
-    # allowed for marketplace media.
-    await storage_ready()
-    if publication.sale_type == "platform_unlock":
-        entitlement = (await db.execute(select(Entitlement).where(
-            Entitlement.user_id == user.id, Entitlement.publication_id == publication.id,
-            Entitlement.active.is_(True)))).scalar_one_or_none()
-        if not entitlement:
-            fail("MARKETPLACE_ENTITLEMENT_REQUIRED", 403)
-        manifest = await _signed_hls_manifest(publication)
-        return {"manifest": manifest, "kind": "hls", "expires_in": 300}
-    asset = await db.get(Asset, publication.asset_id)
-    if not asset or asset.status != "ready":
-        fail("媒体尚未就绪", 409)
-    url = await __import__("asyncio").to_thread(storage.signed, asset.object_key, asset.content_type)
-    return {"url": url, "kind": "original", "expires_in": 300}
+    return await _publication_playback(db, user, publication)
+
+
+@router.get("/platform/publications/{publication_id}/playback", response_model=dict)
+async def publication_playback(publication_id: int, db: DB, user: Actor):
+    """从永久权益打开购买时版本；作者编辑、主动下架不撤销已购在线播放。"""
+    publication = await db.get(Publication, publication_id)
+    if not publication:
+        fail("发布版本不存在", 404)
+    return await _publication_playback(db, user, publication)
 
 
 def _notify_success(params: dict[str, str]) -> bool:
@@ -216,6 +278,8 @@ def _notify_success(params: dict[str, str]) -> bool:
 
 @router.api_route("/payments/epay/notify", methods=["GET", "POST"])
 async def epay_notify(request: Request, db: DB) -> PlainTextResponse:
+    if not _payment_ready():
+        return PlainTextResponse("fail", status_code=503)
     if request.method == "POST":
         form = await request.form()
         params = {key: str(value) for key, value in form.items()}
@@ -230,16 +294,29 @@ async def epay_notify(request: Request, db: DB) -> PlainTextResponse:
     if not order:
         return PlainTextResponse("fail", status_code=404)
     try:
-        paid_fen = int(round(float(params.get("money") or 0) * 100))
-    except ValueError:
-        paid_fen = order.amount_fen
+        amount = Decimal(str(params.get("money") or "")) * 100
+        if not amount.is_finite() or amount != amount.to_integral_value():
+            raise ValueError("invalid amount")
+        paid_fen = int(amount)
+    except (ValueError, InvalidOperation):
+        return PlainTextResponse("fail", status_code=400)
     if paid_fen != order.amount_fen:
         return PlainTextResponse("fail", status_code=400)
     if order.status == "paid":
         return PlainTextResponse("success")
-    publication = await db.get(Publication, order.publication_id)
-    if not publication or not _publication_public(publication):
-        return PlainTextResponse("fail", status_code=409)
+    # Serialize callbacks for the same publication as well as the order. Two
+    # different checkout attempts must not race the unique permanent entitlement.
+    publication = (await db.execute(select(Publication).where(
+        Publication.id == order.publication_id).with_for_update())).scalar_one_or_none()
+    if not publication:
+        return PlainTextResponse("fail", status_code=404)
+    # A verified payment belongs to its frozen order, even if the author has
+    # since edited/unlisted the content or an operator has blocked playback.
+    order.status, order.trade_no, order.paid_at = "paid", str(params.get("trade_no") or params.get("transaction_id") or "") or None, datetime.now(timezone.utc)
+    restriction = await _publication_restriction(db, publication)
+    if restriction or publication.audit_status != "approved":
+        event(db, order.user_id, "content_order", order.id, "paid_restricted_review",
+              restriction or "付款时发布版本已受审核限制", publication.version)
     # Two checkout attempts can race before the first callback creates the
     # entitlement.  The unique entitlement is the idempotency boundary for a
     # user's permanent access; acknowledge the later payment without creating
@@ -247,19 +324,25 @@ async def epay_notify(request: Request, db: DB) -> PlainTextResponse:
     existing_entitlement = (await db.execute(select(Entitlement).where(
         Entitlement.user_id == order.user_id,
         Entitlement.publication_id == publication.id,
-        Entitlement.active.is_(True),
     ).with_for_update())).scalar_one_or_none()
     if existing_entitlement:
-        order.status, order.trade_no, order.paid_at = "paid", str(params.get("trade_no") or params.get("transaction_id") or "") or None, datetime.now(timezone.utc)
+        event(db, order.user_id, "content_order", order.id, "duplicate_purchase_paid",
+              "同一发布版本已有权益，本次付款已确认，需人工核对重复收款；不重复计创作者收益", publication.version)
         await db.commit()
         return PlainTextResponse("success")
-    order.status, order.trade_no, order.paid_at = "paid", str(params.get("trade_no") or params.get("transaction_id") or "") or None, datetime.now(timezone.utc)
     entitlement = Entitlement(user_id=order.user_id, publication_id=publication.id, episode_id=order.episode_id, order_id=order.id)
     db.add(entitlement)
-    config = await db.get(RevenueConfig, 1)
-    share = publication.share_bps if publication.share_bps is not None else (config.platform_share_bps if config else None)
+    share = publication.share_bps
     if share is None:
-        return PlainTextResponse("fail", status_code=409)
+        # Legacy checkout records may predate frozen revenue shares. Confirm
+        # the cash receipt without inventing an allocation if no config exists.
+        config = await db.get(RevenueConfig, 1)
+        share = config.platform_share_bps if config else None
+        event(db, order.user_id, "content_order", order.id, "paid_legacy_share_review",
+              "历史发布版本没有冻结分成；已确认付款及权益，需要人工核对分成", publication.version)
+    if share is None or not 0 <= int(share) <= 10000:
+        await db.commit()
+        return PlainTextResponse("success")
     platform_fen = order.amount_fen * int(share) // 10000
     ledger = RevenueLedger(order_id=order.id, publication_id=publication.id, owner_id=publication.owner_id, gross_fen=order.amount_fen, platform_fen=platform_fen, creator_fen=order.amount_fen - platform_fen, share_bps=int(share))
     db.add(ledger)

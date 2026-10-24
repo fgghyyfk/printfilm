@@ -1,7 +1,8 @@
 /** 分集编辑右侧：分段视频预览 + 入口打开全屏分镜画布 */
 import { useState } from 'react'
 import { Download, Loader2 } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import DramaPublishModal from '../../features/marketplace/DramaPublishModal'
+import { useMarketplace } from '../../features/marketplace/hooks'
 import type { DramaFragment } from '../../api/drama'
 import { DramaSubtitleBoard } from '../../components/drama/DramaSubtitleBoard'
 import { DramaFragmentSegmentedVideoPlayer } from '../../components/drama/DramaFragmentSegmentedVideoPlayer'
@@ -65,7 +66,8 @@ export function EpisodeEditSidePane({
    * composeProgress 拉取/拼接进度
    * composeError 失败原因
    */
-  const navigate = useNavigate()
+  const { capabilities } = useMarketplace()
+  const [publishOpen, setPublishOpen] = useState(false)
   const [composeBusy, setComposeBusy] = useState(false)
   const [composeProgress, setComposeProgress] = useState<EpisodeComposeProgress | null>(null)
   const [composeError, setComposeError] = useState('')
@@ -128,11 +130,11 @@ export function EpisodeEditSidePane({
           )}
           {composeProgressLabel(composeProgress, composeBusy)}
         </button>
-        {projectId && episodeId && fragments.some(item => item.video) ? (
+        {capabilities?.enabled && projectId && episodeId ? (
           <button
             type="button"
             className="drama-ep-compose-btn drama-ep-compose-btn--header"
-            onClick={() => navigate(`/marketplace/from-printfilm?drama=${projectId}&episode=${episodeId}`)}
+            onClick={() => setPublishOpen(true)}
           >
             发布到数字资产市场
           </button>
@@ -184,6 +186,7 @@ export function EpisodeEditSidePane({
           />
         </>
       )}
+      {publishOpen && capabilities?.enabled && projectId && <DramaPublishModal projectId={Number(projectId)} initialEpisodeId={episodeId} onClose={() => setPublishOpen(false)} />}
     </aside>
   )
 }

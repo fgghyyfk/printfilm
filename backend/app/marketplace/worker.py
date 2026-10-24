@@ -17,7 +17,7 @@ from sqlalchemy import and_, or_, select, update
 from app.config import get_settings
 from app.database import AsyncSessionLocal, engine
 from . import storage
-from .config import get_marketplace_settings
+from .config import get_marketplace_settings, is_marketplace_enabled
 from .models import Asset, MarketBase, MediaJob, PlaybackJob, Publication, Recruit, Series, SeriesEpisode, Upload, Work
 from .service import now, notify
 
@@ -376,7 +376,7 @@ async def run_loop(*, standalone: bool = False) -> None:
         try:
             if standalone:
                 await refresh_storage_settings()
-            if get_marketplace_settings().enabled and storage.configured():
+            if is_marketplace_enabled() and storage.configured():
                 # 所有后端进程/手动命令共享一把事务锁，市场媒体总并发保持为1。
                 async with engine.begin() as connection:
                     acquired = await connection.scalar(text("SELECT pg_try_advisory_xact_lock(18427, 73102)"))
@@ -400,7 +400,7 @@ async def run_loop(*, standalone: bool = False) -> None:
 
 async def main() -> None:
     """保留手动命令兼容；日常开发由后端生命周期自动托管。"""
-    if not get_marketplace_settings().enabled:
+    if not is_marketplace_enabled():
         logger.info("下游模块未启用，Worker 不启动")
         return
     async with engine.begin() as conn:

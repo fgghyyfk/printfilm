@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { request, type Handoff } from './api'
 import { PageHeading } from './ui'
 import Button from '../../components/ui/Button'
+import DramaPublishModal from './DramaPublishModal'
 
 type ProjectSource = { id: number; title: string; updated_at: string; has_cover: boolean; status: string }
 type DramaSource = { id: number; title: string; episodes: { id: number; name: string; ready: boolean }[] }
@@ -19,7 +20,7 @@ export default function FromPrintfilm() {
   const [dramas, setDramas] = useState<DramaSource[]>([])
   const [series, setSeries] = useState<SeriesOption[]>([])
   const [dramaId, setDramaId] = useState(focusDrama ? String(focusDrama) : '')
-  const [selected, setSelected] = useState<number[]>(focusEpisode ? [focusEpisode] : [])
+  const [dramaPublishOpen, setDramaPublishOpen] = useState(Boolean(focusDrama))
   const [seriesId, setSeriesId] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -75,19 +76,6 @@ export default function FromPrintfilm() {
     } catch (err) { setError((err as Error).message) } finally { setBusy(false) }
   }
 
-  async function addEpisodes() {
-    if (!drama || !selected.length) return
-    setBusy(true); setError('')
-    try {
-      const target = await ensureSeries(drama.title)
-      await request(`/series/${target}/episodes/import-printfilm`, 'POST', {
-        drama_project_id: drama.id,
-        episode_ids: selected,
-      })
-      navigate(`/marketplace/series/${target}/edit`)
-    } catch (err) { setError((err as Error).message) } finally { setBusy(false) }
-  }
-
   if (loading) return <p role="status">正在读取已生成的成片…</p>
   return <>
     <PageHeading title="发布到数字资产市场" description="选择 PrintFilm 已经生成的成片。文件由服务器复制到市场，草稿仍要补充授权并提交审核。" back="/marketplace/works/new" />
@@ -109,10 +97,10 @@ export default function FromPrintfilm() {
       <h2>漫剧分集</h2>
       <p className="pf-market-notice">只导入勾选的分集。同步完成后，在短剧编辑页补充封面、价格和授权函，再提交审核。</p>
       {dramas.length === 0 ? <p>还没有可导入的漫剧分集。</p> : <>
-        <label>漫剧项目<select value={dramaId} onChange={event => { setDramaId(event.target.value); setSelected([]) }}>{dramas.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
-        {drama?.episodes.map(episode => <label key={episode.id} className="block"><input type="checkbox" disabled={!episode.ready} checked={selected.includes(episode.id)} onChange={event => setSelected(value => event.target.checked ? [...value, episode.id] : value.filter(item => item !== episode.id))} /> {episode.name}{episode.ready ? '' : '（成片未就绪）'}</label>)}
-        <button type="button" disabled={busy || !seriesId || !selected.length} onClick={() => void addEpisodes()}>导入到短剧系列</button>
+        <label>漫剧项目<select value={dramaId} onChange={event => setDramaId(event.target.value)}>{dramas.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
+        <button type="button" disabled={busy || !drama} onClick={() => setDramaPublishOpen(true)}>选择完整分集并发布</button>
       </>}
     </section>
+    {dramaPublishOpen && drama && <DramaPublishModal projectId={drama.id} initialEpisodeId={focusEpisode || undefined} onClose={() => setDramaPublishOpen(false)} />}
   </>
 }

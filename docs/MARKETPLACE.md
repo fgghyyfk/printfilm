@@ -72,7 +72,7 @@ cd C:\code\printfilm\backend
 - 管理端 `/marketplace`：下游审核、登记、投诉、任务与客服配置，区别于原 `/works`。
 - API `/api/marketplace/*`、`/api/admin/marketplace/*`。
 
-模块默认关闭，关闭时业务路由不挂载、菜单隐藏、新表不初始化，不启动 Worker。`GET /api/marketplace/capabilities` 始终可用，只返回开关与配置完整性，**不代表真实 OSS 已验收**。
+模块默认关闭。路由始终挂载，关闭时业务接口返回未启用，菜单隐藏，不建新表，不启动 Worker。`GET /api/marketplace/capabilities` 始终可用，只返回开关与配置完整性，**不代表真实 OSS 已验收**。线上在管理端「系统设置 → 站点工具」打开「启用数字资产市场」并保存，写入 `app_settings`，不必准备 `backend/.env`，也不必为了出现菜单而重启。库里保存过该开关后以数据库为准。
 
 下游使用独立 SQLAlchemy metadata，启动时创建 `marketplace_` 表，不修改或迁移原表。用户 ID 复用现有身份。PrintFilm 成片可以按项目或分集编号异步复制进市场；没有走这条路径的作品仍由用户自行上传。复制完成后的草稿不自动过审。
 
@@ -88,11 +88,11 @@ cd C:\code\printfilm\backend
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-先停止原先占用8000端口的后端。前端及管理端仍按项目原命令启动，刷新后会显示新菜单。若使用 VS Code F5，可在调试终端的环境或本地 `.env` 设置开关，重启后端。代码默认值仍为 false。
+先停止原先占用8000端口的后端。前端及管理端仍按项目原命令启动，刷新后会显示新菜单。若使用 VS Code F5，可在调试终端的环境或本地 `.env` 设置开关，重启后端。代码默认值仍为 false。已在系统设置里保存过开关时，以数据库中的值为准，改 `.env` 不会盖过它。
 
 无 OSS 时支持文字作品草稿和无附件需求的创建、修改、内容审核、招募公开浏览。上传、材料、媒体签名返回503，`detail.code=MARKETPLACE_STORAGE_UNAVAILABLE`，不会回退本地存储、返回 `/static`，也不会产生假就绪视频。
 
-停用时设置 `MARKETPLACE_ENABLED=false` 并重启后端，独立 Worker 一并停止。停用不会删除已经存在的新表或 OSS 对象。
+停用时在「系统设置 → 站点工具」关闭开关并保存，或在尚未写入数据库前把 `MARKETPLACE_ENABLED=false` 后重启。Worker 会停止。停用不会删除已经存在的新表或 OSS 对象。
 
 ## 共用 OSS、独立目录与媒体进程
 
@@ -197,3 +197,19 @@ cd C:\code\printfilm\backend
 ### 招募公开详情与作者管理分离（2026-10-21）
 
 招募广场 /marketplace/recruits/:id 始终显示招募内容与联系客服接单入口，不因当前账号是作者/管理员而切换管理界面；编辑、提交审核及关闭在 /marketplace/recruits/:id/manage 展示，由“我的发布 → 查看与管理”或保存招募草稿后进入。本人看到管理招募链接，创作者登录后联系客服；关闭/到期停止新接单咨询。详情不请求私密投稿列表，不提供视频投稿和独立公开评论系统。
+
+### 漫剧完整分集直接发布（2026-10-24）
+
+漫剧列表卡片菜单「发布到数字资产市场」、分集编辑页和市场编辑页使用同一个发布弹窗。选择当前项目的完整分集，新建或选择本人市场系列后同步并进入 `/marketplace/series/{id}/edit`。新系列带入项目名称和简介；已有系列保留介绍、封面及收费配置，按原集数排序后从下一集接续编号。没有可用封面时需补充上传。
+
+- `GET /api/marketplace/printfilm/dramas/{project_id}/publish-context`：完整度、不可发布原因、源版本、本人目标系列和既有同步关系，不返回来源地址或对象键。
+- `POST /api/marketplace/printfilm/dramas/{project_id}/publish`：提交选中编号、源版本、新建/已有目标、明确确认的更新及幂等键。独立 `marketplace_drama_publish_batches` 记录原子批次；同一账号的同一幂等键不能创建第二个系列。旧的分集导入 URL 也使用相同的整集逻辑。
+- 原漫剧仅供读取。缺失任一分镜、视频生成或重新分镜尚未结束、跨账号选择均阻止发布。按 `(sort_order,id)` 冻结完整分镜清单、源文件指纹/ETag、标题、封面及源集号；不再把最后一个分镜当整集。
+- 使用原有市场 Worker 及看门狗，不增加进程。阶段为排队、同步素材、拼接整集、校验、就绪/失败；兼容编码优先无损封装，不兼容时按最高来源画幅使用高质量编码，比例不一致直接阻断。非公开临时目录只作缓存，视频写入私有 OSS `marketplace/series/` 并校验后才绑定。
+- 同步期间可以填写表单，保存与提交暂时禁用；失败提供原因和重试，源变化或目标冲突要求重新选择并确认。租约丢失会取消处理；过期租约由同一个 Worker 恢复。源或目标已变化的旧任务不能回填新结果，未成功前保留旧资产。
+- PrintFilm 分集统一引用账号当前有效授权函，可先同步及保存草稿，再签署一次并提交。自动关联只表示材料齐备；内容和版权仍由管理员一起审核，不自动批准。
+- 明确更新使系列退回草稿并关闭所有历史发布版本的新销售；旧发布快照、HLS、价格及永久权益保留。已有买家通过 `GET /api/marketplace/platform/publications/{publication_id}/playback` 播放购买时版本，每次仍鉴权并检查封禁/权属限制。在途有效付款回调按冻结版本与金额确认，不因作者编辑或下架丢失权益。分成在提交时按单集、系列、后台默认优先顺序冻结。
+
+新增独立表随启用后的后端启动创建，不修改 `drama_*` 或原生成、下载、AI 计费任务。部署更新后需重启后端以加载接口和创建该表。没有真实 OSS 配置时发布返回 `503 MARKETPLACE_STORAGE_UNAVAILABLE`，不创建空系列，不提供本地媒体回退。
+
+专项回归文件：`tests/test_marketplace_drama_publish.py`、`tests/test_marketplace_drama_media.py`、`tests/test_marketplace_publication_access.py`，覆盖整集顺序和时长、权限、状态、防重、版本回填、租约恢复、旧权益和付款幂等。媒体测试使用真实 FFmpeg、OSS 使用传输测试替身；仍须在真实 OSS 环境单独验证复制、合成上传、私有播放及部署重启，不能将替身结果视为云端验收通过。

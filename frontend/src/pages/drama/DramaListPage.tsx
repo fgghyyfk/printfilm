@@ -28,6 +28,8 @@ import { useI18n } from '../../i18n'
 import { DramaEpisodeCountPopover } from './DramaEpisodeCountPopover'
 import { DramaImageStyleModal } from './DramaImageStyleModal'
 import { DramaProjectCardMenu } from './DramaProjectCardMenu'
+import DramaPublishModal from '../../features/marketplace/DramaPublishModal'
+import { useMarketplace } from '../../features/marketplace/hooks'
 import './drama.css'
 
 const CREATIVE_MIN_LENGTH = 20
@@ -68,6 +70,8 @@ export default function DramaListPage() {
 // 渲染 Agent 首页内容
 function DramaListInner() {
   const navigate = useNavigate()
+  const { capabilities } = useMarketplace()
+  const [publishProjectId, setPublishProjectId] = useState<number | null>(null)
   const { t, m } = useI18n()
   const filterOptions = useMemo<PillOption<ProjectFilter>[]>(
     () =>
@@ -502,6 +506,7 @@ function DramaListInner() {
                       <DramaProjectCardMenu
                         onRename={() => void handleRename(item)}
                         onDelete={() => void handleDeleteOne(item)}
+                        onPublish={capabilities?.enabled ? () => setPublishProjectId(item.id) : undefined}
                       />
                     </div>
                     <p className="pf-drama-card-meta">{formatDramaCardMeta(item)}</p>
@@ -541,6 +546,7 @@ function DramaListInner() {
           </div>
         ) : null}
       </div>
+      {publishProjectId && capabilities?.enabled && <DramaPublishModal projectId={publishProjectId} onClose={() => setPublishProjectId(null)} />}
     </AppShell>
   )
 }

@@ -21,6 +21,7 @@ export type Handoff = {
   id: number; status: string; label: string; error: string; authorization_ready: boolean
   target_kind: string; target_id: number; work_id: number | null; episode_id: number | null
   series_id: number | null; asset_id: number | null
+  phase?: string; error_code?: string | null; retryable?: boolean; target_version?: number
 }
 export type RightsRecord = {
   id?: number; asset_id: number; version: number; details?: Record<string, string>;

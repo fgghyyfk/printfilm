@@ -2,7 +2,7 @@
 import asyncio
 import logging
 
-from .config import get_marketplace_settings
+from .config import is_marketplace_enabled
 from .worker import run_loop
 
 logger = logging.getLogger(__name__)
@@ -24,7 +24,7 @@ async def _supervise():
 
 async def start_marketplace_runtime():
     global _watchdog
-    if not get_marketplace_settings().enabled:
+    if not is_marketplace_enabled():
         return
     if _watchdog is not None and not _watchdog.done():
         return

@@ -6,13 +6,14 @@ import { MoreHorizontal } from 'lucide-react'
 type Props = {
   onRename: () => void
   onDelete: () => void
+  onPublish?: () => void
 }
 
 // 鼠标离开后延迟收起，避免滑向菜单项时被立刻关掉
 const HIDE_DELAY_MS = 120
 
 // 渲染项目卡片重命名 / 删除菜单
-export function DramaProjectCardMenu({ onRename, onDelete }: Props) {
+export function DramaProjectCardMenu({ onRename, onDelete, onPublish }: Props) {
   /*
    * open 菜单是否展开
    * rootRef 用于点外部关闭
@@ -100,7 +101,11 @@ export function DramaProjectCardMenu({ onRename, onDelete }: Props) {
         <MoreHorizontal size={16} strokeWidth={1.8} />
       </button>
       {open ? (
-        <div className="drama-project-row-menu" role="menu">
+        <div className={`drama-project-row-menu${onPublish ? ' has-publish' : ''}`} role="menu">
+          {onPublish && <button type="button" role="menuitem"
+            onPointerDown={event => { event.preventDefault(); event.stopPropagation(); closeThenRun(onPublish) }}
+            onClick={event => { event.stopPropagation(); if (!ignoreToggleRef.current) closeThenRun(onPublish) }}
+          >发布到数字资产市场</button>}
           <button
             type="button"
             role="menuitem"

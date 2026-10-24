@@ -28,3 +28,9 @@ class MarketplaceSettings(BaseSettings):
 def get_marketplace_settings() -> MarketplaceSettings:
     """缓存独立配置；生产使用环境变量，本地可保持为空。"""
     return MarketplaceSettings()
+
+
+def is_marketplace_enabled() -> bool:
+    """菜单和接口以系统设置里的开关为准；还没保存过时回落到 MARKETPLACE_ENABLED。"""
+    from app.config import get_settings
+    return bool(get_settings().marketplace_enabled)

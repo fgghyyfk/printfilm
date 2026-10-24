@@ -175,6 +175,18 @@ class Handoff(Record, MarketBase):
     source_snapshot: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 
 
+class DramaPublishBatch(Record, MarketBase):
+    """一次明确的漫剧发布请求；原子创建系列，重试不能产生空壳或重复系列。"""
+    __tablename__ = "marketplace_drama_publish_batches"
+    __table_args__ = (UniqueConstraint("owner_id", "idempotency_key"),)
+    owner_id: Mapped[int] = mapped_column(Integer, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(120))
+    request_hash: Mapped[str] = mapped_column(String(64))
+    series_id: Mapped[int] = mapped_column(ForeignKey("marketplace_series.id"))
+    episode_ids: Mapped[list[int]] = mapped_column(JSON, default=list)
+    handoff_ids: Mapped[list[int]] = mapped_column(JSON, default=list)
+
+
 class WorkPreview(Record, MarketBase):
     """作品专用试看任务，不复用投稿审片或旧资产预览。"""
     __tablename__ = "marketplace_work_previews"

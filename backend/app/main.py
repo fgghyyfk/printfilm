@@ -131,9 +131,11 @@ async def on_startup() -> None:
     except Exception:  # noqa: BLE001
         pass
     await start_task_runtime()
-    from app.marketplace.config import get_marketplace_settings
-    if get_marketplace_settings().enabled:
-        # 市场启动回调早于本函数里的补列，免费内容下架必须等列补齐后再查系列表。
+    from app.marketplace.bootstrap import apply_marketplace_switch
+    from app.marketplace.config import is_marketplace_enabled
+    # 补列完成后再按系统设置建市场表并启动 Worker。关闭时不建表。
+    await apply_marketplace_switch()
+    if is_marketplace_enabled():
         from app.marketplace.previews import withdraw_unwatermarked_public
         async with AsyncSessionLocal() as db:
             await withdraw_unwatermarked_public(db)
@@ -145,6 +147,8 @@ async def on_shutdown() -> None:
     """Release Postgres pool on uvicorn worker exit."""
     from app.database import dispose_engine
 
+    from app.marketplace.runtime import stop_marketplace_runtime
+    await stop_marketplace_runtime()
     await stop_task_runtime()
     await dispose_engine()
 

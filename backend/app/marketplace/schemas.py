@@ -215,6 +215,7 @@ class PrintfilmEpisodeInput(Input):
     episode_ids: list[int] = Field(default_factory=list, max_length=100)
     project_id: int | None = Field(default=None, gt=0)
     idempotency_key: str = Field(default="", max_length=80)
+    update_episode_ids: list[int] = Field(default_factory=list, max_length=100)
 
     @model_validator(mode="after")
     def choose_source(self):
@@ -224,6 +225,26 @@ class PrintfilmEpisodeInput(Input):
             raise ValueError("请选择漫剧分集或一部科普成片")
         if any(item <= 0 for item in self.episode_ids):
             raise ValueError("分集编号无效")
+        return self
+
+
+class DramaPublishEpisode(Input):
+    episode_id: int = Field(gt=0)
+    source_version: str = Field(min_length=1, max_length=80)
+    update: bool = False
+
+
+class DramaPublishInput(Input):
+    episodes: list[DramaPublishEpisode] = Field(min_length=1, max_length=100)
+    series_id: int | None = Field(default=None, gt=0)
+    series_version: int | None = Field(default=None, ge=1)
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    idempotency_key: str = Field(min_length=8, max_length=120)
+
+    @model_validator(mode="after")
+    def distinct_episodes(self):
+        if len({item.episode_id for item in self.episodes}) != len(self.episodes):
+            raise ValueError("不能重复选择同一分集")
         return self
 
 

@@ -153,6 +153,8 @@ class Settings(BaseSettings):
     public_base_url: str = "http://127.0.0.1:8000"
     ffmpeg_path: str = "ffmpeg"
     ffprobe_path: str = "ffprobe"
+    # 数字资产市场。环境变量 MARKETPLACE_ENABLED；管理端保存后以数据库为准。
+    marketplace_enabled: bool = False
 
     tos_endpoint: str = ""
     tos_bucket: str = ""

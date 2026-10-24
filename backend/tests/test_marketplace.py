@@ -14,6 +14,7 @@ from app.deps import get_current_user
 from app.models import User
 from app.marketplace import storage
 from app.marketplace.bootstrap import install
+from app.config import get_settings
 from app.marketplace.config import get_marketplace_settings
 from app.marketplace.dependencies import optional_user
 from app.marketplace.models import Asset, MarketBase, MediaJob, Recruit, Rights, Submission, Support, Work
@@ -104,6 +105,16 @@ async def test_recruit_public_detail_contact_flags_and_management_privacy(ctx):
 
 
 async def test_paid_preview_submit_dedup_retry_and_free_transition(ctx, monkeypatch):
+    from contextlib import asynccontextmanager
+    from app.marketplace import preview_worker
+
+    @asynccontextmanager
+    async def session():
+        yield ctx.db
+
+    async def render(_snapshot):
+        return 'marketplace/work-previews-hq/test-secure.mp4'
+
     fake_oss(monkeypatch)
     video = await asset(ctx)
     await rights(ctx, video, full=True)
@@ -124,14 +135,20 @@ async def test_paid_preview_submit_dedup_retry_and_free_transition(ctx, monkeypa
     await ctx.db.flush()
     assert (await ctx.client.post(path + '/submit', json={'version': 1})).status_code == 200
     assert job.status == 'pending' and job.attempts == 0
-    job.status, job.object_key = 'done', 'marketplace/work-previews-hq/test-secure.mp4'
-    await ctx.db.flush()
+    # 由 Worker 同时完成任务和作品状态转换；重复 submit 不负责推进后台任务。
+    monkeypatch.setattr(preview_worker, 'AsyncSessionLocal', session)
+    monkeypatch.setattr(preview_worker, 'render_preview', render)
+    assert await preview_worker.run_preview_once()
+    assert job.status == 'done' and record.audit_status == 'pending'
     assert (await ctx.client.post(path + '/submit', json={'version': 1})).json()['audit_status'] == 'pending'
     changed = await ctx.client.put(path, json={**work_body(video), 'price_fen': 0, 'version': 1})
     assert changed.status_code == 200 and not changed.json()['listed']
     result = await ctx.client.post(path + '/submit', json={'version': changed.json()['version']})
     assert result.json()['audit_status'] == 'pending'
     assert result.json()['preview_status'] == 'done'
+    assert result.json()['sale_type'] == 'free'
+    assert list((await ctx.db.execute(select(WorkPreview))).scalars()) == [job]
+    assert job.object_key == 'marketplace/work-previews-hq/test-secure.mp4'
 
 
 async def test_paid_preview_media_never_leaks_original(ctx, monkeypatch):
@@ -280,6 +297,7 @@ async def ctx(db_session, monkeypatch):
     connection = await db_session.connection()
     await connection.run_sync(MarketBase.metadata.create_all)
     settings = get_marketplace_settings()
+    monkeypatch.setattr(get_settings(), "marketplace_enabled", True)
     monkeypatch.setattr(settings, "enabled", True)
     monkeypatch.setattr(storage.get_settings(), "oss_enabled", False)
     users = []
@@ -528,8 +546,8 @@ def test_metadata_does_not_join_original_tables():
 
 
 async def test_disabled_only_exposes_capabilities(monkeypatch):
-    """关闭时没有业务路由，不需要 DB 和 Worker。"""
-    monkeypatch.setattr(get_marketplace_settings(), "enabled", False)
+    """关闭时业务接口不可用，能力接口仍可读取开关。"""
+    monkeypatch.setattr(get_settings(), "marketplace_enabled", False)
     app = FastAPI()
     install(app)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
@@ -883,7 +901,7 @@ async def test_worker_reads_shared_config_without_writing(monkeypatch):
 async def test_disabled_worker_does_not_touch_oss_or_db(monkeypatch):
     """默认关闭时独立 Worker 命令直接退出。"""
     from app.marketplace import worker
-    monkeypatch.setattr(get_marketplace_settings(), "enabled", False)
+    monkeypatch.setattr(get_settings(), "marketplace_enabled", False)
     monkeypatch.setattr(storage, "bucket", lambda: pytest.fail("不应访问OSS"))
     await worker.main()
 
@@ -975,7 +993,7 @@ async def test_worker_recovers_expired_lease(ctx, monkeypatch):
 
 
 async def test_real_ffmpeg_processing_with_oss_transport_stub(monkeypatch, tmp_path):
-    """真实FFmpeg验证短预览和完整审片；只替换OSS传输，不计为云端联调。"""
+    """上传阶段仅验证完整原片；试看由提交阶段的独立任务生成，不计为云端联调。"""
     import json
     import shutil
     from app.config import get_settings
@@ -999,15 +1017,14 @@ async def test_real_ffmpeg_processing_with_oss_transport_stub(monkeypatch, tmp_p
     monkeypatch.setattr(storage, "upload", upload)
     result = await worker.process_asset({"id": 999, "filename": "source.mp4", "object_key": "unit-test", "kind": "video", "size_bytes": source.stat().st_size, "content_type": "video/mp4"})
     assert result["duration_seconds"] == 31
-    assert len(result["fingerprint"]) == 64
-    for field, maximum in (("preview_key", 30.1), ("review_key", 31.1)):
-        probe = json.loads(await worker.command(settings.ffprobe_path, "-v", "error", "-show_format", "-show_streams", "-of", "json", str(results[result[field]])))
-        duration = float(probe["format"]["duration"])
-        assert duration <= maximum
-        assert duration >= maximum - 0.2
-        stream = probe["streams"][0]
-        assert stream["height"] <= 720 and stream["codec_name"] == "h264"
-    assert results[result["cover_key"]].is_file()
+    assert result["fingerprint"] == worker.fingerprint(source)
+    assert set(result) == {"duration_seconds", "fingerprint"}
+    assert results == {}  # 不为每次上传额外制作试看、审片或自动封面。
+    probe = json.loads(await worker.command(settings.ffprobe_path, "-v", "error", "-show_format", "-show_streams", "-of", "json", str(source)))
+    assert float(probe["format"]["duration"]) == 31
+    stream = probe["streams"][0]
+    assert (stream["width"], stream["height"]) == (320, 180)
+    assert stream["codec_name"] == "h264"
 
 
 @pytest.mark.parametrize("extension", ["png", "jpg", "webp"])

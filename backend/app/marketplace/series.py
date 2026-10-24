@@ -4,18 +4,59 @@
 """
 from __future__ import annotations
 
-from pathlib import Path
-
 from fastapi import APIRouter, Query
 from sqlalchemy import and_, not_, or_, select
 
-from app.models_drama import DramaEpisode, DramaEpisodeFragment, DramaProject
+from app.models_drama import DramaProject
 from .dependencies import Actor, DB, Visitor, storage_ready
-from .models import Asset, EpisodePreview, PlaybackJob, Publication, RevenueConfig, Rights, Series, SeriesEpisode
+from .models import Asset, ContentOrder, Entitlement, EpisodePreview, Handoff, PlaybackJob, Publication, RevenueConfig, Rights, Series, SeriesEpisode
 from .schemas import EpisodeInput, EpisodeUpdate, ImportEpisodesInput, SeriesInput, SeriesUpdate, Version
 from .service import asset_owned, asset_owned_for_draft, check_version, data, event, fail, now, notify, owned, page, validate_rights
 
 router = APIRouter()
+
+
+async def ensure_series_idle(db, series_id: int, *, submitting: bool = False) -> None:
+    active = (await db.execute(select(Handoff.id).where(
+        Handoff.series_id == series_id, Handoff.status.in_(("pending", "running"))
+    ).limit(1))).scalar_one_or_none()
+    if active:
+        fail("MARKETPLACE_SYNC_IN_PROGRESS", 409)
+    if submitting:
+        latest = await _latest_series_handoffs(db, series_id)
+        if any(item.status == "failed" for item in latest):
+            fail("MARKETPLACE_EPISODE_NOT_READY", 409)
+
+
+async def _latest_series_handoffs(db, series_id: int) -> list[Handoff]:
+    handoffs = list((await db.execute(select(Handoff).where(
+        Handoff.series_id == series_id, Handoff.target_kind == "series_episode",
+        Handoff.target_id.in_(select(SeriesEpisode.id).where(SeriesEpisode.series_id == series_id)),
+    ).order_by(Handoff.id.desc()))).scalars().all())
+    latest = {}
+    for handoff in handoffs:
+        latest.setdefault(handoff.target_id, handoff)
+    return list(latest.values())
+
+
+async def pause_series_sales(db, series: Series, *, bump_episode_versions: bool = False) -> list[SeriesEpisode]:
+    """保留旧媒体及购买快照，仅关闭销售；系列资料更新时产生新的逐集版本。"""
+    episodes = list((await db.execute(select(SeriesEpisode).where(
+        SeriesEpisode.series_id == series.id).with_for_update())).scalars().all())
+    series.listed = False
+    for episode in episodes:
+        episode.listed = False
+        if bump_episode_versions:
+            episode.version += 1
+            episode.audit_status, episode.reason = "draft", ""
+    if episodes:
+        publications = list((await db.execute(select(Publication).where(
+            Publication.content_type == "series_episode",
+            Publication.content_id.in_([item.id for item in episodes]),
+        ).with_for_update())).scalars().all())
+        for publication in publications:
+            publication.listed = False
+    return episodes
 
 
 def _sale_type(value: str, copyright_price: int) -> str:
@@ -61,6 +102,13 @@ async def _series_data(db, item: Series, *, private: bool = False) -> dict:
     result["episodes"] = [await _episode_data(db, episode, private=private) for episode in episodes]
     if private:
         result.update(data(item, "owner_id", "version", "audit_status", "listed", "blocked", "reason", "share_bps"))
+        from .authorization import current, summary
+        from .handoff import _view
+        authorization = await current(db, item.owner_id)
+        handoffs = await _latest_series_handoffs(db, item.id)
+        result.update(authorization_ready=bool(authorization), authorization=summary(authorization),
+                      sync_in_progress=any(handoff.status in ("pending", "running") for handoff in handoffs),
+                      pending_handoffs=[await _view(db, handoff) for handoff in handoffs])
     return result
 
 
@@ -97,41 +145,12 @@ async def list_series(db: DB, q: str = Query("", max_length=100), category: str 
 @router.get("/series/import-sources", response_model=dict)
 async def import_sources(db: DB, user: Actor):
     """列出当前用户可明确选择导入的漫剧项目和已生成分集。"""
-    from app.services import oss as upstream_oss
-    from app.services import storage as upstream_storage
+    from .drama_publish import publish_context
     projects = list((await db.execute(select(DramaProject).where(DramaProject.user_id == user.id).order_by(DramaProject.id.desc()))).scalars().all())
     result = []
     for project in projects:
-        episodes = list((await db.execute(select(DramaEpisode).where(DramaEpisode.project_id == project.id).order_by(DramaEpisode.id))).scalars().all())
-        episode_items = []
-        for episode in episodes:
-            fragments = list((await db.execute(select(DramaEpisodeFragment).where(DramaEpisodeFragment.episode_id == episode.id).order_by(DramaEpisodeFragment.sort_order.desc()))).scalars().all())
-            ready = False
-            for fragment in fragments:
-                raw_video = (fragment.video or "").strip()
-                if not raw_video:
-                    continue
-                local = upstream_storage.local_path_from_url(raw_video)
-                if not local:
-                    candidate = Path(raw_video)
-                    if candidate.is_absolute() and candidate.is_file():
-                        try:
-                            relative = candidate.resolve().relative_to(upstream_storage.STATIC_ROOT.resolve())
-                            local = upstream_storage.STATIC_ROOT / relative
-                        except ValueError:
-                            local = None
-                if (local and local.is_file()) or raw_video.startswith(("http://", "https://")):
-                    ready = True
-                    break
-                # Object-key rows can be checked during import through the
-                # existing shared OSS client.  Do not issue a network HEAD for
-                # every list request; a missing object returns SOURCE_NOT_READY
-                # when the user explicitly imports it.
-                if upstream_oss.oss_enabled() and not raw_video.startswith("/static/"):
-                    ready = True
-                    break
-            episode_items.append({"id": episode.id, "name": episode.name, "ready": ready})
-        result.append({"id": project.id, "title": project.title, "episodes": episode_items})
+        context = await publish_context(project.id, db, user)
+        result.append({"id": project.id, "title": project.title, "episodes": context["episodes"]})
     return {"items": result}
 
 
@@ -170,6 +189,7 @@ async def update_series(series_id: int, body: SeriesUpdate, db: DB, user: Actor)
     from .service import ensure_kept
     ensure_kept(item)
     check_version(item, body.version)
+    await ensure_series_idle(db, item.id)
     from .categories import validate_category
     await validate_category(db, body.category, item.category)
     if body.cover_asset_id:
@@ -182,7 +202,7 @@ async def update_series(series_id: int, body: SeriesUpdate, db: DB, user: Actor)
         setattr(item, key, value)
     item.version += 1
     item.audit_status, item.listed, item.reason = "draft", False, ""
-    await db.execute(select(SeriesEpisode).where(SeriesEpisode.series_id == item.id).with_for_update())
+    await pause_series_sales(db, item, bump_episode_versions=True)
     await db.commit()
     return await _series_data(db, item, private=True)
 
@@ -190,6 +210,9 @@ async def update_series(series_id: int, body: SeriesUpdate, db: DB, user: Actor)
 @router.post("/series/{series_id}/episodes", response_model=dict)
 async def create_episode(series_id: int, body: EpisodeInput, db: DB, user: Actor):
     series = await _series(db, series_id, user, lock=True)
+    from .service import ensure_kept
+    ensure_kept(series)
+    await ensure_series_idle(db, series.id)
     duplicate = (await db.execute(select(SeriesEpisode.id).where(SeriesEpisode.series_id == series.id, SeriesEpisode.episode_no == body.episode_no))).scalar_one_or_none()
     if duplicate:
         fail("该集数已经存在", 409)
@@ -203,6 +226,7 @@ async def create_episode(series_id: int, body: EpisodeInput, db: DB, user: Actor
     db.add(item)
     series.version += 1
     series.audit_status, series.listed = "draft", False
+    await pause_series_sales(db, series)
     await db.commit()
     return await _episode_data(db, item, private=True)
 
@@ -210,6 +234,9 @@ async def create_episode(series_id: int, body: EpisodeInput, db: DB, user: Actor
 @router.patch("/series/{series_id}/episodes/{episode_id}", response_model=dict)
 async def update_episode(series_id: int, episode_id: int, body: EpisodeUpdate, db: DB, user: Actor):
     series = await _series(db, series_id, user, lock=True)
+    from .service import ensure_kept
+    ensure_kept(series)
+    await ensure_series_idle(db, series.id)
     item = await _episode(db, episode_id, user, lock=True)
     if item.series_id != series.id:
         fail("分集不属于该系列", 404)
@@ -224,6 +251,7 @@ async def update_episode(series_id: int, episode_id: int, body: EpisodeUpdate, d
     item.audit_status, item.listed, item.reason = "draft", False, ""
     series.version += 1
     series.audit_status, series.listed = "draft", False
+    await pause_series_sales(db, series)
     await db.commit()
     return await _episode_data(db, item, private=True)
 
@@ -231,9 +259,17 @@ async def update_episode(series_id: int, episode_id: int, body: EpisodeUpdate, d
 @router.delete("/series/{series_id}/episodes/{episode_id}", response_model=dict)
 async def delete_episode(series_id: int, episode_id: int, db: DB, user: Actor):
     series = await _series(db, series_id, user, lock=True)
+    from .service import ensure_kept
+    ensure_kept(series)
+    await ensure_series_idle(db, series.id)
     item = await _episode(db, episode_id, user, lock=True)
     if item.series_id != series.id:
         fail("分集不属于该系列", 404)
+    has_order = (await db.execute(select(ContentOrder.id).where(ContentOrder.episode_id == item.id).limit(1))).scalar_one_or_none()
+    has_entitlement = (await db.execute(select(Entitlement.id).where(Entitlement.episode_id == item.id).limit(1))).scalar_one_or_none()
+    if has_order or has_entitlement:
+        fail("该分集已有订单或购买权益，不能删除；请下架系列并保留记录", 409)
+    await pause_series_sales(db, series)
     await db.delete(item)
     series.version += 1
     series.audit_status, series.listed = "draft", False
@@ -267,8 +303,11 @@ async def submit_series(series_id: int, body: Version, db: DB, user: Actor):
     from .service import ensure_kept
     ensure_kept(series)
     check_version(series, body.version)
+    await ensure_series_idle(db, series.id, submitting=True)
     if series.blocked:
         fail("系列已被管理员封禁")
+    if series.audit_status in ("pending", "processing", "approved"):
+        return await _series_data(db, series, private=True)
     episodes = list((await db.execute(select(SeriesEpisode).where(SeriesEpisode.series_id == series.id).order_by(SeriesEpisode.episode_no).with_for_update())).scalars().all())
     if not episodes:
         fail("至少添加一集后才能提交审核")
@@ -284,18 +323,34 @@ async def submit_series(series_id: int, body: Version, db: DB, user: Actor):
     await storage_ready()
     from .previews import is_watermark_key
     pending_preview = False
+    await pause_series_sales(db, series)
     for episode in episodes:
+        if episode.blocked:
+            fail(f"第{episode.episode_no}集已被限制发布", 409)
         asset = await asset_owned(db, episode.asset_id or 0, user)
         if not episode.cover_asset_id and not series.cover_asset_id:
             fail(f"第{episode.episode_no}集缺少封面，请上传分集封面或系列封面", 409)
+        if episode.source == "printfilm":
+            from .drama_publish import ensure_import_rights
+            await ensure_import_rights(db, episode)
         rights = (await db.execute(select(Rights).where(Rights.asset_id == asset.id).with_for_update())).scalar_one_or_none()
         if not rights or rights.blocked:
             fail("请完成每集版权信息后再提交", 409)
         if rights.details.get("source") != episode.source:
             fail(f"第{episode.episode_no}集版权来源与分集来源不匹配", 409)
         validate_rights(rights.details, full=True, certificate=bool(rights.certificate_asset_id))
+        if rights.valid_until and rights.valid_until <= now():
+            fail(f"第{episode.episode_no}集版权授权已过期", 409)
         if series.sale_type == "platform_unlock" and episode.unlock_price_fen <= 0:
             fail(f"第{episode.episode_no}集必须设置解锁价")
+        publication = (await db.execute(select(Publication).where(
+            Publication.content_type == "series_episode", Publication.content_id == episode.id,
+            Publication.version == episode.version).with_for_update())).scalar_one_or_none()
+        if publication and publication.audit_status == "approved":
+            # The series may be re-reviewed because another episode changed.
+            # Never reset an approved version's media, financial or rights snapshot.
+            episode.version += 1
+            publication = None
         # 同一原片已有水印就沿用，改免费集数或收费类型不重新转码。
         done = (await db.execute(select(EpisodePreview).where(
             EpisodePreview.episode_id == episode.id, EpisodePreview.asset_id == asset.id,
@@ -319,13 +374,12 @@ async def submit_series(series_id: int, body: Version, db: DB, user: Actor):
                 preview.lease_token, preview.lease_until = None, None
             preview_status = "done" if preview.status == "done" and is_watermark_key(preview.object_key) else "pending"
         pending_preview = pending_preview or preview_status != "done"
-        publication = (await db.execute(select(Publication).where(
-            Publication.content_type == "series_episode", Publication.content_id == episode.id,
-            Publication.version == episode.version).with_for_update())).scalar_one_or_none()
+        share = episode.share_bps if episode.share_bps is not None else (
+            series.share_bps if series.share_bps is not None else (config.platform_share_bps if config else None))
         values = dict(owner_id=user.id, version=episode.version, asset_id=asset.id,
                       cover_asset_id=episode.cover_asset_id or series.cover_asset_id, sale_type=series.sale_type,
                       copyright_price_fen=episode.copyright_price_fen or series.copyright_price_fen,
-                      unlock_price_fen=episode.unlock_price_fen, share_bps=episode.share_bps,
+                      unlock_price_fen=episode.unlock_price_fen, share_bps=share,
                       rights_snapshot={"details": rights.details, "certificate_asset_id": rights.certificate_asset_id,
                                        "evidence_ids": rights.evidence_ids}, audit_status="pending", listed=False,
                       preview_status=preview_status, playback_status="done" if series.sale_type != "platform_unlock" else "pending")

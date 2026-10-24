@@ -5,13 +5,30 @@ from sqlalchemy import func, literal, select, union_all
 from app.models import User
 from .dependencies import Actor, DB, Visitor
 from .previews import prepare_preview, preview_ready, requires_preview
-from .models import Asset, PlaybackJob, Publication, Recruit, RegistrationCase, RevenueConfig, Rights, Series, Submission, Work
+from .models import Asset, Handoff, PlaybackJob, Publication, Recruit, RegistrationCase, RevenueConfig, Rights, Series, SeriesEpisode, Submission, Work
 from .schemas import CaseInput, RecruitInput, RecruitUpdate, RightsInput, Version, WorkInput, WorkUpdate
 from .service import (asset_owned, asset_owned_for_draft, check_version, data, ensure_kept, event, fail, get_target, is_public_work, now,
                       notify, owned, page, public_recruit_filters, public_work_filters, recruit_data,
                       recruit_open, rights_for, rights_valid, submission_data, validate_rights, work_data)
 
 router = APIRouter()
+
+
+async def _pause_work_sales(db, work_id: int) -> None:
+    publications = list((await db.execute(select(Publication).where(
+        Publication.content_type == "work", Publication.content_id == work_id,
+    ).with_for_update())).scalars().all())
+    for publication in publications:
+        publication.listed = False
+
+
+async def _ensure_work_idle(db, work_id: int) -> None:
+    active = (await db.execute(select(Handoff.id).where(
+        Handoff.target_kind == "work", Handoff.target_id == work_id,
+        Handoff.status.in_(("pending", "running")),
+    ).limit(1))).scalar_one_or_none()
+    if active:
+        fail("MARKETPLACE_SYNC_IN_PROGRESS", 409)
 
 
 @router.get("/categories", response_model=dict)
@@ -105,6 +122,7 @@ async def update_work(work_id: int, body: WorkUpdate, db: DB, user: Actor):
     item = await owned(db, Work, work_id, user)
     ensure_kept(item)
     check_version(item, body.version)
+    await _ensure_work_idle(db, item.id)
     from .categories import validate_category
     await validate_category(db, body.category, item.category)
     if body.asset_id:
@@ -123,6 +141,7 @@ async def update_work(work_id: int, body: WorkUpdate, db: DB, user: Actor):
         setattr(item, key, value)
     item.version += 1
     item.audit_status, item.listed, item.reason = "draft", False, ""
+    await _pause_work_sales(db, item.id)
     event(db, user.id, "work", item.id, "updated", version=item.version)
     await db.commit()
     return await work_data(db, item, True)
@@ -134,8 +153,11 @@ async def submit_work(work_id: int, body: Version, db: DB, user: Actor):
     item = await owned(db, Work, work_id, user)
     ensure_kept(item)
     check_version(item, body.version)
+    await _ensure_work_idle(db, item.id)
     if item.blocked:
         fail("作品已被管理员封禁")
+    if item.audit_status in ("pending", "processing", "approved"):
+        return await work_data(db, item, True)
     await asset_owned(db, item.asset_id or 0, user)
     rights = await rights_for(db, item.asset_id, lock=True)
     if not item.license_scope.strip():
@@ -155,6 +177,7 @@ async def submit_work(work_id: int, body: Version, db: DB, user: Actor):
         item.audit_status, item.listed, item.reason = "processing", False, "正在生成试看播放文件"
     else:
         item.audit_status, item.listed, item.reason = "pending", False, ""
+    config = None
     if item.sale_type == "platform_unlock":
         config = await db.get(RevenueConfig, 1)
         if not config or not config.enabled:
@@ -162,13 +185,17 @@ async def submit_work(work_id: int, body: Version, db: DB, user: Actor):
         if item.unlock_price_fen <= 0:
             fail("平台投放作品必须设置解锁价", 409)
     if item.audit_status in ("pending", "processing"):
+        await _pause_work_sales(db, item.id)
         publication = (await db.execute(select(Publication).where(
             Publication.content_type == "work", Publication.content_id == item.id,
             Publication.version == item.version).with_for_update())).scalar_one_or_none()
+        if publication and publication.audit_status == "approved":
+            item.version += 1
+            publication = None
         values = dict(owner_id=user.id, version=item.version, asset_id=item.asset_id,
                       cover_asset_id=item.cover_asset_id, sale_type=item.sale_type,
                       copyright_price_fen=item.price_fen, unlock_price_fen=item.unlock_price_fen,
-                      share_bps=item.share_bps, rights_snapshot={"details": rights.details,
+                      share_bps=item.share_bps if item.share_bps is not None else (config.platform_share_bps if config else None), rights_snapshot={"details": rights.details,
                       "certificate_asset_id": rights.certificate_asset_id, "evidence_ids": rights.evidence_ids},
                       audit_status=item.audit_status if item.audit_status == "pending" else "draft",
                       preview_status=("done" if watermark_ready else "pending") if requires_preview(item.sale_type) else "none",
@@ -229,6 +256,7 @@ async def listing(work_id: int, body: Version, db: DB, user: Actor, listed: bool
             if not publication or publication.playback_status != "done":
                 fail("平台播放版本尚未就绪，请稍后再上架", 409)
     item.listed = listed
+    await _pause_work_sales(db, item.id)
     publication = (await db.execute(select(Publication).where(Publication.content_type == "work", Publication.content_id == item.id, Publication.version == item.version).with_for_update())).scalar_one_or_none()
     if publication:
         publication.listed = listed and publication.audit_status == "approved" and (item.sale_type != "platform_unlock" or publication.playback_status == "done")
@@ -297,8 +325,23 @@ async def save_rights(asset_id: int, body: RightsInput, db: DB, user: Actor):
     item.basic_status, item.full_status = "draft", "draft"
     related = (await db.execute(select(Work).where(Work.asset_id == asset_id).with_for_update())).scalars().all()
     for work in related:
+        await _ensure_work_idle(db, work.id)
         work.audit_status, work.listed = "draft", False
         work.version += 1
+        await _pause_work_sales(db, work.id)
+    related_episodes = list((await db.execute(select(SeriesEpisode).where(
+        SeriesEpisode.asset_id == asset_id).with_for_update())).scalars().all())
+    if related_episodes:
+        from .series import ensure_series_idle, pause_series_sales
+        for episode in related_episodes:
+            episode.version += 1
+            episode.audit_status, episode.listed = "draft", False
+        for series_id in sorted({episode.series_id for episode in related_episodes}):
+            series = (await db.execute(select(Series).where(Series.id == series_id).with_for_update())).scalar_one()
+            await ensure_series_idle(db, series.id)
+            series.version += 1
+            series.audit_status, series.listed = "draft", False
+            await pause_series_sales(db, series)
     await db.flush()
     event(db, user.id, "rights", item.id, "updated", version=item.version)
     await db.commit()

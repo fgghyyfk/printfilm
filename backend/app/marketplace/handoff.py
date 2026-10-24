@@ -141,7 +141,12 @@ async def _view(db, item: Handoff) -> dict:
     else:
         label = "正在同步"
     payload = data(item, "id", "status", "target_kind", "target_id", "series_id", "asset_id", "attempts", "created_at")
-    payload.update(label=label, authorization_ready=ready, error=item.error if item.status == "failed" else "",
+    phase = (item.source_snapshot or {}).get("phase", "queued")
+    phases = {"queued": "排队", "copying": "同步素材", "composing": "拼接整集", "validating": "校验", "ready": "已就绪", "failed": "同步失败"}
+    payload.update(label=label, phase=item.status if item.status in ("ready", "failed") else phase,
+                   phase_label=phases.get(item.status if item.status in ("ready", "failed") else phase, "正在同步"),
+                   retryable=not any(code in (item.error or "") for code in ("SOURCE_CHANGED", "TARGET_CHANGED", "SOURCE_INCOMPATIBLE", "重新选择分集")),
+                   authorization_ready=ready, error=item.error if item.status == "failed" else "",
                    work_id=item.target_id if item.target_kind == "work" else None,
                    episode_id=item.target_id if item.target_kind == "series_episode" else None)
     return payload
@@ -179,20 +184,6 @@ async def _project_source(db, user_id: int, project_id: int) -> tuple[Project, s
     if not locator:
         fail("成片尚未生成", 409)
     return project, locator
-
-
-async def _drama_source(db, user_id: int, drama_project_id: int, episode_id: int) -> tuple[DramaProject, DramaEpisode, DramaEpisodeFragment, str]:
-    project = (await db.execute(select(DramaProject).where(DramaProject.id == drama_project_id, DramaProject.user_id == user_id))).scalar_one_or_none()
-    if not project:
-        fail("漫剧项目不存在或无权访问", 404)
-    episode = (await db.execute(select(DramaEpisode).where(DramaEpisode.id == episode_id, DramaEpisode.project_id == project.id))).scalar_one_or_none()
-    if not episode:
-        fail("存在不属于该漫剧项目的分集", 404)
-    fragments = list((await db.execute(select(DramaEpisodeFragment).where(DramaEpisodeFragment.episode_id == episode.id).order_by(DramaEpisodeFragment.sort_order.desc(), DramaEpisodeFragment.id.desc()))).scalars().all())
-    fragment = next((item for item in fragments if (item.video or "").strip()), None)
-    if not fragment:
-        fail("所选分集没有可导入的成片，请先完成分集合成", 409)
-    return project, episode, fragment, fragment.video.strip()
 
 
 async def _next_no(db, series_id: int) -> int:
@@ -246,6 +237,9 @@ async def work_from_printfilm(body: PrintfilmWorkInput, db: DB, user: Actor):
 async def enqueue_series_import(series_id: int, body: PrintfilmEpisodeInput, db, user) -> dict:
     """把选中的漫剧分集或一部科普成片登记为短剧分集，实际复制交给 Worker。"""
     await storage_ready()
+    if not body.project_id:
+        from .drama_publish import legacy_import
+        return await legacy_import(series_id, body, db, user)
     from .series import _episode_data, _series
 
     series = await _series(db, series_id, user, lock=True)
@@ -258,11 +252,6 @@ async def enqueue_series_import(series_id: int, body: PrintfilmEpisodeInput, db,
         project, locator = await _project_source(db, user.id, body.project_id)
         version = _version(project.updated_at.isoformat(), locator)
         jobs.append((_item_key(body.idempotency_key.strip(), f"series{series.id}:project_final", project.id, version), "project_final", project.id, version, locator, (project.cover_url or "").strip(), _clip(project.title or "第1集", 200) or "第1集"))
-    else:
-        for episode_id in dict.fromkeys(body.episode_ids):
-            _project, episode, fragment, locator = await _drama_source(db, user.id, body.drama_project_id or 0, episode_id)
-            version = _version(f"{fragment.id}:{fragment.updated_at.isoformat()}", locator)
-            jobs.append((_item_key(body.idempotency_key.strip(), f"series{series.id}:drama_episode", episode.id, version), "drama_episode", episode.id, version, locator, (fragment.cover or "").strip(), _clip(episode.name or "", 200) or f"分集{episode.id}"))
     created: list[SeriesEpisode] = []
     records: list[Handoff] = []
     added = False
@@ -336,6 +325,9 @@ async def retry_handoff(handoff_id: int, db: DB, user: Actor):
     item = await _owned_handoff(db, handoff_id, user)
     if item.status != "failed":
         return await _view(db, item)
+    if item.source_kind == "drama_episode":
+        await _validate_drama_source(db, item)
+        await _drama_target(db, item)
     item.status, item.error, item.attempts = "pending", "", 0
     item.lease_token, item.lease_until = None, None
     await db.commit()
@@ -377,7 +369,8 @@ async def _fail(handoff_id: int, token: str, message: str) -> None:
         item = (await db.execute(select(Handoff).where(Handoff.id == handoff_id, Handoff.lease_token == token).with_for_update())).scalar_one_or_none()
         if not item:
             return
-        terminal = item.attempts >= get_marketplace_settings().worker_max_attempts
+        terminal = item.attempts >= get_marketplace_settings().worker_max_attempts or any(
+            code in message for code in ("MARKETPLACE_SOURCE_CHANGED", "MARKETPLACE_TARGET_CHANGED", "MARKETPLACE_SOURCE_INCOMPATIBLE", "重新选择分集"))
         item.status = "failed" if terminal else "pending"
         item.error = message[:500]
         item.lease_token, item.lease_until = None, None
@@ -411,6 +404,10 @@ async def _copy(handoff_id: int, token: str) -> None:
     async with AsyncSessionLocal() as db:
         item = (await db.execute(select(Handoff).where(Handoff.id == handoff_id, Handoff.lease_token == token))).scalar_one_or_none()
         if not item:
+            return
+        if item.source_kind == "drama_episode":
+            # Legacy tasks were snapshots of only the final shot; never run them as full episodes.
+            await _copy_drama(handoff_id, token)
             return
         snapshot = dict(item.source_snapshot or {})
         owner_id, target_kind, target_id = item.owner_id, item.target_kind, item.target_id
@@ -495,11 +492,133 @@ async def _bind(db, item: Handoff, asset_id: int, cover_id: int | None) -> None:
             if cover_id and not work.cover_asset_id:
                 work.cover_asset_id = cover_id
         return
+    if item.source_kind == "drama_episode":
+        episode = await _drama_target(db, item)
+        episode.asset_id = asset_id
+        if cover_id and not episode.cover_asset_id:
+            episode.cover_asset_id = cover_id
+        episode.source_snapshot = {**(episode.source_snapshot or {}), "pending_handoff_id": None,
+            "last_handoff_id": item.id, "imported_source_version": item.source_version}
+        from .drama_publish import ensure_import_rights
+        # Set ready only for the authorization helper; the transaction is atomic.
+        item.status = "ready"
+        await ensure_import_rights(db, episode)
+        return
     episode = await db.get(SeriesEpisode, item.target_id)
     if episode and episode.owner_id == item.owner_id:
         episode.asset_id = asset_id
         if cover_id and not episode.cover_asset_id:
             episode.cover_asset_id = cover_id
+
+
+async def _drama_target(db, item):
+    from .models import Series
+    series = (await db.execute(select(Series).where(Series.id == item.series_id).with_for_update())).scalar_one_or_none()
+    episode = (await db.execute(select(SeriesEpisode).where(SeriesEpisode.id == item.target_id).with_for_update())).scalar_one_or_none()
+    snapshot = item.source_snapshot or {}
+    if (not series or series.owner_id != item.owner_id or series.deleted_at or series.blocked or not episode
+            or episode.series_id != series.id or episode.owner_id != item.owner_id or episode.blocked
+            or episode.version != snapshot.get("target_version")
+            or episode.asset_id != snapshot.get("original_asset_id")
+            or (episode.source_snapshot or {}).get("pending_handoff_id") != item.id):
+        fail("MARKETPLACE_TARGET_CHANGED:市场分集已修改、删除或有新的同步任务，请重新选择", 409)
+    return episode
+
+
+async def _validate_drama_source(db, item):
+    from .drama_publish import episode_snapshot
+    snapshot = item.source_snapshot or {}
+    if snapshot.get("schema_version") != 2:
+        fail("MARKETPLACE_SOURCE_CHANGED:旧导入未包含完整分镜，请重新选择分集并确认更新", 409)
+    try:
+        current = await episode_snapshot(db, item.owner_id, snapshot["drama_project_id"], item.source_id)
+    except HTTPException as exc:
+        if exc.status_code == 503:
+            raise
+        fail("MARKETPLACE_SOURCE_CHANGED:源分集已变化或正在重新生成，请重新选择分集", 409)
+    if current["source_version"] != item.source_version:
+        fail("MARKETPLACE_SOURCE_CHANGED:源分集已更新，请重新选择分集", 409)
+
+
+async def _phase(handoff_id, token, phase):
+    async with AsyncSessionLocal() as db:
+        item = (await db.execute(select(Handoff).where(Handoff.id == handoff_id,
+            Handoff.lease_token == token, Handoff.status == "running").with_for_update())).scalar_one_or_none()
+        if not item:
+            raise RuntimeError("同步任务租约已丢失")
+        item.source_snapshot = {**(item.source_snapshot or {}), "phase": phase}
+        await db.commit()
+
+
+async def _copy_drama(handoff_id, token):
+    """完整视频成功写入私有 OSS 且源/目标仍有效，才一次性绑定新资产。"""
+    async with AsyncSessionLocal() as db:
+        item = (await db.execute(select(Handoff).where(Handoff.id == handoff_id, Handoff.lease_token == token))).scalar_one_or_none()
+        if not item:
+            return
+        await _validate_drama_source(db, item)
+        await _drama_target(db, item)
+        snapshot, owner_id, target_id = dict(item.source_snapshot), item.owner_id, item.target_id
+    folder = f"marketplace/series/u{owner_id}/{target_id}"
+    dest = f"{folder}/{uuid.uuid4().hex}.mp4"
+    cover_key = f"{folder}/cover-{uuid.uuid4().hex}.png"
+    bound = False
+    try:
+        bound = await _finish_drama_copy(handoff_id, token, snapshot, owner_id, dest, cover_key)
+    finally:
+        if not bound:
+            from .storage import discard_generated
+            try:
+                # A database commit error can have an uncertain outcome. Never
+                # remove an object unless a fresh read confirms it is unbound.
+                async with AsyncSessionLocal() as db:
+                    referenced = set((await db.execute(select(Asset.object_key).where(Asset.object_key.in_((dest, cover_key))))).scalars().all())
+                for key in (dest, cover_key):
+                    if key in referenced:
+                        continue
+                    await asyncio.to_thread(discard_generated, key)
+            except Exception:
+                logger.warning("未绑定的市场同步对象清理失败，任务 %s", handoff_id)
+
+
+async def _finish_drama_copy(handoff_id, token, snapshot, owner_id, dest, cover_key):
+    from .drama_media import prepare_drama_video, prepare_drama_cover
+    result = await prepare_drama_video(snapshot, dest, lambda phase: _phase(handoff_id, token, phase))
+    cover = None
+    if snapshot.get("cover_locator"):
+        try:
+            cover = {**await prepare_drama_cover(snapshot["cover_locator"], cover_key, snapshot.get("cover_stamp")), "object_key": cover_key}
+        except (ValueError, HTTPException, OSError):
+            logger.info("漫剧来源封面不可用，保留为待上传封面")
+    async with AsyncSessionLocal() as db:
+        # Queue/update locks series -> episode -> handoff; use the same order.
+        candidate = await db.get(Handoff, handoff_id)
+        if not candidate:
+            return False
+        await _drama_target(db, candidate)
+        item = (await db.execute(select(Handoff).where(Handoff.id == handoff_id,
+            Handoff.lease_token == token, Handoff.status == "running").with_for_update())).scalar_one_or_none()
+        if not item:
+            return False
+        await _validate_drama_source(db, item)
+        await _drama_target(db, item)
+        asset = Asset(owner_id=owner_id, kind="video", filename=f"{snapshot['title'][:180]}.mp4", object_key=dest,
+            status="ready", **{key: result[key] for key in ("size_bytes", "content_type", "fingerprint", "duration_seconds")})
+        db.add(asset)
+        await db.flush()
+        item.asset_id, item.source_fingerprint = asset.id, asset.fingerprint
+        cover_id = None
+        if cover:
+            cover_asset = Asset(owner_id=owner_id, kind="image", filename="cover" + Path(cover["object_key"]).suffix,
+                status="ready", **{key: cover[key] for key in ("object_key", "size_bytes", "content_type")})
+            db.add(cover_asset)
+            await db.flush()
+            cover_id = cover_asset.id
+        await _bind(db, item, asset.id, cover_id)
+        item.status, item.error, item.lease_token, item.lease_until = "ready", "", None, None
+        item.source_snapshot = {**item.source_snapshot, "phase": "ready"}
+        await db.commit()
+        return True
 
 
 async def run_handoff_once() -> bool:
@@ -509,12 +628,18 @@ async def run_handoff_once() -> bool:
         return False
     handoff_id, token = claimed
     pulse = asyncio.create_task(_heartbeat(handoff_id, token))
+    copy = asyncio.create_task(_copy(handoff_id, token))
     try:
-        await _copy(handoff_id, token)
+        done, _ = await asyncio.wait({pulse, copy}, return_when=asyncio.FIRST_COMPLETED)
+        for task in done:
+            await task
+    except (ValueError, HTTPException) as exc:
+        await _fail(handoff_id, token, str(exc.detail) if isinstance(exc, HTTPException) else str(exc))
     except Exception:
         logger.exception("marketplace handoff %s failed", handoff_id)
         await _fail(handoff_id, token, "复制成片失败，请稍后重试")
     finally:
         pulse.cancel()
-        await asyncio.gather(pulse, return_exceptions=True)
+        copy.cancel()
+        await asyncio.gather(pulse, copy, return_exceptions=True)
     return True

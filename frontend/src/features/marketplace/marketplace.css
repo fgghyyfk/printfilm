@@ -237,6 +237,7 @@ body:has(.pf-market-shell) .pf-wx-fab-root { display:none; }
 .pf-episode-fold-head span { display:inline-flex; align-items:center; gap:8px; font-weight:650; }
 .pf-episode-fold-head em { font-style:normal; color:var(--pf-muted); font-size:12px; }
 .pf-episode-fold-body { display:grid; gap:12px; padding:0 14px 14px; }
+.pf-episode-fold-body .pf-market-notice { margin:0 !important; }
 .pf-market-kind-choice { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:16px; }
 .pf-market-kind-choice button { text-align:left; border:1px solid var(--pf-line); background:var(--pf-card); border-radius:16px; padding:22px; display:flex; flex-direction:column; gap:8px; cursor:pointer; }
 .pf-market-kind-choice strong { font-size:18px; }

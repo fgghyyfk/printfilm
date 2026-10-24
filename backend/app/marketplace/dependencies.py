@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.deps import get_current_admin, get_current_user, security, _user_from_bearer
 from app.models import User
-from .config import get_marketplace_settings
+from .config import is_marketplace_enabled
 from . import storage
 
 DB = Annotated[AsyncSession, Depends(get_db)]
@@ -19,7 +19,7 @@ Admin = Annotated[User, Depends(get_current_admin)]
 
 def enabled() -> None:
     """关闭时不允许通过直接 URL 进入下游接口。"""
-    if not get_marketplace_settings().enabled:
+    if not is_marketplace_enabled():
         raise HTTPException(404, "下游业务未启用")
 
 

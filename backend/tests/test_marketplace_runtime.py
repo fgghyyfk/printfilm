@@ -5,7 +5,7 @@ import sys
 import pytest
 
 from app.marketplace import runtime
-from app.marketplace.config import get_marketplace_settings
+from app.config import get_settings
 
 
 def test_media_tools_fall_back_to_environment_paths(monkeypatch, tmp_path):
@@ -53,13 +53,13 @@ async def test_media_thread_command_timeout_and_cancellation(monkeypatch):
 
 
 async def test_market_runtime_disabled_does_not_start(monkeypatch):
-    monkeypatch.setattr(get_marketplace_settings(), "enabled", False)
+    monkeypatch.setattr(get_settings(), "marketplace_enabled", False)
     await runtime.start_marketplace_runtime()
     assert runtime._watchdog is None and runtime._worker is None
 
 
 async def test_market_runtime_idempotent_and_clean_shutdown(monkeypatch):
-    monkeypatch.setattr(get_marketplace_settings(), "enabled", True)
+    monkeypatch.setattr(get_settings(), "marketplace_enabled", True)
     started, stopped = asyncio.Event(), asyncio.Event()
     async def loop():
         started.set()
@@ -83,7 +83,7 @@ async def test_market_runtime_idempotent_and_clean_shutdown(monkeypatch):
 
 @pytest.mark.parametrize("cancelled", [False, True])
 async def test_market_runtime_recovers_failed_or_cancelled_loop(monkeypatch, cancelled):
-    monkeypatch.setattr(get_marketplace_settings(), "enabled", True)
+    monkeypatch.setattr(get_settings(), "marketplace_enabled", True)
     started, restarted = asyncio.Event(), asyncio.Event()
     calls = 0
     async def loop():
