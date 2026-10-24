@@ -790,6 +790,7 @@ title="用当前镜头重新拼接"
       </header>
 
       {error ? <BillingErrorNotice message={error} /> : null}
+      <ProjectMediaCostSummary project={project} />
       {project.error_msg ? <p className="pf-error">{project.error_msg}</p> : null}
 
       <div className="pf-board">
@@ -1637,3 +1638,4 @@ title="用当前镜头重新拼接"
     </AppShell>
   )
 }
+import { ProjectMediaCostSummary } from '../../components/billing/ProjectMediaCostSummary'

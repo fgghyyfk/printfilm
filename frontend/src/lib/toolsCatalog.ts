@@ -1,8 +1,8 @@
-import { Clapperboard, Image, Images, Play, ShoppingBag, Sparkles, Video } from 'lucide-react'
+import { AudioLines, Clapperboard, Image, Images, Play, ShoppingBag, Sparkles, Video } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { Messages } from '../i18n'
 
-export type ToolId = 't2i' | 'i2i' | 'i2p' | 't2v' | 'v2v' | 'ecom'
+export type ToolId = 't2i' | 'i2i' | 'i2p' | 't2v' | 'v2v' | 'ecom' | 'audio'
 
 export type ToolField = {
   key: string
@@ -27,6 +27,11 @@ export type ToolDef = {
 }
 
 export const TOOL_DEFS: ToolDef[] = [
+  {
+    id: 'audio', title: '音频生成', desc: '让文字成为有温度的声音', soon: false, icon: AudioLines,
+    panelHint: '输入文字，选择音色，生成可下载的配音。', cta: '生成语音',
+    fields: [{ key: 'prompt', label: '朗读文字', kind: 'textarea', placeholder: '输入你想朗读的文字…' }],
+  },
   {
     id: 't2i',
     title: '文生图',
@@ -157,7 +162,7 @@ export function localizeToolDef(tool: ToolDef, m: Messages): ToolDef {
 }
 
 export function localizeToolDefs(m: Messages): ToolDef[] {
-  return TOOL_DEFS.map((tool) => localizeToolDef(tool, m))
+  return TOOL_DEFS.filter((tool) => tool.id !== 'audio').map((tool) => localizeToolDef(tool, m))
 }
 
 // 芯片展示文案；未知值原样返回
