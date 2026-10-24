@@ -4,6 +4,16 @@ from __future__ import annotations
 
 from app.services.model_routing_config import normalize_model_name
 
+
+def project_video_resolution(project, settings=None) -> str:
+    from app.config import get_settings
+    chosen = str(getattr(project, "video_resolution", "") or "").strip().lower()
+    if chosen:
+        return chosen
+    config = settings or get_settings()
+    fallback = str(config.ark_video_resolution or "480p").strip().lower()
+    return "720p" if getattr(project, "resolution_mode", "") == "hd" and fallback == "480p" else fallback
+
 # 全量 UI / 白名单（含 MiniMax 的 768p；不上 4k）
 ALL_VIDEO_RESOLUTIONS: tuple[str, ...] = ("480p", "720p", "768p", "1080p")
 # mini / fast：渠道明确仅两档
@@ -70,7 +80,7 @@ def clamp_video_resolution(model_id: str | None, resolution: str | None) -> str:
 def format_video_resolution_for_upstream(model_id: str | None, resolution: str | None) -> str:
     """提交上游的清晰度字符串。
 
-    TokenFree MiniMax 插件枚举只认小写 480p / 768p（大写 480P 会报 plugin_usage_invalid）。
+    内部统一小写；TokenFree 不同 MiniMax 插件存在大小写差异，提交适配层处理明确的枚举拒绝。
     """
     return clamp_video_resolution(model_id, resolution)
 

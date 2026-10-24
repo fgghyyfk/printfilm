@@ -56,7 +56,7 @@ export function DramaMediaModelPicker({
         const kind = mediaModelIconKind(m.id)
         const badge = mediaModelCapabilityBadge(m)
         const desc = (m.description || '').trim()
-        const price = (m.pricing_hint || '').trim()
+        const price = m.prices && Object.keys(m.prices).length ? Object.entries(m.prices).map(([resolution, amount]) => `${resolution} ¥${amount}/${m.billing_unit === 'second' ? '秒' : '张'}`).join(' · ') : (m.pricing_hint || '').trim()
         const eta = (m.eta_hint || '').trim()
         const clip = mediaModelClipDurationLabel(m)
         const metaBits = [clip, eta].filter(Boolean)
@@ -64,6 +64,7 @@ export function DramaMediaModelPicker({
           <button
             key={m.id}
             type="button"
+            disabled={m.available === false}
             className={`fc-gen-model-card${selected ? ' selected' : ''}`}
             title={mediaModelHoverText(m)}
             aria-label={`${m.label}${desc ? `，${desc}` : ''}${metaBits.length ? `，${metaBits.join('，')}` : ''}${price ? `，${price}` : ''}`}
