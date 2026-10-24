@@ -38,6 +38,7 @@ import {
 } from './buildEpisodeFlow'
 import { EpisodeAssetNode } from './EpisodeAssetNode'
 import { EpisodeFragmentNode } from './EpisodeFragmentNode'
+import '../drama.css'
 import './episodeCanvas.css'
 
 const SAVE_DEBOUNCE_MS = 800

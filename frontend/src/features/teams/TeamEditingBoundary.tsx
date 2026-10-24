@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useParams } from 'react-router-dom'
+import AppShell from '../../components/layout/AppShell'
 import Button from '../../components/ui/Button'
 import { createJsonRequester } from '../../api/client'
 import { syncProjectWorkspace, type EditTarget } from './editLocks'
@@ -28,7 +29,16 @@ export function TeamEpisodeEditingBoundary({ children }: { children: ReactNode }
     const unsubscribe = subscribeWorkspace(() => { if (active) { active = false; setRetry((n) => n + 1) } })
     return () => { active = false; unsubscribe() }
   }, [projectId, episodeId, retry])
-  if (error) return <div role="alert" className="pf-team-alert">{error}<Button onClick={() => setRetry((n) => n + 1)}>重试</Button></div>
-  if (!target) return <p role="status">正在读取分集与编辑权限…</p>
+  /* 加载与错误态也在 AppShell 内展示，避免整页只剩一行文字像白屏崩溃。 */
+  if (error) return (
+    <AppShell active="drama" flush>
+      <div role="alert" className="drama-workspace-status drama-error">{error}<Button onClick={() => setRetry((n) => n + 1)}>重试</Button></div>
+    </AppShell>
+  )
+  if (!target) return (
+    <AppShell active="drama" flush>
+      <div role="status" className="drama-workspace-status">正在读取分集与编辑权限…</div>
+    </AppShell>
+  )
   return <TeamEditingBoundary {...target} interactiveReadOnly>{children}</TeamEditingBoundary>
 }
