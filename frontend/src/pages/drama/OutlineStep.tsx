@@ -166,18 +166,23 @@ export function OutlineStep({
 
   // 摘要完成后等待/触发资产抽取（后端摘要任务也会自动抽；此处兜底）
   async function ensureAssetsSeeded(runToken?: number): Promise<boolean> {
-    setAssetsSeeding(true)
     try {
       let p = await dramaApi.getProject(projectId)
       onProjectChange(p)
       let st = getAssetsSeedStatus(p)
-      if (st !== 'generating' && st !== 'done') {
+      /* 已完成/已失败直接返回，不置抽取态，避免进页闪一下“抽取资产中”。 */
+      if (st === 'done' || st === 'failed') {
+        setAssetsSeeding(false)
+        return true
+      }
+      if (st !== 'generating') {
         try {
           await dramaApi.seedAssets(projectId)
         } catch {
           /* 可能已在后台抽取，继续轮询 */
         }
       }
+      setAssetsSeeding(true)
       const started = Date.now()
       while (Date.now() - started < 10 * 60 * 1000) {
         if (runToken !== undefined && runToken !== pipelineRef.current) return false
