@@ -15,6 +15,26 @@ from app.services.drama.access import get_owned_drama_project
 router = APIRouter()
 
 
+def _team_nodes(nodes: list, assets: list[DramaAsset]) -> list:
+    """团队布局中的资产快照始终由当前资产生成，旧画布不能回写资产。"""
+    by_id = {asset.id: asset for asset in assets}
+    out = []
+    for raw in nodes:
+        node = dict(raw)
+        data = dict(node.get("data") or {})
+        try:
+            asset = by_id.get(int(data.get("assetId") or 0))
+        except (TypeError, ValueError):
+            asset = None
+        if asset:
+            data.update(label=asset.name, name=asset.name, kind=asset.type,
+                        asset_type=asset.asset_type, mediaUrl=asset.url,
+                        url=asset.url, cover=asset.cover)
+        node["data"] = data
+        out.append(node)
+    return out
+
+
 @router.get("/canvas/{project_id}")
 async def get_canvas(
     project_id: int,
@@ -25,7 +45,7 @@ async def get_canvas(
     content = project.content if isinstance(project.content, dict) else {}
     return {
         "project_id": project_id,
-        "nodes": content.get("canvas_nodes") or [],
+        "nodes": _team_nodes(content.get("canvas_nodes") or [], project.assets or []) if project.team_id else content.get("canvas_nodes") or [],
         "edges": content.get("canvas_edges") or [],
     }
 
@@ -41,6 +61,13 @@ async def save_canvas(
     content["canvas_nodes"] = body.nodes
     content["canvas_edges"] = body.edges
     project.content = content
+
+    if project.team_id is not None:
+        # 团队资产通过独立资产接口和 asset 租约修改；画布租约仅控制布局。
+        content["canvas_nodes"] = _team_nodes(body.nodes, project.assets or [])
+        project.content = content
+        await db.commit()
+        return {"ok": True, "nodes": len(body.nodes), "edges": len(body.edges)}
 
     # Upsert canvas nodes as type=none assets keyed by node id in params
     existing = {

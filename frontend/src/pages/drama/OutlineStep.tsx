@@ -1,4 +1,5 @@
 /** 剧情大纲步骤：自动摘要 + 分集剧本流水线 */
+import { isRequestAborted } from '../../api/http'
 import { useEffect, useRef, useState } from 'react'
 import {
   dramaApi,
@@ -20,6 +21,7 @@ import Modal from '../../components/ui/Modal'
 import { DramaImageStyleModal } from './DramaImageStyleModal'
 import { DramaProjectSettingsModal } from './DramaProjectSettingsModal'
 import { OutlineEpisodePanel } from './OutlineEpisodePanel'
+import { useTeamEditLock } from '../../features/teams/useTeamEditLock'
 
 type MetaModalKey = 'source' | 'summary' | 'project'
 
@@ -70,6 +72,7 @@ export function OutlineStep({
   const [sourceEditing, setSourceEditing] = useState(false)
   const [sourceDraft, setSourceDraft] = useState('')
   const [sourceSaving, setSourceSaving] = useState(false)
+  const scriptLock = useTeamEditLock({ projectId, type: 'script', resourceId: 0 }, summaryEditing || sourceEditing, async (isCurrent) => { const fresh = await dramaApi.getScript(projectId); if (isCurrent()) { setScript(fresh); if (summaryEditing) setSummaryDraft(fresh.summary || {}); if (sourceEditing) setSourceDraft(fresh.source || '') } })
   const pipelineRef = useRef(0)
   const projectRef = useRef(project)
   projectRef.current = project
@@ -151,6 +154,7 @@ export function OutlineStep({
       onProjectChange(p)
       return finished
     } catch (err) {
+      if (isRequestAborted(err)) throw err
       const msg = err instanceof Error ? err.message : '剧本摘要生成失败'
       setSummaryError(msg)
       onError(msg)
@@ -230,6 +234,7 @@ export function OutlineStep({
       const p = await dramaApi.getProject(projectId)
       onProjectChange(p)
     } catch (err) {
+      if (isRequestAborted(err)) return
       const msg = err instanceof Error ? err.message : '分集剧本生成失败'
       setEpisodeError(msg)
       onError(msg)
@@ -375,6 +380,7 @@ export function OutlineStep({
       const p = await dramaApi.getProject(projectId)
       onProjectChange(p)
     } catch (err) {
+      if (isRequestAborted(err)) return
       onError(err instanceof Error ? err.message : '风格更新失败')
     }
   }
@@ -398,6 +404,7 @@ export function OutlineStep({
       const p = await dramaApi.getProject(projectId)
       onProjectChange(p)
     } catch (err) {
+      if (isRequestAborted(err)) return
       onError(err instanceof Error ? err.message : '摘要保存失败')
     } finally {
       setSummarySaving(false)
@@ -415,6 +422,7 @@ export function OutlineStep({
       setScript(updated)
       setSourceEditing(false)
     } catch (err) {
+      if (isRequestAborted(err)) return
       onError(err instanceof Error ? err.message : '创意保存失败')
     } finally {
       setSourceSaving(false)
@@ -491,7 +499,7 @@ export function OutlineStep({
               <button
                 type="button"
                 className="drama-btn-primary"
-                disabled={sourceSaving}
+                disabled={sourceSaving || scriptLock.readOnly}
                 onClick={() => void saveSourceEdit()}
               >
                 {sourceSaving ? '保存中…' : '保存'}
@@ -512,7 +520,8 @@ export function OutlineStep({
         }
       >
         <div className="drama-outline-meta-modal-body">
-          {sourceEditing ? (
+          {scriptLock.readOnly && <p className="pf-team-alert" role="status">{scriptLock.checking ? '正在取得编辑占用…' : scriptLock.error}<button type="button" onClick={scriptLock.retry}>重新取得编辑权并刷新</button></p>}
+        {sourceEditing ? (
             <textarea
               className="drama-ep-section-textarea"
               rows={16}
@@ -540,7 +549,7 @@ export function OutlineStep({
               <button
                 type="button"
                 className="drama-btn-primary"
-                disabled={summarySaving}
+                disabled={summarySaving || scriptLock.readOnly}
                 onClick={() => void saveSummaryEdit()}
               >
                 {summarySaving ? '保存中…' : '保存'}
@@ -558,6 +567,7 @@ export function OutlineStep({
         }
       >
         <div className="drama-outline-meta-modal-body">
+          {scriptLock.readOnly && <p className="pf-team-alert" role="status">{scriptLock.checking ? '正在取得编辑占用…' : scriptLock.error}<button type="button" onClick={scriptLock.retry}>重新取得编辑权并刷新</button></p>}
           {summaryGenerating || summaryStatus === 'generating' ? (
             <p className="drama-loader">全剧摘要生成中…</p>
           ) : null}
@@ -661,7 +671,7 @@ export function OutlineStep({
                   ? '顺序：整剧摘要 → 抽取资产 → 分集剧本 → 每集立刻 AI 分镜'
                   : assetsSeeding || assetsSeedStatus === 'generating'
                     ? '正在从整剧摘要抽取角色/场景到资产库，完成后开始生成各集剧本'
-                    : '每集剧本完成后立刻入队 AI 分镜；左侧可看「AI 分镜中…」状态'}
+                    : '每集剧本完成后立即执行 AI 分镜；左侧可看「AI 分镜中…」状态'}
               </p>
             </div>
           </div>

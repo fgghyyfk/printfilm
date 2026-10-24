@@ -17,8 +17,9 @@ def empty_usage_stats() -> DramaProjectUsageStats:
 async def aggregate_drama_usage_by_project_ids(
     db: AsyncSession,
     *,
-    user_id: int,
+    user_id: int | None,
     project_ids: list[int],
+    team_id: int | None = None,
 ) -> dict[int, DramaProjectUsageStats]:
     """
     批量聚合漫剧项目用量。
@@ -30,6 +31,10 @@ async def aggregate_drama_usage_by_project_ids(
     image_case = case((UsageEvent.billing_key == "seedream", 1), else_=0)
     video_case = case((UsageEvent.billing_key.like("seedance%"), 1), else_=0)
 
+    filters = [UsageEvent.drama_project_id.in_(project_ids)]
+    filters.append(UsageEvent.team_id == team_id if team_id is not None else UsageEvent.team_id.is_(None))
+    if user_id is not None:
+        filters.append(UsageEvent.user_id == user_id)
     result = await db.execute(
         select(
             UsageEvent.drama_project_id,
@@ -40,10 +45,7 @@ async def aggregate_drama_usage_by_project_ids(
             func.coalesce(func.sum(image_case), 0),
             func.coalesce(func.sum(video_case), 0),
         )
-        .where(
-            UsageEvent.user_id == user_id,
-            UsageEvent.drama_project_id.in_(project_ids),
-        )
+        .where(*filters)
         .group_by(UsageEvent.drama_project_id)
     )
 
@@ -51,7 +53,7 @@ async def aggregate_drama_usage_by_project_ids(
     for row in result.all():
         pid = int(row[0])
         charge_fen = int(row[1] or 0)
-        cost_fen = int(row[2] or 0)
+        cost_fen = 0 if team_id is not None else int(row[2] or 0)
         out[pid] = DramaProjectUsageStats(
             charge_fen=charge_fen,
             charge_yuan=round(charge_fen / 100.0, 2),
@@ -68,11 +70,12 @@ async def aggregate_drama_usage_by_project_ids(
 async def get_drama_project_usage(
     db: AsyncSession,
     *,
-    user_id: int,
+    user_id: int | None,
     project_id: int,
+    team_id: int | None = None,
 ) -> DramaProjectUsageStats:
     """单部漫剧用量汇总。"""
     mapped = await aggregate_drama_usage_by_project_ids(
-        db, user_id=user_id, project_ids=[project_id]
+        db, user_id=user_id, project_ids=[project_id], team_id=team_id
     )
     return mapped.get(project_id) or empty_usage_stats()

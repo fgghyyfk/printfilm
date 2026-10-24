@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,7 +22,9 @@ from app.schemas_drama import (
     DramaProjectUsageStats,
     DramaScriptOut,
 )
-from app.services.drama.access import get_owned_drama_project
+from app.services.drama.access import get_owned_drama_project, require_drama_project_manager
+from app.services.teams.write_access import workspace_team
+from app.services.teams.access import get_team
 from app.services.drama.generation import project_link_last_frame_enabled
 from app.services.drama.project_cover import resolve_drama_project_cover
 from app.services.drama.usage_stats import (
@@ -34,6 +38,16 @@ from app.services.tasks.service import cancel_tasks_for_scope, rebalance_project
 router = APIRouter()
 
 
+async def _usage_actor(db: AsyncSession, team_id: int | None, user_id: int) -> int | None:
+    """所有者看团队计费合计，其他成员只看本人；历史个人费用留在个人账单。"""
+    if team_id is not None:
+        from app.services.teams.access import member_role
+        team, member = await get_team(db, team_id, user_id)
+        if member_role(team, member) == "owner":
+            return None
+    return user_id
+
+
 def _project_out(project: DramaProject, usage: DramaProjectUsageStats | None = None) -> DramaProjectOut:
     # 组装项目详情响应，附带用量统计
     script = None
@@ -42,6 +56,7 @@ def _project_out(project: DramaProject, usage: DramaProjectUsageStats | None = N
     return DramaProjectOut(
         id=project.id,
         user_id=project.user_id,
+        team_id=project.team_id,
         title=project.title,
         description=project.description,
         content=project.content,
@@ -60,11 +75,15 @@ def _project_out(project: DramaProject, usage: DramaProjectUsageStats | None = N
 async def list_projects(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
+    scope_team_id: int | None = Depends(workspace_team),
+    workflow: Literal["script", "canvas"] | None = None,
 ) -> list[DramaProjectListItem]:
     # List current user's drama projects
+    team_id = scope_team_id if isinstance(scope_team_id, int) else None
+    condition = DramaProject.team_id == team_id if team_id is not None else ((DramaProject.user_id == user.id) & DramaProject.team_id.is_(None))
     result = await db.execute(
         select(DramaProject)
-        .where(DramaProject.user_id == user.id)
+        .where(condition)
         .options(
             selectinload(DramaProject.script),
             selectinload(DramaProject.assets),
@@ -73,8 +92,12 @@ async def list_projects(
         .order_by(DramaProject.updated_at.desc())
     )
     rows = list(result.scalars().all())
+    # Reuse the compatibility resolver so pre-workflow canvas projects remain
+    # discoverable. Omitting the filter keeps the existing all-projects API.
+    if workflow is not None:
+        rows = [p for p in rows if resolve_drama_workflow(p) == workflow]
     usage_map = await aggregate_drama_usage_by_project_ids(
-        db, user_id=user.id, project_ids=[p.id for p in rows]
+        db, user_id=await _usage_actor(db, team_id, user.id), project_ids=[p.id for p in rows], team_id=team_id
     )
     items: list[DramaProjectListItem] = []
     for p in rows:
@@ -82,6 +105,7 @@ async def list_projects(
         items.append(
             DramaProjectListItem(
                 id=p.id,
+                team_id=p.team_id,
                 title=p.title,
                 description=p.description,
                 created_at=p.created_at,
@@ -103,6 +127,7 @@ async def create_project(
     body: DramaProjectCreate,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
+    scope_team_id: int | None = Depends(workspace_team),
 ) -> DramaProjectOut:
     # Create project + empty script draft from creative source
     source = (body.source or "").strip()
@@ -120,8 +145,14 @@ async def create_project(
         image_style_id=body.image_style_id,
         extra=body.params,
     )
+    team_id = body.team_id or (scope_team_id if isinstance(scope_team_id, int) else None)
+    if body.team_id and isinstance(scope_team_id, int) and body.team_id != scope_team_id:
+        raise HTTPException(status_code=422, detail="项目团队与当前空间不匹配")
+    if team_id is not None:
+        await get_team(db, team_id, user.id, lock=True)
     project = DramaProject(
         user_id=user.id,
+        team_id=team_id,
         title=title or ("自由画布项目" if workflow == "canvas" else "未命名漫剧"),
         description=body.description,
         params=project_params,
@@ -141,6 +172,10 @@ async def create_project(
         },
     )
     db.add(script)
+    if team_id is not None:
+        from app.services.teams.activity import record_activity
+
+        await record_activity(db, team_id, user.id, "创建了项目", project.title, project_id=project.id)
     await db.commit()
     project = await get_owned_drama_project(
         db, project.id, user, with_script=True, with_assets=True, with_episodes=True
@@ -157,7 +192,7 @@ async def get_project(
     project = await get_owned_drama_project(
         db, project_id, user, with_script=True, with_assets=True, with_episodes=True
     )
-    usage = await get_drama_project_usage(db, user_id=user.id, project_id=project.id)
+    usage = await get_drama_project_usage(db, user_id=await _usage_actor(db, project.team_id, user.id), project_id=project.id, team_id=project.team_id)
     return _project_out(project, usage)
 
 
@@ -193,7 +228,7 @@ async def update_project(
     project = await get_owned_drama_project(
         db, project_id, user, with_script=True, with_assets=True, with_episodes=True
     )
-    usage = await get_drama_project_usage(db, user_id=user.id, project_id=project.id)
+    usage = await get_drama_project_usage(db, user_id=await _usage_actor(db, project.team_id, user.id), project_id=project.id, team_id=project.team_id)
     return _project_out(project, usage)
 
 
@@ -205,6 +240,11 @@ async def delete_project(
 ) -> dict:
     """删除漫剧项目；先解绑任务/账单外键，避免 FK 阻塞 CASCADE。"""
     project = await get_owned_drama_project(db, project_id, user)
+    await require_drama_project_manager(db, project, user.id)
+    if project.team_id is not None:
+        from app.services.teams.edit_locks import _task_conflicts
+
+        await _task_conflicts(db, project.id, ("structure", 0))
     await cancel_tasks_for_scope(db, user.id, drama_project_id=project_id)
 
     # 保留任务与用量历史，仅清空指向本项目及子表的外键

@@ -11,6 +11,7 @@ from app.schemas_tasks import TaskRunBriefOut
 
 
 class DramaProjectCreate(BaseModel):
+    team_id: int | None = Field(default=None, gt=0)
     title: str = Field(default="未命名漫剧", max_length=200)
     description: str | None = None
     source: str = Field(default="", description="原始创意文案")
@@ -113,6 +114,7 @@ class DramaEpisodeUpdate(BaseModel):
 class DramaProjectOut(BaseModel):
     id: int
     user_id: int
+    team_id: int | None = None
     title: str
     description: str | None = None
     content: dict | list | None = None
@@ -132,6 +134,7 @@ class DramaProjectOut(BaseModel):
 
 class DramaProjectListItem(BaseModel):
     id: int
+    team_id: int | None = None
     title: str
     description: str | None = None
     created_at: datetime | None = None

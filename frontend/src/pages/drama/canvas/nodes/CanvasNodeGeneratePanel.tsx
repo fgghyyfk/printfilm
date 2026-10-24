@@ -89,6 +89,7 @@ export function CanvasNodeGeneratePanel({
   imageOptions: savedImageOptions,
 }: CanvasNodeGeneratePanelProps) {
   const {
+    projectId,
     generateNodeImage,
     generateNodeVideo,
     setErrorMessage,
@@ -219,6 +220,7 @@ export function CanvasNodeGeneratePanel({
     setOptimizing(true)
     try {
       const result = await optimizePromptWithSkills({
+        project_id: projectId,
         prompt,
         skill_ids: selectedIds,
         task: isVideo ? 'video_prompt' : 'image_prompt',

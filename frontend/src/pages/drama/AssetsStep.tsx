@@ -251,7 +251,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
       })
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err || '')
-      if (isBillingError(message)) return null
+      if (isBillingError(message)) { onError(message); return null }
       if (await handleBillingError(err)) return null
       onError(message || '余额校验失败')
       return null
@@ -260,7 +260,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
 
   async function notifyImageGenFailure(err: unknown) {
     const message = err instanceof Error ? err.message : String(err || '')
-    if (isBillingError(message)) return
+    if (isBillingError(message)) { onError(message); return }
     if (isUpstreamAccountError(message)) {
       await alertDramaGenError(err)
       onError(formatDramaGenError(message).message)
@@ -311,12 +311,13 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
     if (!pre) return
     const unitYuan = pre.unit_estimate_yuan ?? pre.unit_estimate_fen / 100
     const totalYuan = pre.requested_total_yuan ?? pre.requested_total_fen / 100
-    const balanceYuan = pre.balance_yuan ?? pre.balance_fen / 100
+    const balanceYuan = pre.balance_yuan ?? (typeof pre.balance_fen === 'number' ? pre.balance_fen / 100 : undefined)
+    const balanceText = balanceYuan === undefined ? '消费按团队余额与本人额度校验' : `当前余额 ¥${balanceYuan.toFixed(2)}`
     const ok = await dialog.confirm({
       title: '批量生成形象',
       message:
         `将为当前「${ASSET_TABS.find((t) => t.key === tab)?.label || '分类'}」下 ${targets.length} 个未出图资产开始生图（并行提交，不排队）。\n\n` +
-        `每张预扣约 ¥${unitYuan.toFixed(2)}，本次合计约 ¥${totalYuan.toFixed(2)}（当前余额 ¥${balanceYuan.toFixed(2)}；结束后按实际上游用量多退少补）。\n\n是否继续？`,
+        `每张预扣约 ¥${unitYuan.toFixed(2)}，本次合计约 ¥${totalYuan.toFixed(2)}（${balanceText}；结束后按实际上游用量多退少补）。\n\n是否继续？`,
       confirmText: '开始生成',
     })
     if (!ok) return

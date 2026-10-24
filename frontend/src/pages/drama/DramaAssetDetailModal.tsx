@@ -1,3 +1,4 @@
+import { useTeamEditLock } from '../../features/teams/useTeamEditLock'
 /** 资产详情操作框：预览图、上传/生图提示词编辑、生成/音色、形象历史版本 */
 import { useEffect, useRef, useState } from 'react'
 import { dramaApi, resolveDramaAssetPreviewUrl, type DramaAsset } from '../../api/drama'
@@ -15,6 +16,7 @@ import { DramaImageLightbox } from './DramaImageLightbox'
 type Props = {
   asset: DramaAsset
   open: boolean
+  readOnly?: boolean
   busy?: boolean
   genLabel?: string
   onClose: () => void
@@ -43,6 +45,7 @@ function buildPromptParams(asset: DramaAsset, prompt: string): Record<string, un
 export function DramaAssetDetailModal({
   asset,
   open,
+  readOnly = false,
   busy = false,
   genLabel = '生成形象',
   onClose,
@@ -78,7 +81,8 @@ export function DramaAssetDetailModal({
   const canDelete = Boolean(onDelete) && (isCharacter || isScene || isProp)
   const dirty = promptDraft.trim() !== readVisualPrompt(asset).trim()
   const imageVersions = readAssetImageVersions(asset)
-  const actionBusy = busy || saving || uploading || Boolean(restoringVersionId)
+  const lock = useTeamEditLock({ projectId: asset.project_id, type: 'asset', resourceId: asset.id }, open && !readOnly, async (isCurrent) => { const rows = await dramaApi.listAssets(asset.project_id); const fresh = rows.find((item) => item.id === asset.id); if (!fresh) throw new Error('资产已删除，请关闭后重新加载'); if (isCurrent()) onUpdated(fresh) })
+  const actionBusy = readOnly || lock.readOnly || busy || saving || uploading || Boolean(restoringVersionId)
 
   useEffect(() => {
     if (!open) return
@@ -89,6 +93,7 @@ export function DramaAssetDetailModal({
 
   // 保存提示词到资产 params
   async function savePrompt() {
+    if (actionBusy) return
     const text = promptDraft.trim()
     if (!text) {
       onError('提示词不能为空')
@@ -109,6 +114,7 @@ export function DramaAssetDetailModal({
 
   // 先保存脏提示词再触发生图
   async function handleGenerate() {
+    if (actionBusy) return
     if (dirty) {
       const text = promptDraft.trim()
       if (!text) {
@@ -134,6 +140,7 @@ export function DramaAssetDetailModal({
 
   // 本地上传图片，视为已出图
   async function handleUpload(file: File) {
+    if (actionBusy) return
     setUploading(true)
     try {
       const updated = await dramaApi.uploadAssetMedia(asset.id, file)
@@ -148,6 +155,7 @@ export function DramaAssetDetailModal({
 
   // 将历史形象还原为当前
   async function handleRestoreVersion(versionId: string) {
+    if (actionBusy) return
     setRestoringVersionId(versionId)
     try {
       const updated = await dramaApi.activateAssetImageVersion(asset.id, versionId)
@@ -192,6 +200,7 @@ export function DramaAssetDetailModal({
           </div>
         }
       >
+        {readOnly ? <p className="drama-muted" role="status">只读查看</p> : lock.readOnly && <p className="pf-team-alert" role="status">{lock.checking ? '正在取得编辑占用…' : lock.error}<button type="button" onClick={lock.retry}>重新尝试</button></p>}
         <div className="drama-asset-detail">
           <button
             type="button"
@@ -238,6 +247,7 @@ export function DramaAssetDetailModal({
               <button
                 type="button"
                 className="pf-btn pf-btn-sm"
+                disabled={actionBusy}
                 onClick={() => onBindVoice(asset)}
               >
                 {voice ? '更换音色' : '绑定音色'}
@@ -303,6 +313,7 @@ export function DramaAssetDetailModal({
             <textarea
               rows={8}
               value={promptDraft}
+              readOnly={readOnly || lock.readOnly}
               onChange={(e) => setPromptDraft(e.target.value)}
               placeholder="描述外观、构图、光影与风格…"
             />

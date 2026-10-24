@@ -71,6 +71,7 @@ async def optimize_prompt(
             db,
             user_id=user.id,
             domain="drama",
+            drama_project_id=body.project_id,
         )
         return prompt
 
@@ -82,6 +83,7 @@ async def optimize_prompt(
             task_type="skill_optimize",
             executor=_do_optimize,
             payload={"task": task_name, "skill_count": len(skill_ids)},
+            drama_project_id=body.project_id,
             commit=True,
         )
     except ValueError as exc:

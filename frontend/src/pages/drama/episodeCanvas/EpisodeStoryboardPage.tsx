@@ -1,3 +1,5 @@
+import { TeamEpisodeEditingBoundary } from '../../../features/teams/TeamEditingBoundary'
+import { useTeamReadOnly } from '../../../features/teams/readOnlyContext'
 /** 分集分镜故事板全屏画布：按分镜连线，节点含视频 / 出境资产 / 提示词 */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -62,7 +64,7 @@ export default function EpisodeStoryboardPage() {
   return (
     <RequireAuth>
       <ReactFlowProvider>
-        <EpisodeStoryboardInner />
+        <TeamEpisodeEditingBoundary><EpisodeStoryboardInner /></TeamEpisodeEditingBoundary>
       </ReactFlowProvider>
     </RequireAuth>
   )
@@ -70,6 +72,9 @@ export default function EpisodeStoryboardPage() {
 
 // 加载分集并渲染全屏故事板
 function EpisodeStoryboardInner() {
+  const readOnly = useTeamReadOnly()
+  const readOnlyRef = useRef(readOnly)
+  readOnlyRef.current = readOnly
   const { projectId, episodeId } = useParams()
   const pid = Number(projectId)
   const eid = Number(episodeId)
@@ -157,7 +162,7 @@ function EpisodeStoryboardInner() {
   // 持久化全部分镜（保序，保留成片与引用）
   const persistFragments = useCallback(
     async (next: DramaFragment[]) => {
-      if (!eid) return
+      if (readOnlyRef.current || !eid) return
       setBusy(true)
       setError('')
       try {
@@ -196,6 +201,7 @@ function EpisodeStoryboardInner() {
 
   // 防抖保存
   const scheduleSave = useCallback(() => {
+    if (readOnlyRef.current) return
     setDirty(true)
     if (saveTimer.current) window.clearTimeout(saveTimer.current)
     saveTimer.current = window.setTimeout(() => {
@@ -206,6 +212,7 @@ function EpisodeStoryboardInner() {
   // 刷新单个分镜节点提示词（关联资产变化靠 structureKey 重建）
   const patchFragmentPrompt = useCallback(
     (fragmentId: number, content: string) => {
+      if (readOnlyRef.current) return
       setNodes((prev) =>
         prev.map((node) => {
           if (node.type !== 'episodeFragment') return node
@@ -221,6 +228,7 @@ function EpisodeStoryboardInner() {
   // 改提示词
   const handlePromptChange = useCallback(
     (fragmentId: number, content: string) => {
+      if (readOnlyRef.current) return
       setFragments((prev) =>
         prev.map((f) => {
           if (f.id !== fragmentId) return f
@@ -237,6 +245,7 @@ function EpisodeStoryboardInner() {
   // 取消关联出境资产
   const handleUnlinkAsset = useCallback(
     (fragmentId: number, assetId: number) => {
+      if (readOnlyRef.current) return
       setFragments((prev) =>
         prev.map((f) => {
           if (f.id !== fragmentId) return f
@@ -252,12 +261,14 @@ function EpisodeStoryboardInner() {
 
   // 打开关联选择
   const handleRequestLinkAsset = useCallback((fragmentId: number) => {
+      if (readOnlyRef.current) return
     setLinkTargetFragId(fragmentId)
   }, [])
 
   // 确认关联资产
   const handlePickAsset = useCallback(
     (asset: DramaAsset) => {
+      if (readOnlyRef.current) return
       if (linkTargetFragId == null) return
       const fragmentId = linkTargetFragId
       setFragments((prev) =>
@@ -331,7 +342,7 @@ function EpisodeStoryboardInner() {
           <button
             type="button"
             className="ep-storyboard-btn dark"
-            disabled={busy || !dirty}
+            disabled={readOnly || busy || !dirty}
             onClick={() => void persistFragments(fragments)}
           >
             {busy ? '保存中…' : '保存'}
@@ -352,6 +363,8 @@ function EpisodeStoryboardInner() {
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           nodeTypes={nodeTypes}
+          nodesDraggable={!readOnly}
+          nodesConnectable={!readOnly}
           fitView
           minZoom={0.35}
           maxZoom={1.6}

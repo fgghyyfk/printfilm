@@ -1,3 +1,4 @@
+import { MediaCostNotice } from '../../../../components/billing/MediaCostNotice'
 /** 画布视频节点：风格 / Seedance 模型 / 时长 / 比例清晰度 */
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import { BarChart3, ChevronDown, RectangleVertical, Smile, Timer } from 'lucide-react'
@@ -44,6 +45,7 @@ export function DramaVideoGenOptionsBar({
 }: DramaVideoGenOptionsBarProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState<OpenPanel>(null)
+  const [adjustment, setAdjustment] = useState('')
   // 自定义时长草稿：输入过程不立刻 clamp，避免打「24」时中间的「2」被夹成 min
   const [durationDraft, setDurationDraft] = useState<string | null>(null)
   const durationDraftRef = useRef<string | null>(null)
@@ -94,6 +96,7 @@ export function DramaVideoGenOptionsBar({
       nextAspect !== value.aspect_ratio ||
       nextDur !== value.duration_sec
     ) {
+      setAdjustment('所选模型不支持原参数，已调整规格，请核对时长和报价后生成。')
       onChange({
         ...value,
         resolution: nextRes,
@@ -150,6 +153,8 @@ export function DramaVideoGenOptionsBar({
 
   return (
     <div ref={rootRef} className="fc-gen-opts" onMouseDown={stop} onPointerDown={stop}>
+      {adjustment && <span className="media-cost-notice" role="status">{adjustment}</span>}
+      <MediaCostNotice modelId={value.model_id} resolution={value.resolution} seconds={value.duration_sec} />
       <div className="fc-gen-opts-triggers">
         <button
           type="button"

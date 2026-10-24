@@ -1,11 +1,28 @@
 import { throwApiError } from '../lib/apiError'
-import { API_BASE, createJsonRequester, uploadFile } from './client'
-import { apiErrorMessage } from './http'
+import { API_BASE, createJsonRequester } from './client'
+import { withDramaEditLock, recordDramaResponse } from '../features/teams/editLocks'
+import { teamsApi } from './teams'
+import { projectTeam } from '../features/teams/editLocks'
+import { workspaceScope } from '../features/teams/workspaceScope'
 
 /** 漫剧 API 沿用原有错误提示，并共用登录态与 JSON 解析。 */
-const request = createJsonRequester((response, detail) =>
+const rawRequest = createJsonRequester((response, detail) =>
   throwApiError(response.status, detail, '请求失败'),
 )
+/** 所有漫剧写入口共用资源占用校验，读取只登记实际归属。 */
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const epoch = workspaceScope.epoch
+  const routeProject = typeof window === 'undefined' ? 0 : Number(window.location.pathname.match(/^\/drama\/projects\/(\d+)/)?.[1] || 0)
+  const url = new URL(path, 'http://local')
+  const body = typeof init?.body === 'string' ? JSON.parse(init.body || '{}') as { project_id?: number } : {}
+  const requestedProject = Number(path.match(/^\/api\/drama\/(?:projects|scripts|canvas)\/(\d+)/)?.[1] || url.searchParams.get('project_id') || body.project_id || 0)
+  if (routeProject && requestedProject && routeProject !== requestedProject) throw new DOMException('项目页面已切换', 'AbortError')
+  const result = await withDramaEditLock(path, init, (next) => rawRequest<T>(path, next))
+  if (epoch !== workspaceScope.epoch) throw new DOMException('创作空间已切换', 'AbortError')
+  if (routeProject && typeof window !== 'undefined' && Number(window.location.pathname.match(/^\/drama\/projects\/(\d+)/)?.[1] || 0) !== routeProject) throw new DOMException('项目页面已切换', 'AbortError')
+  recordDramaResponse(path, result, epoch)
+  return result
+}
 
 /** 导出 API 根地址，供静态资源 URL 拼接 */
 export function getDramaApiBase() {
@@ -93,6 +110,7 @@ export type DramaTaskBrief = {
 }
 
 export type DramaProject = {
+  team_id?: number | null
   id: number
   user_id: number
   title: string
@@ -110,6 +128,7 @@ export type DramaProject = {
 }
 
 export type DramaProjectListItem = {
+  team_id?: number | null
   id: number
   title: string
   description?: string | null
@@ -222,7 +241,8 @@ export type DramaVoiceGenerateResult = {
 }
 
 export const dramaApi = {
-  listProjects: () => request<DramaProjectListItem[]>('/api/drama/projects'),
+  listProjects: (params?: { workflow?: 'script' | 'canvas' }) =>
+    request<DramaProjectListItem[]>(`/api/drama/projects${params?.workflow ? `?workflow=${params.workflow}` : ''}`),
   createProject: (body: {
     title?: string
     description?: string
@@ -253,6 +273,10 @@ export const dramaApi = {
       method: 'PATCH',
       body: JSON.stringify(body),
     }),
+
+  /** 按集更新正文，服务端短事务合并其他集，避免整包覆盖。 */
+  updateScriptEpisode: (projectId: number, episodeNumber: number, body: { title?: string; creative?: string; summary?: string; body?: string; version?: number }) =>
+    request<DramaEpisodeBody & { version: number }>(`/api/drama/scripts/${projectId}/episodes/${episodeNumber}`, { method: 'PATCH', body: JSON.stringify(body) }),
 
   scriptSummary: (body: {
     project_id: number
@@ -309,13 +333,23 @@ export const dramaApi = {
   },
   createAsset: (body: Partial<DramaAsset> & { project_id: number }) =>
     request<DramaAsset>('/api/drama/assets', { method: 'POST', body: JSON.stringify(body) }),
+  /** 由服务端校验来源和目标空间，复制后独立保存。 */
+  copyAsset: async (asset: DramaAsset, projectId: number) => {
+    const teamId = await projectTeam(projectId)
+    if (teamId !== null) {
+      const copy = await withDramaEditLock('/api/drama/assets', { method: 'POST', body: JSON.stringify({ project_id: projectId }) }, (init) => teamsApi.copyAsset(String(teamId), asset.id, projectId, init?.headers || {}))
+      recordDramaResponse('/api/drama/assets', copy)
+      return copy
+    }
+    return request<DramaAsset>(`/api/drama/assets/${asset.id}/copy`, { method: 'POST', body: JSON.stringify({ project_id: projectId }) })
+  },
   updateAsset: (id: number, body: Partial<DramaAsset>) =>
     request<DramaAsset>(`/api/drama/assets/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   /** 上传资产媒体并返回更新后的资产。 */
-  uploadAssetMedia: (assetId: number, file: File) =>
-    uploadFile<DramaAsset>(`/api/drama/assets/${assetId}/upload`, file, (response, detail) => {
-      throw new Error(apiErrorMessage(detail, response.statusText) || '上传失败')
-    }),
+  uploadAssetMedia: (assetId: number, file: File) => {
+    const body = new FormData(); body.append('file', file)
+    return request<DramaAsset>(`/api/drama/assets/${assetId}/upload`, { method: 'POST', body })
+  },
   activateAssetImageVersion: (assetId: number, versionId: string) =>
     request<DramaAsset>(`/api/drama/assets/${assetId}/activate_image_version`, {
       method: 'POST',

@@ -11,6 +11,7 @@ import {
 } from './dramaEpisodeEditUtils'
 
 type Props = {
+  readOnly?: boolean
   scope: AssetScope
   tab: AssetTab | null
   assets: DramaAsset[]
@@ -44,6 +45,7 @@ function createLabel(tab: AssetTab | null): string {
 
 // 渲染分集编辑左侧资产栏
 export function EpisodeEditAssetPanel({
+  readOnly = false,
   scope,
   tab,
   assets,
@@ -108,7 +110,7 @@ export function EpisodeEditAssetPanel({
             <button
               type="button"
               className="drama-ep-asset-action-btn"
-              disabled={createBusy}
+              disabled={readOnly || createBusy}
               onClick={onCreateAsset}
             >
               {createBusy ? '创建中…' : createLabel(tab)}
@@ -118,7 +120,7 @@ export function EpisodeEditAssetPanel({
             <button
               type="button"
               className="drama-ep-asset-action-btn is-ghost"
-              disabled={createBusy}
+              disabled={readOnly || createBusy}
               onClick={onImportAsset}
             >
               导入
@@ -150,7 +152,7 @@ export function EpisodeEditAssetPanel({
                     imageBusy ? ' is-gen' : ''
                   }`}
                   onClick={() => onOpenAsset(asset)}
-                  title="点击设置：编辑提示词、重新生成或上传形象"
+                  title={readOnly ? '点击查看资产详情' : '点击设置：编辑提示词、重新生成或上传形象'}
                 >
                   <div className="drama-ep-asset-thumb">
                     {cover ? (
@@ -165,13 +167,14 @@ export function EpisodeEditAssetPanel({
                   {DRAMA_VOICE_BINDING_ENABLED && voice ? (
                     <span className="drama-ep-asset-voice">音色</span>
                   ) : null}
-                  <span className="drama-ep-asset-settings">设置</span>
+                  <span className="drama-ep-asset-settings">{readOnly ? '查看' : '设置'}</span>
                 </button>
                 <div className="drama-ep-asset-ops">
                   {isActive && onUnlinkAsset ? (
                     <button
                       type="button"
                       className="drama-ep-asset-op-btn"
+                      disabled={readOnly}
                       onClick={() => onUnlinkAsset(asset.id)}
                       title="仅取消当前分镜关联，不会删除资产"
                     >
@@ -181,6 +184,7 @@ export function EpisodeEditAssetPanel({
                     <button
                       type="button"
                       className="drama-ep-asset-op-btn"
+                      disabled={readOnly}
                       onClick={() => onMention(asset)}
                       title="插入到当前分镜脚本"
                     >
@@ -200,7 +204,7 @@ export function EpisodeEditAssetPanel({
                       <button
                         type="button"
                         className="drama-ep-asset-voice-btn"
-                        disabled={voiceGenerating}
+                        disabled={readOnly || voiceGenerating}
                         onClick={() => onGenerateVoice(asset)}
                       >
                         {voiceGenerating ? '生成中…' : '生成音色'}

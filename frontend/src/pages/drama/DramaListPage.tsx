@@ -1,4 +1,4 @@
-/** 漫剧 Agent 首页：AI 生剧本 / 自由画布 + 我的项目（多选删除） */
+/** 漫剧 / 自由画布项目列表，共享项目管理与空间隔离。 */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -20,8 +20,11 @@ import { type ImageStyleId } from '../../lib/dramaImageStyles'
 import { formatDramaUsageBrief } from '../../lib/dramaUsage'
 import {
   dramaProjectEntryPath,
+  filterDramaProjectList,
   formatDramaCardMeta,
   isCanvasWorkflow,
+  type DramaProjectFilter,
+  type DramaWorkflow,
 } from '../../lib/dramaWorkflow'
 import RequireAuth from './RequireAuth'
 import { useI18n } from '../../i18n'
@@ -34,8 +37,6 @@ const CREATIVE_MIN_LENGTH = 20
 const CREATIVE_MAX_LENGTH = 2000
 const CANVAS_PLACEHOLDER =
   '自由画布创作项目，稍后在画布中完善故事与资产。'
-
-type AgentTab = 'ai' | 'canvas'
 
 // 格式化更新时间
 function formatUpdatedAt(raw?: string) {
@@ -53,29 +54,29 @@ function verticalTitleLabel(name: string, max = 12): string {
   return `${clean.slice(0, max - 1)}…`
 }
 
-type ProjectFilter = 'all' | 'running' | 'done' | 'draft'
+const FILTER_KEYS: DramaProjectFilter[] = ['all', 'running', 'done', 'draft']
 
-const FILTER_KEYS: ProjectFilter[] = ['all', 'running', 'done', 'draft']
-
-export default function DramaListPage() {
+export default function DramaListPage({ workflow = 'script' }: { workflow?: DramaWorkflow }) {
   return (
     <RequireAuth>
-      <DramaListInner />
+      <DramaListInner key={workflow} workflow={workflow} />
     </RequireAuth>
   )
 }
 
 // 渲染 Agent 首页内容
-function DramaListInner() {
+function DramaListInner({ workflow }: { workflow: DramaWorkflow }) {
   const navigate = useNavigate()
   const { t, m } = useI18n()
-  const filterOptions = useMemo<PillOption<ProjectFilter>[]>(
+  const canvasMode = workflow === 'canvas'
+  const createLabel = canvasMode ? t('canvasList.newCanvas') : t('dramaList.newProject')
+  const filterOptions = useMemo<PillOption<DramaProjectFilter>[]>(
     () =>
-      FILTER_KEYS.map((value) => ({
+      FILTER_KEYS.filter((value) => !canvasMode || value !== 'done').map((value) => ({
         value,
-        label: m.dramaList.filters[value],
+        label: canvasMode && value === 'draft' ? t('canvasList.emptyFilter') : m.dramaList.filters[value],
       })),
-    [m],
+    [m, t, canvasMode],
   )
   /*
    * storyText AI 创意输入
@@ -102,26 +103,26 @@ function DramaListInner() {
   const [error, setError] = useState('')
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [deleting, setDeleting] = useState(false)
-  const [filter, setFilter] = useState<ProjectFilter>('all')
+  const [filter, setFilter] = useState<DramaProjectFilter>('all')
   const [query, setQuery] = useState('')
   const [showCreate, setShowCreate] = useState(false)
 
   // 加载项目列表
-  async function loadProjects() {
-    const rows = await dramaApi.listProjects()
+  const loadProjects = useCallback(async () => {
+    const rows = await dramaApi.listProjects({ workflow })
     setItems(rows)
     setSelected((prev) => {
       const ids = new Set(rows.map((r) => r.id))
       return new Set([...prev].filter((id) => ids.has(id)))
     })
-  }
+  }, [workflow])
 
   useEffect(() => {
     setLoading(true)
     loadProjects()
       .catch((err) => setError(err instanceof Error ? err.message : '加载失败'))
       .finally(() => setLoading(false))
-  }, [])
+  }, [loadProjects])
 
   // AI 立即生成：创建项目并进入大纲步骤
   async function handleGenerate() {
@@ -171,11 +172,9 @@ function DramaListInner() {
     }
   }
 
-  // 切换 Tab；画布 Tab 直接创建并跳转
-  function handleTabClick(next: AgentTab) {
-    if (next === 'canvas') {
-      void handleEnterCanvas()
-    }
+  function handleCreate() {
+    if (canvasMode) void handleEnterCanvas()
+    else setShowCreate(true)
   }
 
   const selectionMode = selected.size > 0
@@ -188,24 +187,7 @@ function DramaListInner() {
         ? ' is-ok'
         : ''
 
-  const filteredItems = items.filter((item) => {
-    const canvas = isCanvasWorkflow(item)
-    if (filter === 'draft') {
-      if (canvas) return (item.asset_count || 0) === 0
-      if (item.has_script) return false
-    }
-    if (filter === 'running') {
-      if (canvas) return (item.asset_count || 0) > 0
-      if (!(item.has_script && (item.episode_count || 0) > 0)) return false
-    }
-    if (filter === 'done') {
-      if (canvas) return false
-      if (!(item.has_script && (item.episode_count || 0) >= 8)) return false
-    }
-    const q = query.trim().toLowerCase()
-    if (q && !(item.title || '').toLowerCase().includes(q)) return false
-    return true
-  })
+  const filteredItems = filterDramaProjectList(items, { workflow, filter, query })
 
   // 切换选中
   const toggleSelect = useCallback((id: number) => {
@@ -289,40 +271,35 @@ function DramaListInner() {
   }
 
   return (
-    <AppShell active="drama">
+    <AppShell active={canvasMode ? 'canvas' : 'drama'}>
       <div className="drama-page drama-agent-page pf-drama-list">
         <header className="pf-drama-list-head">
           <div className="pf-drama-list-title-row">
-            <h1>{t('dramaList.title')}</h1>
+            <div>
+              <h1>{canvasMode ? t('canvasList.title') : t('dramaList.title')}</h1>
+              <p className="pf-muted pf-project-list-intro">
+                {t(canvasMode ? 'canvasList.description' : 'dramaList.description')}
+              </p>
+            </div>
             <div className="pf-drama-list-actions">
               <Button variant="ghost" size="sm" to="/drama/assets">
                 <Library size={15} strokeWidth={1.75} aria-hidden />
                 {t('dramaList.assets')}
               </Button>
               <Button
-                variant="ghost"
-                size="sm"
-                disabled={canvasBusy}
-                onClick={() => handleTabClick('canvas')}
-              >
-                <LayoutGrid size={15} strokeWidth={1.75} aria-hidden />
-                {canvasBusy ? t('dramaList.creating') : t('dramaList.canvas')}
-              </Button>
-              <Button
                 variant="lime"
                 size="sm"
-                onClick={() => {
-                  setShowCreate(true)
-                  handleTabClick('ai')
-                }}
+                disabled={canvasBusy}
+                onClick={handleCreate}
               >
-                {t('dramaList.newProject')}
+                {canvasMode ? <LayoutGrid size={15} strokeWidth={1.75} aria-hidden /> : null}
+                {canvasBusy ? t('dramaList.creating') : createLabel}
               </Button>
             </div>
           </div>
 
           <div className="pf-drama-list-toolbar">
-            <PillFilter<ProjectFilter>
+            <PillFilter<DramaProjectFilter>
               options={filterOptions}
               value={filter}
               onChange={setFilter}
@@ -334,13 +311,13 @@ function DramaListInner() {
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder={t('dramaList.searchPlaceholder')}
+                placeholder={t(canvasMode ? 'canvasList.searchPlaceholder' : 'dramaList.searchPlaceholder')}
               />
             </label>
           </div>
         </header>
 
-        {showCreate ? (
+        {showCreate && !canvasMode ? (
           <section className="drama-agent-panel pf-drama-create-panel" aria-label={t('dramaList.createAria')}>
             <div className="drama-agent-panel-head">
               <div className="drama-agent-tabs" role="tablist">
@@ -420,16 +397,14 @@ function DramaListInner() {
             <div className="pf-empty-illust" aria-hidden>
               <FolderOpen size={48} strokeWidth={1.2} />
             </div>
-            <h2>还没有项目</h2>
-            <p className="pf-muted">用 AI 生剧本或自由画布，创建你的第一部漫剧</p>
+            <h2>{t(canvasMode ? 'canvasList.emptyTitle' : 'dramaList.emptyTitle')}</h2>
+            <p className="pf-muted">{t(canvasMode ? 'canvasList.emptyDescription' : 'dramaList.emptyDescription')}</p>
             <Button
               variant="lime"
-              onClick={() => {
-                setShowCreate(true)
-                handleTabClick('ai')
-              }}
+              disabled={canvasBusy}
+              onClick={handleCreate}
             >
-              新建项目
+              {canvasBusy ? t('dramaList.creating') : createLabel}
             </Button>
           </div>
         ) : filteredItems.length === 0 ? (
@@ -444,15 +419,13 @@ function DramaListInner() {
             <button
               type="button"
               className="pf-drama-card pf-drama-card-new"
-              onClick={() => {
-                setShowCreate(true)
-                handleTabClick('ai')
-              }}
+              disabled={canvasBusy}
+              onClick={handleCreate}
             >
               <span className="pf-drama-card-plus" aria-hidden>
                 +
               </span>
-              <strong>新建项目</strong>
+              <strong>{canvasBusy ? t('dramaList.creating') : createLabel}</strong>
             </button>
             {filteredItems.map((item) => {
               const isSelected = selected.has(item.id)
@@ -505,7 +478,7 @@ function DramaListInner() {
                       />
                     </div>
                     <p className="pf-drama-card-meta">{formatDramaCardMeta(item)}</p>
-                    <p className="pf-drama-card-usage" title="本剧累计费用与生成次数">
+                    <p className="pf-drama-card-usage" title={canvasMode ? t('canvasList.usageTitle') : '本剧累计费用与生成次数'}>
                       {formatDramaUsageBrief(item.usage)}
                     </p>
                     <p className="pf-drama-card-time">{formatUpdatedAt(item.updated_at || item.created_at)}</p>

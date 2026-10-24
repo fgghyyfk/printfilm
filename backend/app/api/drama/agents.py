@@ -30,6 +30,7 @@ from app.services.drama.agents import (
 )
 from app.services.billing.http import http_exception_for_value_error
 from app.services.drama.jobs import dispatch_episode_scripts_job, dispatch_script_summary_job
+from app.services.teams.script_updates import bump_episode_versions, locked_script, set_episode_job_state
 from app.services.drama.llm import DramaLlmUnavailableError, drama_chat_text
 
 router = APIRouter()
@@ -61,6 +62,8 @@ async def script_summary(
 ) -> dict:
     # 入队摘要任务，立即返回；前端轮询 script.params.summary_status
     project = await get_owned_drama_project(db, body.project_id, user, with_script=True)
+    if project.team_id is not None and project.script:
+        await locked_script(db, project.id)
     if not project.script:
         raise HTTPException(status_code=400, detail="缺少剧本")
     creative = (body.creative or project.script.source or "").strip()
@@ -138,6 +141,9 @@ async def episode_script(
     if not project.script or not project.script.summary:
         raise HTTPException(status_code=400, detail="请先生成剧本摘要")
 
+    if project.team_id is not None:
+        project.script = await locked_script(db, project.id)
+
     summary = project.script.summary if isinstance(project.script.summary, dict) else {}
     total = resolve_episode_target(summary, project.params, project.script.params)
     if summary.get("episodeCount") != total:
@@ -156,7 +162,9 @@ async def episode_script(
     if episode_number:
         if str(params.get("episode_content_status") or "") == "generating":
             raise HTTPException(status_code=409, detail="全集剧本正在生成，请稍后再优化单集")
-        if str(params.get("episode_optimize_status") or "") == "generating":
+        current_job = (params.get("episode_jobs") or {}).get(str(episode_number), {})
+        optimizing = str(current_job.get("status") or "") == "generating" if project.team_id is not None else str(params.get("episode_optimize_status") or "") == "generating"
+        if optimizing:
             logger.info(
                 "单集剧本已在优化，跳过重复入队 project_id=%s episode_number=%s",
                 project.id,
@@ -206,6 +214,8 @@ async def episode_script(
                 patch["origin"] = "manual"
             existing = merge_episode_bodies(existing, [patch], prefer_incoming=True)
             project.script.episode_content = {"episodes": existing}
+            if project.team_id is not None:
+                bump_episode_versions(project.script, [episode_number])
 
         mode = generate_mode or "optimize"
         if mode == "optimize":
@@ -263,6 +273,8 @@ async def episode_script(
         params["episode_optimize_mode"] = mode
         params.pop("episode_optimize_error", None)
         project.script.params = params
+        if project.team_id is not None:
+            set_episode_job_state(project.script, episode_number, "generating", mode=mode)
         try:
             task_id = await dispatch_episode_scripts_job(
                 db,
@@ -401,6 +413,8 @@ async def add_episode(
     project = await get_owned_drama_project(db, body.project_id, user, with_script=True)
     if not project.script or not project.script.summary:
         raise HTTPException(status_code=400, detail="请先生成剧本摘要")
+    if project.team_id is not None:
+        project.script = await locked_script(db, project.id)
     params = dict(project.script.params or {})
     if str(params.get("episode_content_status") or "") == "generating":
         raise HTTPException(status_code=409, detail="全集剧本正在生成，请完成后再加集")

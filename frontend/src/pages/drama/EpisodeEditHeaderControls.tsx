@@ -17,7 +17,7 @@ import {
   type ImageStyleId,
 } from '../../lib/dramaImageStyles'
 
-import { subtitleModeUsesModelOutput, type DramaSubtitleMode } from '../../lib/dramaSubtitleBoard'
+import { subtitleModeUsesModelOutput, type DramaSubtitleMode } from '../../lib/dramaSubtitleSettings'
 import {
   characterIntroModeEnabled,
   type DramaCharacterIntroMode,
@@ -347,7 +347,7 @@ export function EpisodeEditHeaderControls({
                     <span>
                       后期拼接字幕
                       <em>
-                        切换后会立刻去掉当前分镜里的字幕提示词；右侧字幕板仍可预览与导出，供后期叠字。
+                        切换后会立刻去掉当前分镜里的字幕提示词，字幕可在后期剪辑时添加。
                       </em>
                     </span>
                   </label>

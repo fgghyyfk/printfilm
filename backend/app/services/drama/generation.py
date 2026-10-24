@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import re
 import time
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -28,6 +29,7 @@ from app.services.drama.build_seedance_generate_body import (
     SEEDANCE_ATTACH_REFERENCE_AUDIO,
     build_seedance_generate_body,
     build_seedance_reference_catalog,
+    build_visual_style_section,
     describe_seedance_content_slots,
     drama_asset_to_payload,
     read_asset_voice_audio_url,
@@ -44,6 +46,7 @@ from app.services.drama.voice_prompt import fallback_voice_prompt
 from app.services.drama.voice_reference_audio import (
     finalize_voice_reference_url,
     is_voice_duration_too_short,
+    is_voice_duration_too_long,
     patch_params_voice_url,
     probe_voice_url_duration,
 )
@@ -170,7 +173,9 @@ async def ensure_fragment_last_frame_url(
         return None
     rel = storage_svc.rel_static_url(frame_dest)
     url = storage_svc.republish_url(rel, sync=True) or rel
-    write_fragment_last_frame_url(fragment, url)
+    # 团队任务只有当前分集的写回权限，来源镜头仅作为本次请求的只读参考。
+    if getattr(project, "team_id", None) is None:
+        write_fragment_last_frame_url(fragment, url)
     return url
 
 
@@ -685,7 +690,14 @@ async def reconcile_orphaned_fragment_generations(
     db: AsyncSession,
     fragments: list[DramaEpisodeFragment],
     active_fragment_ids: set[int],
+    *,
+    terminal_tasks: list | None = None,
 ) -> int:
+    # Callers supply newest-first tasks already restricted to the authorized project/space.
+    latest_terminal = {}
+    for task in terminal_tasks or []:
+        if task.fragment_id:
+            latest_terminal.setdefault(int(task.fragment_id), task)
     changed = 0
     for fragment in fragments:
         status = str(fragment_generation_status(fragment).get("status") or "")
@@ -698,10 +710,13 @@ async def reconcile_orphaned_fragment_generations(
         if generation_queued_recently(gen if isinstance(gen, dict) else None):
             continue
         params.pop("generation_attempts", None)
-        params["generation"] = {
-            "status": "idle",
-            "message": "任务已中断，请重新生成",
-        }
+        terminal = latest_terminal.get(int(fragment.id))
+        if terminal is not None and terminal.status == "cancelled":
+            params["generation"] = {"status": "cancelled", "message": "任务已取消", "error": "任务已取消"}
+        elif terminal is not None and terminal.status == "failed":
+            params["generation"] = {"status": "failed", "error": terminal.error_message or "生成失败，请重试"}
+        else:
+            params["generation"] = {"status": "idle", "message": "任务已中断，请重新生成"}
         fragment.params = params
         changed += 1
     if changed:
@@ -904,10 +919,17 @@ async def ensure_fragment_reference_images(
 async def ensure_reference_assets_public_urls(
     db: AsyncSession,
     assets: list[DramaAsset],
+    *,
+    read_only: bool = False,
 ) -> list[DramaAsset]:
-    """将引用资产的本地 cover/url 同步上传 OSS，供 Seedance 公网拉取。"""
+    """转换参考媒体为公网 URL；团队只处理独立快照，不写引用资产。"""
     from app.services import storage as storage_svc
 
+    if read_only:
+        # 新建未绑定 Session 的 ORM 对象，JSON 也深复制，避免后续 autoflush 越界写入。
+        assets = [DramaAsset(id=asset.id, project_id=asset.project_id, type=asset.type,
+                             asset_type=asset.asset_type, name=asset.name, cover=asset.cover,
+                             url=asset.url, params=deepcopy(asset.params)) for asset in assets]
     source_asset_cache: dict[int, DramaAsset | None] = {}
 
     # 角色音色优先复用 source voice asset 的公网 URL；缺失时再尝试补传本地文件。
@@ -987,7 +1009,7 @@ async def ensure_reference_assets_public_urls(
                     }
             asset.params = params
             changed = True
-    if changed:
+    if changed and not read_only:
         await db.commit()
         for asset in assets:
             await db.refresh(asset)
@@ -1006,6 +1028,29 @@ def _character_voice_binding(params: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+async def _validate_team_reference_audios(project: DramaProject, fragment: DramaEpisodeFragment, assets: list[DramaAsset], work_dir: Path) -> None:
+    """团队分镜仅校验参考音色；修复须由持有相应资产权限的成员主动执行。"""
+    references = [(read_asset_voice_audio_url(asset.params or {}), f"资产「{asset.name or asset.id}」")
+                  for asset in assets if (asset.type or "").strip().lower() == "character"]
+    narrator = (project.params or {}).get("narrationVoiceAudio")
+    if isinstance(narrator, dict):
+        references.append((str(narrator.get("url") or narrator.get("previewUrl") or "").strip(), "旁白"))
+    # 不同分集的探测文件独立，防止并行准备时覆盖同名 probe_voice.mp3。
+    probe_dir = work_dir / f"fragment_{fragment.id}"
+    probe_dir.mkdir(parents=True, exist_ok=True)
+    durations: dict[str, float | None] = {}
+    for url, label in references:
+        if not url:
+            continue
+        if url not in durations:
+            durations[url] = await probe_voice_url_duration(url, work_dir=probe_dir)
+        duration = durations[url]
+        if duration is None:
+            raise RuntimeError(f"无法读取{label}的参考音频时长，请在资产页检查音色后重试")
+        if is_voice_duration_too_short(duration) or is_voice_duration_too_long(duration):
+            raise RuntimeError(f"{label}的参考音频时长不合要求（当前约 {duration:.1f} 秒），请先在资产页重新生成或上传 2–30 秒音色")
+
+
 # 分镜视频提交前：过短的参考音色自动重新合成（Seedance ≥1.8s）
 async def ensure_fragment_reference_audios(
     db: AsyncSession,
@@ -1018,6 +1063,9 @@ async def ensure_fragment_reference_audios(
 
     work_dir = storage_svc.project_dir(project.id) / "voice_probe"
     work_dir.mkdir(parents=True, exist_ok=True)
+    if project.team_id is not None:
+        await _validate_team_reference_audios(project, fragment, ref_assets, work_dir)
+        return ref_assets
     assets_by_id = {a.id: a for a in ref_assets}
     regenerated = 0
 
@@ -1225,6 +1273,11 @@ async def generate_asset_image(
         "3:4" if (kind or "").lower() == "character" else "16:9"
     )
     res = (resolution or "").strip() or "2K"
+    from app.services.media_models.runtime import current_snapshot, operation_for
+    if current_snapshot.get():
+        operation = operation_for("image", target=asset.id if asset else None, model=model_id)
+        model_id = operation["model_id"]
+        ratio, res = operation["params"]["aspect_ratio"], operation["params"]["resolution"]
     model = resolve_seedream_model_endpoint(model_id)
     size = resolve_seedream_size(aspect_ratio=ratio, resolution=res, model_id=model)
     # board 风格封面的公网 URL；没有栅格图时仍只靠提示词
@@ -1441,6 +1494,12 @@ async def prepare_fragment_video_for_submit(
         project.params,
     )
     mid = (model_id or "").strip() or None
+    from app.services.media_models.runtime import current_snapshot, operation_for
+    if current_snapshot.get():
+        operation = operation_for("video", target=fragment.id, model=mid)
+        mid = operation["model_id"]
+        duration = operation["params"]["duration"]
+        ratio, resolution = operation["params"]["aspect_ratio"], operation["params"]["resolution"]
     from app.services.seedance_resolutions import clamp_video_duration, clamp_video_resolution
 
     # 按模型钳时长（预设 ∩ 站点 seedance_duration_*；如 MiniMax 4–15）
@@ -1487,7 +1546,7 @@ async def prepare_fragment_video_for_submit(
         fragment,
         ref_assets=ref_assets,
     )
-    ref_assets = await ensure_reference_assets_public_urls(db, ref_assets)
+    ref_assets = await ensure_reference_assets_public_urls(db, ref_assets, read_only=project.team_id is not None)
     # 已绑角色/旁白试听：补齐并提交 reference_audio
     if SEEDANCE_ATTACH_REFERENCE_AUDIO:
         ref_assets = await ensure_fragment_reference_audios(
@@ -1580,11 +1639,15 @@ async def prepare_fragment_video_for_submit(
             size=seedream_still_size_for_video_ratio(ratio),
         )
         image_url = still.local_url or ""
+        await record_seedream_image_usage(
+            db, user_id=user.id, model=get_settings().model_image, domain="drama",
+            image_result=still, drama_project_id=project.id,
+        )
 
     return FragmentVideoPrepared(
         submit_mode="i2v",
         image_url=image_url,
-        prompt=prompt,
+        prompt="\n\n".join(part for part in [build_visual_style_section(style_id), prompt] if part),
         duration=duration,
         ratio=ratio,
         resolution=resolution,

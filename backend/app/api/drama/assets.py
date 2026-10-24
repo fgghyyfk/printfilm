@@ -22,7 +22,8 @@ from app.schemas_drama import (
     DramaAssetUpdate,
     SeedAssetsFromScriptOut,
 )
-from app.services.drama.access import get_owned_drama_project
+from app.services.drama.access import get_owned_asset, get_owned_drama_project
+from app.services.teams.write_access import workspace_team
 from app.services.billing import run_billed_ephemeral
 from app.services.billing.http import http_exception_for_value_error
 from app.services.drama.billing_util import record_seed_assets_llm_usage
@@ -43,24 +44,21 @@ async def list_assets(
     library_only: bool = False,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
+    scope_team_id: int | None = Depends(workspace_team),
 ) -> list[DramaAssetOut]:
     # Global library = all assets of user's drama projects; optional project filter
-    from app.services.drama.seed import merge_duplicate_library_assets
-
     q = (
         select(DramaAsset)
         .join(DramaProject, DramaAsset.project_id == DramaProject.id)
-        .where(DramaProject.user_id == user.id)
         .order_by(DramaAsset.updated_at.desc())
     )
     if project_id is not None:
         await get_owned_drama_project(db, project_id, user)
-        # 进入资产库时顺带合并同名重复，并清掉误入角色的音色名
-        removed = await merge_duplicate_library_assets(db, int(project_id))
-        purged = await purge_voice_like_character_assets(db, int(project_id))
-        if removed or purged:
-            await db.commit()
         q = q.where(DramaAsset.project_id == project_id)
+    elif isinstance(scope_team_id, int):
+        q = q.where(DramaProject.team_id == scope_team_id)
+    else:
+        q = q.where(DramaProject.user_id == user.id, DramaProject.team_id.is_(None))
     rows = list((await db.execute(q)).scalars().all())
     if library_only:
         canvas_only_types = {"video", "audio", "text"}
@@ -154,14 +152,7 @@ async def update_asset(
 ) -> DramaAssetOut:
     from app.models_drama import DramaProject
 
-    result = await db.execute(
-        select(DramaAsset)
-        .join(DramaProject, DramaAsset.project_id == DramaProject.id)
-        .where(DramaAsset.id == asset_id, DramaProject.user_id == user.id)
-    )
-    asset = result.scalar_one_or_none()
-    if not asset:
-        raise HTTPException(status_code=404, detail="资产不存在")
+    asset = await get_owned_asset(db, asset_id, user)
     for field in ("type", "asset_type", "name", "cover", "url", "params"):
         val = getattr(body, field)
         if val is None:
@@ -192,14 +183,7 @@ async def upload_asset_media(
     if not oss_svc.oss_enabled():
         raise HTTPException(status_code=503, detail="OSS 未启用，无法上传资产媒体")
 
-    result = await db.execute(
-        select(DramaAsset)
-        .join(DramaProject, DramaAsset.project_id == DramaProject.id)
-        .where(DramaAsset.id == asset_id, DramaProject.user_id == user.id)
-    )
-    asset = result.scalar_one_or_none()
-    if not asset:
-        raise HTTPException(status_code=404, detail="资产不存在")
+    asset = await get_owned_asset(db, asset_id, user)
 
     gen = (asset.params or {}).get("generation") if isinstance(asset.params, dict) else None
     status = str((gen or {}).get("status") or "").lower() if isinstance(gen, dict) else ""
@@ -323,14 +307,7 @@ async def activate_image_version(
     """将资产形象历史版本设为当前。"""
     from app.services.drama.generation import activate_asset_image_version
 
-    result = await db.execute(
-        select(DramaAsset)
-        .join(DramaProject, DramaAsset.project_id == DramaProject.id)
-        .where(DramaAsset.id == asset_id, DramaProject.user_id == user.id)
-    )
-    asset = result.scalar_one_or_none()
-    if not asset:
-        raise HTTPException(status_code=404, detail="资产不存在")
+    asset = await get_owned_asset(db, asset_id, user)
 
     gen = (asset.params or {}).get("generation") if isinstance(asset.params, dict) else None
     status = str((gen or {}).get("status") or "").lower() if isinstance(gen, dict) else ""
@@ -355,14 +332,7 @@ async def delete_asset(
 ) -> dict:
     from app.models_drama import DramaProject
 
-    result = await db.execute(
-        select(DramaAsset)
-        .join(DramaProject, DramaAsset.project_id == DramaProject.id)
-        .where(DramaAsset.id == asset_id, DramaProject.user_id == user.id)
-    )
-    asset = result.scalar_one_or_none()
-    if not asset:
-        raise HTTPException(status_code=404, detail="资产不存在")
+    asset = await get_owned_asset(db, asset_id, user)
     await db.delete(asset)
     await db.commit()
     return {"ok": True}

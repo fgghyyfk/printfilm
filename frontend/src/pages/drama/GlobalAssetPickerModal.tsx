@@ -5,6 +5,9 @@ import { filterDramaLibraryAssets, isDramaLibraryAsset } from '../../lib/dramaLi
 import { DRAMA_VOICE_BINDING_ENABLED } from '../../lib/dramaVoiceBinding'
 import BillingErrorNotice from '../../components/billing/BillingErrorNotice'
 import Modal from '../../components/ui/Modal'
+import { teamsApi } from '../../api/teams'
+import { projectTeam } from '../../features/teams/editLocks'
+import { TeamPagination } from '../../features/teams/TeamPagination'
 import './drama.css'
 
 export type GlobalAssetTabKey = 'character' | 'scene' | 'prop' | 'voice' | 'all'
@@ -77,6 +80,9 @@ export function GlobalAssetPickerModal({
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+  const allowedTypesKey = allowedTypes?.join(',') || ''
 
   useEffect(() => {
     if (!open) return
@@ -86,13 +92,24 @@ export function GlobalAssetPickerModal({
     setQuery('')
     setSelectedId(null)
     setError('')
-    setLoading(true)
-    dramaApi
-      .listAssets(undefined, { libraryOnly: true })
-      .then((rows) => setAllAssets(filterDramaLibraryAssets(rows)))
-      .catch((err) => setError(err instanceof Error ? err.message : '加载资产库失败'))
-      .finally(() => setLoading(false))
+    setPage(1)
   }, [open, defaultTab])
+
+  useEffect(() => {
+    if (!open) return
+    const controller = new AbortController()
+    let active = true
+    setLoading(true); setError('')
+    const timer = window.setTimeout(() => {
+      void projectTeam(projectId).then(async (teamId) => {
+        if (teamId === null) { const rows = await dramaApi.listAssets(undefined, { libraryOnly: true }); if (active) { setAllAssets(filterDramaLibraryAssets(rows)); setTotal(0) }; return }
+        const kind = allowedTypesKey && !allowedTypesKey.includes(',') ? allowedTypesKey : tab === 'all' ? undefined : tab
+        const result = await teamsApi.assets(String(teamId), { page, page_size: 12, q: query, type: kind }, controller.signal)
+        if (active) { setAllAssets(result.items.map((asset) => ({ id: Number(asset.id), name: asset.name, type: asset.type, asset_type: asset.type === 'voice' ? 'audio' : 'image', url: asset.url, cover: asset.cover, project_id: Number(asset.projectId) }))); setTotal(result.meta.total) }
+      }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : '资产库加载失败') }).finally(() => { if (active) setLoading(false) })
+    }, 180)
+    return () => { active = false; controller.abort(); window.clearTimeout(timer) }
+  }, [open, projectId, query, tab, page, allowedTypesKey])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -155,7 +172,7 @@ export function GlobalAssetPickerModal({
       }
     >
       <p className="drama-muted drama-global-picker-lead">
-        展示你名下全部漫剧项目的已生成图片，选中后可导入或应用到当前节点
+        展示当前空间内的可用资产，跨项目复用会复制到当前项目。
       </p>
 
       {showTabs ? (
@@ -179,7 +196,7 @@ export function GlobalAssetPickerModal({
       <input
         className="pf-dialog-input drama-global-picker-search"
         value={query}
-        onChange={(e) => setQuery(e.target.value)}
+        onChange={(e) => { setQuery(e.target.value); setPage(1) }}
         placeholder="搜索名称或项目 ID"
       />
 
@@ -217,6 +234,7 @@ export function GlobalAssetPickerModal({
           )
         })}
       </div>
+      <TeamPagination page={page} total={total} onChange={setPage} />
       {!loading && filtered.length === 0 ? (
         <p className="drama-muted">当前分类下暂无可用图片，请先在其它项目生成资产</p>
       ) : null}
@@ -232,20 +250,7 @@ export async function importGlobalAssetToProject(
   if (!source.url && !source.cover) {
     throw new Error('所选资产没有可用图片')
   }
-  const params = {
-    ...(source.params || {}),
-    importedFromAssetId: source.id,
-    importedFromProjectId: source.project_id,
-  }
-  return dramaApi.createAsset({
-    project_id: projectId,
-    type: source.type || 'none',
-    asset_type: source.asset_type || 'image',
-    name: source.name || '未命名',
-    cover: source.cover || source.url,
-    url: source.url || source.cover,
-    params,
-  })
+  return dramaApi.copyAsset(source, projectId)
 }
 
 // 画布 kind → 资产 type 筛选

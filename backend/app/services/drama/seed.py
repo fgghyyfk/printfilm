@@ -1113,8 +1113,9 @@ async def seed_single_episode_from_script(
         .all()
     )
     summary = script.summary if isinstance(script.summary, dict) else None
-    # 进入分镜前先清同号重复，避免再建一条第 N 集
-    await merge_duplicate_episodes_by_number(db, int(project.id))
+    # 团队项目创建/迁入时规范集号，单集操作不可改写其他集。
+    if project.team_id is None:
+        await merge_duplicate_episodes_by_number(db, int(project.id))
     existing = list(
         (
             await db.execute(

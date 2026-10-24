@@ -156,6 +156,12 @@ async def generate_asset_video(
         (project.params or {}).get("image_style_id") or ""
     ).strip() or None
     ratio = (aspect_ratio or "").strip() or "9:16"
+    from app.services.media_models.runtime import current_snapshot, operation_for
+    if current_snapshot.get():
+        operation = operation_for("video", target=asset.id, model=model_id)
+        model_id = operation["model_id"]
+        duration = operation["params"]["duration"]
+        ratio, resolution = operation["params"]["aspect_ratio"], operation["params"]["resolution"]
     from app.services.seedance_resolutions import clamp_video_duration, clamp_video_resolution
 
     duration = clamp_video_duration(model_id, duration)
@@ -167,7 +173,7 @@ async def generate_asset_video(
         self_asset_id=asset.id,
     )
     ref_assets = await load_reference_assets(db, project.id, ref_ids)
-    ref_assets = await ensure_reference_assets_public_urls(db, ref_assets)
+    ref_assets = await ensure_reference_assets_public_urls(db, ref_assets, read_only=project.team_id is not None)
     ref_payloads = [drama_asset_to_payload(item) for item in ref_assets]
     # 与正式提交一致：带 script 判定开口角色，才能挂 reference_audio
     catalog = build_seedance_reference_catalog(ref_payloads, script=content)

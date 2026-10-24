@@ -1,3 +1,5 @@
+import { useTeamEditLock } from '../../features/teams/useTeamEditLock'
+import { isRequestAborted } from '../../api/http'
 /** 漫剧项目工作流：剧情大纲 → 分镜 → 生成视频；资产库为独立入口 */
 import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
@@ -51,6 +53,7 @@ function WorkspaceInner() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const locationApplied = useRef(false)
+  const titleLock = useTeamEditLock({ projectId: id, type: 'structure', resourceId: 0 }, editingTitle, async (isCurrent) => { const fresh = await dramaApi.getProject(id); if (isCurrent()) { setProject(fresh); setTitleDraft(fresh.title) } })
 
   // 应用路由 state：assets / 分镜类步骤跳转
   function applyLocationState(state: WorkspaceLocationState | null) {
@@ -62,7 +65,7 @@ function WorkspaceInner() {
     if (normalized && isEpisodesRouteStep(normalized)) {
       void resolveStoryboardPath(id)
         .then((path) => navigate(path, { replace: true }))
-        .catch((err) => setError(err instanceof Error ? err.message : '无法进入分镜'))
+        .catch((err) => { if (!isRequestAborted(err)) setError(err instanceof Error ? err.message : '无法进入分镜') })
       return
     }
     if (normalized && isProjectStepKey(normalized)) {
@@ -80,12 +83,14 @@ function WorkspaceInner() {
     }
     setProject(p)
     setTitleDraft(p.title)
+    setError('')
     return p
   }
 
   useEffect(() => {
     if (!Number.isFinite(id) || id <= 0) return
     setLoading(true)
+    setError('')
     reload()
       .then((p) => {
         if (!p) return
@@ -97,7 +102,7 @@ function WorkspaceInner() {
             if (isEpisodesRouteStep(initial)) {
               void resolveStoryboardPath(id)
                 .then((path) => navigate(path, { replace: true }))
-                .catch((err) => setError(err instanceof Error ? err.message : '无法进入分镜'))
+                .catch((err) => { if (!isRequestAborted(err)) setError(err instanceof Error ? err.message : '无法进入分镜') })
               return
             }
             setActiveStep(initial)
@@ -105,7 +110,7 @@ function WorkspaceInner() {
           locationApplied.current = true
         }
       })
-      .catch((err) => setError(err instanceof Error ? err.message : '加载失败'))
+      .catch((err) => { if (!isRequestAborted(err)) setError(err instanceof Error ? err.message : '加载失败') })
       .finally(() => setLoading(false))
   }, [id])
 
@@ -138,6 +143,7 @@ function WorkspaceInner() {
       setProject(updated)
       setTitleDraft(updated.title)
     } catch (err) {
+      if (isRequestAborted(err)) return
       setError(err instanceof Error ? err.message : '标题保存失败')
     } finally {
       setEditingTitle(false)
@@ -185,13 +191,14 @@ function WorkspaceInner() {
               type="button"
               className="drama-icon-btn"
               aria-label="返回"
-              onClick={() => navigate('/drama/dramas')}
+              onClick={() => navigate(project.team_id ? `/teams/${project.team_id}?tab=projects` : '/drama/dramas')}
             >
               <ChevronLeft size={20} strokeWidth={1.75} />
             </button>
             {editingTitle ? (
               <input
                 className="drama-title-input"
+                disabled={titleLock.readOnly}
                 value={titleDraft}
                 autoFocus
                 onChange={(e) => setTitleDraft(e.target.value)}
@@ -228,6 +235,7 @@ function WorkspaceInner() {
           </div>
         </header>
 
+        {titleLock.error && <p role="alert" className="pf-team-alert">{titleLock.error}<button type="button" onClick={titleLock.retry}>重新取得编辑权</button></p>}
         {error ? <BillingErrorNotice message={error} className="drama-error drama-workspace-banner" /> : null}
 
         <main className="drama-workspace-main">

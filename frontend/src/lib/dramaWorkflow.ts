@@ -1,6 +1,7 @@
 import type { DramaProject, DramaProjectListItem } from '../api/drama'
 
 export type DramaWorkflow = 'script' | 'canvas'
+export type DramaProjectFilter = 'all' | 'running' | 'done' | 'draft'
 
 const CANVAS_SOURCE_MARKER = '自由画布创作项目'
 const CANVAS_TITLE_MARKER = '自由画布'
@@ -43,6 +44,31 @@ export function dramaProjectEntryPath(
   if (!Number.isFinite(id) || id <= 0) return '/drama'
   if (isCanvasWorkflow(item)) return `/drama/projects/${id}/canvas`
   return `/drama/projects/${id}`
+}
+
+/** 共享列表筛选，先匹配工作流和搜索，再应用项目进度。 */
+export function filterDramaProjectList(
+  items: DramaProjectListItem[],
+  { workflow, filter = 'all', query = '' }: {
+    workflow: DramaWorkflow
+    filter?: DramaProjectFilter
+    query?: string
+  },
+): DramaProjectListItem[] {
+  const needle = query.trim().toLocaleLowerCase()
+  return items.filter((item) => {
+    if (resolveDramaWorkflow(item) !== workflow) return false
+    if (needle && !item.title.toLocaleLowerCase().includes(needle)) return false
+    if (workflow === 'canvas') {
+      if (filter === 'draft') return !item.asset_count
+      if (filter === 'running') return item.asset_count > 0
+      return filter !== 'done'
+    }
+    if (filter === 'draft') return !item.has_script
+    if (filter === 'running') return item.has_script && item.episode_count > 0
+    if (filter === 'done') return item.has_script && item.episode_count >= 8
+    return true
+  })
 }
 
 /** 列表卡片 meta 文案 */

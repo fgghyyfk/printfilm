@@ -20,7 +20,6 @@ from app.services.drama.image_styles import (
 )
 from app.services.seedance_segments import (
     VOICE_CUE_PREFIX_RE,
-    build_seedance_production_section,
     classify_voice_body,
     is_production_meta_line,
     rewrite_misclassified_visual_voice_lines,
@@ -971,62 +970,10 @@ def build_seedance_prompt_text(
     if not character_intro:
         normalized = strip_character_intro_cues(normalized)
     resolved_catalog = catalog or build_seedance_reference_catalog(reference, script=normalized)
+    # Submitted prompts contain the selected visual style and storyboard body only.
+    # Reference images/audio stay in content[], without extra mandatory instruction paragraphs.
     sections = [
         build_visual_style_section(video_style_id, has_style_board=has_style_board),
-        build_seedance_production_section(
-            normalized,
-            burn_subtitles=burn_subtitles,
-            character_intro=character_intro,
-        ),
-        *(
-            [
-                build_reference_index_section(
-                    reference,
-                    "character",
-                    resolved_catalog.audio_index_by_asset_id,
-                    SEEDANCE_CHARACTER_VOICE_SECTION_HEADER,
-                    "参考音频",
-                    resolve_character_prompt_name,
-                    image_index_map=resolved_catalog.image_index_by_asset_id,
-                ),
-                build_reference_index_section(
-                    reference,
-                    "narration",
-                    resolved_catalog.audio_index_by_asset_id,
-                    SEEDANCE_NARRATION_VOICE_SECTION_HEADER,
-                    "参考音频",
-                    resolve_narration_prompt_name,
-                    image_index_map=resolved_catalog.image_index_by_asset_id,
-                ),
-            ]
-            if SEEDANCE_ATTACH_REFERENCE_AUDIO
-            else []
-        ),
-        build_music_reference_section(reference, resolved_catalog),
-        build_reference_index_section(
-            reference,
-            "character",
-            resolved_catalog.image_index_by_asset_id,
-            SEEDANCE_CHARACTER_APPEARANCE_SECTION_HEADER,
-            "参考图",
-            resolve_character_prompt_name,
-        ),
-        build_reference_index_section(
-            reference,
-            "scene",
-            resolved_catalog.image_index_by_asset_id,
-            SEEDANCE_SCENE_SECTION_HEADER,
-            "参考图",
-            resolve_scene_prompt_name,
-        ),
-        build_reference_index_section(
-            reference,
-            "prop",
-            resolved_catalog.image_index_by_asset_id,
-            SEEDANCE_PROP_SECTION_HEADER,
-            "参考图",
-            resolve_other_asset_prompt_name,
-        ),
         build_seedance_body_text(normalized, reference, resolved_catalog),
     ]
     return "\n\n".join(section for section in sections if section)
@@ -1059,21 +1006,6 @@ def build_seedance_content_items(
 
     continuity = (continuity_first_frame_url or "").strip()
     has_reference_media = bool(catalog.images or catalog.audios)
-
-    if continuity and prompt_text:
-        # Seedance：first/last_frame 不能与 reference_* 混用；有角色/场景参考时改挂 reference_image
-        if has_reference_media:
-            prompt_text = (
-                "【强制约束：镜头衔接】另附上一镜尾帧作为参考图（参考图序列最后一张）。"
-                "本段开场须从该尾帧画面自然续接，保持主体、场景与光影连贯，禁止跳切到无关画面。\n\n"
-                + prompt_text
-            )
-        else:
-            prompt_text = (
-                "【强制约束：镜头衔接】本段视频必须以首帧图为开场画面自然续接，"
-                "保持主体、场景与光影连贯，禁止跳切到无关画面。\n\n"
-                + prompt_text
-            )
 
     if prompt_text:
         items.append({"type": "text", "text": prompt_text})
