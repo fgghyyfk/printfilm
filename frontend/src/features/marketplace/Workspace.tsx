@@ -7,6 +7,7 @@ import Button from '../../components/ui/Button'
 import { EmptyState, PageHeading } from './ui'
 import AssetPreview from './AssetPreview'
 import { dialog } from '../../lib/dialog'
+import { isFreeWork } from './playbackPolicy'
 
 function mineHref(item: Row) {
   return item.kind === 'series' ? `/marketplace/series/${item.id}/edit` : `/marketplace/works/${item.id}/manage`
@@ -19,7 +20,7 @@ function mineStatus(item: Row) {
 }
 
 function freeMine(item: Row) {
-  return item.sale_type === 'free' || ((item.price_fen ?? 0) === 0 && item.sale_type !== 'platform_unlock')
+  return isFreeWork(item)
 }
 
 function MineWorks({ listing, loading, page, changePage, remove }: { listing: Listing | null; loading: boolean; page: number; changePage: (value: number) => void; remove: (item: Row) => void }) {

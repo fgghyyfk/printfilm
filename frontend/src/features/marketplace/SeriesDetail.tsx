@@ -4,6 +4,7 @@ import { Lock } from 'lucide-react'
 import { Contact, Media, NeedLogin } from './shared'
 import { money, request, type Row } from './api'
 import { PageHeading } from './ui'
+import { isFreeEpisode } from './playbackPolicy'
 
 type Episode = Row & { episode_no: number; description?: string }
 type Series = { id: number; title: string; description?: string; category?: string; sale_type: string; copyright_price_fen?: number; free_episode_count?: number; episodes: Episode[] }
@@ -12,10 +13,6 @@ const pageSize = 15
 
 function rememberKey(id: number) {
   return `pf-market-series-${id}`
-}
-
-function isFreeEpisode(series: Series, episodeNo: number) {
-  return series.sale_type === 'free' || episodeNo <= (series.free_episode_count || 0)
 }
 
 // 短剧详情只挂一个播放器，选集格切换当前集。
@@ -56,7 +53,7 @@ export default function SeriesDetail() {
   const next = item.episodes[index + 1]
   const ranges = Math.ceil(item.episodes.length / pageSize)
   const visible = item.episodes.filter(entry => Math.floor((entry.episode_no - 1) / pageSize) === range)
-  const price = item.sale_type === 'platform_unlock' ? '按集解锁' : item.copyright_price_fen ? money(item.copyright_price_fen) : '免费'
+  const price = item.sale_type === 'platform_unlock' ? '按集解锁' : `版权参考价 ${money(item.copyright_price_fen)}`
   return <>
     <PageHeading title={item.title} description={`${item.category || '其他'} · 短剧 · ${item.episodes.length} 集`} back="/marketplace" />
     <section className="pf-series-stage">
@@ -70,9 +67,10 @@ export default function SeriesDetail() {
     <section className="pf-series-meta">
       <p>{item.sale_type === 'free' || (item.free_episode_count || 0) >= item.episodes.length ? '全部免费，播放原片' : (item.free_episode_count || 0) > 0 ? `前 ${item.free_episode_count} 集免费播放原片，之后 ${price}` : `收费观看 · ${price}`}</p>
       <p className="pf-market-text">{item.description || '暂无系列简介'}</p>
-      <p>{free ? '本集免费观看，直接播放原片。使用仍须遵守作者授权范围。' : item.sale_type === 'platform_unlock' ? '本集需付费。未购买只能看水印试看，购买后永久在线播放。' : '本集需付费。当前为水印试看，联系客服购买后获取完整成片。'}</p>
+      <p>{free ? '本集免费观看，直接播放原片。使用仍须遵守作者授权范围。' : item.sale_type === 'platform_unlock' ? '未购买时可看短试看，购买后永久在线播放。' : '当前提供短试看，联系客服确认版权价格与完整成片交付。'}</p>
+      {!free && <small>短试看不加水印，最长15秒且不超过原片时长的30%。</small>}
       {!free && item.sale_type === 'copyright_contact' && <NeedLogin><Contact kind="series_episode" id={episode.id} /></NeedLogin>}
-      {!free && item.sale_type === 'platform_unlock' && <small>平台解锁购买和永久播放由 App 接入，当前网页只播放水印试看。</small>}
+      {!free && item.sale_type === 'platform_unlock' && <small>平台解锁购买和永久播放由 App 接入，当前网页只播放短试看。</small>}
     </section>
     <section className="pf-series-picker" aria-label="选集">
       {ranges > 1 && <div className="pf-series-ranges">{Array.from({ length: ranges }, (_, group) => {

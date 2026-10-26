@@ -147,6 +147,6 @@ export const date = (value?: string) => value ? new Date(value).toLocaleString('
 // 将UTC转为当前浏览器datetime-local值，避免表单回填时改变时区。
 export function localDate(value: string) { const date = new Date(value); return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16) }
 // 状态不在客户端推断，仅翻译后端结果。
-export const labels: Record<string, string> = { draft: '草稿', preview_failed: '水印生成失败', pending: '待审核', approved: '已通过', rejected: '已驳回', missing: '未提交', ready: '已就绪', processing: '处理中', uploading: '上传中', failed: '失败', open: '征集中', closed: '已关闭', expired: '已到期', to_review: '待看', candidate: '候选', not_selected: '不采用', pending_materials: '待材料', reviewing: '材料核验中', supplement: '待补正', applying: '办理中', certificated: '已取得证书', cancelled: '已取消', existing: '已有证书', self_service: '自行办理', assisted: '客服协办' }
+export const labels: Record<string, string> = { draft: '草稿', preview_failed: '短试看生成失败', pending: '待审核', approved: '已通过', rejected: '已驳回', missing: '未提交', ready: '已就绪', processing: '处理中', uploading: '上传中', failed: '失败', open: '征集中', closed: '已关闭', expired: '已到期', to_review: '待看', candidate: '候选', not_selected: '不采用', pending_materials: '待材料', reviewing: '材料核验中', supplement: '待补正', applying: '办理中', certificated: '已取得证书', cancelled: '已取消', existing: '已有证书', self_service: '自行办理', assisted: '客服协办' }
 
 

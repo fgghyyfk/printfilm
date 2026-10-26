@@ -132,14 +132,8 @@ async def on_startup() -> None:
         pass
     await start_task_runtime()
     from app.marketplace.bootstrap import apply_marketplace_switch
-    from app.marketplace.config import is_marketplace_enabled
     # 补列完成后再按系统设置建市场表并启动 Worker。关闭时不建表。
     await apply_marketplace_switch()
-    if is_marketplace_enabled():
-        from app.marketplace.previews import withdraw_unwatermarked_public
-        async with AsyncSessionLocal() as db:
-            await withdraw_unwatermarked_public(db)
-            await db.commit()
 
 
 @app.on_event("shutdown")

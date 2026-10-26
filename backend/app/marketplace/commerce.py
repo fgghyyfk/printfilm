@@ -75,6 +75,9 @@ async def _current_sale(db: DB, publication: Publication) -> bool:
     else:
         item = await db.get(SeriesEpisode, publication.content_id)
         parent = await db.get(Series, item.series_id)
+        from .previews import episode_is_free
+        if episode_is_free(parent, item):
+            return False
     if (item.version != publication.version or item.asset_id != publication.asset_id
             or item.audit_status != "approved" or not item.listed
             or parent.audit_status != "approved" or not parent.listed

@@ -5,6 +5,7 @@ import { Contact, Media, NeedLogin, ReportForm } from './shared'
 import { PageHeading } from './ui'
 import WorkPublishingSteps from './WorkPublishingSteps'
 import { dialog } from '../../lib/dialog'
+import { isFreeWork } from './playbackPolicy'
 
 // 公开详情与作者管理分离，招募统一由客服协调接单。
 export default function Detail({ recruit = false, manage = false }: { recruit?: boolean; manage?: boolean }) {
@@ -15,6 +16,8 @@ export default function Detail({ recruit = false, manage = false }: { recruit?: 
   const [message, setMessage] = useState('')
   const [refresh, setRefresh] = useState(0)
   const [preview, setPreview] = useState(false)
+  const [retryingPreview, setRetryingPreview] = useState(false)
+  const previewActive = Boolean(item && !isFreeWork(item) && (item.preview_status === 'pending' || item.preview_status === 'running'))
   useEffect(() => { let active = true; setItem(null); setError(''); request<Row>(`/${recruit ? 'recruits' : 'works'}/${id}`).then(value => { if (active) setItem(value) }).catch(e => { if (active) setError(e.message) }); return () => { active = false } }, [id, recruit, refresh])
   // 状态操作只发意图；重复和过期版本由后端处理。
   async function action(path: string, body?: unknown) {
@@ -22,7 +25,14 @@ export default function Detail({ recruit = false, manage = false }: { recruit?: 
     try { await request(path, 'POST', body); setMessage('操作成功'); setRefresh(v => v + 1) }
     catch (err) { setError((err as Error).message) }
   }
-  useEffect(() => { if (!manage || item?.audit_status !== 'processing') return; const timer = window.setInterval(() => setRefresh(v => v + 1), 5000); return () => window.clearInterval(timer) }, [manage, item?.audit_status])
+  useEffect(() => {
+    if (!manage || recruit || (item?.audit_status !== 'processing' && !previewActive)) return
+    let active = true
+    const timer = window.setInterval(() => {
+      request<Row>(`/works/${id}`).then(fresh => { if (active) setItem(fresh) }).catch(err => { if (active) setError(err.message) })
+    }, 5000)
+    return () => { active = false; window.clearInterval(timer) }
+  }, [id, manage, recruit, item?.audit_status, previewActive])
   if (!item) return <p role={error ? 'alert' : 'status'}>{error || '正在加载…'}</p>
   const privateView = manage && item.version !== undefined
   const submitIssues = [
@@ -35,6 +45,14 @@ export default function Detail({ recruit = false, manage = false }: { recruit?: 
   async function refreshProgress() {
     try { setItem(await request<Row>(`/works/${id}`)) } catch (e) { setError((e as Error).message) }
   }
+  async function retryPreview() {
+    if (!item || retryingPreview || previewActive) return
+    setRetryingPreview(true); setError(''); setMessage('')
+    try {
+      setItem(await request<Row>(`/works/${id}/preview/retry`, 'POST', { version: item.version }))
+      setMessage('已重新排队生成短试看，可在此查看处理进度。')
+    } catch (err) { setError((err as Error).message) } finally { setRetryingPreview(false) }
+  }
   async function removeWork() {
     const ok = await dialog.confirm({ title: '删除作品', message: '删除后作品会从我的作品和作品广场撤下。文件和审核记录会保留，但不能再展示。', confirmText: '删除', tone: 'danger' })
     if (!ok) return
@@ -46,7 +64,7 @@ export default function Detail({ recruit = false, manage = false }: { recruit?: 
     <PageHeading title={item.title || '作品详情'} description={`${item.author || '创作者'} · ${item.category || '其他'}`} back="/marketplace" />
     <div className="pf-market-buyer-layout">
       <section className="pf-market-buyer-player" aria-label="作品视频预览"><Media kind="work" id={id} purpose="preview" video /></section>
-      <aside className="pf-market-buyer-info"><span className="pf-market-badge">视频作品</span><h2>{item.title}</h2><p>创作者 · {item.author || '创作者'}</p><div className="pf-market-buyer-price"><span>{item.sale_type === 'free' || (item.price_fen === 0 && item.sale_type !== 'platform_unlock') ? '免费公开' : item.sale_type === 'platform_unlock' ? '平台解锁价' : '版权参考价'}</span><strong>{item.sale_type === 'free' || (item.price_fen === 0 && item.sale_type !== 'platform_unlock') ? '免费' : money(item.sale_type === 'platform_unlock' ? item.unlock_price_fen : item.price_fen)}</strong></div>{item.sale_type === 'copyright_contact' && (item.price_fen ?? 0) > 0 && <Contact kind="work" id={id} />}<small>{item.sale_type === 'free' || (item.price_fen === 0 && item.sale_type !== 'platform_unlock') ? '免费作品可看完整时长，播放原片。使用仍须遵守作者授权范围。' : item.sale_type === 'platform_unlock' ? '平台投放内容购买后永久在线播放，支付和播放接口由客户端接入。未购买只能看水印试看。' : '当前为水印试看，最多15秒、不超过原片30%。联系客服确认授权并线下购买原片。'}</small><ReportForm kind="work" id={id} /></aside>
+      <aside className="pf-market-buyer-info"><span className="pf-market-badge">视频作品</span><h2>{item.title}</h2><p>创作者 · {item.author || '创作者'}</p><div className="pf-market-buyer-price"><span>{isFreeWork(item) ? '免费公开' : item.sale_type === 'platform_unlock' ? '平台解锁价' : '版权参考价'}</span><strong>{isFreeWork(item) ? '免费' : money(item.sale_type === 'platform_unlock' ? item.unlock_price_fen : item.price_fen)}</strong></div>{item.sale_type === 'copyright_contact' && <Contact kind="work" id={id} />}<small>{isFreeWork(item) ? '免费作品可看完整时长，播放原片。使用仍须遵守作者授权范围。' : item.sale_type === 'platform_unlock' ? '平台投放内容购买后永久在线播放，支付和播放接口由客户端接入。未购买只能看短试看。' : '当前为无水印短试看，最长15秒且不超过原片30%。联系客服确认授权并线下购买原片。'}</small><ReportForm kind="work" id={id} /></aside>
     </div>
     <section className="pf-market-detail-section"><h2>作品介绍</h2><p className="pf-market-text">{item.description || '暂未填写详细介绍'}</p><h2>用途及授权意向</h2><p className="pf-market-text">{item.license_scope || '具体授权范围请联系客服确认'}</p><p>作品版权与内容已由平台人工审核，最终授权以线下协议为准。</p></section>
   </>
@@ -64,9 +82,10 @@ export default function Detail({ recruit = false, manage = false }: { recruit?: 
   </>
   return <><PageHeading title={item.title || (recruit ? '招募详情' : '作品详情')} description={`${item.author || '创作者'} · ${item.category || '其他'} · ${date(item.created_at)}`} back={manage ? '/marketplace/mine' : recruit ? '/marketplace/recruits' : '/marketplace'} /><div className="pf-market-detail-intro"><div><span className="pf-market-category-tag">{recruit ? '创作需求' : '视频作品'}</span><p className="pf-market-text">{item.description || '暂未填写详细介绍'}</p></div><div className="pf-market-detail-price"><span>{recruit ? '单条预算' : '参考价'}</span><strong>{money(recruit ? item.budget_fen : item.price_fen)}</strong><small>具体合作与授权由客服线下确认</small></div></div><section className="pf-market-detail-section"><h2>用途及授权意向</h2><p className="pf-market-text">{item.license_scope || '请联系发布者补充授权说明'}</p>
     {recruit ? <><p>征集 {item.wanted_count} 条 · 截止 {date(item.deadline_at)}</p><p className="pf-market-text">{item.requirements}</p>{item.image_ids?.map((_, index) => <Media key={index} kind="recruit" id={id} purpose={`image-${index}`} />)}</> : <><p>作品版权与内容统一审核，最终授权以线下协议为准。</p><button type="button" disabled={privateView && (!item.asset_id || item.media_status !== 'ready')} onClick={() => setPreview(!preview)}>播放／关闭作品预览</button>{preview && <Media kind={privateView ? 'asset' : 'work'} id={privateView ? item.asset_id ?? 0 : id} purpose="preview" video />}</>}
-    </section>{privateView && !recruit && <WorkPublishingSteps item={item} onUpdated={() => { void refreshProgress() }} />}{privateView && <section><h2>发布管理</h2>{!recruit && submitIssues.length > 0 && <div className="pf-market-notice" role="status"><strong>提交前还需完成：</strong><ul>{submitIssues.map(issue => <li key={issue}>{issue}</li>)}</ul><Link to={`/marketplace/works/${id}/edit`}>前往编辑草稿</Link></div>}{item.audit_status === 'processing' && <p role="status">正在生成水印播放文件，完成后自动进入待审核。可以关闭页面，稍后在我的发布中查看。</p>}<p>{recruit ? '招募审核' : '作品审核'}：{labels[item.audit_status ?? ''] || item.audit_status} · {recruit ? labels[item.state ?? ''] : item.listed ? '已上架' : '未上架'}{item.blocked ? ' · 已封禁' : ''}</p><p>{item.reason}</p><div className="pf-market-actions"><Link to={`/marketplace/${recruit ? 'recruits' : 'works'}/${id}/edit`}>编辑草稿</Link><button type="button" disabled={!recruit && (!canSubmitWork || item.audit_status === 'processing' || item.audit_status === 'pending' || item.audit_status === 'approved')} onClick={() => action(`/${recruit ? 'recruits' : 'works'}/${id}/submit`, { version: item.version })}>{item.audit_status === 'processing' ? '正在生成试看视频…' : item.audit_status === 'preview_failed' ? '重试生成试看并提交' : '提交审核'}</button>{recruit ? <button type="button" onClick={() => { if (window.confirm('关闭后将退出招募广场，停止新的接单咨询。确认关闭？')) void action(`/recruits/${id}/close`) }}>关闭招募</button> : <><button type="button" disabled={!item.listed && (!canSubmitWork || item.audit_status !== 'approved')} onClick={() => action(`/works/${id}/listing?listed=${!item.listed}`, { version: item.version })}>{item.listed ? '下架' : '上架'}</button>{item.asset_id && <Link to={`/marketplace/assets/${item.asset_id}/rights?source=${item.source || 'external'}&return=${encodeURIComponent(`/marketplace/works/${id}/edit`)}`}>确认版权信息</Link>}<button type="button" onClick={() => void removeWork()}>删除作品</button></>}</div></section>}
+    </section>{privateView && !recruit && <WorkPublishingSteps item={item} onUpdated={() => { void refreshProgress() }} />}{privateView && <section><h2>发布管理</h2>{!recruit && submitIssues.length > 0 && <div className="pf-market-notice" role="status"><strong>提交前还需完成：</strong><ul>{submitIssues.map(issue => <li key={issue}>{issue}</li>)}</ul><Link to={`/marketplace/works/${id}/edit`}>前往编辑草稿</Link></div>}{item.audit_status === 'processing' && <p role="status">正在生成短试看，完成后自动进入待审核。可以关闭页面，稍后在我的发布中查看。</p>}<p>{recruit ? '招募审核' : '作品审核'}：{labels[item.audit_status ?? ''] || item.audit_status} · {recruit ? labels[item.state ?? ''] : item.listed ? '已上架' : '未上架'}{item.blocked ? ' · 已封禁' : ''}</p><p>{item.reason}</p><div className="pf-market-actions"><Link to={`/marketplace/${recruit ? 'recruits' : 'works'}/${id}/edit`}>编辑草稿</Link><button type="button" disabled={!recruit && (!canSubmitWork || item.audit_status === 'processing' || item.audit_status === 'pending' || item.audit_status === 'approved')} onClick={() => action(`/${recruit ? 'recruits' : 'works'}/${id}/submit`, { version: item.version })}>{item.audit_status === 'processing' ? '正在生成短试看…' : item.audit_status === 'preview_failed' ? '重试生成短试看并提交' : '提交审核'}</button>{recruit ? <button type="button" onClick={() => { if (window.confirm('关闭后将退出招募广场，停止新的接单咨询。确认关闭？')) void action(`/recruits/${id}/close`) }}>关闭招募</button> : <><button type="button" disabled={!item.listed && (!canSubmitWork || item.audit_status !== 'approved')} onClick={() => action(`/works/${id}/listing?listed=${!item.listed}`, { version: item.version })}>{item.listed ? '下架' : '上架'}</button>{item.asset_id && <Link to={`/marketplace/assets/${item.asset_id}/rights?source=${item.source || 'external'}&return=${encodeURIComponent(`/marketplace/works/${id}/edit`)}`}>确认版权信息</Link>}<button type="button" onClick={() => void removeWork()}>删除作品</button></>}</div></section>}
+    {privateView && !recruit && item.audit_status === 'approved' && !isFreeWork(item) && (item.preview_status === 'failed' || previewActive) && <section aria-label="短试看修复"><p role="status">{previewActive ? '正在生成短试看，可以关闭页面，稍后回来查看。' : '短试看生成失败，可直接重试。'}</p><button type="button" disabled={retryingPreview || previewActive || item.blocked} onClick={() => void retryPreview()}>{retryingPreview || previewActive ? '正在生成短试看…' : '重试生成短试看'}</button></section>}
     {recruit && <p className="pf-market-notice">审核通过后，创作者通过平台客服沟通接单。具体合作、合同与交付在线下确认。</p>}
-    <div className="pf-market-actions">{(recruit || (item.sale_type === 'copyright_contact' && (item.price_fen ?? 0) > 0)) && <Contact kind={recruit ? 'recruit' : 'work'} id={id} label={recruit ? '联系客服' : undefined} />}<ReportForm kind={recruit ? 'recruit' : 'work'} id={id} /></div>
+    <div className="pf-market-actions">{(recruit || (item.sale_type === 'copyright_contact')) && <Contact kind={recruit ? 'recruit' : 'work'} id={id} label={recruit ? '联系客服' : undefined} />}<ReportForm kind={recruit ? 'recruit' : 'work'} id={id} /></div>
     {message && <p role="status">{message}</p>}{error && <p role="alert">{error}</p>}</>
 }
 

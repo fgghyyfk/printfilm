@@ -112,21 +112,20 @@ def full_proof_present(rights: Rights) -> bool:
 def public_work_filters() -> tuple:
     """列表与详情使用相同 SQL 条件，价格筛选前即排除不可售作品。"""
     from .authorization import VERSION
+    from .previews import CLIP_WORK_PREFIX
     proof = or_(and_(Rights.details["source"].as_string() == "printfilm",
                      Rights.details["authorization_id"].as_string().is_not(None),
                      Rights.details["authorization_version"].as_string() == VERSION),
                 and_(Rights.details["source"].as_string() != "printfilm", Rights.certificate_asset_id.is_not(None)))
-    def watermark_exists(prefix: str):
+    def preview_exists():
         return select(WorkPreview.id).where(
             WorkPreview.work_id == Work.id, WorkPreview.asset_id == Work.asset_id,
-            WorkPreview.status == "done", WorkPreview.object_key.startswith(prefix)).exists()
+            WorkPreview.version == Work.version, WorkPreview.status == "done",
+            WorkPreview.object_key.startswith(CLIP_WORK_PREFIX)).exists()
 
     return (Work.listed.is_(True), Work.blocked.is_(False), Work.deleted_at.is_(None), Work.audit_status == "approved",
             Asset.status == "ready", Rights.basic_status == "approved", Rights.full_status == "approved",
-            # 免费作品可直接上架。标价为 0 的作品和收费作品只要已有水印文件就进入广场。
-            or_(Work.sale_type == "free",
-                watermark_exists("marketplace/work-watermarks-full/"),
-                watermark_exists("marketplace/work-previews-hq/")),
+            or_(Work.sale_type == "free", preview_exists()),
             proof, Rights.blocked.is_(False),
             Rights.details["source"].as_string() == Work.source,
             or_(Rights.valid_until.is_(None), Rights.valid_until > now()))
@@ -170,11 +169,12 @@ async def work_data(db: AsyncSession, work: Work, private: bool = False) -> dict
     result = data(work, "id", "title", "description", "category", "tags", "price_fen", "sale_type", "unlock_price_fen", "share_bps", "source", "license_scope", "created_at")
     result.update(author=owner.nickname if owner else "创作者", duration_seconds=asset.duration_seconds if asset else None)
     if private:
-        from .previews import is_watermark_key, preview_for
+        from .previews import is_preview_key, preview_for, requires_preview
         preview = await preview_for(db, work)
-        usable = bool(preview and (preview.status != "done" or is_watermark_key(preview.object_key)))
-        result["preview_status"] = preview.status if usable else "missing"
-        result["preview_error"] = preview.error if preview else ""
+        usable = bool(preview and preview.version == work.version and preview.status != "cancelled"
+                      and (preview.status != "done" or is_preview_key(preview.object_key, episode=False)))
+        result["preview_status"] = (preview.status if usable else "missing") if requires_preview(work.sale_type) else "none"
+        result["preview_error"] = preview.error if usable and requires_preview(work.sale_type) else ""
         result.update(data(work, "owner_id", "asset_id", "cover_asset_id", "version", "audit_status", "listed", "blocked", "reason"))
         result["media_status"] = asset.status if asset else "missing"
         rights = await rights_for(db, work.asset_id)

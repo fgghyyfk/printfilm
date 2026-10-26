@@ -12,6 +12,8 @@ from .dependencies import Actor, DB, Visitor, storage_ready
 from .models import Asset, ContentOrder, Entitlement, EpisodePreview, Handoff, PlaybackJob, Publication, RevenueConfig, Rights, Series, SeriesEpisode
 from .schemas import EpisodeInput, EpisodeUpdate, ImportEpisodesInput, SeriesInput, SeriesUpdate, Version
 from .service import asset_owned, asset_owned_for_draft, check_version, data, event, fail, now, notify, owned, page, validate_rights
+from .previews import (CLIP_EPISODE_PREFIX, cancel_episode_previews, episode_is_free,
+                       episode_preview_for, episode_preview_ready, is_preview_key, prepare_episode_preview)
 
 router = APIRouter()
 
@@ -49,6 +51,8 @@ async def pause_series_sales(db, series: Series, *, bump_episode_versions: bool 
         if bump_episode_versions:
             episode.version += 1
             episode.audit_status, episode.reason = "draft", ""
+            episode.preview_status, episode.preview_key, episode.preview_attempts = "none", None, 0
+            await cancel_episode_previews(db, episode)
     if episodes:
         publications = list((await db.execute(select(Publication).where(
             Publication.content_type == "series_episode",
@@ -88,6 +92,14 @@ async def _episode_data(db, item: SeriesEpisode, *, private: bool = False) -> di
     asset = await db.get(Asset, item.asset_id) if item.asset_id else None
     result = data(item, "id", "series_id", "episode_no", "title", "description", "copyright_price_fen", "unlock_price_fen", "share_bps", "source", "source_type", "version", "preview_status", "playback_status", "created_at")
     result.update(media_status=asset.status if asset else "missing", duration_seconds=asset.duration_seconds if asset else None)
+    series = await db.get(Series, item.series_id)
+    if series and episode_is_free(series, item):
+        result["preview_status"] = "none"
+    else:
+        preview = await episode_preview_for(db, item)
+        usable = preview and preview.status != "cancelled" and (preview.status != "done" or is_preview_key(preview.object_key, episode=True))
+        result["preview_status"] = preview.status if usable else "none"
+        result["preview_error"] = preview.error if usable else ""
     if private:
         result.update(data(item, "owner_id", "asset_id", "cover_asset_id", "audit_status", "listed", "blocked", "reason", "source_snapshot"))
         rights = (await db.execute(select(Rights).where(Rights.asset_id == item.asset_id))).scalar_one_or_none() if item.asset_id else None
@@ -113,21 +125,30 @@ async def _series_data(db, item: Series, *, private: bool = False) -> dict:
 
 
 def public_series_filters():
-    """作品广场只展示已上架、且每一集都有水印文件的短剧。改免费集数不要求重做。"""
-    watermarked = or_(
-        EpisodePreview.object_key.startswith("marketplace/series-watermarks-full/"),
-        EpisodePreview.object_key.startswith("marketplace/series-previews-hq/"),
-    )
+    """免费集检查原片，收费集检查当前版本短试看，实时校验权属限制。"""
+    from .authorization import VERSION
+    proof = or_(and_(Rights.details["source"].as_string() == "printfilm",
+                     Rights.details["authorization_id"].as_string().is_not(None),
+                     Rights.details["authorization_version"].as_string() == VERSION),
+                and_(Rights.details["source"].as_string() != "printfilm", Rights.certificate_asset_id.is_not(None)))
+    asset_ready = select(Asset.id).join(Rights, Rights.asset_id == Asset.id).where(
+        Asset.id == SeriesEpisode.asset_id, Asset.status == "ready", Asset.owner_id == Series.owner_id,
+        Rights.basic_status == "approved", Rights.full_status == "approved", Rights.blocked.is_(False),
+        Rights.details["source"].as_string() == SeriesEpisode.source, proof,
+        or_(Rights.valid_until.is_(None), Rights.valid_until > now()),
+    ).correlate(Series, SeriesEpisode).exists()
+    preview_ready = select(EpisodePreview.id).where(
+        EpisodePreview.episode_id == SeriesEpisode.id, EpisodePreview.asset_id == SeriesEpisode.asset_id,
+        EpisodePreview.version == SeriesEpisode.version, EpisodePreview.status == "done",
+        EpisodePreview.object_key.startswith(CLIP_EPISODE_PREFIX),
+    ).correlate(SeriesEpisode).exists()
+    free = or_(Series.sale_type == "free", SeriesEpisode.episode_no <= Series.free_episode_count)
     missing = select(SeriesEpisode.id).where(
         SeriesEpisode.series_id == Series.id,
-        not_(select(EpisodePreview.id).where(
-            EpisodePreview.episode_id == SeriesEpisode.id,
-            EpisodePreview.asset_id == SeriesEpisode.asset_id,
-            EpisodePreview.status == "done",
-            watermarked,
-        ).exists()),
-    ).exists()
-    has_episode = select(SeriesEpisode.id).where(SeriesEpisode.series_id == Series.id).exists()
+        or_(SeriesEpisode.blocked.is_(True), SeriesEpisode.listed.is_(False),
+            SeriesEpisode.audit_status != "approved", not_(asset_ready), and_(not_(free), not_(preview_ready))),
+    ).correlate(Series).exists()
+    has_episode = select(SeriesEpisode.id).where(SeriesEpisode.series_id == Series.id).correlate(Series).exists()
     return (Series.listed.is_(True), Series.blocked.is_(False), Series.deleted_at.is_(None), Series.audit_status == "approved", has_episode, not_(missing))
 
 
@@ -174,8 +195,6 @@ async def create_series(body: SeriesInput, db: DB, user: Actor):
     if body.cover_asset_id:
         await asset_owned(db, body.cover_asset_id, user, ("image",))
     values = body.model_dump()
-    if "sale_type" not in body.model_fields_set and values["copyright_price_fen"] == 0:
-        values["sale_type"] = "free"
     item = Series(owner_id=user.id, **values)
     item.sale_type = _sale_type(item.sale_type, item.copyright_price_fen)
     db.add(item)
@@ -195,8 +214,6 @@ async def update_series(series_id: int, body: SeriesUpdate, db: DB, user: Actor)
     if body.cover_asset_id:
         await asset_owned(db, body.cover_asset_id, user, ("image",))
     values = body.model_dump(exclude={"version"})
-    if "sale_type" not in body.model_fields_set and values["copyright_price_fen"] == 0:
-        values["sale_type"] = "free"
     values["sale_type"] = _sale_type(values["sale_type"], values["copyright_price_fen"])
     for key, value in values.items():
         setattr(item, key, value)
@@ -221,7 +238,7 @@ async def create_episode(series_id: int, body: EpisodeInput, db: DB, user: Actor
     if body.cover_asset_id:
         await asset_owned(db, body.cover_asset_id, user, ("image",))
     item = SeriesEpisode(series_id=series.id, owner_id=user.id, source_type="upload", **body.model_dump())
-    if series.sale_type == "platform_unlock" and item.unlock_price_fen <= 0:
+    if series.sale_type == "platform_unlock" and not episode_is_free(series, item) and item.unlock_price_fen <= 0:
         fail("平台投放系列必须为每集设置解锁价")
     db.add(item)
     series.version += 1
@@ -256,6 +273,8 @@ async def update_episode(series_id: int, episode_id: int, body: EpisodeUpdate, d
         item.playback_status, item.playback_manifest_key, item.playback_attempts = "none", None, 0
     item.version += 1
     item.audit_status, item.listed, item.reason = "draft", False, ""
+    item.preview_status, item.preview_key, item.preview_attempts = "none", None, 0
+    await cancel_episode_previews(db, item)
     series.version += 1
     series.audit_status, series.listed = "draft", False
     await pause_series_sales(db, series)
@@ -323,12 +342,9 @@ async def submit_series(series_id: int, body: Version, db: DB, user: Actor):
     config = await db.get(RevenueConfig, 1)
     if series.sale_type == "platform_unlock" and (not config or not config.enabled):
         fail("MARKETPLACE_REVENUE_CONFIG_REQUIRED", 409)
-    # Paid series require a real private bucket because the submission creates
-    # a preview job that will immediately be consumed by the market Worker.
-    # Reject early with the standard 503 instead of leaving a misleading pending
-    # job when OSS is not configured.
-    await storage_ready()
-    from .previews import is_watermark_key
+    # 只有收费分集需要短试看。免费系列/免费集不依赖生成任务。
+    if any(not episode_is_free(series, episode) for episode in episodes):
+        await storage_ready()
     pending_preview = False
     await pause_series_sales(db, series)
     for episode in episodes:
@@ -348,7 +364,8 @@ async def submit_series(series_id: int, body: Version, db: DB, user: Actor):
         validate_rights(rights.details, full=True, certificate=bool(rights.certificate_asset_id))
         if rights.valid_until and rights.valid_until <= now():
             fail(f"第{episode.episode_no}集版权授权已过期", 409)
-        if series.sale_type == "platform_unlock" and episode.unlock_price_fen <= 0:
+        free = episode_is_free(series, episode)
+        if series.sale_type == "platform_unlock" and not free and episode.unlock_price_fen <= 0:
             fail(f"第{episode.episode_no}集必须设置解锁价")
         publication = (await db.execute(select(Publication).where(
             Publication.content_type == "series_episode", Publication.content_id == episode.id,
@@ -358,51 +375,33 @@ async def submit_series(series_id: int, body: Version, db: DB, user: Actor):
             # Never reset an approved version's media, financial or rights snapshot.
             episode.version += 1
             publication = None
-        # 同一原片已有水印就沿用，改免费集数或收费类型不重新转码。
-        done = (await db.execute(select(EpisodePreview).where(
-            EpisodePreview.episode_id == episode.id, EpisodePreview.asset_id == asset.id,
-            EpisodePreview.status == "done").order_by(EpisodePreview.id.desc()).limit(1))).scalar_one_or_none()
-        preview = (await db.execute(select(EpisodePreview).where(
-            EpisodePreview.episode_id == episode.id, EpisodePreview.asset_id == asset.id,
-            EpisodePreview.version == episode.version).with_for_update())).scalar_one_or_none()
-        if done and is_watermark_key(done.object_key):
-            if preview is None:
-                preview = EpisodePreview(episode_id=episode.id, asset_id=asset.id, version=episode.version, status="done", object_key=done.object_key)
-                db.add(preview)
-            elif preview.id != done.id:
-                preview.status, preview.object_key, preview.error = "done", done.object_key, ""
-            preview_status = "done"
+        if free:
+            await cancel_episode_previews(db, episode)
+            preview, preview_status = None, "none"
         else:
-            if preview is None:
-                preview = EpisodePreview(episode_id=episode.id, asset_id=asset.id, version=episode.version)
-                db.add(preview)
-            elif preview.status == "failed":
-                preview.status, preview.attempts, preview.error, preview.object_key = "pending", 0, "", None
-                preview.lease_token, preview.lease_until = None, None
-            preview_status = "done" if preview.status == "done" and is_watermark_key(preview.object_key) else "pending"
-        pending_preview = pending_preview or preview_status != "done"
+            preview = await prepare_episode_preview(db, episode)
+            preview_status = "done" if preview.status == "done" and is_preview_key(preview.object_key, episode=True) else "pending"
+        pending_preview = pending_preview or (not free and preview_status != "done")
         share = episode.share_bps if episode.share_bps is not None else (
             series.share_bps if series.share_bps is not None else (config.platform_share_bps if config else None))
         values = dict(owner_id=user.id, version=episode.version, asset_id=asset.id,
                       cover_asset_id=episode.cover_asset_id or series.cover_asset_id, sale_type=series.sale_type,
                       copyright_price_fen=episode.copyright_price_fen or series.copyright_price_fen,
-                      unlock_price_fen=episode.unlock_price_fen, share_bps=share,
+                      unlock_price_fen=0 if free else episode.unlock_price_fen, share_bps=share,
                       rights_snapshot={"details": rights.details, "certificate_asset_id": rights.certificate_asset_id,
                                        "evidence_ids": rights.evidence_ids}, audit_status="pending", listed=False,
-                      preview_status=preview_status, playback_status="done" if series.sale_type != "platform_unlock" else "pending")
-        # Keep the episode's live access gate in sync with its immutable
-        # publication.  In particular, a paid episode must be marked pending
-        # immediately so /media cannot fall back to the original while the
-        # watermark job is still running.
+                      preview_status=preview_status, preview_key=preview.object_key if preview and preview_status == "done" else None,
+                      preview_error="", playback_status="done" if free or series.sale_type != "platform_unlock" else "pending")
         episode.preview_status = preview_status
-        episode.playback_status = "done" if series.sale_type != "platform_unlock" else "pending"
+        episode.preview_key = preview.object_key if preview and preview_status == "done" else None
+        episode.playback_status = "done" if free or series.sale_type != "platform_unlock" else "pending"
         if publication is None:
             publication = Publication(content_type="series_episode", content_id=episode.id, **values)
             db.add(publication)
         else:
             for key, value in values.items():
                 setattr(publication, key, value)
-        if series.sale_type == "platform_unlock":
+        if series.sale_type == "platform_unlock" and not free:
             await db.flush()
             playback_job = (await db.execute(select(PlaybackJob).where(
                 PlaybackJob.publication_id == publication.id
@@ -419,8 +418,42 @@ async def submit_series(series_id: int, body: Version, db: DB, user: Actor):
         episode.listed = False
         rights.basic_status = rights.full_status = "pending"
     series.audit_status = "processing" if pending_preview else "pending"
-    series.listed, series.reason = False, "正在生成水印播放文件" if pending_preview else ""
+    series.listed, series.reason = False, "正在生成短试看" if pending_preview else ""
     event(db, user.id, "series", series.id, "submitted", version=series.version)
+    await db.commit()
+    return await _series_data(db, series, private=True)
+
+
+@router.post("/series/{series_id}/preview/retry", response_model=dict)
+async def retry_series_preview(series_id: int, body: Version, db: DB, user: Actor):
+    """仅重试当前分集的衍生短片，不更改已审核版本、权益或 HLS。"""
+    series = await _series(db, series_id, user, lock=True)
+    if series.owner_id != user.id:
+        fail("系列不存在或无权操作", 404)
+    from .service import ensure_kept
+    from .previews import series_submission_ready
+    ensure_kept(series)
+    check_version(series, body.version)
+    await ensure_series_idle(db, series.id, submitting=True)
+    if series.audit_status not in ("approved", "pending", "processing", "preview_failed"):
+        fail("请先提交系列审核", 409)
+    if not await series_submission_ready(db, series):
+        fail("系列媒体或版权资料已变化，请编辑后重新提交审核", 409)
+    episodes = list((await db.execute(select(SeriesEpisode).where(SeriesEpisode.series_id == series.id)
+        .order_by(SeriesEpisode.id).with_for_update())).scalars().all())
+    if any(not episode_is_free(series, episode) for episode in episodes):
+        await storage_ready()
+    pending = False
+    for episode in episodes:
+        if episode_is_free(series, episode):
+            await cancel_episode_previews(db, episode)
+            episode.preview_status, episode.preview_key = "none", None
+            continue
+        preview = await prepare_episode_preview(db, episode)
+        episode.preview_status, episode.preview_key = preview.status, preview.object_key
+        pending = pending or preview.status != "done"
+    if series.audit_status != "approved":
+        series.audit_status, series.reason = ("processing", "正在生成短试看") if pending else ("pending", "")
     await db.commit()
     return await _series_data(db, series, private=True)
 
@@ -442,16 +475,15 @@ async def listing_series(series_id: int, body: Version, db: DB, user: Actor, lis
             fail("系列内容或权属尚未通过，不能上架")
         if not episodes:
             fail("系列没有可上架的分集")
-        from .previews import is_watermark_key
+        from .previews import series_submission_ready
+        if not await series_submission_ready(db, series):
+            fail("媒体、版权材料或授权已变化，请重新提交审核", 409)
         for episode in episodes:
             if episode.blocked or episode.audit_status != "approved":
                 fail(f"第{episode.episode_no}集尚未审核通过")
-            preview = (await db.execute(select(EpisodePreview).where(
-                EpisodePreview.episode_id == episode.id, EpisodePreview.asset_id == episode.asset_id,
-                EpisodePreview.status == "done").order_by(EpisodePreview.id.desc()).limit(1))).scalar_one_or_none()
-            if not preview or not is_watermark_key(preview.object_key):
-                fail(f"第{episode.episode_no}集水印播放文件尚未生成", 409)
-            if series.sale_type == "platform_unlock":
+            if not await episode_preview_ready(db, series, episode):
+                fail(f"第{episode.episode_no}集短试看尚未生成", 409)
+            if series.sale_type == "platform_unlock" and not episode_is_free(series, episode):
                 publication = (await db.execute(select(Publication).where(Publication.content_type == "series_episode", Publication.content_id == episode.id, Publication.version == episode.version))).scalar_one_or_none()
                 if not publication or publication.playback_status != "done":
                     fail(f"第{episode.episode_no}集播放版本尚未就绪", 409)
@@ -472,6 +504,7 @@ async def listing_series(series_id: int, body: Version, db: DB, user: Actor, lis
         )
         publication.listed = listed and is_current and publication.audit_status == "approved" and (
             series.sale_type != "platform_unlock" or publication.playback_status == "done"
+            or any(episode.id == publication.content_id and episode_is_free(series, episode) for episode in episodes)
         )
     for episode in episodes:
         episode.listed = listed and episode.audit_status == "approved" and not episode.blocked

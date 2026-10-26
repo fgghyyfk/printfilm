@@ -6,6 +6,7 @@ import Button from '../../components/ui/Button'
 import { date, money, request, type Listing, type Row } from './api'
 import { Media, Pager } from './shared'
 import { EmptyState } from './ui'
+import { isFreeWork } from './playbackPolicy'
 
 function plazaHref(item: Row, recruits: boolean) {
   if (item.kind === 'series') return `/marketplace/series/${item.id}`
@@ -13,7 +14,7 @@ function plazaHref(item: Row, recruits: boolean) {
 }
 
 function freeListing(item: Row) {
-  return item.sale_type === 'free' || (item.price_fen === 0 && item.sale_type !== 'platform_unlock')
+  return isFreeWork(item)
 }
 
 // 公开广场只展示后端过滤通过的单视频、短剧或需求。

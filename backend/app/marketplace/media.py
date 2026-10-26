@@ -7,7 +7,7 @@ from sqlalchemy import select
 from . import storage
 from .config import get_marketplace_settings
 from .dependencies import DB, Visitor, storage_ready
-from .models import Asset, EpisodePreview, Publication, Recruit, Rights, Series, SeriesEpisode, Submission, Support, Work
+from .models import Asset, Recruit, Series, SeriesEpisode, Submission, Support, Work
 from .service import event, fail, is_public_work, recruit_open, rights_for, rights_valid, submission_rights_match
 
 router = APIRouter()
@@ -20,19 +20,21 @@ async def media_url(kind: str, record_id: int, purpose: str, db: DB, user: Visit
     admin = bool(user and user.role == "admin")
     if kind == "work":
         work = await db.get(Work, record_id)
-        if not work or purpose not in ("preview", "cover"):
+        if not work or work.deleted_at or purpose not in ("preview", "cover"):
             fail("媒体不存在", 404)
         owner = bool(user and work.owner_id == user.id)
         if not admin and (work.blocked or (not owner and not await is_public_work(db, record_id))):
             fail("作品未公开或已下架", 404)
         asset = await db.get(Asset, work.asset_id) if work.asset_id else None
         if purpose == "preview" and asset:
-            # 广场播放只签发水印文件。作者和管理员查看原片走 asset 接口。
-            from .previews import is_watermark_key, preview_for
-            preview = await preview_for(db, work)
-            if not preview or preview.status != "done" or not is_watermark_key(preview.object_key):
-                fail("水印播放文件尚未生成，暂不可播放", 409)
-            key, content_type = preview.object_key, "video/mp4"
+            from .previews import preview_for, preview_ready, requires_preview
+            if not requires_preview(work.sale_type):
+                key, content_type = asset.object_key, asset.content_type
+            else:
+                if not await preview_ready(db, work):
+                    fail("短试看尚未生成，暂不可播放", 409)
+                preview = await preview_for(db, work)
+                key, content_type = preview.object_key, "video/mp4"
         if purpose == "cover" and work.cover_asset_id:
             asset = await db.get(Asset, work.cover_asset_id)
     elif kind == "series_episode":
@@ -41,29 +43,36 @@ async def media_url(kind: str, record_id: int, purpose: str, db: DB, user: Visit
         if not episode or not series or purpose not in ("preview", "cover"):
             fail("媒体不存在", 404)
         owner = bool(user and episode.owner_id == user.id)
-        public = bool(series.listed and series.audit_status == "approved" and episode.listed and episode.audit_status == "approved" and not series.blocked and not episode.blocked)
+        from .series import public_series_filters
+        public = (await db.execute(select(Series.id).where(Series.id == series.id,
+            *public_series_filters()))).scalar_one_or_none() is not None
+        if series.deleted_at:
+            fail("媒体已删除", 404)
+        if not admin and (series.blocked or episode.blocked):
+            fail("媒体已被限制播放", 404)
         if not admin and not owner and not public:
             fail("媒体未公开或已下架", 404)
         if purpose == "cover":
             asset = await db.get(Asset, episode.cover_asset_id or series.cover_asset_id) if (episode.cover_asset_id or series.cover_asset_id) else None
         else:
             asset = await db.get(Asset, episode.asset_id) if episode.asset_id else None
-            # Paid episodes never fall back to the original object.  A legacy
-            # row may still have preview_status="none"; that must be treated as
-            # not-ready and return 409 below rather than leaking the source.
-            from .previews import is_watermark_key
-            preview = (await db.execute(select(EpisodePreview).where(
-                EpisodePreview.episode_id == episode.id, EpisodePreview.asset_id == episode.asset_id,
-                EpisodePreview.status == "done").order_by(EpisodePreview.id.desc()).limit(1))).scalar_one_or_none()
-            if not preview or not is_watermark_key(preview.object_key):
-                fail("水印播放文件尚未生成，暂不可播放", 409)
-            key, content_type = preview.object_key, "video/mp4"
+            from .previews import episode_is_free, episode_preview_for, episode_preview_ready
+            if episode_is_free(series, episode):
+                if asset:
+                    key, content_type = asset.object_key, asset.content_type
+            else:
+                if not await episode_preview_ready(db, series, episode):
+                    fail("短试看尚未生成，暂不可播放", 409)
+                preview = await episode_preview_for(db, episode)
+                key, content_type = preview.object_key, "video/mp4"
     elif kind == "series":
         series = await db.get(Series, record_id)
-        if not series or purpose != "cover" or not series.cover_asset_id:
+        if not series or series.deleted_at or purpose != "cover" or not series.cover_asset_id:
             fail("媒体不存在", 404)
         owner = bool(user and series.owner_id == user.id)
-        public = bool(series.listed and series.audit_status == "approved" and not series.blocked)
+        from .series import public_series_filters
+        public = (await db.execute(select(Series.id).where(Series.id == series.id,
+            *public_series_filters()))).scalar_one_or_none() is not None
         if not admin and not owner and not public:
             fail("媒体未公开或已下架", 404)
         asset = await db.get(Asset, series.cover_asset_id)

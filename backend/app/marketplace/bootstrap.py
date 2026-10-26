@@ -33,4 +33,9 @@ async def apply_marketplace_switch() -> None:
     from .models import MarketBase
     async with engine.begin() as conn:
         await conn.run_sync(MarketBase.metadata.create_all)
+    from app.database import AsyncSessionLocal
+    from .previews import reconcile_preview_policy
+    async with AsyncSessionLocal() as db:
+        await reconcile_preview_policy(db)
+        await db.commit()
     await start_marketplace_runtime()

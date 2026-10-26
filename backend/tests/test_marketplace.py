@@ -25,15 +25,8 @@ from app.marketplace.models import WorkPreview
 async def ready_work_preview(ctx, work_id, asset_id, version=1):
     """已生成试看的测试前置条件，不复用旧资产预览。"""
     ctx.db.add(WorkPreview(work_id=work_id, asset_id=asset_id, version=version,
-                          status="done", object_key="marketplace/work-previews-hq/test-preview.mp4"))
+                          status="done", object_key="marketplace/previews-v2/works/test-preview.mp4"))
     await ctx.db.flush()
-
-
-def test_watermark_text_uses_author_name_and_strips_ffmpeg_chars():
-    from app.marketplace.preview_worker import watermark_text
-    assert watermark_text("张三") == "PRINTFILM  张三  侵权必究"
-    assert watermark_text("a:b'c") == "PRINTFILM  abc  侵权必究"
-    assert watermark_text("") == "PRINTFILM  创作者  侵权必究"
 
 
 @pytest.mark.parametrize('duration, expected', [(20, 6), (120, 15), (50, 15)])
@@ -113,7 +106,7 @@ async def test_paid_preview_submit_dedup_retry_and_free_transition(ctx, monkeypa
         yield ctx.db
 
     async def render(_snapshot):
-        return 'marketplace/work-previews-hq/test-secure.mp4'
+        return 'marketplace/previews-v2/works/test-secure.mp4'
 
     fake_oss(monkeypatch)
     video = await asset(ctx)
@@ -141,14 +134,14 @@ async def test_paid_preview_submit_dedup_retry_and_free_transition(ctx, monkeypa
     assert await preview_worker.run_preview_once()
     assert job.status == 'done' and record.audit_status == 'pending'
     assert (await ctx.client.post(path + '/submit', json={'version': 1})).json()['audit_status'] == 'pending'
-    changed = await ctx.client.put(path, json={**work_body(video), 'price_fen': 0, 'version': 1})
+    changed = await ctx.client.put(path, json={**work_body(video), 'sale_type': 'free', 'price_fen': 0, 'version': 1})
     assert changed.status_code == 200 and not changed.json()['listed']
     result = await ctx.client.post(path + '/submit', json={'version': changed.json()['version']})
     assert result.json()['audit_status'] == 'pending'
-    assert result.json()['preview_status'] == 'done'
+    assert result.json()['preview_status'] == 'none'
     assert result.json()['sale_type'] == 'free'
     assert list((await ctx.db.execute(select(WorkPreview))).scalars()) == [job]
-    assert job.object_key == 'marketplace/work-previews-hq/test-secure.mp4'
+    assert job.object_key == 'marketplace/previews-v2/works/test-secure.mp4'
 
 
 async def test_paid_preview_media_never_leaks_original(ctx, monkeypatch):
@@ -166,27 +159,28 @@ async def test_paid_preview_media_never_leaks_original(ctx, monkeypatch):
     assert not calls
     await ready_work_preview(ctx, work.id, video.id)
     assert (await ctx.client.get(url)).status_code == 200
-    assert calls == ['marketplace/work-previews-hq/test-preview.mp4']
+    assert calls == ['marketplace/previews-v2/works/test-preview.mp4']
     assert (await ctx.client.get(f'/api/marketplace/media/asset/{video.id}/original')).status_code == 404
     work.price_fen = 0
     await ctx.db.flush()
     assert (await ctx.client.get(url)).status_code == 200
-    assert calls[-1] == 'marketplace/work-previews-hq/test-preview.mp4'
+    assert calls[-1] == 'marketplace/previews-v2/works/test-preview.mp4'
 
 
 async def test_free_submit_without_oss_creates_no_preview_and_paid_switch_blocks(ctx):
-    """免费作品也要生成水印，未配置 OSS 时不创建任务、不进入待审核。"""
+    """已就绪免费资产无需再访问 OSS 生成试看；改收费后缺配置明确阻断。"""
     video = await asset(ctx)
     await rights(ctx, video, full=True)
-    body = {**work_body(video), 'price_fen': 0}
+    body = {**work_body(video), 'sale_type': 'free', 'price_fen': 0}
     created = await ctx.client.post('/api/marketplace/works', json=body)
     assert created.status_code == 200
     path = f"/api/marketplace/works/{created.json()['id']}"
-    blocked = await ctx.client.post(path + '/submit', json={'version': 1})
-    assert blocked.status_code == 503
-    assert blocked.json()['detail']['code'] == 'MARKETPLACE_STORAGE_UNAVAILABLE'
+    submitted = await ctx.client.post(path + '/submit', json={'version': 1})
+    assert submitted.status_code == 200, submitted.text
+    assert submitted.json()['audit_status'] == 'pending'
+    assert submitted.json()['preview_status'] == 'none'
     assert not list((await ctx.db.execute(select(WorkPreview))).scalars())
-    changed = await ctx.client.put(path, json={**body, 'price_fen': 100, 'version': 1})
+    changed = await ctx.client.put(path, json={**body, 'sale_type': 'copyright_contact', 'price_fen': 100, 'version': 1})
     assert changed.status_code == 200 and not changed.json()['listed']
     result = await ctx.client.post(path + '/submit', json={'version': changed.json()['version']})
     assert result.status_code == 503
@@ -243,8 +237,9 @@ async def test_preview_worker_lease_recovery_and_version(ctx, monkeypatch, stale
     async def session():
         yield ctx.db
     async def render(snapshot):
-        return 'marketplace/work-previews-hq/test-worker.mp4'
+        return 'marketplace/previews-v2/works/test-worker.mp4'
     video = await asset(ctx)
+    await rights(ctx, video, full=True)
     work = Work(owner_id=ctx.owner.id, **work_body(video), audit_status='processing', version=2 if stale else 1)
     ctx.db.add(work)
     await ctx.db.flush()
@@ -255,40 +250,10 @@ async def test_preview_worker_lease_recovery_and_version(ctx, monkeypatch, stale
     monkeypatch.setattr(preview_worker, 'AsyncSessionLocal', session)
     monkeypatch.setattr(preview_worker, 'render_preview', render)
     assert await preview_worker.run_preview_once()
-    assert job.status == 'done' and job.attempts == 2
+    assert job.status == ('cancelled' if stale else 'done')
+    assert job.attempts == (1 if stale else 2)
     assert work.audit_status == ('processing' if stale else 'pending')
     assert not await preview_worker.run_preview_once()
-
-
-@pytest.mark.parametrize('seconds, dimensions, fps', [(10, '1920x1080', 24), (60, '320x180', 10)])
-async def test_real_work_preview_limits_and_burned_watermark(monkeypatch, tmp_path, seconds, dimensions, fps):
-    import json
-    import shutil
-    from app.config import get_settings
-    from app.marketplace import worker, preview_worker
-    settings = get_settings()
-    source = tmp_path / 'source.mp4'
-    await worker.command(settings.ffmpeg_path, '-y', '-v', 'error', '-f', 'lavfi', '-i',
-        f'color=c=blue:s={dimensions}:r={fps}', '-f', 'lavfi', '-i', 'sine=frequency=440', '-t', str(seconds),
-        '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', str(source))
-    output = tmp_path / 'result.mp4'
-    keys = []
-    monkeypatch.setattr(storage, 'download', lambda key, dest: shutil.copyfile(source, dest))
-    def upload(key, path, mime):
-        keys.append(key)
-        shutil.copyfile(path, output)
-    monkeypatch.setattr(storage, 'upload', upload)
-    key = await preview_worker.render_preview(dict(work_id=123, owner_id=456, asset_id=789,
-        filename='source.mp4', source_key='test', size_bytes=source.stat().st_size))
-    assert keys == [key] and key.startswith('marketplace/work-previews-hq/123/789/')
-    probe = json.loads(await worker.command(settings.ffprobe_path, '-v', 'error', '-show_format', '-show_streams', '-of', 'json', str(output)))
-    limit = min(15, seconds * .3)
-    assert limit - .3 <= float(probe['format']['duration']) <= limit
-    assert (probe['streams'][0]['width'], probe['streams'][0]['height']) == tuple(map(int, dimensions.split('x')))
-    from fractions import Fraction
-    assert Fraction(probe['streams'][0]['avg_frame_rate']) == fps
-    frame = await worker.command(settings.ffmpeg_path, '-v', 'error', '-i', str(output), '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'rgb24', 'pipe:1')
-    assert sum(1 for r, g in zip(frame[::3], frame[1::3]) if r > 100 and g > 100) > 30
 
 
 @pytest_asyncio.fixture
@@ -633,20 +598,20 @@ async def test_work_full_flow_and_version_checks(ctx):
     assert (await ctx.client.get(path)).status_code == 404
 
 
-async def test_zero_price_contact_work_requires_full_watermark(ctx):
-    """价格为 0 的作品必须有完整时长水印才能进入广场，不能播放原片。"""
+async def test_zero_price_contact_work_requires_new_short_preview(ctx):
+    """版权咨询零参考价仍需短试看，不能复用历史完整水印。"""
     video = await asset(ctx)
     await rights(ctx, video, full=True)
     hidden_free = Work(owner_id=ctx.owner.id, **{**work_body(video), "title": "未生成水印", "price_fen": 0, "sale_type": "copyright_contact"}, audit_status="approved", listed=True)
     hidden_paid = Work(owner_id=ctx.owner.id, **{**work_body(video), "title": "未生成试看", "price_fen": 100, "sale_type": "copyright_contact"}, audit_status="approved", listed=True)
-    shown = Work(owner_id=ctx.owner.id, **{**work_body(video), "title": "免费水印", "price_fen": 0, "sale_type": "copyright_contact"}, audit_status="approved", listed=True)
+    shown = Work(owner_id=ctx.owner.id, **{**work_body(video), "title": "零价短试看", "price_fen": 0, "sale_type": "copyright_contact"}, audit_status="approved", listed=True)
     ctx.db.add_all([hidden_free, hidden_paid, shown])
     await ctx.db.flush()
-    ctx.db.add(WorkPreview(work_id=shown.id, asset_id=video.id, version=1, status="done", object_key="marketplace/work-watermarks-full/test.mp4"))
+    ctx.db.add(WorkPreview(work_id=shown.id, asset_id=video.id, version=1, status="done", object_key="marketplace/previews-v2/works/test.mp4"))
     await ctx.db.flush()
     ctx.user = None
     titles = [item["title"] for item in (await ctx.client.get("/api/marketplace/works")).json()["items"]]
-    assert "免费水印" in titles
+    assert "零价短试看" in titles
     assert "未生成水印" not in titles
     assert "未生成试看" not in titles
     assert (await ctx.client.get(f"/api/marketplace/works/{shown.id}")).status_code == 200
@@ -658,7 +623,7 @@ async def test_expired_rights_hide_public_work(ctx):
     video = await asset(ctx)
     proof = await rights(ctx, video, full=True)
     proof.valid_until = now() - timedelta(seconds=1)
-    ctx.db.add(Work(owner_id=ctx.owner.id, **work_body(video), audit_status="approved", listed=True))
+    ctx.db.add(Work(owner_id=ctx.owner.id, **{**work_body(video), "sale_type": "free"}, audit_status="approved", listed=True))
     await ctx.db.flush()
     ctx.user = None
     assert (await ctx.client.get("/api/marketplace/works")).json()["items"] == []
@@ -998,7 +963,8 @@ async def test_report_contact_private_and_admin_block_hides_work(ctx, monkeypatc
     assert (await ctx.client.get(f"/api/marketplace/works/{item.id}")).status_code == 404
     assert (await ctx.client.get(f"/api/marketplace/media/work/{item.id}/preview")).status_code == 404
     ctx.user = ctx.owner
-    assert (await ctx.client.post(f"/api/marketplace/works/{item.id}/listing", json={"version": item.version})).status_code == 400
+    assert (await ctx.client.post(f"/api/marketplace/works/{item.id}/listing", json={"version": item.version})).status_code in (400, 409)
+    assert item.blocked and not item.listed
 
 
 async def test_worker_recovers_expired_lease(ctx, monkeypatch):

@@ -4,7 +4,7 @@ from sqlalchemy import func, literal, select, union_all
 
 from app.models import User
 from .dependencies import Actor, DB, Visitor
-from .previews import prepare_preview, preview_ready, requires_preview
+from .previews import cancel_work_previews, prepare_preview, preview_ready, requires_preview
 from .models import Asset, Handoff, PlaybackJob, Publication, Recruit, RegistrationCase, RevenueConfig, Rights, Series, SeriesEpisode, Submission, Work
 from .schemas import CaseInput, RecruitInput, RecruitUpdate, RightsInput, Version, WorkInput, WorkUpdate
 from .service import (asset_owned, asset_owned_for_draft, check_version, data, ensure_kept, event, fail, get_target, is_public_work, now,
@@ -107,9 +107,6 @@ async def create_work(body: WorkInput, db: DB, user: Actor):
     if body.cover_asset_id:
         await asset_owned(db, body.cover_asset_id, user, ("image",))
     values = body.model_dump()
-    # 兼容旧客户端未发送收费类型且 price_fen=0 的草稿；新客户端明确选择联系客服时保留该类型。
-    if "sale_type" not in body.model_fields_set and values["price_fen"] == 0:
-        values["sale_type"] = "free"
     item = Work(owner_id=user.id, **values)
     db.add(item)
     await db.commit()
@@ -135,12 +132,11 @@ async def update_work(work_id: int, body: WorkUpdate, db: DB, user: Actor):
             rights.full_status = "draft"
             rights.version += 1
     values = body.model_dump(exclude={"version"})
-    if "sale_type" not in body.model_fields_set and values["price_fen"] == 0:
-        values["sale_type"] = "free"
     for key, value in values.items():
         setattr(item, key, value)
     item.version += 1
     item.audit_status, item.listed, item.reason = "draft", False, ""
+    await cancel_work_previews(db, item)
     await _pause_work_sales(db, item.id)
     event(db, user.id, "work", item.id, "updated", version=item.version)
     await db.commit()
@@ -167,14 +163,18 @@ async def submit_work(work_id: int, body: Version, db: DB, user: Actor):
     validate_rights(rights.details, full=True, certificate=bool(rights.certificate_asset_id))
     if rights.valid_until and rights.valid_until <= now():
         fail("版权授权已过期")
-    # 免费作品直接播放用户上传的原片，不创建试看/水印任务；收费作品
-    # 才需要由市场 Worker 生成最多 15 秒、最多原片 30% 的试看文件。
-    watermark_ready = await preview_ready(db, item) if requires_preview(item.sale_type) else True
-    if requires_preview(item.sale_type) and not watermark_ready:
-        from .dependencies import storage_ready
-        await storage_ready()
-        await prepare_preview(db, item)
-        item.audit_status, item.listed, item.reason = "processing", False, "正在生成试看播放文件"
+    # 新版合格短片仅按同一资产复用，免费作品不创建任何试看任务。
+    if requires_preview(item.sale_type):
+        if not await preview_ready(db, item):
+            from .dependencies import storage_ready
+            await storage_ready()
+        preview = await prepare_preview(db, item)
+    else:
+        await cancel_work_previews(db, item)
+        preview = None
+    clip_ready = await preview_ready(db, item)
+    if requires_preview(item.sale_type) and not clip_ready:
+        item.audit_status, item.listed, item.reason = "processing", False, "正在生成短试看"
     else:
         item.audit_status, item.listed, item.reason = "pending", False, ""
     config = None
@@ -198,7 +198,9 @@ async def submit_work(work_id: int, body: Version, db: DB, user: Actor):
                       share_bps=item.share_bps if item.share_bps is not None else (config.platform_share_bps if config else None), rights_snapshot={"details": rights.details,
                       "certificate_asset_id": rights.certificate_asset_id, "evidence_ids": rights.evidence_ids},
                       audit_status=item.audit_status if item.audit_status == "pending" else "draft",
-                      preview_status=("done" if watermark_ready else "pending") if requires_preview(item.sale_type) else "none",
+                      preview_status=("done" if clip_ready else "pending") if requires_preview(item.sale_type) else "none",
+                      preview_key=preview.object_key if preview and clip_ready else None,
+                      preview_error="",
                       playback_status="done" if item.sale_type != "platform_unlock" else "pending")
         if publication is None:
             publication = Publication(content_type="work", content_id=item.id, **values)
@@ -246,7 +248,7 @@ async def listing(work_id: int, body: Version, db: DB, user: Actor, listed: bool
     check_version(item, body.version)
     if listed:
         if requires_preview(item.sale_type) and not await preview_ready(db, item):
-            fail("水印播放文件尚未生成，请重新提交审核", 409)
+            fail("短试看尚未生成，请重新提交审核", 409)
         rights = await rights_for(db, item.asset_id, lock=True)
         asset = await db.get(Asset, item.asset_id) if item.asset_id else None
         if item.blocked or item.audit_status != "approved" or not asset or asset.status != "ready" or not rights_valid(rights, full=True) or rights.details.get("source") != item.source:
@@ -261,6 +263,32 @@ async def listing(work_id: int, body: Version, db: DB, user: Actor, listed: bool
     if publication:
         publication.listed = listed and publication.audit_status == "approved" and (item.sale_type != "platform_unlock" or publication.playback_status == "done")
     event(db, user.id, "work", item.id, "listed" if listed else "unlisted", version=item.version)
+    await db.commit()
+    return await work_data(db, item, True)
+
+
+@router.post("/works/{work_id}/preview/retry", response_model=dict)
+async def retry_work_preview(work_id: int, body: Version, db: DB, user: Actor):
+    """仅重试当前作品的衍生短片，已审核版本和购买播放文件保持原样。"""
+    item = await owned(db, Work, work_id, user)
+    ensure_kept(item)
+    check_version(item, body.version)
+    await _ensure_work_idle(db, item.id)
+    from .previews import work_submission_ready
+    if item.audit_status not in ("approved", "pending", "processing", "preview_failed"):
+        fail("请先提交作品审核", 409)
+    if not await work_submission_ready(db, item):
+        fail("作品媒体或版权资料已变化，请编辑后重新提交审核", 409)
+    if requires_preview(item.sale_type):
+        from .dependencies import storage_ready
+        await storage_ready()
+        preview = await prepare_preview(db, item)
+        if item.audit_status != "approved":
+            item.audit_status, item.reason = ("pending", "") if preview.status == "done" else ("processing", "正在生成短试看")
+    else:
+        await cancel_work_previews(db, item)
+        if item.audit_status != "approved":
+            item.audit_status, item.reason = "pending", ""
     await db.commit()
     return await work_data(db, item, True)
 
@@ -291,6 +319,14 @@ async def get_rights(asset_id: int, db: DB, user: Actor):
 @router.put("/assets/{asset_id}/rights", response_model=dict)
 async def save_rights(asset_id: int, body: RightsInput, db: DB, user: Actor):
     """任何材料变动都重置核验结论，绑定不可变视频文件。"""
+    # 与提交、Worker 一致：先锁父内容，再锁分集和权属，避免 Rights→Series 反向等待。
+    related = list((await db.execute(select(Work).where(Work.asset_id == asset_id)
+        .order_by(Work.id).with_for_update())).scalars().all())
+    series_ids = select(SeriesEpisode.series_id).where(SeriesEpisode.asset_id == asset_id).distinct()
+    related_series = list((await db.execute(select(Series).where(Series.id.in_(series_ids))
+        .order_by(Series.id).with_for_update())).scalars().all())
+    related_episodes = list((await db.execute(select(SeriesEpisode).where(SeriesEpisode.asset_id == asset_id)
+        .order_by(SeriesEpisode.id).with_for_update())).scalars().all())
     await asset_owned(db, asset_id, user)
     for document_id in [*body.evidence_ids, *([body.certificate_asset_id] if body.certificate_asset_id else [])]:
         await asset_owned(db, document_id, user, ("document", "image"))
@@ -323,21 +359,21 @@ async def save_rights(asset_id: int, body: RightsInput, db: DB, user: Actor):
             fail("请先签署 PrintFilm 授权函")
     item.certificate_asset_id, item.evidence_ids, item.valid_until = body.certificate_asset_id, body.evidence_ids, body.valid_until
     item.basic_status, item.full_status = "draft", "draft"
-    related = (await db.execute(select(Work).where(Work.asset_id == asset_id).with_for_update())).scalars().all()
     for work in related:
         await _ensure_work_idle(db, work.id)
         work.audit_status, work.listed = "draft", False
         work.version += 1
+        await cancel_work_previews(db, work)
         await _pause_work_sales(db, work.id)
-    related_episodes = list((await db.execute(select(SeriesEpisode).where(
-        SeriesEpisode.asset_id == asset_id).with_for_update())).scalars().all())
     if related_episodes:
         from .series import ensure_series_idle, pause_series_sales
         for episode in related_episodes:
             episode.version += 1
             episode.audit_status, episode.listed = "draft", False
-        for series_id in sorted({episode.series_id for episode in related_episodes}):
-            series = (await db.execute(select(Series).where(Series.id == series_id).with_for_update())).scalar_one()
+            episode.preview_status, episode.preview_key, episode.preview_attempts = "none", None, 0
+            from .previews import cancel_episode_previews
+            await cancel_episode_previews(db, episode)
+        for series in related_series:
             await ensure_series_idle(db, series.id)
             series.version += 1
             series.audit_status, series.listed = "draft", False

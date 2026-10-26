@@ -135,7 +135,7 @@ async def review_work(work_id: int, body: ReviewInput, db: DB, user: Admin):
     if body.decision == "approved":
         from .previews import preview_ready
         if item.sale_type != "free" and not await preview_ready(db, item):
-            fail("水印播放文件尚未就绪，不能通过审核", 409)
+            fail("短试看尚未就绪，不能通过审核", 409)
         if item.blocked or not asset or asset.status != "ready" or not rights or rights.blocked:
             fail("版权、媒体或封禁状态不允许通过")
         if rights.details.get("source") != item.source or (rights.valid_until and rights.valid_until <= now()):
@@ -233,6 +233,9 @@ async def review_series(series_id: int, body: ReviewInput, db: DB, user: Admin):
             fail("请确认系列内容与各集版权信息均已检查")
         if not episodes or [item.episode_no for item in episodes] != list(range(1, len(episodes) + 1)):
             fail("系列分集必须从1开始连续排列")
+        from .previews import episode_is_free, episode_preview_ready, series_submission_ready
+        if not await series_submission_ready(db, series):
+            fail("系列媒体、版权材料或授权未就绪，请重新检查", 409)
         config = await db.get(RevenueConfig, 1)
         if series.sale_type == "platform_unlock" and (not config or not config.enabled):
             fail("MARKETPLACE_REVENUE_CONFIG_REQUIRED", 409)
@@ -254,13 +257,9 @@ async def review_series(series_id: int, body: ReviewInput, db: DB, user: Admin):
             elif episode.source == "external":
                 if not rights.certificate_asset_id or not rights.details.get("certificate_number") or not rights.details.get("dispute_ack"):
                     fail(f"第{episode.episode_no}集缺少版权证书编号、证明材料或纠纷声明")
-            from .previews import is_watermark_key
-            preview = (await db.execute(select(EpisodePreview).where(
-                EpisodePreview.episode_id == episode.id, EpisodePreview.asset_id == episode.asset_id,
-                EpisodePreview.status == "done").order_by(EpisodePreview.id.desc()).limit(1))).scalar_one_or_none()
-            if not preview or not is_watermark_key(preview.object_key):
-                fail(f"第{episode.episode_no}集水印播放文件尚未就绪", 409)
-            if series.sale_type == "platform_unlock" and episode.unlock_price_fen <= 0:
+            if not await episode_preview_ready(db, series, episode):
+                fail(f"第{episode.episode_no}集短试看尚未就绪", 409)
+            if series.sale_type == "platform_unlock" and not episode_is_free(series, episode) and episode.unlock_price_fen <= 0:
                 fail(f"第{episode.episode_no}集必须设置解锁价")
             publication = (await db.execute(select(Publication).where(Publication.content_type == "series_episode", Publication.content_id == episode.id, Publication.version == episode.version).with_for_update())).scalar_one_or_none()
             if not publication:

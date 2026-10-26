@@ -193,6 +193,25 @@ async def test_new_order_cannot_buy_stale_or_hidden_publication(publication_ctx,
     assert await ctx.db.scalar(select(func.count()).select_from(ContentOrder)) == 0
 
 
+@pytest.mark.parametrize("whole_series", [False, True])
+async def test_legacy_priced_free_episode_cannot_create_new_order(publication_ctx, whole_series):
+    ctx = publication_ctx
+    content = await make_publication(ctx)
+    if whole_series:
+        content.series.sale_type = "free"
+    else:
+        content.series.free_episode_count = 1
+    await ctx.db.flush()
+    # 历史快照可能仍有价格；免费集不能因此被收费，旧购买权益仍可播放。
+    response = await ctx.client.post("/api/marketplace/content-orders", json={
+        "publication_id": content.publication.id, "pay_type": "alipay", "idempotency_key": uuid.uuid4().hex})
+    assert response.status_code == 409, response.text
+    assert await ctx.db.scalar(select(func.count()).select_from(ContentOrder)) == 0
+    await grant(ctx, content)
+    playback = await ctx.client.get(f"/api/marketplace/platform/publications/{content.publication.id}/playback")
+    assert playback.status_code == 200, playback.text
+
+
 async def test_pending_payment_survives_update_and_duplicate_notification(publication_ctx):
     ctx = publication_ctx
     content = await make_publication(ctx)
@@ -348,7 +367,7 @@ async def test_series_submission_freezes_effective_revenue_share(publication_ctx
     await ctx.db.flush()
     content.item.cover_asset_id = cover.id
     ctx.db.add(EpisodePreview(episode_id=content.item.id, asset_id=content.asset.id, version=1,
-                             status="done", object_key="marketplace/series-previews-hq/test.mp4"))
+                             status="done", object_key="marketplace/previews-v2/episodes/test.mp4"))
     await ctx.db.flush()
     response = await ctx.client.post(f"/api/marketplace/series/{content.series.id}/submit", json={"version": 1})
     assert response.status_code == 200, response.text
@@ -367,7 +386,7 @@ async def test_work_submission_freezes_default_share_and_never_rewrites_approved
     content.proof.details = {"source": "external", "certificate_number": "CP-123", "dispute_ack": True}
     ctx.db.add_all([RevenueConfig(id=1, platform_share_bps=2100), WorkPreview(
         work_id=content.item.id, asset_id=content.asset.id, version=1,
-        status="done", object_key="marketplace/work-previews-hq/test.mp4")])
+        status="done", object_key="marketplace/previews-v2/works/test.mp4")])
     await ctx.db.flush()
     response = await ctx.client.post(f"/api/marketplace/works/{content.item.id}/submit", json={"version": 1})
     assert response.status_code == 200, response.text
