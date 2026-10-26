@@ -55,9 +55,9 @@ Manage short videos as project cards at `/history`, then start a new project at 
 - Stop production or resume missing media after a failure; saved projects and tasks recover after leaving the page
 - Existing conversations transfer to the step editor after their producers stop and settle; historical versions retain their media
 
-### 3. Tools hub
+### 3. Independent generation and Drama Skills
 
-One-shot capabilities without the full pipeline: text-to-image, image-to-image, image-to-product, text-to-video, video-to-video, e-commerce collage.
+Images, videos and audio have independent generation pages. Explore [Drama Skills](https://www.gitcc.com/ai1/film-skills) for short-drama creation skills.
 
 ### 4. Admin console
 

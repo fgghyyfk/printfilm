@@ -8,7 +8,7 @@ PRINTFILM（仓库目录 `ai_movie`）：模板驱动的 AI 短视频（科普 k
 
 - **科普短视频**：主题/口播 → 模板拆镜 → 分镜图 →（可选）视频 → 旁白 → FFmpeg 合成；状态机 `SCRIPTING → IMAGING → VIDEOING/AUDIOING → COMPOSING → DONE`
 - **漫剧 drama**：项目 → 剧本摘要/分集 → 资产库（角色/场景/道具/音色）→ 分集分镜 → React Flow 画布
-- 另有工具中心（t2i/i2p/t2v 等）、管理后台、可选钱包计费（易支付）
+- 另有图片/视频/音频独立生成入口、短剧 Skills 站外链接、管理后台、可选钱包计费（易支付）
 
 三条独立进程 + 两个容器中间件：FastAPI(:8000)、用户端 Vite(:5173)、管理端 Vite(:5174)、Postgres(:15432)、Redis(:16379)。技术栈：Python 3.12 / FastAPI / SQLAlchemy(asyncpg) / React 19 / TS / Vite 8。需要本机安装 FFmpeg。
 
