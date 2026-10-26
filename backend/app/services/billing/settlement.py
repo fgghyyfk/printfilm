@@ -495,43 +495,6 @@ async def close_expired_pending_orders(
     return closed
 
 
-async def settle_usage_charge(
-    db: AsyncSession,
-    user: User,
-    charge_fen: int,
-    *,
-    ref_type: str = "api",
-    ref_id: str = "",
-) -> None:
-    """即时扣费（已由 task 结算覆盖时仅作兼容）。"""
-    if not billing_active(user):
-        return
-    need = max(0, int(charge_fen))
-    if need <= 0:
-        return
-    locked = await _lock_user(db, int(user.id))
-    target = locked or user
-    available = int(target.balance_fen or 0)
-    if available < need:
-        raise ValueError(f"余额不足：需要 ¥{need / 100:.2f}，当前 ¥{available / 100:.2f}，请先充值")
-    await _ledger(
-        db,
-        target,
-        -need,
-        "settle",
-        ref_type=ref_type,
-        ref_id=ref_id,
-        note="api_usage",
-    )
-    if locked is not None and locked is not user:
-        user.balance_fen = locked.balance_fen
-        user.frozen_fen = locked.frozen_fen
-    await db.flush()
-    from app.services.billing.alerts import process_billing_alerts_after_charge
-
-    await process_billing_alerts_after_charge(db, target, charged_fen=need)
-
-
 async def get_task_usage_lines(db: AsyncSession, task_id: int) -> list[UsageEvent]:
     result = await db.execute(
         select(UsageEvent)

@@ -32,7 +32,6 @@ from app.services.billing.settlement import (
     get_task_usage_lines,
     pending_task_commitment_fen,
     settle_task,
-    settle_usage_charge,
 )
 from app.services.billing.usage import record_line, record_llm_chat_line, record_usage
 
@@ -67,6 +66,5 @@ __all__ = [
     "settle_deferred_video_poll",
     "set_current_task_run_id",
     "settle_task",
-    "settle_usage_charge",
     "sku_by_id",
 ]
