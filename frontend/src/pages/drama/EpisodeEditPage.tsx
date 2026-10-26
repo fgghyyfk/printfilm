@@ -1771,6 +1771,7 @@ function EpisodeEditInner() {
           onPlayingFragmentChange={handlePlayingFragmentChange}
           aspectRatio={aspectRatio}
           episodeId={episode?.id}
+          projectId={projectId}
           episodeName={episode?.name || '本集'}
           onOpenStoryboard={openEpisodeStoryboard}
           previewVideoUrl={previewVideoUrl}

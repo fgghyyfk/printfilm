@@ -66,11 +66,17 @@ export function OssSettingsPanel() {
       { id: "async", label: "上传方式", ready: form.oss_enabled && form.oss_upload_async, readyText: "异步上传", pendingText: form.oss_enabled ? "同步上传" : "依赖 OSS 启用" },
     ]} extra={<span className="settings-status-extra">配置来源：{form.source === "db" ? "管理端" : "环境变量"}</span>} />
 
-    <SettingsPanel title="存储连接" description="Endpoint 决定上传到哪里，Bucket 是存储空间名称。未启用时也可提前保存连接信息。">
+    <SettingsPanel title="存储连接" description="生成业务与数字资产市场共用此处的 Bucket 和凭证。Endpoint 决定上传到哪里，Bucket 是存储空间名称。">
       <div className="settings-toggle-row">
-        <div><strong>启用阿里云 OSS</strong><span>开启后上传生成文件；关闭后使用本地静态目录。</span></div>
+        <div><strong>启用阿里云 OSS</strong><span>关闭后生成业务使用本地目录；数字资产市场文件上传与播放不可用。</span></div>
         <Switch aria-label="启用阿里云 OSS" checked={form.oss_enabled} onCheckedChange={(value) => patchField("oss_enabled", value)} />
       </div>
+      <p className="mt-3 text-sm text-muted-foreground">
+        数字资产市场固定使用 marketplace/ 目录，不受下方生成业务目录设置影响。
+        市场文件以私有权限上传，通过短时签名访问，不使用公开域名。
+        Bucket 须为私有且不得存在匿名 Allow 策略；此页保存配置不会自动修改 Bucket 权限。
+        “配置完整”仅表示配置项已填写，实际权限仍需云端验证。
+      </p>
       <div className="settings-field-grid mt-5">
         <LabeledControl label="服务域名 Endpoint" required={form.oss_enabled} error={endpointError} hint="如 oss-cn-beijing.aliyuncs.com；不要填写 Bucket 访问地址。">
           <input className="settings-input" placeholder="oss-cn-beijing.aliyuncs.com" value={form.oss_endpoint} onChange={(event) => patchField("oss_endpoint", event.target.value)} autoCapitalize="none" spellCheck={false} />
@@ -81,7 +87,7 @@ export function OssSettingsPanel() {
         <LabeledControl label="地域 Region" optional hint="如 cn-beijing，应与 Endpoint 所属地域一致。">
           <input className="settings-input" placeholder="cn-beijing" value={form.oss_region} onChange={(event) => patchField("oss_region", event.target.value)} autoCapitalize="none" spellCheck={false} />
         </LabeledControl>
-        <LabeledControl label="文件目录前缀" optional hint="不含域名；例如 kepu。留空使用默认目录 kepu。">
+        <LabeledControl label="文件目录前缀" optional hint="仅用于生成业务，不含域名；例如 kepu。留空使用默认目录 kepu。">
           <input className="settings-input" placeholder="kepu" value={form.oss_folder} onChange={(event) => patchField("oss_folder", event.target.value)} spellCheck={false} />
         </LabeledControl>
       </div>
@@ -100,7 +106,7 @@ export function OssSettingsPanel() {
       </div>
     </SettingsPanel>
 
-    <SettingsPanel title="公网访问与 CDN" description="浏览器通过这个地址预览和下载媒体；它与上传使用的 Endpoint 分开配置。">
+    <SettingsPanel title="公网访问与 CDN" description="生成业务通过这个地址预览和下载媒体；它与上传使用的 Endpoint 分开配置。数字资产市场使用签名访问，不使用此地址。">
       <LabeledControl label="自定义访问地址" optional error={publicBaseError} hint="绑定 CDN 或自定义域名时填写完整 https:// 地址；留空使用 Bucket 的公网地址。">
         <input className="settings-input" type="url" placeholder="https://cdn.example.com" value={form.oss_public_base} onChange={(event) => patchField("oss_public_base", event.target.value)} autoCapitalize="none" spellCheck={false} />
       </LabeledControl>

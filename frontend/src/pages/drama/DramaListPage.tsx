@@ -31,6 +31,8 @@ import { useI18n } from '../../i18n'
 import { DramaProjectCardMenu } from './DramaProjectCardMenu'
 import { ProjectCard, ProjectGrid } from '../../components/projects/ProjectCard'
 import ProjectCreateDialog, { type ProjectCreateValues } from '../../components/projects/ProjectCreateDialog'
+import DramaPublishModal from '../../features/marketplace/DramaPublishModal'
+import { useMarketplace } from '../../features/marketplace/hooks'
 import './drama.css'
 import './project-list.css'
 
@@ -63,6 +65,8 @@ export default function DramaListPage({ workflow = 'script' }: { workflow?: Dram
 // 渲染 Agent 首页内容
 function DramaListInner({ workflow }: { workflow: DramaWorkflow }) {
   const navigate = useNavigate()
+  const { capabilities } = useMarketplace()
+  const [publishProjectId, setPublishProjectId] = useState<number | null>(null)
   const { t, m } = useI18n()
   const canvasMode = workflow === 'canvas'
   const createLabel = canvasMode ? t('canvasList.newCanvas') : t('dramaList.newProject')
@@ -322,7 +326,11 @@ function DramaListInner({ workflow }: { workflow: DramaWorkflow }) {
                     <span><UserRound size={13} aria-hidden />个人项目</span>
                     <time dateTime={item.updated_at || item.created_at}>{formatUpdatedAt(item.updated_at || item.created_at)}</time>
                   </>}
-                  menu={<DramaProjectCardMenu onRename={() => void handleRename(item)} onDelete={() => void handleDeleteOne(item)} />}
+                  menu={<DramaProjectCardMenu
+                    onRename={() => void handleRename(item)}
+                    onDelete={() => void handleDeleteOne(item)}
+                    onPublish={capabilities?.enabled ? () => setPublishProjectId(item.id) : undefined}
+                  />}
                   selection={{ checked: selected.has(item.id), visible: selectionMode, onChange: () => toggleSelect(item.id), label: `选择 ${item.title}` }}
                   onOpen={() => openProject(item)}
                   openLabel={selectionMode ? `切换选择 ${item.title}` : `打开 ${item.title}`}
@@ -371,6 +379,7 @@ function DramaListInner({ workflow }: { workflow: DramaWorkflow }) {
           </div>
         ) : null}
       </div>
+      {publishProjectId && capabilities?.enabled && <DramaPublishModal projectId={publishProjectId} onClose={() => setPublishProjectId(null)} />}
     </AppShell>
   )
 }

@@ -257,6 +257,14 @@ export default function EditorPage() {
           >
             导出视频
           </button>
+          <button
+            type="button"
+            className="pf-btn pf-btn-ghost pf-btn-sm"
+            disabled={!project.final_video_url}
+            onClick={() => nav(`/marketplace/from-printfilm?project=${project.id}`)}
+          >
+            发布到数字资产市场
+          </button>
         </div>
       </div>
 

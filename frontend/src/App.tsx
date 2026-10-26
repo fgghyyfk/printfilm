@@ -1,5 +1,5 @@
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
-import { useLayoutEffect, useSyncExternalStore } from 'react'
+import { lazy, Suspense, useLayoutEffect, useSyncExternalStore } from 'react'
 import DialogHost from './components/ui/DialogHost'
 import BillingAlertHost from './components/billing/BillingAlertHost'
 import { DramaGenQueuePanel } from './components/drama/DramaGenQueuePanel'
@@ -40,6 +40,8 @@ import { TeamPreviewProvider } from './features/teams/TeamPreviewContext'
 import './styles/printfilm.css'
 import './App.css'
 
+const Marketplace = lazy(() => import('./features/marketplace/Marketplace'))
+
 /** 生成队列支持个人和团队空间，余额引导仅在个人业务空间展示。 */
 function PersonalBusinessOverlays() {
   const { pathname } = useLocation()
@@ -54,6 +56,7 @@ export default function App() {
   return (
     <TeamPreviewProvider><BrowserRouter>
       <Routes>
+        <Route path="/marketplace/*" element={<Suspense fallback={<p>正在加载作品与招募…</p>}><Marketplace /></Suspense>} />
         <Route path="/" element={<HomePage />} />
         <Route path="/method" element={<MethodPage />} />
         <Route path="/auth" element={<AuthPage />} />

@@ -1,0 +1,4 @@
+# 下游授权函生成 PDF；原项目依赖文件保持独立。
+-r requirements.txt
+Pillow==11.3.0
+reportlab==4.4.4

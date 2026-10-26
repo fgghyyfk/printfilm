@@ -119,6 +119,7 @@ class AdminModelSettingsOut(BaseModel):
     public_base_url: str = ""
     ffmpeg_path: str = "ffmpeg"
     ffprobe_path: str = "ffprobe"
+    marketplace_enabled: bool = False
 
     source: str = "env"
     updated_at: datetime | None = None
@@ -221,6 +222,7 @@ class AdminModelSettingsPatch(BaseModel):
     public_base_url: str | None = None
     ffmpeg_path: str | None = None
     ffprobe_path: str | None = None
+    marketplace_enabled: bool | None = None
 
 
 class AdminModelSettingsSaveOut(BaseModel):
@@ -318,6 +320,7 @@ def model_config_field_names() -> tuple[str, ...]:
         "public_base_url",
         "ffmpeg_path",
         "ffprobe_path",
+        "marketplace_enabled",
     )
 
 

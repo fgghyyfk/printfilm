@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   ArrowUpRight, ChevronRight, CircleHelp, Clapperboard, CreditCard,
-  Image, Images, LayoutDashboard, ListTodo, Menu, Plus, Settings2, UserRound, UsersRound,
+  Image, Images, LayoutDashboard, ListTodo, Menu, Plus, Settings2, Store, UserRound, UsersRound,
   Video, WandSparkles, Workflow, X,
 } from 'lucide-react'
 import { api } from '../../api'
@@ -19,6 +19,7 @@ import { useI18n } from '../../i18n'
 import LanguageSwitch from './LanguageSwitch'
 import WorkspaceSwitcher from '../../features/teams/WorkspaceSwitcher'
 import { useTeamPreview } from '../../features/teams/useTeamPreview'
+import { useMarketplace } from '../../features/marketplace/hooks'
 
 export type { NavActive } from '../../lib/siteNavigation'
 
@@ -41,6 +42,7 @@ const NAV_ICONS = {
 
 /** 应用主侧栏及窄屏导航抽屉，共用路由与会话状态。 */
 export default function SiteNav({ active }: Props) {
+  const { capabilities: marketplace } = useMarketplace()
   const nav = useNavigate()
   const location = useLocation()
   const { t } = useI18n()
@@ -52,8 +54,9 @@ export default function SiteNav({ active }: Props) {
   const menuButtonRef = useRef<HTMLButtonElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   const current = resolveNavActive(location.pathname, active)
+  const inMarketplace = location.pathname === '/marketplace' || location.pathname.startsWith('/marketplace/')
   const currentItem = [...CREATION_NAV, ...RESOURCE_NAV].find((item) => item.key === current)
-  const currentLabel = currentItem ? t(currentItem.label) : current === 'settings' ? t('nav.profile') : current === 'help' ? t('nav.help') : t('nav.workbench')
+  const currentLabel = inMarketplace ? '数字资产市场' : currentItem ? t(currentItem.label) : current === 'settings' ? t('nav.profile') : current === 'help' ? t('nav.help') : t('nav.workbench')
 
   useEffect(() => {
     let active = true
@@ -184,7 +187,13 @@ export default function SiteNav({ active }: Props) {
       </div>
       <nav className="pf-sidebar-navigation" aria-label={t('nav.main')}>
         <div className="pf-sidebar-group"><span className="pf-sidebar-group-label">{t('nav.creation')}</span>{CREATION_NAV.map(renderLink)}</div>
-        <div className="pf-sidebar-group"><span className="pf-sidebar-group-label">{t('nav.resources')}</span>{RESOURCE_NAV.map(renderLink)}</div>
+        <div className="pf-sidebar-group"><span className="pf-sidebar-group-label">{t('nav.resources')}</span>{RESOURCE_NAV.map(renderLink)}
+          {marketplace?.enabled && <Link to="/marketplace" className={`pf-sidebar-link${inMarketplace ? ' is-active' : ''}`} aria-current={inMarketplace ? 'page' : undefined} onClick={() => { selectTeam(null); setMenuOpen(false) }}>
+            <Store size={19} strokeWidth={1.8} aria-hidden />
+            <span>数字资产市场</span>
+            {inMarketplace && <ChevronRight size={15} className="pf-sidebar-link-arrow" aria-hidden />}
+          </Link>}
+        </div>
       </nav>
       <div className="pf-sidebar-bottom">
         <div className="pf-sidebar-utilities">

@@ -1038,9 +1038,14 @@ title="用当前镜头重新拼接"
                   </button>
                 ) : null}
                 {hasFinal ? (
-                  <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm" onClick={openFinalPreview}>
-                    预览成片
-                  </button>
+                  <>
+                    <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm" onClick={openFinalPreview}>
+                      预览成片
+                    </button>
+                    <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm" onClick={() => nav(`/marketplace/from-printfilm?project=${project.id}`)}>
+                      发布到数字资产市场
+                    </button>
+                  </>
                 ) : (
                   <button
                     type="button"

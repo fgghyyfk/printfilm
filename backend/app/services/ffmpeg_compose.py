@@ -358,13 +358,15 @@ def _canvas(opts: ComposeOptions) -> tuple[int, int]:
 
 def _find_cjk_font() -> str | None:
     """Return a path usable by drawtext fontfile=…（优先环境变量与仓库内置字体）。"""
-    bundled = (
-        Path(__file__).resolve().parents[1] / "assets" / "fonts" / "NotoSansSC-Regular.otf"
-    )
+    bundled_dir = Path(__file__).resolve().parents[1] / "assets" / "fonts"
+    bundled = [
+        bundled_dir / "NotoSansSC-Regular.ttf",
+        bundled_dir / "NotoSansSC-Regular.otf",
+    ]
     candidates = [
         os.environ.get("FRAMECUT_FONT"),
-        # 仓库内置（部署时可放入 backend/assets/fonts）
-        str(bundled) if bundled.exists() else None,
+        # 仓库内置（部署时随代码带走，服务器不必再安装字体）
+        *[str(path) for path in bundled if path.is_file()],
         r"C:\Windows\Fonts\msyhbd.ttc",
         r"C:\Windows\Fonts\msyh.ttc",
         r"C:\Windows\Fonts\simhei.ttf",

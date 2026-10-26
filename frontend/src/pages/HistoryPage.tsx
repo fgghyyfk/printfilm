@@ -14,6 +14,7 @@ import {
   IconEye,
   IconPlus,
   IconSearch,
+  IconSend,
   IconTrash,
 } from '../components/ui/Icons'
 import { dialog } from '../lib/dialog'
@@ -367,6 +368,7 @@ export default function HistoryPage() {
                     <button type="button" className="pf-btn-text" onClick={() => continueEdit(p)}><IconEdit size={14} />{t('history.continueEdit')}</button>
                     <button type="button" className="pf-btn-text" disabled={!p.final_video_url} onClick={() => p.final_video_url && setPreview({ url: api.assetUrl(p.final_video_url, p.updated_at), title: p.title, projectId: p.id })}><IconEye size={14} />{t('common.preview')}</button>
                     <button type="button" className="pf-btn-text" disabled={!canDownload(p) || busyId === p.id || packing} onClick={() => downloadOne(p)}><IconDownload size={14} />{busyId === p.id ? t('common.downloading') : t('common.download')}</button>
+                    <button type="button" className="pf-btn-text" disabled={!p.final_video_url} onClick={() => nav(`/marketplace/from-printfilm?project=${p.id}`)}><IconSend size={14} />发布到市场</button>
                   </>}
                 />
               })}

@@ -122,6 +122,10 @@ app.include_router(team_content.personal_router, prefix="/api")
 app.include_router(team_edit_locks.router, prefix="/api")
 app.include_router(admin_router, prefix="/api")
 
+# 下游扩展仅注册独立路由和初始化，不改变原发布、生成及存储逻辑。
+from app.marketplace.bootstrap import install as install_marketplace
+install_marketplace(app)
+
 
 async def _load_startup_model_settings() -> None:
     async with AsyncSessionLocal() as db:
@@ -155,6 +159,15 @@ async def on_startup() -> None:
     except Exception:  # noqa: BLE001
         pass
     await start_task_runtime()
+    from app.marketplace.bootstrap import apply_marketplace_switch
+    from app.marketplace.config import is_marketplace_enabled
+    # 补列完成后再按系统设置建市场表并启动 Worker。关闭时不建表。
+    await apply_marketplace_switch()
+    if is_marketplace_enabled():
+        from app.marketplace.previews import withdraw_unwatermarked_public
+        async with AsyncSessionLocal() as db:
+            await withdraw_unwatermarked_public(db)
+            await db.commit()
 
 
 @app.on_event("shutdown")
@@ -162,6 +175,8 @@ async def on_shutdown() -> None:
     """Release Postgres pool on uvicorn worker exit."""
     from app.database import dispose_engine
 
+    from app.marketplace.runtime import stop_marketplace_runtime
+    await stop_marketplace_runtime()
     await stop_task_runtime()
     await dispose_engine()
 
@@ -182,6 +197,9 @@ async def _apply_schema_patches(engine_override: AsyncEngine | None = None) -> N
     """Lightweight additive migrations（仅 PostgreSQL）。"""
     target_engine = engine_override if engine_override is not None else engine
     async with target_engine.begin() as conn:
+        # 现有 SQLite 测试库由 create_all 建表；以下补列只适用于 PostgreSQL。
+        if conn.dialect.name != "postgresql":
+            return
         from app.team_schema import apply_team_schema_patches
 
         await apply_team_schema_patches(conn)
@@ -316,6 +334,63 @@ async def _apply_schema_patches(engine_override: AsyncEngine | None = None) -> N
                 continue
             await conn.execute(text(f"DROP INDEX IF EXISTS ix_task_runs_{col}"))
             await conn.execute(text(f"ALTER TABLE task_runs DROP COLUMN {col}"))
+
+        # Marketplace additive columns. The marketplace bootstrap creates new tables;
+        # these columns keep existing work drafts compatible with the new sale modes.
+        mcols = await _pg_columns(conn, "marketplace_works")
+        if mcols:
+            if "sale_type" not in mcols:
+                await conn.execute(text("ALTER TABLE marketplace_works ADD COLUMN sale_type VARCHAR(24) DEFAULT 'copyright_contact'"))
+            if "unlock_price_fen" not in mcols:
+                await conn.execute(text("ALTER TABLE marketplace_works ADD COLUMN unlock_price_fen BIGINT DEFAULT 0"))
+            if "share_bps" not in mcols:
+                await conn.execute(text("ALTER TABLE marketplace_works ADD COLUMN share_bps INTEGER"))
+            if "deleted_at" not in mcols:
+                await conn.execute(text("ALTER TABLE marketplace_works ADD COLUMN deleted_at TIMESTAMPTZ"))
+
+        # The marketplace tables are intentionally created from their own metadata,
+        # but create_all() does not alter tables from an earlier deployment.  Keep
+        # upgrades additive and idempotent so a server can be restarted against an
+        # existing database without a manual migration step.  Defaults make these
+        # additions safe for historical rows; newly written records still use the
+        # ORM defaults and publication snapshots remain immutable.
+        marketplace_columns: dict[str, dict[str, str]] = {
+            "marketplace_series": {
+                "sale_type": "VARCHAR(24) DEFAULT 'copyright_contact'",
+                "copyright_price_fen": "BIGINT DEFAULT 0",
+                "share_bps": "INTEGER",
+                "free_episode_count": "INTEGER NOT NULL DEFAULT 0",
+                "deleted_at": "TIMESTAMPTZ",
+            },
+            "marketplace_series_episodes": {
+                "source": "VARCHAR(30) NOT NULL DEFAULT 'external'",
+                "preview_status": "VARCHAR(24) DEFAULT 'none'",
+                "preview_key": "VARCHAR(512)",
+                "preview_attempts": "INTEGER DEFAULT 0",
+                "playback_status": "VARCHAR(24) DEFAULT 'none'",
+                "playback_manifest_key": "VARCHAR(512)",
+                "playback_attempts": "INTEGER DEFAULT 0",
+            },
+            "marketplace_publications": {
+                "preview_key": "VARCHAR(512)",
+                "preview_status": "VARCHAR(24) DEFAULT 'pending'",
+                "preview_attempts": "INTEGER DEFAULT 0",
+                "preview_error": "TEXT DEFAULT ''",
+                "playback_manifest_key": "VARCHAR(512)",
+                "playback_status": "VARCHAR(24) DEFAULT 'pending'",
+                "playback_attempts": "INTEGER DEFAULT 0",
+                "playback_error": "TEXT DEFAULT ''",
+            },
+        }
+        for table, additions in marketplace_columns.items():
+            columns = await _pg_columns(conn, table)
+            # A missing table is expected on a first boot before marketplace's
+            # startup handler runs create_all(); simply let that handler create it.
+            if not columns:
+                continue
+            for column, definition in additions.items():
+                if column not in columns:
+                    await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {definition}"))
 
 
 async def bootstrap_admins() -> None:

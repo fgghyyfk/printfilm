@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useMarketplaceEnabled } from "@/features/marketplace/api";
 
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
@@ -148,6 +149,7 @@ const navGroups: NavGroup[] = [
 ];
 
 const titles: Record<string, string> = {
+  "/marketplace": "数字资产平台运营",
 
   "/": "仪表盘",
 
@@ -199,6 +201,10 @@ function resolveTitle(pathname: string): string {
 
 /** 统一运营工作台：桌面折叠导航、移动抽屉与可搜索入口。 */
 export function AdminLayout() {
+  const marketplaceEnabled = useMarketplaceEnabled();
+  const visibleNavGroups = navGroups.map((group) => group.label === "业务" && marketplaceEnabled
+    ? { ...group, items: [...group.items, { to: "/marketplace", label: "数字资产平台运营", icon: FileVideo } satisfies NavItem] }
+    : group);
   const navigate = useNavigate();
   const location = useLocation();
   const user = getCachedUser();
@@ -303,7 +309,7 @@ export function AdminLayout() {
           <button ref={sidebarCloseRef} type="button" className="admin-icon-btn admin-sidebar-close" aria-label="关闭导航" onClick={() => setMobileOpen(false)}><X size={18} /></button>
         </div>
         <nav className="admin-nav" aria-label="主导航">
-          {navGroups.map((group) => (
+          {visibleNavGroups.map((group) => (
             <div key={group.label} className="admin-nav-group">
               <div className="admin-nav-group-label">{group.label}</div>
               {group.items.map((item) => (
@@ -346,7 +352,7 @@ export function AdminLayout() {
         </header>
         <main className="admin-content" id="admin-main-content" tabIndex={-1}><Outlet /></main>
       </div>
-      <AdminNavigationSearch open={searchOpen} onOpenChange={setSearchOpen} groups={navGroups} />
+      <AdminNavigationSearch open={searchOpen} onOpenChange={setSearchOpen} groups={visibleNavGroups} />
     </div>
   );
 }

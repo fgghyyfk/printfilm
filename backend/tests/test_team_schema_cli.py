@@ -10,9 +10,9 @@ from app import database, main, media_schema, team_schema
 from scripts import prepare_team_schema as cli
 
 
-def stub_engine():
+def stub_engine(dialect="postgresql"):
     """提供记录事务入口的假引擎与假连接，DDL 只由 AsyncMock 接收。"""
-    connection = SimpleNamespace(run_sync=AsyncMock(), execute=AsyncMock())
+    connection = SimpleNamespace(dialect=SimpleNamespace(name=dialect), run_sync=AsyncMock(), execute=AsyncMock())
     entered = []
 
     @asynccontextmanager
@@ -37,6 +37,21 @@ async def test_init_db_uses_requested_engine_without_replacing_global(monkeypatc
     assert database.engine is default
     assert len(default_entered) == (0 if explicit else 1)
     assert len(override_entered) == (1 if explicit else 0)
+
+
+@pytest.mark.asyncio
+async def test_schema_patches_skip_postgres_ddl_for_sqlite(monkeypatch):
+    """SQLite 测试库不执行团队、媒体及市场的 PostgreSQL 增量补列。"""
+    engine, connection, entered = stub_engine("sqlite")
+    team_patches = AsyncMock()
+    media_patches = AsyncMock()
+    monkeypatch.setattr(team_schema, "apply_team_schema_patches", team_patches)
+    monkeypatch.setattr(media_schema, "apply_media_schema_patches", media_patches)
+    await main._apply_schema_patches(engine_override=engine)
+    assert entered == [True]
+    team_patches.assert_not_awaited()
+    media_patches.assert_not_awaited()
+    connection.execute.assert_not_awaited()
 
 
 @pytest.mark.asyncio
