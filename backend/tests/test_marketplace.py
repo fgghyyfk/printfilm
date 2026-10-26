@@ -426,6 +426,21 @@ def test_bundled_cjk_font_is_used_when_configured_path_missing(monkeypatch):
     TTFont("BundledCJKTest", found, subfontIndex=0)
 
 
+def test_authorization_generation_error_is_not_storage(monkeypatch):
+    """生成授权函失败时不要报成文件服务未配置。"""
+    from app.marketplace.authorization import SignInput, render_and_store
+
+    def missing_component(path):
+        raise ImportError("reportlab")
+
+    body = SignInput.model_validate(signing_body())
+    monkeypatch.setattr("app.marketplace.authorization._pdf_font", missing_component)
+    with pytest.raises(HTTPException) as error:
+        render_and_store(body, "2026-10-26T00:00:00+00:00", 1)
+    assert error.value.status_code == 503
+    assert error.value.detail == "服务器未安装生成授权函所需组件，请安装 requirements-marketplace.txt 后重启。"
+
+
 def test_letter_font_falls_back_when_configured_path_missing(monkeypatch):
     """配置路径和系统字体都不存在时，明确报缺少字体。"""
     from app.marketplace.config import resolve_cjk_font

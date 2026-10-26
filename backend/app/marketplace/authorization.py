@@ -1,12 +1,13 @@
 """本平台作品账号授权；仅作用于下游，不自动转让或授予买家权利。"""
 import asyncio
 import hashlib
+import logging
 from pathlib import Path
 import tempfile
 from typing import Annotated, Literal
 import uuid
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -17,6 +18,8 @@ from .dependencies import Actor, DB, storage_ready
 from .models import Authorization
 from .schemas import Input
 from .service import data, event, fail, now
+
+logger = logging.getLogger("marketplace.authorization")
 
 VERSION = "printfilm-marketplace-2026-10-v1"
 TITLE = "PrintFilm 生成作品展示与撮合授权函"
@@ -80,21 +83,28 @@ def _wrap(text: str, font_name: str, size: float, width: float) -> list[str]:
     return lines
 
 
-@storage.transport
 def render_and_store(body: SignInput, signed_at: str, owner_id: int) -> str:
-    """把条款和手写签名直接写成 PDF，再存入私有 OSS。"""
-    from reportlab.pdfgen import canvas
+    """把条款和手写签名直接写成 PDF，再存入私有 OSS。生成失败不伪装成存储未配置。"""
     try:
         font_name = _pdf_font(resolve_cjk_font())
-    except (OSError, FileNotFoundError):
-        fail("服务器未找到可用的中文字体，暂时无法生成授权函。请安装 Noto CJK 或文泉驿字体后重试。", 503)
-    prefix = f"marketplace/authorizations/u{owner_id}/{uuid.uuid4().hex}"
-    key = f"{prefix}/letter.pdf"
-    with tempfile.TemporaryDirectory(prefix="printfilm-authorization-") as folder:
-        path = Path(folder) / "letter.pdf"
-        _write_letter(path, font_name, body, signed_at, owner_id)
-        storage.upload(key, path, "application/pdf")
-    return key
+        prefix = f"marketplace/authorizations/u{owner_id}/{uuid.uuid4().hex}"
+        key = f"{prefix}/letter.pdf"
+        with tempfile.TemporaryDirectory(prefix="printfilm-authorization-") as folder:
+            path = Path(folder) / "letter.pdf"
+            _write_letter(path, font_name, body, signed_at, owner_id)
+            storage.upload(key, path, "application/pdf")
+        return key
+    except HTTPException:
+        raise
+    except (OSError, FileNotFoundError) as exc:
+        logger.warning("授权函字体不可用：%s", type(exc).__name__)
+        fail("服务器未找到可用的中文字体，暂时无法生成授权函。", 503)
+    except ImportError:
+        logger.exception("授权函组件未安装")
+        fail("服务器未安装生成授权函所需组件，请安装 requirements-marketplace.txt 后重启。", 503)
+    except Exception:
+        logger.exception("授权函生成失败")
+        fail("授权函生成失败，请稍后重试。", 503)
 
 
 def _write_letter(path: Path, font_name: str, body: SignInput, signed_at: str, owner_id: int) -> None:

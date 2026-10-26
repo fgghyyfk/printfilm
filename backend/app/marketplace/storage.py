@@ -1,6 +1,7 @@
 """共用后台 OSS 配置，独立私有对象；不复用公开上传函数。"""
 from functools import lru_cache, wraps
 import json
+import logging
 from pathlib import Path
 import time
 
@@ -8,6 +9,8 @@ from fastapi import HTTPException
 from app.config import get_settings
 
 from .config import get_marketplace_settings
+
+logger = logging.getLogger("marketplace.storage")
 
 # 已核验客户端及核验时刻；一分钟后重新检查 Bucket 权限。
 _verified_at: float = 0
@@ -34,6 +37,7 @@ def transport(operation):
         except HTTPException:
             raise
         except Exception as exc:
+            logger.warning("市场文件操作失败：%s", getattr(exc, "code", None) or type(exc).__name__)
             raise unavailable() from exc
     return guarded
 
@@ -63,7 +67,9 @@ def bucket():
     try:
         client = _client()
         if client is not _verified_client or time.monotonic() - _verified_at > 60:
-            if client.get_bucket_acl().acl != "private":
+            acl = client.get_bucket_acl().acl
+            if acl != "private":
+                logger.warning("市场存储不可用：Bucket ACL 为 %s，需要 private", acl)
                 raise unavailable()
             try:
                 policy = json.loads(client.get_bucket_policy().policy)
@@ -76,6 +82,7 @@ def bucket():
                     principal = statement.get("Principal", "")
                     # 下游不接受任何匿名授权策略，避免条件或资源规则被误判。
                     if "*" in json.dumps(principal):
+                        logger.warning("市场存储不可用：Bucket Policy 允许匿名访问")
                         raise unavailable()
             except Exception as exc:
                 # Aliyun returns 404/NoSuchBucketPolicy when no optional bucket
@@ -92,6 +99,7 @@ def bucket():
     except HTTPException:
         raise
     except Exception as exc:
+        logger.warning("市场存储不可用：%s", getattr(exc, "code", None) or type(exc).__name__)
         raise unavailable() from exc
 
 
