@@ -93,12 +93,17 @@ async def get_media_models(db: AsyncSession = Depends(get_db)) -> dict:
 @router.post("/voices/preview", response_model=VoicePreviewOut)
 async def preview_voice(
     body: VoicePreviewRequest,
+    db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> VoicePreviewOut:
     """Generate a short cached TTS sample for audition."""
-    _ = user
     try:
-        url = await ensure_voice_preview(body.voice_id)
+        _, url = await run_billed_ephemeral(
+            db, user, domain="kepu", task_type="voice_preview",
+            executor=lambda: ensure_voice_preview(body.voice_id),
+            payload={"voice_id": body.voice_id}, billable=False,
+            result_payload_factory=lambda result: {"kind": "audio", "urls": [result] if result else []},
+        )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"试听生成失败：{exc}") from exc
     return VoicePreviewOut(url=url, voice_id=body.voice_id)

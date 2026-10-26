@@ -350,6 +350,8 @@ async def run_script_summary_job(project_id: int) -> dict[str, Any]:
         "project_id": project_id,
         "assets": assets_result,
         "episode_script_task_id": episodes_task_id,
+        "kind": "text",
+        "text_content": format_summary_text(summary),
     }
 
 
@@ -649,6 +651,8 @@ async def run_episode_scripts_job(
                 "project_id": project_id,
                 "total": total,
                 "post_pipeline": pipeline,
+                "kind": "text",
+                "episodes": existing,
             }
         except Exception as exc:  # noqa: BLE001
             params = dict(script.params or {})
@@ -923,6 +927,8 @@ async def _run_single_episode_script_job(
                 "assets_created_count": assets_created,
                 "assets_reused_count": assets_reused,
                 "post_pipeline": pipeline,
+                "kind": "text",
+                "episodes": batch,
             }
         except Exception as exc:  # noqa: BLE001
             await db.rollback()
@@ -1172,6 +1178,8 @@ async def run_episode_fragment_plan_job(
             "mode": mode_used,
             "count": len(protected_frags) + len(drafts),
             "preserved": len(protected_frags),
+            "kind": "text",
+            "fragments": drafts,
         }
 
 
@@ -1441,7 +1449,11 @@ async def _recover_complete_fragment_video(
     await db.refresh(locked, attribute_names=["steps"])
     # 先 complete（commit 后锁释放），再激活后续；避免 activate 提前 commit 导致并发双 complete
     locked.progress_percent = 100
-    result_payload: dict[str, Any] = {"ok": True, "fragment_id": int(fragment_id)}
+    fragment = await db.get(DramaEpisodeFragment, int(fragment_id))
+    result_payload: dict[str, Any] = {
+        "ok": True, "fragment_id": int(fragment_id), "kind": "video",
+        "urls": [fragment.video] if fragment and fragment.video else [],
+    }
     if recovered:
         result_payload["recovered"] = True
     await _complete_task(db, locked, result_payload)
@@ -1825,7 +1837,8 @@ async def run_asset_image_job(
                 asset.id,
                 (asset.url or asset.cover or "")[:80],
             )
-            return {"ok": True, "asset_id": asset.id}
+            url = asset.url or asset.cover
+            return {"ok": True, "asset_id": asset.id, "kind": "image", "urls": [url] if url else []}
         except Exception as exc:  # noqa: BLE001
             from app.services.exc_format import format_exception_message
 
@@ -1973,7 +1986,8 @@ async def run_asset_video_job(
                 asset.id,
                 (asset.url or "")[:80],
             )
-            return {"ok": True, "asset_id": asset.id}
+            return {"ok": True, "asset_id": asset.id, "kind": "video", "urls": [asset.url] if asset.url else [],
+                    "preview_url": asset.cover or None}
         except Exception as exc:  # noqa: BLE001
             from app.services.drama.asset_video import DOWNLOAD_RETRY_MESSAGE
             from app.services.exc_format import format_exception_message

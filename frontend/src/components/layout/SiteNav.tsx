@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   ArrowUpRight, ChevronRight, CircleHelp, Clapperboard, CreditCard,
-  Images, LayoutDashboard, Menu, Plus, Settings2, UserRound, UsersRound,
+  Image, Images, LayoutDashboard, ListTodo, Menu, Plus, Settings2, UserRound, UsersRound,
   Video, WandSparkles, Workflow, X,
 } from 'lucide-react'
 import { api } from '../../api'
@@ -30,12 +30,16 @@ const NAV_ICONS = {
   drama: Clapperboard,
   canvas: Workflow,
   kepu: Video,
+  video: Video,
+  image: Image,
   tools: WandSparkles,
+  tasks: ListTodo,
   assets: Images,
   team: UsersRound,
   pricing: CreditCard,
 }
 
+/** 应用主侧栏及窄屏导航抽屉，共用路由与会话状态。 */
 export default function SiteNav({ active }: Props) {
   const nav = useNavigate()
   const location = useLocation()
@@ -95,7 +99,8 @@ export default function SiteNav({ active }: Props) {
     if (!menuOpen) return
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
-    closeButtonRef.current?.focus()
+    // 等抽屉解除 visibility:hidden 后再移动焦点。
+    const focusFrame = window.requestAnimationFrame(() => closeButtonRef.current?.focus())
 
     function keepFocusInside(event: KeyboardEvent) {
       // 独立弹窗接管自己的键盘事件；普通下拉仍归属当前抽屉。
@@ -125,6 +130,7 @@ export default function SiteNav({ active }: Props) {
 
     document.addEventListener('keydown', keepFocusInside)
     return () => {
+      window.cancelAnimationFrame(focusFrame)
       document.body.style.overflow = previousOverflow
       document.removeEventListener('keydown', keepFocusInside)
       menuButtonRef.current?.focus()
@@ -167,7 +173,10 @@ export default function SiteNav({ active }: Props) {
       <button type="button" className="pf-mobile-create" aria-label={t('nav.startCreate')} onClick={goCreate}><Plus size={20} aria-hidden /></button>
     </header>
     {menuOpen && <button type="button" className="pf-sidebar-backdrop" aria-label={t('nav.closeMenu')} tabIndex={-1} onClick={() => setMenuOpen(false)} />}
-    <aside ref={sidebarRef} id="pf-app-sidebar" className={`pf-app-sidebar${menuOpen ? ' is-open' : ''}`} role={menuOpen ? 'dialog' : undefined} aria-modal={menuOpen ? true : undefined} aria-label={t('nav.main')}>
+    <aside ref={sidebarRef} id="pf-app-sidebar" className={`pf-app-sidebar${menuOpen ? ' is-open' : ''}`} role={menuOpen ? 'dialog' : undefined} aria-modal={menuOpen ? true : undefined} aria-label={t('nav.main')}
+      onTransitionEnd={(event) => {
+        if (menuOpen && event.target === event.currentTarget && event.propertyName === 'transform') closeButtonRef.current?.focus()
+      }}>
       <div className="pf-sidebar-top">
         <div className="pf-sidebar-brand"><BrandMark /><button ref={closeButtonRef} type="button" className="pf-sidebar-icon-button pf-sidebar-close" aria-label={t('nav.closeMenu')} onClick={() => setMenuOpen(false)}><X size={19} aria-hidden /></button></div>
         <div className="pf-sidebar-workspace"><WorkspaceSwitcher /></div>

@@ -1,15 +1,20 @@
-/** 主导航路由：自由画布与漫剧并列，旧短视频入口仍归属同一导航项。 */
-export type NavActive = 'home' | 'canvas' | 'drama' | 'kepu' | 'tools' | 'assets' | 'pricing' | 'templates' | 'studio' | 'history' | 'team' | 'tasks' | 'help' | 'settings'
+/** 主导航路由：创作产品、独立生成与资源协作共用同一份入口配置。 */
+import { SHORT_VIDEO_LIST_PATH } from './shortVideoRoutes.ts'
+
+export type NavActive = 'home' | 'canvas' | 'drama' | 'kepu' | 'video' | 'image' | 'tools' | 'assets' | 'pricing' | 'templates' | 'studio' | 'history' | 'team' | 'tasks' | 'help' | 'settings'
 
 export const CREATION_NAV = [
   { key: 'home', path: '/', label: 'nav.workbench' },
   { key: 'drama', path: '/drama', label: 'nav.drama' },
   { key: 'canvas', path: '/canvas', label: 'nav.canvas' },
-  { key: 'kepu', path: '/history', label: 'nav.kepu' },
+  { key: 'kepu', path: SHORT_VIDEO_LIST_PATH, label: 'nav.kepu' },
+  { key: 'video', path: '/tools/video', label: 'nav.video' },
+  { key: 'image', path: '/tools/image', label: 'nav.image' },
   { key: 'tools', path: '/tools', label: 'nav.tools' },
 ] as const
 
 export const RESOURCE_NAV = [
+  { key: 'tasks', path: '/tasks', label: 'nav.tasks' },
   { key: 'assets', path: '/assets', label: 'nav.assets' },
   { key: 'team', path: '/teams', label: 'nav.team' },
   { key: 'pricing', path: '/pricing', label: 'nav.pricing' },
@@ -25,6 +30,8 @@ export function resolveNavActive(pathname: string, active?: NavActive): NavActiv
   if (within('/drama/assets') || within('/assets')) return 'assets'
   if (within('/drama')) return 'drama'
   if (['/studio', '/templates', '/history'].some(within)) return 'kepu'
+  if (within('/tools/video')) return 'video'
+  if (within('/tools/image')) return 'image'
   if (within('/tools')) return 'tools'
   if (within('/tasks')) return 'tasks'
   if (within('/pricing')) return 'pricing'

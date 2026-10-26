@@ -10,6 +10,8 @@ import HomePage from './pages/HomePage'
 import MethodPage from './pages/MethodPage'
 import ToolsPage from './pages/ToolsPage'
 import ToolDetailPage from './pages/ToolDetailPage'
+import GenerationPage from './pages/GenerationPage'
+import GenerationTasksPage from './pages/GenerationTasksPage'
 import HelpPage from './pages/HelpPage'
 import { PrivacyPage, TermsPage } from './pages/LegalDocPage'
 import ContactPage from './pages/ContactPage'
@@ -57,8 +59,11 @@ export default function App() {
         <Route path="/auth" element={<AuthPage />} />
         <Route path="/templates" element={<TemplatesPage />} />
         <Route path="/tools" element={<ToolsPage />} />
+        <Route path="/tools/video" element={<RequireAuth><GenerationPage kind="video" /></RequireAuth>} />
+        <Route path="/tools/image" element={<RequireAuth><GenerationPage kind="image" /></RequireAuth>} />
+        <Route path="/tools/audio" element={<RequireAuth><GenerationPage kind="audio" /></RequireAuth>} />
         <Route path="/tools/:toolId" element={<ToolDetailPage />} />
-        <Route path="/tasks" element={<Navigate to="/settings?tab=tools" replace />} />
+        <Route path="/tasks" element={<RequireAuth><GenerationTasksPage /></RequireAuth>} />
         <Route path="/assets" element={<AssetLibraryPage />} />
         <Route path="/help" element={<HelpPage />} />
         <Route path="/terms" element={<TermsPage />} />

@@ -227,6 +227,7 @@ async def get_task(
     owned_task = await db.get(TaskRun, owned)
     async with billing_scope(owned, snapshot=owned_task.billing_snapshot):
         data = await poll_video_task(user, tid)
+    owned_task.result_payload = {"kind": "video", **data}
     await settle_deferred_video_poll(
         db,
         user,

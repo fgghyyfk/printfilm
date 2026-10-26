@@ -403,8 +403,10 @@ async def _run_cancel_request(task_id: int) -> None:
                 lease_until = getattr(task, "lease_until", None)
                 if lease_until is not None and lease_until.tzinfo is None:
                     lease_until = lease_until.replace(tzinfo=UTC)
-                if getattr(task, "execution_mode", "queued") == "direct" and lease_until and lease_until > datetime.now(UTC):
-                    # 其他进程正在调用模型，由租约持有者取消并结算，不能先退冻结。
+                if lease_until and lease_until > datetime.now(UTC):
+                    # Any live executor may still be writing media/usage in another
+                    # process. Its heartbeat observes cancel_requested and cancels
+                    # the owner coroutine; only that owner may settle until expiry.
                     return
                 await _mark_cancelled(db, task)
     except Exception:  # noqa: BLE001
@@ -536,6 +538,26 @@ async def recover_orphaned_tasks() -> int:
         changed = 0
         for task in rows:
             if _job_alive(int(task.id)):
+                continue
+            from app.services.tasks.inline import INLINE_LEASE_PREFIX
+            if str(task.lease_token or "").startswith(INLINE_LEASE_PREFIX):
+                # HTTP inline executors have no replayable job. A restarted
+                # process must not queue their noop handler or resubmit a POST.
+                from app.services.billing.settlement import settle_task
+                task.status = "cancelled" if task.cancel_requested else "failed"
+                task.error_code = "inline_execution_interrupted"
+                task.error_message = "生成请求执行中断，请重新发起"
+                task.finished_at = now
+                task.next_action_at = None
+                task.lease_token = None
+                task.lease_until = None
+                await append_task_event(
+                    db, task.id, event_type=f"task.{task.status}", status=task.status,
+                    phase=task.current_step_key, message=task.error_message,
+                )
+                if task.billing_status in {"frozen", "reserved"}:
+                    await settle_task(db, task.id)
+                changed += 1
                 continue
             task.status = "cancel_requested" if task.cancel_requested else "pending"
             task.next_action_at = now

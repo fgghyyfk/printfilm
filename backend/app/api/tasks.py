@@ -3,6 +3,7 @@
 from __future__ import annotations
 import asyncio
 import re
+from datetime import datetime
 
 from app.config import get_settings
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
@@ -12,6 +13,8 @@ from app.database import get_db
 from app.deps import get_current_user
 from app.models import User
 from app.schemas_tasks import MockDelayTaskRequest, TaskCreateRequest, TaskListOut, TaskRunOut
+from app.schemas_generation_history import GenerationListOut, GenerationRecordOut
+from app.services.tasks.generation_history import get_generation, list_generations
 from app.services.billing.http import http_exception_for_value_error
 from app.services.tasks.service import (
     TaskAccessContext,
@@ -113,6 +116,46 @@ async def create_mock_delay_task(
     except ValueError as exc:
         raise http_exception_for_value_error(exc) from exc
     return public_task(task, viewer=user)
+
+
+def _generation_workspace(team_id: int | None, workspace_team_id: int | None) -> int | None:
+    if team_id is not None and workspace_team_id is not None and team_id != workspace_team_id:
+        raise HTTPException(status_code=422, detail="团队空间参数不一致")
+    return team_id if team_id is not None else workspace_team_id
+
+
+@router.get("/generations", response_model=GenerationListOut)
+async def list_generation_history(
+    page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
+    kind: str | None = Query(None, pattern="^(video|image|audio|text)$"),
+    status: str | None = Query(None, pattern="^(processing|succeeded|failed|cancelled)$"),
+    task_id: str | None = Query(None, max_length=128),
+    created_from: datetime | None = None, created_to: datetime | None = None,
+    team_id: int | None = Query(None, ge=1),
+    workspace_team_id: int | None = Header(None, alias="X-Team-Id", ge=1),
+    db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user),
+) -> GenerationListOut:
+    if created_from and created_to:
+        from datetime import UTC
+        start = created_from.replace(tzinfo=UTC) if created_from.tzinfo is None else created_from
+        end = created_to.replace(tzinfo=UTC) if created_to.tzinfo is None else created_to
+        if start > end:
+            raise HTTPException(status_code=400, detail="开始时间不能晚于结束时间")
+    return await list_generations(db, user, page=page, page_size=page_size, kind=kind, status=status,
+        task_id=task_id, created_from=created_from, created_to=created_to,
+        team_id=_generation_workspace(team_id, workspace_team_id))
+
+
+@router.get("/generations/{task_id}", response_model=GenerationRecordOut)
+async def get_generation_history(
+    task_id: int, team_id: int | None = Query(None, ge=1),
+    workspace_team_id: int | None = Header(None, alias="X-Team-Id", ge=1),
+    db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user),
+) -> GenerationRecordOut:
+    try:
+        return await get_generation(db, user, task_id, team_id=_generation_workspace(team_id, workspace_team_id))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail="任务不存在") from exc
 
 
 # 查询单个任务详情（含 steps/targets/events）

@@ -203,6 +203,10 @@ async def suggest_voice_prompt(
             drama_project_id=project.id,
             asset_id=asset.id,
             commit=True,
+            result_payload_factory=lambda result: {
+                "kind": "text", "text_content": result[0],
+                "speaker": result[1], "sample_text": result[2],
+            },
         )
     except ValueError as exc:
         raise http_exception_for_value_error(exc) from exc
@@ -293,19 +297,20 @@ async def generate_voice(
         )
 
     try:
-        if team_mode:
-            _, updated = await run_billed_ephemeral(
-                db,
-                user,
-                domain="drama",
-                task_type="voice_synthesis",
-                executor=_synthesize,
-                drama_project_id=project.id,
-                asset_id=asset.id,
-                payload={"asset_id": asset.id},
-            )
-        else:
-            updated = await _synthesize()
+        _, updated = await run_billed_ephemeral(
+            db,
+            user,
+            domain="drama",
+            task_type="voice_synthesis",
+            executor=_synthesize,
+            drama_project_id=project.id,
+            asset_id=asset.id,
+            payload={"asset_id": asset.id, "prompt": prompt, "sample_text": body.sample_text},
+            billable=team_mode,
+            result_payload_factory=lambda result: {
+                "kind": "audio", "urls": [result.url] if result.url else [], "asset_id": result.id,
+            },
+        )
     except Exception as exc:  # noqa: BLE001
         project_id, asset_id = project.id, asset.id
         if team_mode and not started:

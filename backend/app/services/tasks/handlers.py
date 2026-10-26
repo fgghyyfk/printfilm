@@ -161,7 +161,48 @@ async def _await_kepu(task: TaskRun, aw: Awaitable[Any], **extra: Any) -> dict[s
         if task.cancel_requested:
             return {"cancelled": True, "project_id": task.project_id, **extra}
         raise
-    return {"ok": True, "project_id": task.project_id, **extra}
+    result = {"ok": True, "project_id": task.project_id, **extra}
+    result.update(await _kepu_output_snapshot(task, extra.get("phase")))
+    return result
+
+
+async def _kepu_output_snapshot(task: TaskRun, phase: str | None) -> dict[str, Any]:
+    """Freeze the completed generation's outputs before later edits replace them."""
+    from sqlalchemy import select
+    from app.database import AsyncSessionLocal
+    from app.models import Project, Shot
+
+    if task.task_type == "shot_regen_image" or phase == "assets":
+        kind, field = "image", "image_url"
+    elif task.task_type in {"shot_regen_audio", "project_regen_audio"} or phase == "audio":
+        kind, field = "audio", "audio_url"
+    elif task.task_type == "shot_regen_video" or phase == "videos":
+        kind, field = "video", "video_url"
+    elif task.task_type in {"project_compose_only", "project_pipeline"} and phase not in {"script", "storyboard"}:
+        kind, field = "video", "final_video_url"
+    else:
+        kind, field = "text", None
+    async with AsyncSessionLocal() as db:
+        project = await db.get(Project, task.project_id)
+        if project is None:
+            return {"kind": kind, "urls": []}
+        if field == "final_video_url":
+            urls = [project.final_video_url] if project.final_video_url else []
+        else:
+            query = select(Shot).where(Shot.project_id == task.project_id).order_by(Shot.shot_no)
+            if task.shot_id:
+                query = query.where(Shot.id == task.shot_id)
+            shots = list((await db.execute(query)).scalars().all())
+            if field:
+                urls = list(dict.fromkeys(getattr(shot, field) for shot in shots if getattr(shot, field)))
+            else:
+                return {"kind": "text", "text_content": "\n\n".join(
+                    shot.narration or shot.segment_script or "" for shot in shots
+                )}
+        result = {"kind": kind, "urls": urls}
+        if project.cover_url:
+            result["preview_url"] = project.cover_url
+        return result
 
 
 # 执行科普分阶段流水线（严格按 payload.phase 预扣对应阶段）。
@@ -312,6 +353,7 @@ TASK_HANDLERS: dict[tuple[str, str], TaskHandler] = {
     ("drama", "voice_synthesis"): TaskHandler("drama", "voice_synthesis", _noop_ephemeral),
     ("drama", "episode_compose"): TaskHandler("drama", "episode_compose", _noop_ephemeral),
     ("kepu", "content_expand"): TaskHandler("kepu", "content_expand", _noop_ephemeral),
+    ("kepu", "voice_preview"): TaskHandler("kepu", "voice_preview", _noop_ephemeral),
     ("api", "v1_image"): TaskHandler("api", "v1_image", _noop_ephemeral),
     ("api", "v1_video"): TaskHandler("api", "v1_video", _noop_ephemeral),
     ("api", "v1_seedance"): TaskHandler("api", "v1_seedance", _noop_ephemeral),

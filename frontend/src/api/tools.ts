@@ -36,6 +36,12 @@ export type ToolTaskResult = {
 
 export type ToolRunRecord = {
   id: number
+  source?: 'task' | 'tool'
+  record_key?: string
+  domain?: string | null
+  task_type?: string | null
+  text_content?: string | null
+  billing_status?: string | null
   tool_id: string
   kind: string
   status: string
@@ -53,7 +59,7 @@ export type ToolRunRecord = {
   queue_type?: string | null
   started_at?: string | null
   finished_at?: string | null
-  billing_charged_fen?: number
+  billing_charged_fen?: number | null
 }
 
 export type ToolRunList = {

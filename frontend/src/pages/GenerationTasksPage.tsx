@@ -1,14 +1,23 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { Link, Navigate, useSearchParams } from 'react-router-dom'
-import { AlertCircle, ArrowUpRight, CheckCircle2, Clock3, Download, Eye, ListFilter, Loader2, Plus, RefreshCw, Search, X } from 'lucide-react'
-import { listToolRuns, resolveToolMediaUrl, type ToolRunRecord } from '../api/tools'
+import { AlertCircle, ArrowUpRight, CheckCircle2, Clock3, Download, Eye, FileText, ListChecks, ListFilter, Loader2, Plus, RefreshCw, Search, X } from 'lucide-react'
+import { resolveToolMediaUrl, type ToolRunRecord } from '../api/tools'
+import { listGenerationTasks } from '../api/generationTasks'
 import GenerationLayout from '../components/tools/GenerationLayout'
 import GenerationDateRange from '../components/tools/GenerationDateRange'
 import GenerationSelect from '../components/tools/GenerationSelect'
-import { mediaIcons, mediaKinds, type MediaKind, useGenerationText } from '../lib/generationMedia'
-import Modal from '../components/ui/Modal'
+import { AssetDetailDialog } from '../components/assets/AssetDetailDialog'
+import { useToolRunDetail } from '../hooks/useToolRunDetail'
+import { mediaIcons, useGenerationText } from '../lib/generationMedia'
+import { generationBillingState, generationRecordKey } from '../lib/generationTaskHistory'
+import { subscribeWorkspace, workspaceScope } from '../features/teams/workspaceScope'
 import Pagination from '../components/ui/Pagination'
 import { fetchMediaBlob, triggerBlobDownload } from '../lib/clientDownload'
+
+const taskKinds = ['all', 'video', 'image', 'audio', 'text'] as const
+type TaskKind = typeof taskKinds[number]
+const taskIcons = { ...mediaIcons, all: ListChecks, text: FileText }
+const workspaceSnapshot = () => workspaceScope.epoch
 
 export default function GenerationTasksPage() {
   if (!localStorage.getItem('token')) return <Navigate to="/auth?next=/tasks" replace />
@@ -16,9 +25,14 @@ export default function GenerationTasksPage() {
 }
 
 function TaskHistory() {
+  const workspaceEpoch = useSyncExternalStore(subscribeWorkspace, workspaceSnapshot)
+  return <TaskHistoryContent key={workspaceEpoch} />
+}
+
+function TaskHistoryContent() {
   const text = useGenerationText()
   const [params, setParams] = useSearchParams()
-  const kind = mediaKinds.includes(params.get('kind') as MediaKind) ? params.get('kind') as MediaKind : 'video'
+  const kind = taskKinds.includes(params.get('kind') as TaskKind) ? params.get('kind') as TaskKind : 'all'
   const status = ['processing', 'succeeded', 'failed', 'cancelled'].includes(params.get('status') || '') ? params.get('status')! : ''
   const taskId = params.get('task_id') || ''
   const [query, setQuery] = useState(taskId)
@@ -32,12 +46,21 @@ function TaskHistory() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [revision, setRevision] = useState(0)
-  const [detail, setDetail] = useState<ToolRunRecord | null>(null)
-  const [downloading, setDownloading] = useState<number | null>(null)
-  const Icon = mediaIcons[kind]
+  const { detail, asset: detailAsset, error: detailError, resultIndex, selectResult, openDetail, closeDetail } = useToolRunDetail()
+  const [downloading, setDownloading] = useState<string | null>(null)
+  const Icon = taskIcons[kind]
+  const createPath = kind === 'all' ? '/tools' : kind === 'text' ? '/studio/new' : `/tools/${kind}`
   const labels: Record<string, string> = {
     all: text('全部', 'All'), processing: text('处理中', 'Processing'), succeeded: text('已完成', 'Completed'),
     failed: text('失败', 'Failed'), cancelled: text('已取消', 'Cancelled'), queued: text('排队中', 'Queued'), running: text('处理中', 'Processing'),
+  }
+  const kindLabels: Record<TaskKind, string> = {
+    all: text('全部任务', 'All tasks'), video: text('视频任务', 'Video tasks'), image: text('图片任务', 'Image tasks'),
+    audio: text('音频任务', 'Audio tasks'), text: text('文字任务', 'Text tasks'),
+  }
+  const billingLabels = {
+    hidden: text('费用不可见', 'Cost hidden'), pending: text('待结算', 'Pending charge'), settled: text('已结算', 'Charged'),
+    refunded: text('已退还', 'Refunded'), free: text('无需结算', 'No charge'), not_charged: text('未收费', 'Not charged'),
   }
   function filter(key: string, value: string) {
     const next = new URLSearchParams(params)
@@ -52,7 +75,7 @@ function TaskHistory() {
     async function refresh() {
       if (from && to && from > to) { setError(text('开始日期不能晚于结束日期', 'Start date must precede end date')); setLoading(false); return }
       try {
-        const data = await listToolRuns(page, pageSize, { kind, status, task_id: taskId,
+        const data = await listGenerationTasks(page, pageSize, { kind: kind === 'all' ? undefined : kind, status, task_id: taskId,
           created_from: from ? new Date(`${from}T00:00:00`).toISOString() : '',
           created_to: to ? new Date(`${to}T23:59:59.999`).toISOString() : '' })
         if (disposed) return
@@ -68,9 +91,10 @@ function TaskHistory() {
   }, [kind, status, taskId, from, to, page, pageSize, revision, text])
 
   async function download(item: ToolRunRecord, url = item.urls[0]) {
-    setDownloading(item.id)
+    setDownloading(generationRecordKey(item))
     try {
-      triggerBlobDownload(await fetchMediaBlob(resolveToolMediaUrl(url)), `printfilm_${item.kind}_${item.id}.${item.kind === 'video' ? 'mp4' : item.kind === 'audio' ? 'mp3' : 'png'}`)
+      const blob = item.kind === 'text' ? new Blob([item.text_content || ''], { type: 'text/plain;charset=utf-8' }) : await fetchMediaBlob(resolveToolMediaUrl(url))
+      triggerBlobDownload(blob, `printfilm_${item.kind}_${item.id}.${item.kind === 'video' ? 'mp4' : item.kind === 'audio' ? 'mp3' : item.kind === 'text' ? 'txt' : 'png'}`)
     } catch (err) { setError(err instanceof Error ? err.message : text('下载失败', 'Download failed')) }
     finally { setDownloading(null) }
   }
@@ -94,20 +118,20 @@ function TaskHistory() {
   return <GenerationLayout tasks>
     <header className="gen-tasks-heading">
       <div><div className="gen-section-eyebrow">{text('创作管理', 'CREATION LIBRARY')}</div><h1>{text('我的任务', 'My tasks')}<span className="gen-heading-dot" /></h1><p>{text('每一次灵感，都有迹可循。', 'Every idea, all in one place.')}</p></div>
-      <div className="gen-task-actions"><button className="gen-secondary" type="button" onClick={() => setRevision(value => value + 1)} disabled={loading}><RefreshCw size={16} className={loading ? 'gen-spin' : ''} />{text('刷新', 'Refresh')}</button><Link className="gen-primary" to={`/tools/${kind}`}><Plus size={18} />{text('去创作', 'Create something')}</Link></div>
+      <div className="gen-task-actions"><button className="gen-secondary" type="button" onClick={() => setRevision(value => value + 1)} disabled={loading}><RefreshCw size={16} className={loading ? 'gen-spin' : ''} />{text('刷新', 'Refresh')}</button><Link className="gen-primary" to={createPath}><Plus size={18} />{text('去创作', 'Create something')}</Link></div>
     </header>
     <div className="gen-library">
       <div className="gen-task-tabs"><div role="tablist" aria-label={text('任务类型', 'Media type')}>
-        {mediaKinds.map((value, index) => {
-          const TabIcon = mediaIcons[value]
+        {taskKinds.map((value, index) => {
+          const TabIcon = taskIcons[value]
           return <button type="button" key={value} id={`gen-tab-${value}`} role="tab" tabIndex={value === kind ? 0 : -1}
-            aria-selected={value === kind} className={value === kind ? 'is-active' : ''} onClick={() => filter('kind', value)}
+            aria-selected={value === kind} className={value === kind ? 'is-active' : ''} onClick={() => filter('kind', value === 'all' ? '' : value)}
             onKeyDown={event => {
               if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
               event.preventDefault()
-              const next = event.key === 'Home' ? 0 : event.key === 'End' ? 2 : (index + (event.key === 'ArrowRight' ? 1 : 2)) % 3
-              filter('kind', mediaKinds[next]); document.getElementById(`gen-tab-${mediaKinds[next]}`)?.focus()
-            }}><TabIcon size={18} />{text(value === 'video' ? '视频任务' : value === 'image' ? '图片任务' : '音频任务', `${value[0].toUpperCase()}${value.slice(1)} tasks`)}</button>
+              const next = event.key === 'Home' ? 0 : event.key === 'End' ? taskKinds.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : taskKinds.length - 1)) % taskKinds.length
+              filter('kind', taskKinds[next] === 'all' ? '' : taskKinds[next]); document.getElementById(`gen-tab-${taskKinds[next]}`)?.focus()
+            }}><TabIcon size={18} />{kindLabels[value]}</button>
         })}
       </div><span className="gen-auto-sync"><i />{text('自动更新', 'Auto-updating')}</span></div>
       <div className="gen-task-filters">
@@ -127,32 +151,37 @@ function TaskHistory() {
       {error && <p className="gen-inline-error" role="alert">{error}</p>}
       <div className="gen-list-heading" aria-hidden><span><ListFilter size={14} />{text('生成内容', 'Creation')}</span><span>{text('任务状态', 'Status')}</span><span>{text('费用', 'Cost')}</span><span>{text('创建时间', 'Created')}</span><span>{text('操作', 'Actions')}</span></div>
       <section className="gen-task-list" aria-label={text('生成任务记录', 'Generation history')} aria-busy={loading}>
-      {loading && !items.length ? <div className="gen-empty"><Loader2 className="gen-spin" size={28} />{text('加载任务中…', 'Loading tasks…')}</div> : !items.length ? <div className="gen-empty"><Icon size={36} /><strong>{text('暂无符合条件的任务', 'No matching tasks')}</strong><p>{text('调整筛选条件，或开始一次新的创作。', 'Adjust your filters or create something new.')}</p><Link to={`/tools/${kind}`}>{text('开始创作', 'Start creating')} →</Link></div> : items.map(item => {
+      {loading && !items.length ? <div className="gen-empty"><Loader2 className="gen-spin" size={28} />{text('加载任务中…', 'Loading tasks…')}</div> : !items.length ? <div className="gen-empty"><Icon size={36} /><strong>{text('暂无符合条件的任务', 'No matching tasks')}</strong><p>{text('调整筛选条件，或开始一次新的创作。', 'Adjust your filters or create something new.')}</p><Link to={createPath}>{text('开始创作', 'Start creating')} →</Link></div> : items.map(item => {
         const RowStatusIcon = StatusIcon[item.status as keyof typeof StatusIcon] || Clock3
-        return <article className={`gen-task-row ${item.status === 'failed' ? 'has-error' : ''}`} key={item.id}>
-        <button className="gen-task-cover" type="button" onClick={() => setDetail(item)} aria-label={text('查看生成结果', 'View result')}>
-          {item.kind === 'image' && (item.preview_url || item.urls[0]) ? <img src={resolveToolMediaUrl(item.preview_url || item.urls[0])} alt="" /> : item.kind === 'video' && item.preview_url ? <img src={resolveToolMediaUrl(item.preview_url)} alt="" /> : item.kind === 'video' && item.urls[0] ? <video src={resolveToolMediaUrl(item.urls[0])} preload="metadata" muted /> : <Icon size={28} />}
+        const RowIcon = taskIcons[item.kind as TaskKind] || FileText
+        const recordKey = generationRecordKey(item)
+        const billingState = generationBillingState(item)
+        const formatLabel = item.kind === 'video' ? 'MP4' : item.kind === 'audio' ? 'MP3' : item.kind === 'text' ? text('文字', 'Text') : text('图片', 'Image')
+        return <article className={`gen-task-row ${item.status === 'failed' ? 'has-error' : ''}`} key={recordKey}>
+        <button className="gen-task-cover" type="button" onClick={() => openDetail(item)} aria-label={text('查看生成结果', 'View result')}>
+          {item.kind === 'image' && (item.preview_url || item.urls[0]) ? <img src={resolveToolMediaUrl(item.preview_url || item.urls[0])} alt="" /> : item.kind === 'video' && item.preview_url ? <img src={resolveToolMediaUrl(item.preview_url)} alt="" /> : item.kind === 'video' && item.urls[0] ? <video src={resolveToolMediaUrl(item.urls[0])} preload="metadata" muted /> : <RowIcon size={28} />}
           <span className="gen-cover-overlay"><Eye size={18} /></span>
         </button>
-        <div className="gen-task-description"><button type="button" className="gen-task-title" onClick={() => setDetail(item)} title={item.prompt}>{item.prompt || text('未命名创作', 'Untitled creation')}</button><div className="gen-task-metadata"><span className="gen-task-tag">{item.params?.ratio || (kind === 'audio' ? text('文字配音', 'Text to speech') : 'AI')}</span><span className="gen-task-number">#{item.platform_task_id || item.id}</span>{item.provider_task_id && <code title={item.provider_task_id}>{text('上游', 'Upstream')} {item.provider_task_id}</code>}</div>{item.error && <button type="button" className="gen-task-error" onClick={() => setDetail(item)} title={item.error}><AlertCircle size={12} /><span>{errorSummary(item.error)}</span><ArrowUpRight size={12} /></button>}</div>
-        <div className="gen-task-state"><span className={`gen-state is-${item.status}`}><RowStatusIcon size={13} />{labels[item.status] || item.status}</span><small>{item.kind === 'video' ? 'MP4' : item.kind === 'audio' ? 'MP3' : text('图片', 'Image')}</small></div>
-        <div className="gen-task-cost"><strong>¥{((item.billing_charged_fen || 0) / 100).toFixed(2)}</strong><small>{item.finished_at ? text('已结算', 'Charged') : text('待结算', 'Pending charge')}</small></div>
+        <div className="gen-task-description"><button type="button" className="gen-task-title" onClick={() => openDetail(item)} title={item.prompt}>{item.prompt || item.task_type || text('未命名创作', 'Untitled creation')}</button><div className="gen-task-metadata"><span className="gen-task-tag">{kindLabels[item.kind as TaskKind] || 'AI'}</span>{(item.params?.ratio || item.params?.aspect_ratio) && <span className="gen-task-tag">{item.params.ratio || item.params.aspect_ratio}</span>}<span className="gen-task-number">#{item.platform_task_id || item.id}</span>{item.provider_task_id && <code title={item.provider_task_id}>{text('上游', 'Upstream')} {item.provider_task_id}</code>}</div>{item.error && <button type="button" className="gen-task-error" onClick={() => openDetail(item)} title={item.error}><AlertCircle size={12} /><span>{errorSummary(item.error)}</span><ArrowUpRight size={12} /></button>}</div>
+        <div className="gen-task-state"><span className={`gen-state is-${item.status}`}><RowStatusIcon size={13} />{labels[item.status] || item.status}</span><small>{formatLabel}</small></div>
+        <div className="gen-task-cost"><strong>{billingState === 'hidden' ? '—' : `¥${((item.billing_charged_fen || 0) / 100).toFixed(2)}`}</strong><small>{billingLabels[billingState]}</small></div>
         <div className="gen-task-time"><span>{when(item.created_at)}</span><small>{text('耗时', 'Duration')} {elapsed(item)}</small></div>
-        <div className="gen-row-actions">{item.status === 'succeeded' && item.urls[0] && <button type="button" className="gen-secondary" disabled={downloading === item.id} onClick={() => void download(item)}>{downloading === item.id ? <Loader2 size={15} className="gen-spin" /> : <Download size={15} />}{text('下载', 'Download')}</button>}<button type="button" className="gen-icon-button" onClick={() => setDetail(item)} aria-label={text('查看任务详情', 'Task details')}><Eye size={18} /></button></div>
+        <div className="gen-row-actions">{item.status === 'succeeded' && (item.kind === 'text' ? item.text_content : item.urls[0]) && <button type="button" className="gen-secondary" disabled={downloading === recordKey} onClick={() => void download(item)}>{downloading === recordKey ? <Loader2 size={15} className="gen-spin" /> : <Download size={15} />}{text('下载', 'Download')}</button>}<button type="button" className="gen-icon-button" onClick={() => openDetail(item)} aria-label={text('查看任务详情', 'Task details')}><Eye size={18} /></button></div>
       </article>})}
     </section>
     <footer className="gen-task-pagination"><span>{text('共', 'Total')} <strong>{total}</strong> {text('条记录', 'creations')}<span className="gen-pagination-divider" />{text(`第 ${page} / ${pageCount} 页`, `Page ${page} of ${pageCount}`)}</span>
       <div><Pagination page={page} pageCount={pageCount} onChange={setPage} showSummary={false} /><GenerationSelect compact label={text('每页条数', 'Items per page')} value={String(pageSize)} options={[8, 16, 24, 50].map(value => ({ value: String(value), label: text(`${value} 条 / 页`, `${value} / page`) }))} onChange={value => { setPageSize(Number(value)); setPage(1) }} /></div>
     </footer>
     </div>
-    <Modal open={Boolean(detail)} title={text('生成详情', 'Generation details')} onClose={() => setDetail(null)} className="gen-detail-modal">
-      {detail && <div className="gen-detail"><p className="gen-detail-prompt">{detail.prompt}</p><dl>
-        <div><dt>{text('任务 ID', 'Task ID')}</dt><dd>{detail.task_id || detail.id}</dd></div>
-        <div><dt>{text('调度队列', 'Queue')}</dt><dd>{{ text: text('文字', 'Text'), image: text('图片', 'Image'), video: text('视频', 'Video') }[detail.queue_type || ''] || '—'}</dd></div>
-        <div><dt>{text('上游任务 ID', 'Upstream task ID')}</dt><dd>{detail.provider_task_id || '—'}</dd></div>
-        <div><dt>{text('上游服务 / 状态', 'Provider / status')}</dt><dd>{detail.provider_name || '—'} / {detail.provider_status || '—'}</dd></div>
-        <div><dt>{text('耗时', 'Duration')}</dt><dd>{elapsed(detail)}</dd></div>
-      </dl>{detail.error && <p className="gen-inline-error">{detail.error}</p>}{detail.urls.map(url => <div key={url} className="gen-detail-media">{detail.kind === 'video' ? <video controls src={resolveToolMediaUrl(url)} /> : detail.kind === 'audio' ? <audio controls src={resolveToolMediaUrl(url)} /> : <img src={resolveToolMediaUrl(url)} alt={detail.prompt} />}<button type="button" className="gen-secondary" onClick={() => void download(detail, url)} disabled={downloading === detail.id}><Download size={16} />{text('下载结果', 'Download result')}</button></div>)}</div>}
-    </Modal>
+    {detail && detailAsset && <AssetDetailDialog key={generationRecordKey(detail)} asset={detailAsset} onClose={closeDetail}
+      notice={<section className="pf-asset-detail-prompt"><div className="pf-asset-detail-text">
+        <p role="status">{labels[detail.status] || detail.status}{(detail.status === 'queued' || detail.status === 'running') && text('，结果会自动更新。', '. Results will update automatically.')}</p>
+        {(detail.error || detailError) && <p role="alert">{detail.error || detailError}</p>}
+      </div></section>}
+      actions={detail.urls.length > 1 && <div className="pf-asset-detail-utilities" role="group" aria-label={text('生成结果', 'Generation results')}>
+        {detail.urls.map((url, index) => <button type="button" key={url} className="pf-btn pf-btn-sm" aria-pressed={resultIndex === index} onClick={() => selectResult(index)}>{text(`结果 ${index + 1}`, `Result ${index + 1}`)}</button>)}
+      </div>}>
+      <section className="pf-asset-detail-history"><dl className="pf-asset-detail-meta"><dt>{text('任务 ID', 'Task ID')}</dt><dd>{detail.platform_task_id || detail.id}</dd>{detail.task_type && <><dt>{text('任务类型', 'Task type')}</dt><dd>{detail.task_type}</dd></>}</dl></section>
+    </AssetDetailDialog>}
   </GenerationLayout>
 }

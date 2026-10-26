@@ -55,6 +55,8 @@ export const enShell = {
     loginHint: 'Sign in to keep creating',
     skipContent: 'Skip to main content',
     kepu: 'AI Short Video',
+    video: 'Video',
+    image: 'Image',
     tools: 'Tools',
     tasks: 'My tasks',
     assets: 'Assets',

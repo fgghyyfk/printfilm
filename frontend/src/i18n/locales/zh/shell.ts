@@ -54,6 +54,8 @@ export const zhShell = {
     loginHint: '登录，继续你的创作',
     skipContent: '跳转到主要内容',
     kepu: 'AI短视频',
+    video: '视频',
+    image: '图片',
     tools: '小工具',
     tasks: '我的任务',
     assets: '资产',

@@ -891,11 +891,13 @@ async def compose_episode(
             """只合成本次受理的分集，系统占用持续到文件完成。"""
             return await compose_episode_video(db, episode=episode, project=project, fragment_ids=req.fragment_ids)
 
-        if project.team_id is not None:
-            _, url = await run_billed_ephemeral(db, user, domain="drama", task_type="episode_compose", executor=compose_current_episode,
-                                               drama_project_id=project.id, episode_id=episode.id)
-        else:
-            url = await compose_current_episode()
+        _, url = await run_billed_ephemeral(
+            db, user, domain="drama", task_type="episode_compose", executor=compose_current_episode,
+            drama_project_id=project.id, episode_id=episode.id,
+            payload={"fragment_ids": req.fragment_ids},
+            billable=project.team_id is not None,
+            result_payload_factory=lambda result: {"kind": "video", "urls": [result] if result else []},
+        )
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001

@@ -2,6 +2,7 @@
 """轻量 TaskRun：同步执行并计费（聊天、API、工具）。"""
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any, TypeVar
@@ -17,6 +18,7 @@ from app.config import get_settings
 from app.services.billing.context import billing_scope
 from app.services.billing.settlement import freeze_for_task, settle_task
 from app.services.tasks.handlers import get_task_handler
+from app.services.tasks.inline import hold_inline_lease, start_inline_lease
 from app.services.tasks.queues import task_queue
 from app.services.tasks.service import append_task_event, build_task_event, build_task_step
 from app.services.tasks.upstream import upstream_event_session
@@ -114,6 +116,8 @@ async def run_billed_ephemeral(
     asset_id: int | None = None,
     episode_id: int | None = None,
     commit: bool = True,
+    billable: bool = True,
+    result_payload_factory: Callable[[T], dict[str, Any]] | None = None,
 ) -> tuple[TaskRun, T]:
     """
     创建轻量 TaskRun → 预扣 → 在 billing_scope 内执行 → 结算。
@@ -133,7 +137,13 @@ async def run_billed_ephemeral(
         episode_id=episode_id,
     )
     try:
-        await freeze_for_task(db, task)
+        if billable:
+            await freeze_for_task(db, task)
+        else:
+            # Auditions and personal legacy synthesis remain free. They still
+            # share the durable task lifecycle without creating a new charge.
+            task.billing_status = "skipped"
+            task.billing_enabled_snapshot = False
     except ValueError:
         task.status = "failed"
         task.error_code = "insufficient_balance"
@@ -146,6 +156,7 @@ async def run_billed_ephemeral(
     now = datetime.now(UTC)
     task.status = "running"
     task.started_at = now
+    start_inline_lease(task, now)
     await append_task_event(
         db,
         task.id,
@@ -155,20 +166,20 @@ async def run_billed_ephemeral(
     )
     await db.flush()
 
-    if task.team_id is not None or task.billing_snapshot is not None:
-        # Accepted team work is durable before network I/O; release the shared
-        # team/member/project/wallet admission locks even for commit=False callers.
-        await db.commit()
+    # Accepted work must be visible while the provider is still generating.
+    # commit=False controls the caller's final success transaction only; task
+    # admission is durable before any external I/O, as for team/media tasks.
+    await db.commit()
 
     result: T
     try:
-        async with billing_scope(task.id, team_id=task.team_id, snapshot=task.billing_snapshot), upstream_event_session(db):
+        async with hold_inline_lease(task), billing_scope(task.id, team_id=task.team_id, snapshot=task.billing_snapshot), upstream_event_session(db):
             result = await executor()
         task.status = "succeeded"
         task.progress_percent = 100
         task.finished_at = datetime.now(UTC)
-        task.result_payload = {**(task.result_payload or {}), "ok": True,
-                               **({"result": str(type(result))} if result is not None else {})}
+        output = result_payload_factory(result) if result_payload_factory else _inline_result_payload(result)
+        task.result_payload = {**(task.result_payload or {}), "ok": True, **output}
         await append_task_event(
             db,
             task.id,
@@ -176,6 +187,9 @@ async def run_billed_ephemeral(
             status=task.status,
             message="轻量任务完成",
         )
+    except asyncio.CancelledError:
+        await _cancel_inline_task(db, task, billable=billable)
+        raise
     except Exception as exc:
         task.status = "failed"
         task.error_code = "ephemeral_failed"
@@ -188,16 +202,45 @@ async def run_billed_ephemeral(
             status=task.status,
             message=str(exc)[:200],
         )
-        await settle_task(db, task.id)
-        if commit or task.team_id is not None:
-            await db.commit()
+        if billable:
+            await settle_task(db, task.id)
+        # An outer request rollback must not erase an accepted failed task.
+        await db.commit()
         raise
 
-    await settle_task(db, task.id)
+    if billable:
+        await settle_task(db, task.id)
     if commit or task.team_id is not None:
         await db.commit()
     await db.refresh(task)
     return task, result
+
+
+def _inline_result_payload(result: Any) -> dict[str, Any]:
+    """Keep generated text rather than only Python's return type."""
+    if isinstance(result, str):
+        return {"kind": "text", "text_content": result}
+    if isinstance(result, dict):
+        text = result.get("content") or result.get("reply") or result.get("text_content")
+        if isinstance(text, str):
+            return {"kind": "text", "text_content": text, "data": result}
+    return {}
+
+
+async def _cancel_inline_task(db: AsyncSession, task: TaskRun, *, billable: bool = True) -> None:
+    await db.refresh(task)
+    if task.status in {"succeeded", "failed", "cancelled"}:
+        return
+    task.status = "cancelled"
+    task.finished_at = datetime.now(UTC)
+    task.next_action_at = None
+    task.lease_token = None
+    task.lease_until = None
+    await append_task_event(db, task.id, event_type="task.cancelled", status=task.status,
+                            message="生成已取消")
+    if billable:
+        await settle_task(db, task.id)
+    await db.commit()
 
 
 def _extract_provider_task_id(result: Any) -> str:
@@ -254,6 +297,7 @@ async def run_billed_ephemeral_deferred(
     now = datetime.now(UTC)
     task.status = "running"
     task.started_at = now
+    start_inline_lease(task, now)
     await append_task_event(
         db,
         task.id,
@@ -263,12 +307,11 @@ async def run_billed_ephemeral_deferred(
     )
     await db.flush()
 
-    if task.team_id is not None or task.billing_snapshot is not None:
-        await db.commit()
+    await db.commit()
 
     result: T
     try:
-        async with billing_scope(task.id, team_id=task.team_id, snapshot=task.billing_snapshot), upstream_event_session(db):
+        async with hold_inline_lease(task), billing_scope(task.id, team_id=task.team_id, snapshot=task.billing_snapshot), upstream_event_session(db):
             result = await executor()
         provider_id = _extract_provider_task_id(result)
         if not provider_id:
@@ -286,6 +329,9 @@ async def run_billed_ephemeral_deferred(
             message="已提交上游，等待轮询",
             payload={"provider_task_id": provider_id},
         )
+    except asyncio.CancelledError:
+        await _cancel_inline_task(db, task)
+        raise
     except Exception as exc:
         task.status = "failed"
         task.error_code = "ephemeral_failed"
@@ -299,8 +345,7 @@ async def run_billed_ephemeral_deferred(
             message=str(exc)[:200],
         )
         await settle_task(db, task.id)
-        if commit or task.team_id is not None:
-            await db.commit()
+        await db.commit()
         raise
 
     if commit or task.team_id is not None:

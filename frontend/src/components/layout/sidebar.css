@@ -11,7 +11,6 @@
 .pf-shell--sidebar .pf-settings-side,
 .pf-shell--sidebar .pf-history-side { top: calc(var(--pf-content-top) + 24px); }
 .pf-shell--sidebar .pf-team-sidebar { top: calc(var(--pf-content-top) + 24px); }
-.pf-shell--sidebar .gen-rail { top: calc(var(--pf-content-top) + 20px); }
 .pf-shell--sidebar .pf-create { min-height: calc(100dvh - var(--pf-content-top) - 5rem); }
 .pf-shell--sidebar .pf-editor,
 .pf-shell--sidebar .drama-workspace { min-height: calc(100dvh - var(--pf-content-top)); }
@@ -47,7 +46,7 @@
 .pf-sidebar-navigation { flex: 1; min-height: 0; padding: 8px 14px 12px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #e0e5dc transparent; }
 .pf-sidebar-group + .pf-sidebar-group { margin-top: 21px; }
 .pf-sidebar-group-label { display: block; padding: 9px 14px 10px; color: #90978f; font-size: 10px; font-weight: 550; letter-spacing: .1em; }
-.pf-sidebar-link { position: relative; display: flex; align-items: center; gap: 12px; min-height: 44px; margin: 3px 0; padding: 11px 13px; border: 1px solid transparent; border-radius: 9px; color: #6e756e; font-size: 13px; transition: background .15s, color .15s, border-color .15s; }
+.pf-sidebar-link { position: relative; display: flex; align-items: center; gap: 12px; min-height: 44px; margin: 3px 0; padding: 11px 13px; border: 1px solid transparent; border-radius: 9px; color: #6e756e; font-size: 14px; transition: background .15s, color .15s, border-color .15s; }
 .pf-sidebar-link > svg { flex: none; }
 .pf-sidebar-link > span { min-width: 0; }
 .pf-sidebar-link:hover { color: #20291a; background: #f5f7f1; }
@@ -68,7 +67,7 @@
 .pf-sidebar-account > svg { color: #969e89; flex: none; }
 .pf-sidebar-account:hover, .pf-sidebar-account.is-active { border-color: #cfdcb8; background: #f5f9ed; }
 .pf-sidebar-account .pf-user-avatar { width: 31px; height: 31px; flex: none; }
-.pf-sidebar-account > .pf-sidebar-account-guest { display: grid; place-items: center; width: 31px; height: 31px; flex: none; background: #edf1e5; border-radius: 50%; color: #7a8c61; }
+.pf-sidebar-account > span.pf-sidebar-account-guest { display: grid; place-items: center; width: 31px; height: 31px; flex: 0 0 31px; background: #edf1e5; border-radius: 50%; color: #7a8c61; }
 .pf-sidebar-icon-button { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: #68735c; }
 .pf-sidebar-icon-button:hover { background: #eef2e6; }
 .pf-sidebar-close, .pf-app-mobile-header, .pf-sidebar-backdrop { display: none; }
