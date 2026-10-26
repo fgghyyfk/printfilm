@@ -140,6 +140,7 @@ class ShotUpdate(BaseModel):
 
 
 class ProjectCreate(BaseModel):
+    target_duration_sec: int = Field(default=60, ge=15, le=180)
     image_resolution: str = Field(default="", max_length=16)
     video_resolution: str = Field(default="", max_length=16)
     template_id: str
@@ -163,6 +164,7 @@ class ProjectCreate(BaseModel):
 
 
 class ProjectUpdate(BaseModel):
+    target_duration_sec: int | None = Field(default=None, ge=15, le=180)
     image_resolution: str | None = Field(default=None, max_length=16)
     video_resolution: str | None = Field(default=None, max_length=16)
     title: str | None = Field(default=None, max_length=200)
@@ -189,6 +191,8 @@ class ProjectUpdate(BaseModel):
 
 
 class ProjectOut(BaseModel):
+    creation_session_id: int | None = None
+    target_duration_sec: int = 60
     image_resolution: str = ""
     video_resolution: str = ""
     id: int
@@ -223,6 +227,7 @@ class ProjectOut(BaseModel):
 
 
 class ProjectListItem(BaseModel):
+    creation_session_id: int | None = None
     id: int
     title: str
     template_id: ProjectTemplateIdOut

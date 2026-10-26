@@ -1,6 +1,7 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { Clapperboard, PanelsTopLeft, Video } from 'lucide-react'
 import { useI18n } from '../../i18n'
+import { SHORT_VIDEO_CREATE_PATH } from '../../lib/shortVideoRoutes'
 import Modal from './Modal'
 
 type Props = {
@@ -37,7 +38,7 @@ export default function CreateChoiceModal({ open, onClose }: Props) {
           <strong>{t('create.canvas')}</strong>
           <span className="pf-muted">{t('create.canvasHint')}</span>
         </button>
-        <button type="button" className="pf-create-choice-card" onClick={() => go('/studio/new')}>
+        <button type="button" className="pf-create-choice-card" onClick={() => go(SHORT_VIDEO_CREATE_PATH)}>
           <span className="pf-ws-product-icon" aria-hidden>
             <Video size={24} strokeWidth={1.6} />
           </span>

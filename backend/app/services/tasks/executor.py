@@ -164,6 +164,8 @@ async def _complete_task(db, task, result: dict) -> None:
     except Exception:  # noqa: BLE001
         logger.exception("settle_task failed task_id=%s", task.id)
     await db.commit()
+    from app.services.creation import reconcile_after_task
+    await reconcile_after_task(task)
 
 
 # 预扣阶段（handler 尚未执行）失败收敛：此时 _lock_task(populate_existing) 已卸掉

@@ -54,6 +54,7 @@ async def init_db(engine_override: AsyncEngine | None = None) -> None:
     """注册全部模型建表；独立迁移可显式提供引擎而不改变应用连接池。"""
     from app import models  # noqa: F401
     from app import models_agent  # noqa: F401
+    from app import models_creation  # noqa: F401
     from app import models_drama  # noqa: F401
     from app import models_api  # noqa: F401
     from app import models_settings  # noqa: F401

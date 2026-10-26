@@ -1,5 +1,5 @@
 /** PRINTFILM 官网首页：产品主张、漫剧/科普入口、成片流程与工具 */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ArrowRight } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
@@ -11,15 +11,29 @@ import { useI18n } from '../i18n'
 import { getDramaImageStylePreviewUrl } from '../lib/dramaImageStylePreviews'
 import { GITHUB_REPO_URL } from '../lib/siteLinks'
 import { PRODUCT_ICONS, localizeToolDefs } from '../lib/toolsCatalog'
+import { api, type Template } from '../api'
+import { SHORT_VIDEO_LIST_PATH, shortVideoCreatePath } from '../lib/shortVideoRoutes'
 
 export default function HomePage() {
   const nav = useNavigate()
   const { t, m } = useI18n()
   const loggedIn = Boolean(localStorage.getItem('token'))
   const [createOpen, setCreateOpen] = useState(false)
+  const [templates, setTemplates] = useState<Template[]>([])
+  const [templatesError, setTemplatesError] = useState(false)
   const DramaIcon = PRODUCT_ICONS.drama
   const KepuIcon = PRODUCT_ICONS.kepu
   const tools = localizeToolDefs(m)
+
+  useEffect(() => {
+    let active = true
+    api.templates().then((items) => {
+      if (active) setTemplates(items)
+    }).catch(() => {
+      if (active) setTemplatesError(true)
+    })
+    return () => { active = false }
+  }, [])
 
   // 未登录去登录；已登录弹出产品选择
   function goCreate() {
@@ -73,7 +87,7 @@ export default function HomePage() {
             <figcaption>{t('home.dramaTitle')}</figcaption>
           </figure>
           <figure className="pf-land-frame is-kepu">
-            <img src={getDramaImageStylePreviewUrl('neon-cyberpunk-film')} alt="" />
+            <img src={api.assetUrl(templates[0]?.preview_cover || '/static/templates/covers/anim_3d.png')} alt="" />
             <figcaption>{t('home.kepuTitle')}</figcaption>
           </figure>
         </div>
@@ -98,7 +112,7 @@ export default function HomePage() {
             <ArrowRight size={16} strokeWidth={2} />
           </span>
         </button>
-        <button type="button" className="pf-land-product is-kepu" onClick={() => goAuthOr('/studio/new')}>
+        <button type="button" className="pf-land-product is-kepu" onClick={() => goAuthOr(SHORT_VIDEO_LIST_PATH)}>
           <span className="pf-land-product-icon" aria-hidden>
             <KepuIcon size={26} strokeWidth={1.6} />
           </span>
@@ -119,6 +133,31 @@ export default function HomePage() {
             <ArrowRight size={16} strokeWidth={2} />
           </span>
         </button>
+      </section>
+
+      <section className="pf-land-caps" aria-labelledby="pf-land-templates-title">
+        <header className="pf-land-section-head">
+          <p className="pf-land-kicker">Styles</p>
+          <h2 id="pf-land-templates-title">{t('home.templatesTitle')}</h2>
+          <p className="pf-muted">{t('home.templatesHint')}</p>
+        </header>
+        <div className="pf-template-grid">
+          {templates.map((template) => (
+            <button
+              key={template.id}
+              type="button"
+              className="pf-template-card"
+              onClick={() => goAuthOr(shortVideoCreatePath(template.id))}
+            >
+              <img src={api.assetUrl(template.preview_cover)} alt="" loading="lazy" />
+              <div className="body">
+                <h3>{template.name}</h3>
+                <p>{template.description}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+        {templatesError ? <p className="pf-muted">{t('home.templatesLoadFailed')}</p> : null}
       </section>
 
       <section className="pf-land-pipeline" aria-labelledby="pf-land-pipeline-title">
@@ -221,7 +260,7 @@ export default function HomePage() {
         </div>
         <nav className="pf-land-foot-nav" aria-label={t('home.footNav')}>
           <Link to="/drama">{t('nav.drama')}</Link>
-          <Link to="/history">{t('nav.kepu')}</Link>
+          <Link to={SHORT_VIDEO_LIST_PATH}>{t('nav.kepu')}</Link>
           <Link to="/method">{t('home.methodLink')}</Link>
           <Link to="/tools">{t('nav.tools')}</Link>
           <Link to="/pricing">{t('nav.pricing')}</Link>

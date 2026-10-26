@@ -128,7 +128,7 @@ export const zhShell = {
     canvas: '自由画布',
     canvasHint: '无限画布 · 图像 · 视频',
     kepu: 'AI短视频',
-    kepuHint: '分镜流水线出片',
+    kepuHint: '输入想法 · 文案分镜 · 画面配音 · 合成成片',
     toolsFootPrefix: '也可以先去',
     toolsFootLink: '工具中心',
     toolsFootSuffix: '浏览独立能力',

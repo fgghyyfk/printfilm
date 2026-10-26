@@ -721,6 +721,11 @@ async def _script_stage(project_id: int) -> None:
 
         style = _effective_style(project)
         extra = _effective_extra(project)
+        if image_text:
+            target = int(getattr(project, "target_duration_sec", 60) or 60)
+            extra = f"{extra}\n成片目标约 {target} 秒。每镜一个清晰画面，按旁白节奏分配镜头。".strip()
+            if project.source_type == "script":
+                extra += "严格保留用户已生成文案的全部旁白，只拆分镜头，不增加或删改旁白。"
         char_hint = _effective_character_prompt(project)
         consist = template_consistency_mode(tpl)
         plans_result = await ark.chat_storyboard(
@@ -1452,6 +1457,18 @@ async def _compose_stage(project_id: int) -> None:
             full_audio = _full_narration_path(project_id)
             if not full_audio.exists():
                 full_audio = None
+
+        if mode == "image_text":
+            if not media or any(item.image_path is None for item in media):
+                raise RuntimeError("分镜图片尚未齐备，请重试素材生成")
+            if full_audio is not None:
+                if not _continuous_audio_ok(project_id):
+                    raise RuntimeError("整片配音不可用，请重新生成配音")
+            elif any(
+                item.audio_path is None or is_near_silent_audio(item.audio_path)
+                for item in media
+            ):
+                raise RuntimeError("配音尚未齐备，请重新生成配音")
 
         sub_cfg = _merge_subtitle_preset(
             (project.template.subtitle_config if project.template else None) or {},

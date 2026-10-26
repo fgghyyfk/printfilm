@@ -112,6 +112,9 @@ class Project(Base):
     # full = 图→视频→配音→合成；image_text = 静图+叠字+配音+Ken Burns（跳过 AI 视频）
     # 由用户选择，不由模板锁定
     pipeline_mode: Mapped[str] = mapped_column(String(32), default="full")
+    # Agent 会话归属和目标时长；历史向导项目保持空会话标识。
+    creation_session_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    target_duration_sec: Mapped[int] = mapped_column(Integer, default=60)
     # 输出画幅，如 16:9 / 9:16；空则回退模板 default_ratio
     output_ratio: Mapped[str] = mapped_column(String(16), default="")
     # 配音预设 id；空则用模板默认

@@ -4,6 +4,7 @@ import { api, defaultsFromTemplate } from '../../api'
 import type { Project, Shot, Template } from '../../api'
 import AppShell from '../../components/layout/AppShell'
 import Stepper from '../../components/ui/Stepper'
+import ImageTextStoryboard from './ImageTextStoryboard'
 import {
   IconChevronLeft,
   IconDownload,
@@ -17,6 +18,7 @@ import {
 } from '../../components/ui/Icons'
 import { scenePromptForDisplay } from '../../promptDisplay'
 import { dialog } from '../../lib/dialog'
+import { downloadSingleVideo } from '../../lib/clientDownload'
 import { handleBillingError } from '../../lib/billingError'
 import BillingErrorNotice from '../../components/billing/BillingErrorNotice'
 import {
@@ -104,10 +106,10 @@ function shotCaption(shot: Shot) {
 }
 
 function hasActiveUnifiedTasks(project: Project | null): boolean {
-  const activeStatuses = ['pending', 'leased', 'running', 'awaiting_poll', 'awaiting_review']
+  const activeStatuses = ['pending', 'leased', 'running', 'awaiting_poll', 'awaiting_review', 'cancel_requested']
   return Boolean(
     project?.active_tasks?.some(
-      (task) => !task.cancel_requested && activeStatuses.includes(task.status),
+      (task) => activeStatuses.includes(task.status),
     ),
   )
 }
@@ -161,9 +163,14 @@ export default function StoryboardPage() {
     api
       .getProject(projectId)
       .then((p) => {
+        if (p.creation_session_id) {
+          nav(`/studio/sessions/${p.creation_session_id}?project=${p.id}`, { replace: true })
+          return
+        }
         setProject(p)
-        return api.templates().then((list) => {
-          setTemplate(list.find((t) => t.id === p.template_id) || null)
+        return api.templates().then(async (list) => {
+          const selected = list.find((t) => t.id === p.template_id)
+          setTemplate(selected || (p.template_id ? await api.getTemplate(p.template_id) : null))
         })
       })
       .catch((err) => setError(err instanceof Error ? err.message : '加载失败'))
@@ -379,10 +386,38 @@ export default function StoryboardPage() {
   async function composeOnly() {
     if (!project) return
     setBusy(true)
+    setError('')
     try {
       setProject(await api.compose(project.id))
     } catch (err) {
       setError(err instanceof Error ? err.message : '合成失败')
+      await handleBillingError(err, nav)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function cancelGeneration() {
+    if (!project) return
+    setBusy(true)
+    setError('')
+    try {
+      setProject(await api.cancelProject(project.id))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '停止失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function downloadFinal() {
+    if (!project?.final_video_url) return
+    setBusy(true)
+    setError('')
+    try {
+      await downloadSingleVideo({ url: api.assetUrl(project.final_video_url, project.updated_at), title: project.title, projectId: project.id })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '下载失败')
     } finally {
       setBusy(false)
     }
@@ -681,6 +716,32 @@ export default function StoryboardPage() {
 
   return (
     <AppShell active="studio" wide>
+      {!isFullPipeline ? <>
+        {error ? <BillingErrorNotice message={error} /> : null}
+        {project.error_msg ? <p className="pf-error">{project.error_msg}</p> : null}
+        <ImageTextStoryboard
+          key={project.id}
+          project={project}
+          template={template}
+          busy={busy}
+          running={running}
+          busyShotIds={busyShotIds}
+          onBack={() => nav('/history')}
+          onSettings={() => nav(`/studio/new?project=${project.id}`)}
+          onGenerate={() => void continueGenerate()}
+          onCompose={() => void composeOnly()}
+          onCancel={() => void cancelGeneration()}
+          onRestart={() => void restartGenerate()}
+          onExport={() => downloadStoryboardCsv(project)}
+          onDownload={() => void downloadFinal()}
+          onEditor={() => nav(`/studio/${project.id}/editor`)}
+          onEditShot={openShotEdit}
+          onPreviewShot={(shot) => setPreview({ kind: 'shot', shotNo: shot.shot_no, imageUrl: shot.image_url, videoUrl: shot.video_url, audioUrl: shot.audio_url, caption: shotCaption(shot) })}
+          onRegenImage={(shot) => void regenImage(shot)}
+          onRegenAudio={(shot) => void regenAudio(shot)}
+        />
+        <ProjectMediaCostSummary project={project} />
+      </> : <>
       <header className="pf-page-head">
         <div className="pf-page-head-row">
           <div>
@@ -1271,6 +1332,8 @@ title="用当前镜头重新拼接"
         </aside>
       </div>
 
+      </>}
+
       {batchOpen && project ? (
         <div className="modal-backdrop" onClick={() => !busy && setBatchOpen(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -1378,7 +1441,7 @@ title="用当前镜头重新拼接"
                 ? `编辑镜头 ${editing.shot_no} · 旁白与标题`
                 : editMode === 'segment'
                   ? `编辑镜头 ${editing.shot_no} · 逐段分镜`
-                  : `编辑镜头 ${editing.shot_no} · 全部提示词`}
+                  : `编辑镜头 ${editing.shot_no} · ${isFullPipeline ? '全部提示词' : '画面与旁白'}`}
             </h3>
             <div className="pf-prompt-modal-scroll">
               {editMode === 'narration' || editMode === 'full' ? (
@@ -1401,7 +1464,7 @@ title="用当前镜头重新拼接"
                       onChange={(e) => setEditing({ ...editing, overlay_subtitle: e.target.value })}
                     />
                     <span className="pf-muted pf-prompt-hint">
-                      图文成片叠字；AI 视频成片不烧这行，只作分镜说明
+                      {isFullPipeline ? '作为分镜说明使用' : '可选，会和标题一起显示在成片中'}
                     </span>
                   </label>
                   <label>
@@ -1420,7 +1483,7 @@ title="用当前镜头重新拼接"
               ) : null}
               {editMode === 'full' ? (
                 <label>
-                  画面提示词（首帧）
+                    {isFullPipeline ? '画面提示词（首帧）' : '画面描述'}
                   <textarea
                     autoFocus={editFocus === 'img_prompt'}
                     value={editing.img_prompt}
@@ -1428,11 +1491,11 @@ title="用当前镜头重新拼接"
                     rows={3}
                   />
                   <span className="pf-muted pf-prompt-hint">
-                    会同步到脚本首段画面，出图与视频都用这一段
+                    {isFullPipeline ? '会同步到脚本首段画面，出图与视频都用这一段' : '描述角色、场景和动作；修改后可重新生成这一张图片'}
                   </span>
                 </label>
               ) : null}
-              {editMode === 'segment' || editMode === 'full' ? (
+              {isFullPipeline && (editMode === 'segment' || editMode === 'full') ? (
                 <>
                   <label>
                     逐段分镜脚本（画面节奏与 @duration）
@@ -1492,7 +1555,7 @@ title="用当前镜头重新拼接"
               ) : null}
             </div>
             <div className="pf-prompt-modal-foot">
-              {editMode !== 'segment' ? (
+              {isFullPipeline && editMode !== 'segment' ? (
                 <button
                   type="button"
                   className="pf-btn pf-btn-ghost pf-btn-sm"
@@ -1504,7 +1567,7 @@ title="用当前镜头重新拼接"
                   逐段分镜…
                 </button>
               ) : null}
-              {editMode !== 'narration' ? (
+              {isFullPipeline && editMode !== 'narration' ? (
                 <button
                   type="button"
                   className="pf-btn pf-btn-ghost pf-btn-sm"
@@ -1516,7 +1579,7 @@ title="用当前镜头重新拼接"
                   旁白与标题…
                 </button>
               ) : null}
-              {editMode !== 'full' ? (
+              {isFullPipeline && editMode !== 'full' ? (
                 <button
                   type="button"
                   className="pf-btn pf-btn-ghost pf-btn-sm"

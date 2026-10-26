@@ -18,6 +18,7 @@ import PricingPage from './pages/PricingPage'
 import StudioPage from './pages/StudioPage'
 import TemplatesPage from './pages/TemplatesPage'
 import CreateProjectPage from './pages/studio/CreateProjectPage'
+import CreationSessionEditorBridge from './pages/studio/CreationSessionEditorBridge'
 import StyleConfigPage from './pages/studio/StyleConfigPage'
 import StoryboardPage from './pages/studio/StoryboardPage'
 import EditorPage from './pages/studio/EditorPage'
@@ -71,6 +72,7 @@ export default function App() {
         <Route path="/pricing" element={<PricingPage />} />
         <Route path="/history" element={<HistoryPage />} />
         <Route path="/studio/new" element={<CreateProjectPage />} />
+        <Route path="/studio/sessions/:sessionId" element={<CreationSessionEditorBridge />} />
         <Route path="/studio/:id/style" element={<StyleConfigPage />} />
         <Route path="/studio/:id/editor" element={<EditorPage />} />
         <Route path="/studio/:id" element={<StoryboardPage />} />

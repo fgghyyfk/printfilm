@@ -1,5 +1,6 @@
 import { getActiveLocale } from '../i18n/detect'
 import { messages } from '../i18n/messages'
+import { IMAGE_TEXT_STEPS, imageTextBoardStep } from './imageTextStoryboard'
 
 export const RUNNING = new Set([
   'SCRIPTING',
@@ -223,7 +224,7 @@ export const BOARD_STEPS = KEPU_STEPS
 /** 静图成片跳过「镜头视频」步 */
 export function kepuSteps(pipelineMode?: string | null) {
   if (pipelineMode === 'image_text') {
-    return KEPU_STEPS.filter((s) => s.key !== 'videos')
+    return IMAGE_TEXT_STEPS
   }
   return KEPU_STEPS
 }
@@ -263,6 +264,10 @@ export function kepuStepIndex(
     shots?: Array<{ image_url?: string | null; audio_url?: string | null; video_url?: string | null }>
   } | null,
 ): number {
+  if (project?.pipeline_mode === 'image_text') {
+    if (page === 'create' || page === 'style') return 0
+    return imageTextBoardStep(project)
+  }
   const steps = kepuSteps(project?.pipeline_mode)
   const idx = (key: string) => {
     const n = steps.findIndex((s) => s.key === key)
@@ -293,6 +298,13 @@ export function kepuPhaseHint(project: {
   pipeline_mode?: string | null
   shots?: Array<{ image_url?: string | null; audio_url?: string | null; video_url?: string | null }>
 }): string {
+  if (project.pipeline_mode === 'image_text') {
+    if (isRunning(effectiveStatus(project))) return '当前步骤正在制作，完成后可查看结果并继续下一步。'
+    const phase = kepuBillingPhase(project)
+    if (phase === 'script') return '保存文案后生成分镜，确认每张卡片里的旁白和画面。'
+    if (phase === 'assets') return '确认分镜后生成图片与配音；已完成的素材会继续保留。'
+    return '图片与配音已齐，可以试听后合成带运镜和字幕的成片。'
+  }
   if (isRunning(effectiveStatus(project))) {
     return '生成进行中，可在右侧查看各阶段进度。'
   }

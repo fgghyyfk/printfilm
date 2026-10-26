@@ -27,6 +27,7 @@ def _project(project_id):
 async def test_listing_batches_tasks_and_projects_runtime_once(monkeypatch):
     """列表一次获取整页任务，运行态与已发布标记保持原响应语义。"""
     rows = [_project(12), _project(20)]
+    rows[0].creation_session_id = 91
     task = SimpleNamespace(
         id=99, domain="kepu", task_type="project_pipeline", status="running",
         progress_percent=60, error_message=None, payload={"phase": "videos"},
@@ -45,6 +46,7 @@ async def test_listing_batches_tasks_and_projects_runtime_once(monkeypatch):
     assert page.stats.model_dump() == {"total": 10, "generating": 2, "done": 5, "published": 1}
     assert (page.items[0].status, page.items[0].progress, page.items[0].error_msg) == (ProjectStatus.VIDEOING, 60, None)
     assert [item.published for item in page.items] == [False, True]
+    assert [item.creation_session_id for item in page.items] == [91, None]
     assert page.items[1].error_msg == "旧错误"
 
     compiled = [call.args[0].compile(dialect=postgresql.dialect()) for call in db.execute.await_args_list]

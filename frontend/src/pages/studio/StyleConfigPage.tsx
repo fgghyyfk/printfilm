@@ -80,17 +80,25 @@ export default function StyleConfigPage() {
     if (!projectId) {
       nav('/studio/new')
     }
-    api.templates().then(setTemplates)
     api.voices().then(setVoices)
-    api
-      .getProject(projectId)
-      .then((p) => {
+    Promise.all([api.templates(), api.getProject(projectId)])
+      .then(async ([list, p]) => {
+        if (p.pipeline_mode === 'image_text') {
+          nav(`/studio/new?project=${p.id}`, { replace: true })
+          return
+        }
+        // 下架的风格不再展示给新用户，历史项目仍可加载其原模板。
+        if (p.template_id && !list.some((item) => item.id === p.template_id)) {
+          const legacy = await api.getTemplate(p.template_id)
+          list = [...list, legacy]
+        }
+        setTemplates(list)
         setProject(p)
         setStylePrompt(p.style_prompt || '')
         setExtraPrompt(p.extra_prompt || '')
         setVoiceId(p.voice_id || '')
         setPipelineMode(p.pipeline_mode || 'full')
-        setRatio(p.output_ratio || (p.pipeline_mode === 'image_text' ? '9:16' : '16:9'))
+        setRatio(p.output_ratio || '16:9')
         if (p.image_model) setImageModel(p.image_model)
         if (p.video_model) setVideoModel(p.video_model)
         if (p.image_resolution) setImageResolution(p.image_resolution)

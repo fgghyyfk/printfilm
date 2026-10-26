@@ -185,8 +185,15 @@ _PROJECT_WIDE_TASK_TYPES = {
 }
 
 
+def _ensure_wizard_project(project: Project) -> None:
+    """Conversation projects are exclusively coordinated by their session."""
+    if getattr(project, "creation_session_id", None):
+        raise HTTPException(status_code=409, detail="请在创作对话中修改、停止或重试该短片")
+
+
 def _ensure_side_task_allowed(project: Project) -> None:
     """整片任务未终态前拒绝侧任务；单镜重绘可并行，不因残留 IMAGING 卡住。"""
+    _ensure_wizard_project(project)
     for task in getattr(project, "active_tasks", []) or []:
         if str(getattr(task, "status", "") or "") not in ACTIVE_TASK_STATUSES:
             continue
@@ -196,6 +203,7 @@ def _ensure_side_task_allowed(project: Project) -> None:
 
 # COMPOSING 且无进行中任务时视为拼接已失败卡住，允许重新发起
 async def _ensure_compose_allowed(db: AsyncSession, user: User, project: Project) -> None:
+    _ensure_wizard_project(project)
     active = await list_active_tasks_for_owner(db, user.id, project_id=project.id)
     if active:
         raise HTTPException(status_code=409, detail="生成进行中，请稍后")
@@ -251,7 +259,10 @@ async def create_project(
     user: User = Depends(get_current_user),
 ) -> Project:
     from app.models import Template
+    from app.services.creation_templates import CREATION_TEMPLATE_IDS
 
+    if body.template_id not in CREATION_TEMPLATE_IDS:
+        raise HTTPException(status_code=400, detail="请选择可用的动画模板")
     tpl = await db.get(Template, body.template_id)
     if not tpl or not tpl.is_active:
         raise HTTPException(status_code=400, detail="无效模板")
@@ -261,6 +272,7 @@ async def create_project(
         title=body.title,
         source_type=body.source_type,
         source_text=body.source_text,
+        target_duration_sec=body.target_duration_sec,
         resolution_mode=body.resolution_mode,
         pipeline_mode=body.pipeline_mode,
         output_ratio=(body.output_ratio or "").strip(),
@@ -403,6 +415,7 @@ async def update_project(
     user: User = Depends(get_current_user),
 ) -> Project:
     project = await _get_owned_project(db, project_id, user)
+    _ensure_wizard_project(project)
     if project.status in {
         ProjectStatus.SCRIPTING,
         ProjectStatus.IMAGING,
@@ -519,6 +532,7 @@ async def generate_project(
     - restart=true: wipe shots/media and regenerate storyboard from scratch.
     """
     project = await _get_owned_project(db, project_id, user)
+    _ensure_wizard_project(project)
     if project.status in {
         ProjectStatus.SCRIPTING,
         ProjectStatus.IMAGING,
@@ -587,6 +601,7 @@ async def cancel_project(
     user: User = Depends(get_current_user),
 ) -> Project:
     project = await _get_owned_project(db, project_id, user)
+    _ensure_wizard_project(project)
     running = {
         ProjectStatus.SCRIPTING,
         ProjectStatus.IMAGING,
@@ -797,6 +812,7 @@ async def update_shot(
     from app.services.pipeline import clamp_shot_duration
 
     project = await _get_owned_project(db, project_id, user)
+    _ensure_wizard_project(project)
     shot = next((s for s in project.shots if s.id == shot_id), None)
     if not shot:
         raise HTTPException(status_code=404, detail="分镜不存在")
@@ -956,6 +972,7 @@ async def regen_all_audio(
 ) -> Project:
     """Re-TTS all shots with current voice_id, then recompose final video."""
     project = await _get_owned_project(db, project_id, user)
+    _ensure_wizard_project(project)
     if project.status in {
         ProjectStatus.SCRIPTING,
         ProjectStatus.IMAGING,

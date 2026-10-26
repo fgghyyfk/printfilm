@@ -129,7 +129,7 @@ export const enShell = {
     canvas: 'Free canvas',
     canvasHint: 'Infinite canvas · images · video',
     kepu: 'AI Short Video',
-    kepuHint: 'Storyboard pipeline',
+    kepuHint: 'Idea · Copy & storyboard · Images & voice · Compose',
     toolsFootPrefix: 'Or browse standalone tools in the',
     toolsFootLink: 'tool hub',
     toolsFootSuffix: '',

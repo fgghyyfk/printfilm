@@ -225,6 +225,13 @@ async def _tick() -> None:
         if job.done():
             _cancel_jobs.pop(task_id, None)
     await _claim_cancel_requests()
+    # Conversations advance from persisted, settled stage results, including after restarts.
+    try:
+        from app.services.creation import reconcile_creation_sessions
+        async with AsyncSessionLocal() as db:
+            await reconcile_creation_sessions(db)
+    except Exception:
+        logger.exception("creation workflow reconciliation failed")
     await _claim_direct_llm_tasks(now)
 
     # Each lane owns its capacity; a blocked image/video lane never blocks text.

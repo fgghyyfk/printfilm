@@ -285,6 +285,11 @@ async def _run_studio_generation(task: TaskRun) -> dict[str, Any] | None:
     return await execute_generation(task)
 
 
+async def _run_creation_turn(task: TaskRun) -> dict[str, Any] | None:
+    from app.services.creation import execute_creation_turn
+    return await execute_creation_turn(task)
+
+
 # 确保关键主键字段存在。
 def _require_int(value: int | None, field_name: str) -> int:
     if isinstance(value, int) and value > 0:
@@ -293,6 +298,7 @@ def _require_int(value: int | None, field_name: str) -> int:
 
 
 TASK_HANDLERS: dict[tuple[str, str], TaskHandler] = {
+    ("kepu", "creation_turn"): TaskHandler("kepu", "creation_turn", _run_creation_turn),
     ("drama", "script_summary"): TaskHandler("drama", "script_summary", _run_drama_script_summary),
     ("drama", "episode_script"): TaskHandler("drama", "episode_script", _run_drama_episode_script),
     ("drama", "fragment_plan"): TaskHandler("drama", "fragment_plan", _run_drama_fragment_plan),

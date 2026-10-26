@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from app.api import auth, billing, projects, tasks, templates, tools
+from app.api import auth, billing, creation, projects, tasks, templates, tools
 from app.api import teams, team_billing, team_content, team_edit_locks
 from app.api import api_keys as user_api_keys
 from app.api.v1 import router as v1_router
@@ -111,6 +111,7 @@ app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 app.include_router(auth.router, prefix="/api")
 app.include_router(templates.router, prefix="/api")
 app.include_router(projects.router, prefix="/api")
+app.include_router(creation.router, prefix="/api")
 app.include_router(tasks.router, prefix="/api")
 app.include_router(billing.router, prefix="/api")
 app.include_router(tools.router, prefix="/api")
@@ -201,6 +202,11 @@ async def _apply_schema_patches(engine_override: AsyncEngine | None = None) -> N
         pcols = await _pg_columns(conn, "projects")
         if "pipeline_mode" not in pcols:
             await conn.execute(text("ALTER TABLE projects ADD COLUMN pipeline_mode VARCHAR(32) DEFAULT 'full'"))
+        if "creation_session_id" not in pcols:
+            await conn.execute(text("ALTER TABLE projects ADD COLUMN creation_session_id INTEGER"))
+        if "target_duration_sec" not in pcols:
+            await conn.execute(text("ALTER TABLE projects ADD COLUMN target_duration_sec INTEGER DEFAULT 60"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_projects_creation_session_id ON projects (creation_session_id)"))
         if "output_ratio" not in pcols:
             await conn.execute(text("ALTER TABLE projects ADD COLUMN output_ratio VARCHAR(16) DEFAULT ''"))
         if "voice_id" not in pcols:
