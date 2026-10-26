@@ -33,8 +33,17 @@ import {
 } from './dramaWorkspaceUtils'
 import { sumFragmentContentDuration } from './dramaEpisodeEditUtils'
 import { OutlineScriptParseModal, OutlineScriptPreview } from './outlineScriptPreview'
+import DramaStatusNotice, { DramaErrorNotice } from './DramaStatusNotice'
 
 type SectionKey = 'creative' | 'summary' | 'body'
+
+const GENERATION_TITLES: Record<string, string> = {
+  creative: '正在生成本集创作思路',
+  summary: '正在生成本集梗概',
+  brief: '正在提取本集梗概',
+  body: '正在生成拍摄剧本',
+  full: '正在重新生成整集',
+}
 
 /** 分集目录用的镜头合计文案 */
 function formatOutlineShotDuration(sec: number): string {
@@ -856,41 +865,55 @@ export function OutlineEpisodePanel({
         </div>
       </header>
 
-      {localError ? <p className="drama-error">{localError}</p> : null}
-      {localNotice ? <p className="drama-outline-notice">{localNotice}</p> : null}
-      {selectedShot?.scriptChanged ? (
-        <p className="drama-outline-notice">剧本已修改，当前分镜仍为旧稿；进入后请重新分镜。</p>
-      ) : null}
-      {summaryGenerating ? (
-        <p className="drama-loader">全剧摘要生成中…完成后抽取资产，再生成各集剧本</p>
-      ) : null}
-      {assetsSeeding ? (
-        <p className="drama-loader">抽取资产中…角色/场景写入资产库后开始分集</p>
-      ) : null}
-      {episodeGenerating ? (
-        <p className="drama-loader">
-          {episodeProgress.total > 0
-            ? `整剧进度 ${episodeProgress.done}/${episodeProgress.total} · 可先浏览已完成的集`
-            : '全集剧本生成中，可先浏览已完成的集…'}
-        </p>
-      ) : null}
-      {selectedGenerating ? (
-        <p className="drama-loader">本集生成中（{generatingMode}）…</p>
-      ) : anyEpisodeGenerating && generatingEpisodeNumber ? (
-        <p className="drama-loader">
-          第 {generatingEpisodeNumber} 集生成中，可继续创作当前分集
-        </p>
-      ) : null}
-      {selected && episodeShotStats[selected.episodeNumber || 0]?.planStatus === 'generating' ? (
-        <p className="drama-loader">本集 AI 分镜中…</p>
-      ) : null}
-      {selected &&
-      isSubstantialEpisodeBody(selected.body) &&
-      !episodeShotStats[selected.episodeNumber || 0]?.planStatus &&
-      !summaryGenerating &&
-      !assetsSeeding ? (
-        <p className="drama-loader">本集正文已就绪，正在准备 AI 分镜…</p>
-      ) : null}
+      <div className="drama-outline-status-list">
+        {localError ? <DramaErrorNotice message={localError} onDismiss={() => setLocalError('')} /> : null}
+        {localNotice ? <DramaStatusNotice tone="success" title={localNotice} onDismiss={() => setLocalNotice('')} /> : null}
+        {selectedShot?.scriptChanged ? (
+          <DramaStatusNotice tone="warning" title="剧本已更新，分镜待同步">
+            现有分镜仍为旧稿，进入分镜后请重新分镜。
+          </DramaStatusNotice>
+        ) : null}
+        {summaryGenerating ? (
+          <DramaStatusNotice tone="busy" title="正在生成全剧摘要">
+            完成后将抽取角色与场景资产，再生成各集剧本。
+          </DramaStatusNotice>
+        ) : null}
+        {assetsSeeding ? (
+          <DramaStatusNotice tone="busy" title="正在抽取角色与场景资产">
+            写入资产库后，将开始生成分集剧本。
+          </DramaStatusNotice>
+        ) : null}
+        {episodeGenerating ? (
+          <DramaStatusNotice tone="busy" title="正在生成分集剧本">
+            {episodeProgress.total > 0
+              ? `已完成 ${episodeProgress.done} / ${episodeProgress.total} 集，可先浏览已完成的内容。`
+              : '可先浏览已完成的分集内容。'}
+          </DramaStatusNotice>
+        ) : null}
+        {selectedGenerating ? (
+          <DramaStatusNotice tone="busy" title={GENERATION_TITLES[generatingMode || ''] || '正在生成本集内容'}>
+            内容生成后将自动更新，请稍候。
+          </DramaStatusNotice>
+        ) : anyEpisodeGenerating && generatingEpisodeNumber ? (
+          <DramaStatusNotice tone="busy" title={`第 ${generatingEpisodeNumber} 集正在生成`}>
+            可继续创作当前分集。
+          </DramaStatusNotice>
+        ) : null}
+        {selected && episodeShotStats[selected.episodeNumber || 0]?.planStatus === 'generating' ? (
+          <DramaStatusNotice tone="busy" title="正在生成本集 AI 分镜">
+            分镜完成后，可进入查看与编辑。
+          </DramaStatusNotice>
+        ) : null}
+        {selected &&
+        isSubstantialEpisodeBody(selected.body) &&
+        !episodeShotStats[selected.episodeNumber || 0]?.planStatus &&
+        !selectedGenerating &&
+        !episodeGenerating &&
+        !summaryGenerating &&
+        !assetsSeeding ? (
+          <DramaStatusNotice tone="busy" title="本集剧本已就绪，正在准备 AI 分镜" />
+        ) : null}
+      </div>
 
       <div className="drama-outline-sections">
         <SectionCard

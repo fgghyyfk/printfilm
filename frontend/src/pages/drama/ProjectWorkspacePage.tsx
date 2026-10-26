@@ -4,7 +4,7 @@ import { isRequestAborted } from '../../api/http'
 import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { Boxes, ChevronLeft } from 'lucide-react'
-import BillingErrorNotice from '../../components/billing/BillingErrorNotice'
+import { DramaErrorNotice } from './DramaStatusNotice'
 import AppShell from '../../components/layout/AppShell'
 import { dramaApi, type DramaProject } from '../../api/drama'
 import {
@@ -236,7 +236,7 @@ function WorkspaceInner() {
         </header>
 
         {titleLock.error && <p role="alert" className="pf-team-alert">{titleLock.error}<button type="button" onClick={titleLock.retry}>重新取得编辑权</button></p>}
-        {error ? <BillingErrorNotice message={error} className="drama-error drama-workspace-banner" /> : null}
+        {error ? <DramaErrorNotice message={error} className="drama-workspace-alert" onDismiss={() => setError('')} /> : null}
 
         <main className="drama-workspace-main">
           {assetsOpen ? <AssetsStep projectId={id} onError={setError} /> : null}
