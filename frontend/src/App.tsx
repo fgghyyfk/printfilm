@@ -8,8 +8,6 @@ import AuthPage from './pages/AuthPage'
 import HistoryPage from './pages/HistoryPage'
 import HomePage from './pages/HomePage'
 import MethodPage from './pages/MethodPage'
-import ToolsPage from './pages/ToolsPage'
-import ToolDetailPage from './pages/ToolDetailPage'
 import GenerationPage from './pages/GenerationPage'
 import GenerationTasksPage from './pages/GenerationTasksPage'
 import HelpPage from './pages/HelpPage'
@@ -61,11 +59,9 @@ export default function App() {
         <Route path="/method" element={<MethodPage />} />
         <Route path="/auth" element={<AuthPage />} />
         <Route path="/templates" element={<TemplatesPage />} />
-        <Route path="/tools" element={<ToolsPage />} />
         <Route path="/tools/video" element={<RequireAuth><GenerationPage kind="video" /></RequireAuth>} />
         <Route path="/tools/image" element={<RequireAuth><GenerationPage kind="image" /></RequireAuth>} />
         <Route path="/tools/audio" element={<RequireAuth><GenerationPage kind="audio" /></RequireAuth>} />
-        <Route path="/tools/:toolId" element={<ToolDetailPage />} />
         <Route path="/tasks" element={<RequireAuth><GenerationTasksPage /></RequireAuth>} />
         <Route path="/assets" element={<AssetLibraryPage />} />
         <Route path="/help" element={<HelpPage />} />

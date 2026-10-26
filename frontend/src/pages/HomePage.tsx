@@ -1,16 +1,14 @@
-/** PRINTFILM 官网首页：产品主张、漫剧/科普入口、成片流程与工具 */
+/** PRINTFILM 官网首页：产品主张、漫剧/科普入口、成片流程与创作入口 */
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowRight } from 'lucide-react'
+import { ArrowRight, ArrowUpRight, Clapperboard as DramaIcon, Video as KepuIcon } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import Button from '../components/ui/Button'
 import { IconGithub } from '../components/ui/Icons'
-import ComingSoon from '../components/ui/ComingSoon'
 import CreateChoiceModal from '../components/ui/CreateChoiceModal'
 import { useI18n } from '../i18n'
 import { getDramaImageStylePreviewUrl } from '../lib/dramaImageStylePreviews'
-import { GITHUB_REPO_URL } from '../lib/siteLinks'
-import { PRODUCT_ICONS, localizeToolDefs } from '../lib/toolsCatalog'
+import { FILM_SKILLS_URL, GITHUB_REPO_URL } from '../lib/siteLinks'
 import { api, type Template } from '../api'
 import { SHORT_VIDEO_LIST_PATH, shortVideoCreatePath } from '../lib/shortVideoRoutes'
 
@@ -21,9 +19,6 @@ export default function HomePage() {
   const [createOpen, setCreateOpen] = useState(false)
   const [templates, setTemplates] = useState<Template[]>([])
   const [templatesError, setTemplatesError] = useState(false)
-  const DramaIcon = PRODUCT_ICONS.drama
-  const KepuIcon = PRODUCT_ICONS.kepu
-  const tools = localizeToolDefs(m)
 
   useEffect(() => {
     let active = true
@@ -65,10 +60,10 @@ export default function HomePage() {
               {t('home.startCreate')}
               <ArrowRight size={16} strokeWidth={2} aria-hidden />
             </Button>
-            <Button variant="ghost" size="lg" icon to="/tools">
-              {t('home.browseTools')}
-              <ArrowRight size={16} strokeWidth={2} aria-hidden />
-            </Button>
+            <a className="pf-btn pf-btn-ghost pf-btn-lg pf-btn-icon" href={FILM_SKILLS_URL} target="_blank" rel="noopener noreferrer">
+              {t('nav.skills')}
+              <ArrowUpRight size={16} strokeWidth={2} aria-hidden />
+            </a>
           </div>
           <a
             className="pf-land-github"
@@ -191,37 +186,6 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="pf-land-tools" id="tools">
-        <header className="pf-land-section-head is-row">
-          <div>
-            <p className="pf-land-kicker">{t('home.toolsKicker')}</p>
-            <h2>{t('home.toolsTitle')}</h2>
-          </div>
-          <Link to="/tools" className="pf-link">
-            {t('home.allTools')}
-          </Link>
-        </header>
-        <div className="pf-land-tool-grid">
-          {tools.map((tool) => {
-            const Icon = tool.icon
-            return (
-              <Link
-                key={tool.id}
-                to={`/tools/${tool.id}`}
-                className={`pf-land-tool-card${tool.soon ? ' is-soon' : ''}`}
-              >
-                <span className="pf-land-tool-icon" aria-hidden>
-                  <Icon size={20} strokeWidth={1.7} />
-                </span>
-                <strong>{tool.title}</strong>
-                <span>{tool.desc}</span>
-                {tool.soon ? <ComingSoon /> : null}
-              </Link>
-            )
-          })}
-        </div>
-      </section>
-
       <section className="pf-land-who" aria-labelledby="pf-land-who-title">
         <header className="pf-land-section-head">
           <p className="pf-land-kicker">{t('home.whoKicker')}</p>
@@ -262,7 +226,7 @@ export default function HomePage() {
           <Link to="/drama">{t('nav.drama')}</Link>
           <Link to={SHORT_VIDEO_LIST_PATH}>{t('nav.kepu')}</Link>
           <Link to="/method">{t('home.methodLink')}</Link>
-          <Link to="/tools">{t('nav.tools')}</Link>
+          <a href={FILM_SKILLS_URL} target="_blank" rel="noopener noreferrer">{t('nav.skills')}</a>
           <Link to="/pricing">{t('nav.pricing')}</Link>
           <Link to="/help">{t('nav.help')}</Link>
           <Link to="/terms">{t('footer.terms')}</Link>

@@ -1,23 +1,24 @@
-/** 主导航路由：创作产品、独立生成与资源协作共用同一份入口配置。 */
+/** 导航入口：公开产品位于顶栏，个人资源收进头像菜单。 */
 import { SHORT_VIDEO_LIST_PATH } from './shortVideoRoutes.ts'
 
-export type NavActive = 'home' | 'canvas' | 'drama' | 'kepu' | 'video' | 'image' | 'tools' | 'assets' | 'pricing' | 'templates' | 'studio' | 'history' | 'team' | 'tasks' | 'help' | 'settings'
+export type NavActive = 'home' | 'canvas' | 'drama' | 'kepu' | 'video' | 'image' | 'audio' | 'assets' | 'pricing' | 'templates' | 'studio' | 'history' | 'team' | 'tasks' | 'help' | 'settings'
+
+/** 首页是全站总览入口，独立于具体创作产品分组。 */
+export const HOME_NAV = { key: 'home', path: '/', label: 'nav.home' } as const
 
 export const CREATION_NAV = [
-  { key: 'home', path: '/', label: 'nav.workbench' },
   { key: 'drama', path: '/drama', label: 'nav.drama' },
   { key: 'canvas', path: '/canvas', label: 'nav.canvas' },
   { key: 'kepu', path: SHORT_VIDEO_LIST_PATH, label: 'nav.kepu' },
-  { key: 'video', path: '/tools/video', label: 'nav.video' },
-  { key: 'image', path: '/tools/image', label: 'nav.image' },
-  { key: 'tools', path: '/tools', label: 'nav.tools' },
 ] as const
 
 export const RESOURCE_NAV = [
-  { key: 'tasks', path: '/tasks', label: 'nav.tasks' },
-  { key: 'assets', path: '/assets', label: 'nav.assets' },
-  { key: 'team', path: '/teams', label: 'nav.team' },
   { key: 'pricing', path: '/pricing', label: 'nav.pricing' },
+] as const
+
+export const PERSONAL_NAV = [
+  { key: 'tasks', path: '/tasks', label: 'nav.tasks' },
+  { key: 'assets', path: '/assets', label: 'nav.myAssets' },
 ] as const
 
 /** 路由段精确匹配，避免 /canvas-unknown 等非业务地址误高亮。 */
@@ -32,7 +33,7 @@ export function resolveNavActive(pathname: string, active?: NavActive): NavActiv
   if (['/studio', '/templates', '/history'].some(within)) return 'kepu'
   if (within('/tools/video')) return 'video'
   if (within('/tools/image')) return 'image'
-  if (within('/tools')) return 'tools'
+  if (within('/tools/audio')) return 'audio'
   if (within('/tasks')) return 'tasks'
   if (within('/pricing')) return 'pricing'
   if (within('/help')) return 'help'

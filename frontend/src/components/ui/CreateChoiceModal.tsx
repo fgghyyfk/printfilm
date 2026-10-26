@@ -1,7 +1,8 @@
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { Clapperboard, PanelsTopLeft, Video } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { SHORT_VIDEO_CREATE_PATH } from '../../lib/shortVideoRoutes'
+import { FILM_SKILLS_URL } from '../../lib/siteLinks'
 import Modal from './Modal'
 
 type Props = {
@@ -12,7 +13,7 @@ type Props = {
 /** 开始创作：选择漫剧、自由画布或短视频。 */
 export default function CreateChoiceModal({ open, onClose }: Props) {
   const nav = useNavigate()
-  const { t } = useI18n()
+  const { t, m } = useI18n()
 
   // 跳转到目标产品并关闭弹层
   function go(path: string) {
@@ -48,10 +49,10 @@ export default function CreateChoiceModal({ open, onClose }: Props) {
       </div>
       <p className="pf-create-choice-foot">
         {t('create.toolsFootPrefix')}{' '}
-        <Link to="/tools" onClick={onClose}>
+        <a href={FILM_SKILLS_URL} target="_blank" rel="noopener noreferrer" onClick={onClose}>
           {t('create.toolsFootLink')}
-        </Link>
-        {t('create.toolsFootSuffix') ? ` ${t('create.toolsFootSuffix')}` : ''}
+        </a>
+        {m.create.toolsFootSuffix ? ` ${m.create.toolsFootSuffix}` : ''}
       </p>
     </Modal>
   )

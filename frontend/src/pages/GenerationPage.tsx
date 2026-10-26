@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, Navigate, useParams } from 'react-router-dom'
+import { Link, Navigate } from 'react-router-dom'
 import { ArrowRight, AudioLines, Check, Clock3, Download, Eye, ImagePlus, Layers, Loader2, Mic, Plus, RectangleHorizontal, RectangleVertical, Sparkles, Square, X } from 'lucide-react'
 import { getGenerationConfig, listToolRuns, resolveToolMediaUrl, runStudioTool, type ToolRunRecord } from '../api/tools'
 import BillingErrorNotice from '../components/billing/BillingErrorNotice'
@@ -17,16 +17,10 @@ import { useGenerationEstimate } from '../hooks/useGenerationEstimate'
 import { generationReferenceLimits, serializeGenerationReferences, validateGenerationReferences, type GenerationReference, type VideoGenerationMode } from '../lib/generationReferences'
 import { detectPromptMentionTrigger, measureTextareaCaretRect, type MentionCaretRect } from '../lib/promptMention'
 
-const aliases: Record<string, MediaKind> = { video: 'video', t2v: 'video', v2v: 'video', image: 'image', t2i: 'image', i2i: 'image', i2p: 'image', ecom: 'image', audio: 'audio' }
-
-/** 展示指定媒体的生成工作台，同时兼容原来的工具分类参数。 */
-export default function GenerationPage({ kind }: { kind?: MediaKind }) {
-  const { toolId } = useParams()
-  // 显式分类供固定路由使用，旧动态路由仍按工具别名归类。
-  const requestedKind = kind || toolId
-  if (!localStorage.getItem('token')) return <Navigate to={`/auth?next=${encodeURIComponent(`/tools/${requestedKind || 'video'}`)}`} replace />
-  if (!requestedKind || aliases[requestedKind] !== requestedKind) return <Navigate to={`/tools/${aliases[requestedKind || 'video'] || 'video'}`} replace />
-  return <GenerationWorkspace kind={aliases[requestedKind]} key={requestedKind} />
+/** 图片、视频、音频使用明确的独立生成入口。 */
+export default function GenerationPage({ kind }: { kind: MediaKind }) {
+  if (!localStorage.getItem('token')) return <Navigate to={`/auth?next=${encodeURIComponent(`/tools/${kind}`)}`} replace />
+  return <GenerationWorkspace kind={kind} key={kind} />
 }
 
 function GenerationWorkspace({ kind }: { kind: MediaKind }) {

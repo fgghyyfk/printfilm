@@ -44,6 +44,7 @@
 .pf-sidebar-create > svg:last-child { margin-left: auto; }
 .pf-sidebar-create:hover { background: #aaf000; transform: translateY(-1px); }
 .pf-sidebar-navigation { flex: 1; min-height: 0; padding: 8px 14px 12px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #e0e5dc transparent; }
+.pf-sidebar-navigation > .pf-sidebar-link + .pf-sidebar-group { margin-top: 12px; }
 .pf-sidebar-group + .pf-sidebar-group { margin-top: 21px; }
 .pf-sidebar-group-label { display: block; padding: 9px 14px 10px; color: #90978f; font-size: 10px; font-weight: 550; letter-spacing: .1em; }
 .pf-sidebar-link { position: relative; display: flex; align-items: center; gap: 12px; min-height: 44px; margin: 3px 0; padding: 11px 13px; border: 1px solid transparent; border-radius: 9px; color: #6e756e; font-size: 14px; transition: background .15s, color .15s, border-color .15s; }

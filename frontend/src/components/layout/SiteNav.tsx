@@ -1,23 +1,20 @@
-﻿import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { useEffect, useRef, useState } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  ArrowUpRight, ChevronRight, CircleHelp, Clapperboard, CreditCard,
-  Image, Images, LayoutDashboard, ListTodo, Menu, Plus, Settings2, Store, UserRound, UsersRound,
-  Video, WandSparkles, Workflow, X,
+  ChevronRight, CircleHelp, Clapperboard, CreditCard,
+  Menu, Plus, Store,
+  Video, Workflow, X,
 } from 'lucide-react'
 import { api } from '../../api'
 import type { User } from '../../api'
-import UserAvatar from '../UserAvatar'
 import BrandMark from '../BrandMark'
-import { IconGithub } from '../ui/Icons'
 import CreateChoiceModal from '../ui/CreateChoiceModal'
 import { USER_UPDATED_EVENT } from '../../lib/userEvents'
 import { loadSessionUser } from '../../lib/sessionUser'
-import { GITHUB_REPO_URL } from '../../lib/siteLinks'
-import { CREATION_NAV, RESOURCE_NAV, resolveNavActive, type NavActive } from '../../lib/siteNavigation'
+import { HOME_NAV, CREATION_NAV, RESOURCE_NAV, PERSONAL_NAV, resolveNavActive, type NavActive } from '../../lib/siteNavigation'
 import { useI18n } from '../../i18n'
 import LanguageSwitch from './LanguageSwitch'
-import WorkspaceSwitcher from '../../features/teams/WorkspaceSwitcher'
+import AccountMenu from './AccountMenu'
 import { useTeamPreview } from '../../features/teams/useTeamPreview'
 import { useMarketplace } from '../../features/marketplace/hooks'
 
@@ -27,36 +24,36 @@ type Props = { active?: NavActive }
 type NavItem = (typeof CREATION_NAV)[number] | (typeof RESOURCE_NAV)[number]
 
 const NAV_ICONS = {
-  home: LayoutDashboard,
   drama: Clapperboard,
   canvas: Workflow,
   kepu: Video,
-  video: Video,
-  image: Image,
-  tools: WandSparkles,
-  tasks: ListTodo,
-  assets: Images,
-  team: UsersRound,
   pricing: CreditCard,
 }
 
-/** 应用主侧栏及窄屏导航抽屉，共用路由与会话状态。 */
+/** 桌面与窄屏共用精简产品导航，个人入口由头像菜单承载。 */
 export default function SiteNav({ active }: Props) {
   const { capabilities: marketplace } = useMarketplace()
   const nav = useNavigate()
   const location = useLocation()
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const { selectTeam } = useTeamPreview()
   const [user, setUser] = useState<User | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [accountOpen, setAccountOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
-  const sidebarRef = useRef<HTMLElement>(null)
+  const menuRef = useRef<HTMLElement>(null)
   const menuButtonRef = useRef<HTMLButtonElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   const current = resolveNavActive(location.pathname, active)
   const inMarketplace = location.pathname === '/marketplace' || location.pathname.startsWith('/marketplace/')
-  const currentItem = [...CREATION_NAV, ...RESOURCE_NAV].find((item) => item.key === current)
-  const currentLabel = inMarketplace ? '数字资产市场' : currentItem ? t(currentItem.label) : current === 'settings' ? t('nav.profile') : current === 'help' ? t('nav.help') : t('nav.workbench')
+  const currentItem = [HOME_NAV, ...CREATION_NAV, ...RESOURCE_NAV, ...PERSONAL_NAV].find((item) => item.key === current)
+  const currentLabel = inMarketplace ? (locale === 'en' ? 'Marketplace' : '数字资产市场') : currentItem ? t(currentItem.label) : current ? t(`nav.${current === 'settings' ? 'profile' : current}`) : t('nav.home')
+
+  /** 产品菜单与头像菜单互斥，回调保持稳定以免重复移动焦点。 */
+  const changeAccountOpen = useCallback((open: boolean) => {
+    setAccountOpen(open)
+    if (open) setMenuOpen(false)
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -89,11 +86,12 @@ export default function SiteNav({ active }: Props) {
     return () => { active = false; generation += 1; window.removeEventListener(USER_UPDATED_EVENT, onUserUpdated) }
   }, [])
 
-  useEffect(() => { setMenuOpen(false) }, [location.pathname, location.search])
+  useEffect(() => { setMenuOpen(false); setAccountOpen(false) }, [location.pathname, location.search])
 
   useEffect(() => {
-    const desktop = window.matchMedia('(min-width: 1001px)')
+    const desktop = window.matchMedia('(min-width: 1024px)')
     function closeOnDesktop() { if (desktop.matches) setMenuOpen(false) }
+    closeOnDesktop()
     desktop.addEventListener('change', closeOnDesktop)
     return () => desktop.removeEventListener('change', closeOnDesktop)
   }, [])
@@ -101,28 +99,28 @@ export default function SiteNav({ active }: Props) {
   useEffect(() => {
     if (!menuOpen) return
     const previousOverflow = document.body.style.overflow
+    const menuButton = menuButtonRef.current
     document.body.style.overflow = 'hidden'
-    // 等抽屉解除 visibility:hidden 后再移动焦点。
     const focusFrame = window.requestAnimationFrame(() => closeButtonRef.current?.focus())
 
     function keepFocusInside(event: KeyboardEvent) {
-      // 独立弹窗接管自己的键盘事件；普通下拉仍归属当前抽屉。
-      const modal = document.querySelector<HTMLElement>('[role="dialog"][aria-modal="true"]:not(#pf-app-sidebar)')
-      if (modal && !sidebarRef.current?.contains(modal)) return
+      // 独立弹窗优先接管键盘事件。
+      const modal = document.querySelector<HTMLElement>('[role="dialog"][aria-modal="true"]:not(#pf-topbar-menu)')
+      if (modal && !menuRef.current?.contains(modal)) return
       if (event.key === 'Escape') {
         event.preventDefault()
         setMenuOpen(false)
         return
       }
-      if (event.key !== 'Tab' || !sidebarRef.current) return
-      const focusable = Array.from(sidebarRef.current.querySelectorAll<HTMLElement>(
+      if (event.key !== 'Tab' || !menuRef.current) return
+      const focusable = Array.from(menuRef.current.querySelectorAll<HTMLElement>(
         'a[href], button:not(:disabled), summary, input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
       )).filter((element) => element.getClientRects().length > 0 && !element.closest('[inert]'))
       const first = focusable[0]
       const last = focusable[focusable.length - 1]
       if (!first || !last) { event.preventDefault(); return }
       const focused = document.activeElement
-      if (!sidebarRef.current.contains(focused) || (event.shiftKey && focused === first)) {
+      if (!menuRef.current.contains(focused) || (event.shiftKey && focused === first)) {
         event.preventDefault()
         ;(event.shiftKey ? last : first).focus()
       } else if (!event.shiftKey && focused === last) {
@@ -131,17 +129,20 @@ export default function SiteNav({ active }: Props) {
       }
     }
 
-    document.addEventListener('keydown', keepFocusInside)
+    document.addEventListener('keydown', keepFocusInside, true)
     return () => {
       window.cancelAnimationFrame(focusFrame)
       document.body.style.overflow = previousOverflow
-      document.removeEventListener('keydown', keepFocusInside)
-      menuButtonRef.current?.focus()
+      document.removeEventListener('keydown', keepFocusInside, true)
+      if (menuButton?.getClientRects().length) menuButton.focus()
     }
   }, [menuOpen])
 
+  /** 根据会话打开创作选择或登录页。 */
   function goCreate() {
     setMenuOpen(false)
+    setAccountOpen(false)
+    selectTeam(null)
     if (!user && !localStorage.getItem('token')) {
       nav('/auth?next=/')
       return
@@ -149,65 +150,83 @@ export default function SiteNav({ active }: Props) {
     setCreateOpen(true)
   }
 
-  function renderLink(item: NavItem) {
+  /** 个人入口始终使用个人空间，清理原有团队选择。 */
+  function goPersonal() {
+    selectTeam(null)
+    setAccountOpen(false)
+  }
+
+  /** 沿用账户页的退出流程，同步所有会话订阅者。 */
+  function logout() {
+    localStorage.removeItem('token')
+    setUser(null)
+    setAccountOpen(false)
+    selectTeam(null)
+    window.dispatchEvent(new Event(USER_UPDATED_EVENT))
+    nav('/')
+  }
+
+  /** 顶栏使用文字导航，展开菜单补充图标；所有入口沿用同一份路由配置。 */
+  function renderLink(item: NavItem, expanded = false) {
     const Icon = NAV_ICONS[item.key]
     const selected = current === item.key
     return <Link
       key={item.key}
       to={item.path}
-      className={`pf-sidebar-link${selected ? ' is-active' : ''}`}
+      className={`pf-topbar-link${expanded ? ' pf-topbar-menu-link' : ''}${selected ? ' is-active' : ''}`}
       aria-current={selected ? 'page' : undefined}
       onClick={() => {
-        if (item.key !== 'team' && item.key !== 'home') selectTeam(null)
+        selectTeam(null)
         setMenuOpen(false)
       }}
     >
-      <Icon size={19} strokeWidth={1.8} aria-hidden />
+      {expanded && <Icon size={18} strokeWidth={1.8} aria-hidden />}
       <span>{t(item.label)}</span>
-      {selected && <ChevronRight size={15} className="pf-sidebar-link-arrow" aria-hidden />}
+      {expanded && selected && <ChevronRight size={15} className="pf-topbar-link-arrow" aria-hidden />}
+    </Link>
+  }
+
+  /** 市场入口遵从服务端能力开关，进入个人市场时清理团队请求范围。 */
+  function renderMarketplace(expanded = false) {
+    if (!marketplace?.enabled) return null
+    return <Link to="/marketplace" className={`pf-topbar-link${expanded ? ' pf-topbar-menu-link' : ''}${inMarketplace ? ' is-active' : ''}`} aria-current={inMarketplace ? 'page' : undefined} onClick={() => { selectTeam(null); setMenuOpen(false) }}>
+      {expanded && <Store size={18} strokeWidth={1.8} aria-hidden />}
+      <span>{locale === 'en' ? 'Marketplace' : '数字资产市场'}</span>
+      {expanded && inMarketplace && <ChevronRight size={15} className="pf-topbar-link-arrow" aria-hidden />}
     </Link>
   }
 
   return <>
-    <header className="pf-app-mobile-header">
-      <button ref={menuButtonRef} type="button" className="pf-sidebar-icon-button" aria-label={t('nav.openMenu')} aria-controls="pf-app-sidebar" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}><Menu size={21} aria-hidden /></button>
-      <BrandMark />
-      <span className="pf-mobile-current">{currentLabel}</span>
-      <button type="button" className="pf-mobile-create" aria-label={t('nav.startCreate')} onClick={goCreate}><Plus size={20} aria-hidden /></button>
-    </header>
-    {menuOpen && <button type="button" className="pf-sidebar-backdrop" aria-label={t('nav.closeMenu')} tabIndex={-1} onClick={() => setMenuOpen(false)} />}
-    <aside ref={sidebarRef} id="pf-app-sidebar" className={`pf-app-sidebar${menuOpen ? ' is-open' : ''}`} role={menuOpen ? 'dialog' : undefined} aria-modal={menuOpen ? true : undefined} aria-label={t('nav.main')}
-      onTransitionEnd={(event) => {
-        if (menuOpen && event.target === event.currentTarget && event.propertyName === 'transform') closeButtonRef.current?.focus()
-      }}>
-      <div className="pf-sidebar-top">
-        <div className="pf-sidebar-brand"><BrandMark /><button ref={closeButtonRef} type="button" className="pf-sidebar-icon-button pf-sidebar-close" aria-label={t('nav.closeMenu')} onClick={() => setMenuOpen(false)}><X size={19} aria-hidden /></button></div>
-        <div className="pf-sidebar-workspace"><WorkspaceSwitcher /></div>
-        <button type="button" className="pf-sidebar-create" onClick={goCreate}><Plus size={19} aria-hidden /><span>{t('nav.startCreate')}</span><ArrowUpRight size={17} aria-hidden /></button>
-      </div>
-      <nav className="pf-sidebar-navigation" aria-label={t('nav.main')}>
-        <div className="pf-sidebar-group"><span className="pf-sidebar-group-label">{t('nav.creation')}</span>{CREATION_NAV.map(renderLink)}</div>
-        <div className="pf-sidebar-group"><span className="pf-sidebar-group-label">{t('nav.resources')}</span>{RESOURCE_NAV.map(renderLink)}
-          {marketplace?.enabled && <Link to="/marketplace" className={`pf-sidebar-link${inMarketplace ? ' is-active' : ''}`} aria-current={inMarketplace ? 'page' : undefined} onClick={() => { selectTeam(null); setMenuOpen(false) }}>
-            <Store size={19} strokeWidth={1.8} aria-hidden />
-            <span>数字资产市场</span>
-            {inMarketplace && <ChevronRight size={15} className="pf-sidebar-link-arrow" aria-hidden />}
-          </Link>}
-        </div>
+    <header className={`pf-app-topbar${accountOpen ? ' pf-app-topbar--account-open' : ''}`} data-locale={locale}>
+      <div className="pf-topbar-brand" onClick={() => selectTeam(null)}><BrandMark /></div>
+      <nav className="pf-topbar-links" aria-label={t('nav.main')}>
+        {renderMarketplace()}
+        {CREATION_NAV.map((item) => renderLink(item))}
+        {RESOURCE_NAV.map((item) => renderLink(item))}
       </nav>
-      <div className="pf-sidebar-bottom">
-        <div className="pf-sidebar-utilities">
-          <Link to="/help" className={current === 'help' ? 'is-active' : undefined} aria-current={current === 'help' ? 'page' : undefined} onClick={() => setMenuOpen(false)}><CircleHelp size={17} aria-hidden /><span>{t('nav.help')}</span></Link>
-          <a href={GITHUB_REPO_URL} target="_blank" rel="noopener noreferrer" title={t('nav.githubTitle')} onClick={() => setMenuOpen(false)}><IconGithub size={17} /><span>{t('nav.github')}</span></a>
-        </div>
-        <div className="pf-sidebar-language"><span>{t('nav.language')}</span><LanguageSwitch /></div>
-        <Link to={user ? '/settings' : '/auth?next=/'} className={`pf-sidebar-account${current === 'settings' ? ' is-active' : ''}`} aria-current={current === 'settings' ? 'page' : undefined} onClick={() => setMenuOpen(false)}>
-          {user ? <UserAvatar user={user} size="sm" /> : <span className="pf-sidebar-account-guest"><UserRound size={19} aria-hidden /></span>}
-          <span><strong>{user?.nickname || t('nav.login')}</strong><small>{user ? t('nav.profile') : t('nav.loginHint')}</small></span>
-          <Settings2 size={17} aria-hidden />
-        </Link>
+      <div className="pf-topbar-actions">
+        <div className="pf-topbar-language"><LanguageSwitch /></div>
+        <Link to="/help" className={`pf-topbar-help${current === 'help' ? ' is-active' : ''}`} aria-label={t('nav.helpCenter')} aria-current={current === 'help' ? 'page' : undefined}><CircleHelp size={18} aria-hidden /><span>{t('nav.help')}</span></Link>
+        <AccountMenu user={user} open={accountOpen} marketplaceEnabled={Boolean(marketplace?.enabled)} onOpenChange={changeAccountOpen} onNavigate={goPersonal} onLogout={logout} />
+        <button type="button" className="pf-topbar-create" aria-label={t('nav.startCreate')} onClick={goCreate}><Plus size={17} aria-hidden /><span>{t('nav.startCreate')}</span></button>
+        <button ref={menuButtonRef} type="button" className="pf-topbar-menu-toggle" aria-label={t('nav.openMenu')} aria-controls="pf-topbar-menu" aria-expanded={menuOpen} onClick={() => { setAccountOpen(false); setMenuOpen(true) }}><Menu size={21} aria-hidden /></button>
       </div>
-    </aside>
+    </header>
+    {menuOpen && <>
+      <button type="button" className="pf-topbar-backdrop" aria-label={t('nav.closeMenu')} tabIndex={-1} onClick={() => setMenuOpen(false)} />
+      <section ref={menuRef} id="pf-topbar-menu" className="pf-topbar-menu" role="dialog" aria-modal="true" aria-label={t('nav.mobileNav')}>
+        <div className="pf-topbar-menu-heading"><div><span>{t('nav.main')}</span><strong>{currentLabel}</strong></div><button ref={closeButtonRef} type="button" className="pf-topbar-menu-close" aria-label={t('nav.closeMenu')} onClick={() => setMenuOpen(false)}><X size={20} aria-hidden /></button></div>
+        <nav aria-label={t('nav.main')}>
+          <div className="pf-topbar-menu-home">{renderMarketplace(true)}</div>
+          <div className="pf-topbar-menu-group"><span>{t('nav.creation')}</span><div>{CREATION_NAV.map((item) => renderLink(item, true))}</div></div>
+          <div className="pf-topbar-menu-group"><div>{RESOURCE_NAV.map((item) => renderLink(item, true))}</div></div>
+        </nav>
+        <div className="pf-topbar-menu-footer">
+          <LanguageSwitch />
+          <Link to="/help" onClick={() => setMenuOpen(false)}><CircleHelp size={17} aria-hidden /><span>{t('nav.help')}</span></Link>
+        </div>
+      </section>
+    </>}
     <CreateChoiceModal open={createOpen} onClose={() => setCreateOpen(false)} />
   </>
 }

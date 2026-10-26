@@ -1,0 +1,160 @@
+/* 全站顶栏：白色底、石墨文字、荧光绿当前位置；内容区恢复完整宽度。 */
+.pf-shell.pf-shell--topbar {
+  --pf-content-top: var(--pf-nav-h, 64px);
+  padding-inline-start: 0;
+}
+
+.pf-shell--topbar .pf-shell-main { min-width: 0; }
+.pf-shell--topbar .pf-shell-main:focus { outline: none; }
+.pf-shell--topbar .pf-shell-main:not(.flush) { padding: 34px clamp(24px, 3vw, 48px) 48px; }
+.pf-shell--topbar .pf-settings-side,
+.pf-shell--topbar .pf-history-side,
+.pf-shell--topbar .pf-team-sidebar { top: calc(var(--pf-content-top) + 24px); }
+.pf-shell--topbar .pf-create { min-height: calc(100dvh - var(--pf-content-top) - 5rem); }
+.pf-shell--topbar .pf-editor,
+.pf-shell--topbar .drama-workspace { min-height: calc(100dvh - var(--pf-content-top)); }
+.pf-shell--topbar .creation-workspace { min-height: calc(100dvh - var(--pf-content-top) - 40px); }
+.pf-shell--topbar .drama-workspace-top { top: var(--pf-content-top); }
+.pf-shell--topbar .drama-outline-sidebar { top: calc(var(--pf-content-top) + 76px); max-height: calc(100dvh - var(--pf-content-top) - 88px); }
+.pf-shell--topbar .drama-episodes-page > .drama-episode-dir { top: calc(var(--pf-content-top) + 64px); max-height: calc(100dvh - var(--pf-content-top) - 72px); }
+.pf-shell--topbar .sv-settings { top: calc(var(--pf-content-top) + 20px); }
+
+.pf-app-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 45;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: clamp(16px, 1.8vw, 36px);
+  height: var(--pf-nav-h, 64px);
+  flex: none;
+  padding: 0 clamp(20px, 1.8vw, 36px);
+  border-bottom: 1px solid #e8e9ec;
+  background: #fff;
+  color: var(--pf-ink);
+}
+
+.pf-topbar-brand { justify-self: start; }
+.pf-app-topbar--account-open { z-index: 95; }
+.pf-topbar-brand .brand-mark { gap: 10px; }
+.pf-topbar-brand .brand-logo { width: 32px; height: 32px; }
+.pf-topbar-brand .brand-word { font-size: 19px; letter-spacing: .09em; }
+.pf-topbar-links { display: flex; align-items: center; justify-content: center; gap: clamp(12px, 1.15vw, 24px); min-width: 0; height: 100%; white-space: nowrap; }
+.pf-topbar-link { position: relative; display: inline-flex; align-items: center; gap: 5px; height: 100%; flex: none; padding: 2px 0 0; color: #7e8490; font-size: 14px; font-weight: 550; text-decoration: none; transition: color .15s; }
+.pf-topbar-link:hover { color: #20242b; }
+.pf-topbar-link.is-active { color: #14171c; font-weight: 700; }
+.pf-topbar-link.is-active::after { position: absolute; right: 0; bottom: 15px; left: 0; height: 3px; border-radius: 2px; background: var(--pf-lime); content: ''; }
+.pf-topbar-link-arrow { flex: none; color: #9198a0; }
+.pf-topbar-actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; min-width: 0; }
+.pf-topbar-language { display: flex; }
+.pf-app-topbar .pf-nav-lang { height: 31px; background: #fff; border-color: #e6e8eb; }
+.pf-app-topbar .pf-nav-lang button { font-size: 11px; padding-inline: 9px; }
+.pf-topbar-help { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 34px; flex: none; color: #828895; font-size: 13px; font-weight: 550; white-space: nowrap; }
+.pf-topbar-help:hover, .pf-topbar-help.is-active { color: #252b34; }
+.pf-topbar-account { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; flex: none; border: 1px solid #e8e9ec; border-radius: 50%; background: #f5f6f8; color: #717987; }
+.pf-topbar-account .pf-user-avatar { width: 100%; height: 100%; }
+.pf-topbar-account:hover, .pf-topbar-account.is-active { border-color: #a9d256; box-shadow: 0 0 0 3px #b6ff001f; }
+.pf-topbar-account { padding: 0; cursor: pointer; }
+.pf-topbar-account-wrap { position: relative; flex: none; }
+.pf-topbar-account-panel { position: absolute; top: calc(100% + 15px); right: 0; width: 264px; max-width: calc(100vw - 24px); max-height: calc(100dvh - 80px); overflow-y: auto; padding: 10px; border: 1px solid #e7eae2; border-radius: 14px; background: #fff; box-shadow: 0 16px 50px #18201b20; }
+.pf-topbar-account-heading { display: grid; gap: 5px; padding: 10px 10px 13px; border-bottom: 1px solid #edf0e8; }
+.pf-topbar-account-heading strong { overflow: hidden; color: #242b20; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.pf-topbar-account-heading > span { overflow: hidden; color: #92998a; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.pf-topbar-account-group { padding-block: 8px; }
+.pf-topbar-account-group + .pf-topbar-account-group { border-top: 1px solid #edf0e8; }
+.pf-topbar-account-group > span { display: block; padding: 4px 10px 7px; color: #949c89; font-size: 10px; }
+.pf-topbar-account-group a, .pf-topbar-account-logout { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 39px; padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; color: #515b49; font-size: 13px; text-align: start; }
+.pf-topbar-account-group a:hover { background: #f2f7e9; color: #304b0f; }
+.pf-topbar-account-group svg, .pf-topbar-account-logout svg { flex: none; }
+.pf-topbar-account-logout { margin-top: 4px; border-top: 1px solid #edf0e8; border-radius: 0 0 8px 8px; color: #9a5e56; cursor: pointer; }
+.pf-topbar-account-logout:hover { background: #fdf4f1; }
+.pf-topbar-create { display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 36px; flex: none; padding: 0 16px; border: 1px solid var(--pf-lime); border-radius: 999px; background: var(--pf-lime); color: #172100; font-size: 13px; font-weight: 650; white-space: nowrap; transition: background .15s; }
+.pf-topbar-create:hover { border-color: #a6eb00; background: #a6eb00; }
+.pf-topbar-menu-toggle, .pf-topbar-menu-close { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; flex: none; padding: 0; border: 1px solid #e7e9ed; border-radius: 9px; background: #fff; color: #515b68; }
+.pf-topbar-menu-toggle { display: none; }
+.pf-topbar-menu-toggle:hover, .pf-topbar-menu-close:hover { background: #f5f7f2; }
+.pf-app-topbar :focus-visible, .pf-topbar-menu :focus-visible { outline: 2px solid #719b2e; outline-offset: 3px; }
+.pf-skip-content { position: fixed; top: -60px; left: 20px; z-index: 120; padding: 10px 16px; border-radius: 8px; background: #18201b; color: #fff; }
+.pf-skip-content:focus { top: 12px; }
+
+.pf-topbar-backdrop { position: fixed; inset: 0; z-index: 100; width: 100%; height: 100%; border: 0; background: #1d273846; backdrop-filter: blur(3px); }
+.pf-topbar-menu { position: fixed; top: 12px; right: 12px; z-index: 110; width: 410px; max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); padding: 22px; overflow-y: auto; overscroll-behavior: contain; border: 1px solid #e5e8e1; border-radius: 18px; background: #fff; box-shadow: 0 24px 80px #18201b24; }
+.pf-topbar-menu-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 19px; }
+.pf-topbar-menu-heading > div { display: grid; gap: 5px; }
+.pf-topbar-menu-heading > div > span { color: #929a87; font-size: 10px; }
+.pf-topbar-menu-heading strong { color: #1d2520; font-size: 17px; font-weight: 650; }
+.pf-topbar-menu-group { margin-top: 17px; }
+.pf-topbar-menu-group > span { display: block; margin-bottom: 6px; color: #98a08f; font-size: 10px; letter-spacing: .05em; }
+.pf-topbar-menu-group > div, .pf-topbar-menu-home { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.pf-topbar-menu .pf-topbar-menu-link { height: auto; min-height: 43px; min-width: 0; padding: 10px; border: 1px solid transparent; border-radius: 8px; gap: 9px; font-size: 13px; }
+.pf-topbar-menu-link > svg { flex: none; }
+.pf-topbar-menu-link > span { min-width: 0; }
+.pf-topbar-menu-link > .pf-topbar-link-arrow { margin-left: auto; }
+.pf-topbar-menu-link:hover { background: #f5f7f1; }
+.pf-topbar-menu-link.is-active { border-color: #e1edce; background: #f0f8e3; color: #405926; }
+.pf-topbar-menu-link.is-active::after { display: none; }
+.pf-topbar-menu-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 20px; padding-top: 17px; border-top: 1px solid #edf0e8; }
+.pf-topbar-menu-footer > a { display: inline-flex; align-items: center; gap: 6px; color: #7f8875; font-size: 12px; }
+.pf-project-list-intro { margin: 8px 0 0; color: #8b9288; font-size: 13px; line-height: 1.7; }
+.pf-dialog-root .pf-create-choice { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.pf-dialog-root .pf-create-choice-card { min-width: 0; padding: 16px 13px; }
+.pf-dialog-root .pf-create-choice-card .pf-muted { font-size: 11px; line-height: 1.7; }
+
+@media (max-width: 1859px) {
+  .pf-app-topbar { gap: 18px; padding-inline: 24px; }
+  .pf-topbar-brand .brand-word { font-size: 16px; letter-spacing: .065em; }
+  .pf-topbar-brand .brand-logo { width: 30px; height: 30px; }
+  .pf-topbar-links { gap: 14px; }
+  .pf-topbar-link { font-size: 13px; }
+  .pf-topbar-actions { gap: 8px; }
+  .pf-topbar-help { width: 32px; padding: 0; }
+  .pf-topbar-help > span { display: none; }
+  .pf-topbar-create { padding-inline: 12px; }
+}
+
+@media (max-width: 1023px) {
+  .pf-app-topbar { grid-template-columns: auto minmax(0, 1fr); }
+  .pf-topbar-links { display: none; }
+  .pf-topbar-menu-toggle { display: inline-flex; }
+  .pf-shell--topbar .pf-shell-main:not(.flush) { padding: 28px 24px 40px; }
+}
+
+@media (max-width: 767px) {
+  .pf-app-topbar { gap: 12px; padding-inline: 16px; }
+  .pf-topbar-brand .brand-word { font-size: 15px; }
+  .pf-topbar-brand .brand-logo { width: 29px; height: 29px; }
+  .pf-topbar-language, .pf-topbar-help { display: none; }
+  .pf-topbar-actions { gap: 9px; }
+  .pf-topbar-account-panel { position: fixed; top: calc(var(--pf-nav-h, 64px) + 8px); right: 12px; }
+  .pf-shell--topbar .pf-shell-main:not(.flush) { padding: 24px 18px 36px; }
+  .pf-shell--topbar .pf-settings { grid-template-columns: minmax(0, 1fr); }
+  .pf-shell--topbar .pf-settings-side { position: static; }
+  .pf-shell--topbar .pf-land-hero,
+  .pf-shell--topbar .pf-land-products,
+  .pf-shell--topbar .pf-land-pipeline-list,
+  .pf-shell--topbar .pf-land-who-grid,
+  .pf-shell--topbar .pf-land-cap-grid,
+  .pf-shell--topbar .pf-template-grid { grid-template-columns: minmax(0, 1fr); max-width: none; }
+  .pf-shell--topbar .pf-land-hero { gap: 28px; padding-top: 20px; }
+  .pf-shell--topbar .pf-land-frames { width: 100%; max-width: 300px; margin-inline: auto; }
+}
+
+@media (max-width: 400px) {
+  .pf-app-topbar { padding-inline: 12px; }
+  .pf-topbar-brand .brand-mark { gap: 8px; }
+  .pf-topbar-brand .brand-word { font-size: 14px; }
+  .pf-topbar-actions { gap: 7px; }
+  .pf-topbar-create { width: 34px; height: 34px; padding: 0; }
+  .pf-topbar-create > span { display: none; }
+  .pf-topbar-menu { padding: 18px; }
+  .pf-topbar-menu .pf-topbar-menu-link { gap: 7px; padding: 9px 7px; font-size: 12px; }
+}
+
+@media (max-width: 560px) {
+  .pf-dialog-root .pf-create-choice { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pf-topbar-link, .pf-topbar-create { transition: none; }
+}

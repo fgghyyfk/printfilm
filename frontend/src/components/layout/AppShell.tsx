@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { useI18n } from '../../i18n'
 import { GITHUB_REPO_URL } from '../../lib/siteLinks'
 import SiteNav, { type NavActive } from './SiteNav'
-import './sidebar.css'
+import './topbar.css'
 
 type Props = {
   children: ReactNode
@@ -18,7 +18,7 @@ export default function AppShell({ children, active, wide, flush, hideFooter }: 
   const { t } = useI18n()
 
   return (
-    <div className="pf-shell pf-shell--sidebar">
+    <div className="pf-shell pf-shell--topbar">
       <a className="pf-skip-content" href="#pf-main-content">{t('nav.skipContent')}</a>
       <SiteNav active={active} />
       <main id="pf-main-content" tabIndex={-1} className={['pf-shell-main', wide ? 'wide' : '', flush ? 'flush' : ''].filter(Boolean).join(' ')}>
