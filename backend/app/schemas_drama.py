@@ -16,7 +16,7 @@ class DramaProjectCreate(BaseModel):
     title: str = Field(default="未命名漫剧", max_length=200)
     description: str | None = None
     source: str = Field(default="", description="原始创意文案")
-    episode_count: int = Field(default=12, ge=1, le=120)
+    episode_count: int = Field(default=1, strict=True, ge=1, le=120, description="初始集数，支持 1 至 120 集，后续可在项目中增加分集")
     image_style_id: str = Field(default="")
     # script=大纲分集流程；canvas=自由画布
     workflow: str = Field(default="script", description="script | canvas")

@@ -2,9 +2,41 @@
 
 import pytest
 
+from sqlalchemy import select
+
 from app.models_drama import DramaProject, DramaScript
+from app.models_tasks import TaskRun
 from tests.test_team_drama_integration import drama_api  # noqa: F401
 from tests.test_teams_api import teams_api  # noqa: F401
+
+
+@pytest.mark.asyncio
+async def test_new_drama_preserves_selected_episode_count_without_changing_legacy_projects(drama_api):
+    """初始集数支持 1 至 120 集，严格拒绝非法值并保持项目与剧本一致。"""
+    a = drama_api
+    payload = {"title": "雨夜来信", "source": "一个年轻的邮差在雨夜收到一封写给未来自己的信，决定寻找写信的人。"}
+    for episode_count in [0, 121, 1.5, "1", True]:
+        response = await a.client.post("/api/drama/projects", json={**payload, "episode_count": episode_count})
+        assert response.status_code == 422, response.text
+    for episode_count in [1, 12, 120]:
+        created = await a.client.post("/api/drama/projects", json={**payload, "episode_count": episode_count, "params": {"episode_count": 5}})
+        assert created.status_code == 200, created.text
+        body = created.json()
+        assert body["params"]["episode_count"] == episode_count
+        assert body["script"]["params"]["episode_count"] == episode_count
+        assert await a.db.scalar(select(TaskRun.id).where(TaskRun.drama_project_id == body["id"])) is None
+    # 通用 params 不能覆盖受控的初始集数。
+    created = await a.client.post("/api/drama/projects", json={**payload, "params": {"episode_count": 12}})
+    assert created.status_code == 200, created.text
+    body = created.json()
+    assert body["params"]["episode_count"] == 1
+    assert body["script"]["params"]["episode_count"] == 1
+    legacy = DramaProject(user_id=a.owner.id, title="旧多集作品", params={"workflow": "script", "episode_count": 12})
+    a.db.add(legacy)
+    await a.db.commit()
+    loaded = await a.client.get(f"/api/drama/projects/{legacy.id}")
+    assert loaded.status_code == 200, loaded.text
+    assert loaded.json()["params"]["episode_count"] == 12
 
 
 @pytest.mark.asyncio

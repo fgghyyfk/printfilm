@@ -67,14 +67,23 @@ async def test_team_content_create_requires_real_source(content_api):
     """创建沿用真实漫剧数据结构；短创意被拒绝，不伪造创意或启动生成。"""
     a = content_api
     path = f"/api/teams/{a.team_id}/projects"
-    assert (await a.client.post(path, json={"title": "测试", "source": "太短", "episode_count": 2})).status_code == 422
+    assert (await a.client.post(path, json={"title": "测试", "source": "太短", "episode_count": 1})).status_code == 422
     source = "这是由用户亲自提供的一段足够长的原始创意，用于创建真实团队项目。"
-    created = await a.client.post(path, json={"title": "新作品", "source": source, "episode_count": 3})
-    assert created.status_code == 201, created.text
-    body = created.json()
-    assert body["team_id"] == a.team_id
-    assert body["script"]["source"] == source
-    assert await a.db.scalar(select(TaskRun.id).where(TaskRun.drama_project_id == body["id"])) is None
+    for episode_count in [0, 121, 1.5, "1", True]:
+        invalid = await a.client.post(path, json={"title": "新作品", "source": source, "episode_count": episode_count})
+        assert invalid.status_code == 422, invalid.text
+    for requested_count in [None, 3, 120]:
+        payload = {"title": "新作品", "source": source}
+        if requested_count is not None:
+            payload["episode_count"] = requested_count
+        created = await a.client.post(path, json=payload)
+        assert created.status_code == 201, created.text
+        body = created.json()
+        assert body["team_id"] == a.team_id
+        assert body["script"]["source"] == source
+        assert body["params"]["episode_count"] == (requested_count or 1)
+        assert body["script"]["params"]["episode_count"] == (requested_count or 1)
+        assert await a.db.scalar(select(TaskRun.id).where(TaskRun.drama_project_id == body["id"])) is None
 
 
 @pytest.mark.asyncio

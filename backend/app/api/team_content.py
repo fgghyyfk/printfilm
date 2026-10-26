@@ -21,7 +21,7 @@ class TeamProjectCreate(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     description: str = Field(default="", max_length=512)
     source: str = Field(min_length=20, max_length=100000)
-    episode_count: int = Field(default=12, strict=True, ge=1, le=120)
+    episode_count: int = Field(default=1, strict=True, ge=1, le=120, description="初始集数，支持 1 至 120 集，后续可在项目中增加分集")
     workflow: Literal["script", "canvas"] = "script"
 
 
