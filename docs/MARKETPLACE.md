@@ -165,7 +165,7 @@ cd C:\code\printfilm\backend
 ## 来源分流与上传预览补充（2026-10-20）
 
 - 授权签署入口：`/marketplace/authorization`，个人工作台与发布作品页均有入口，权属页内也可直接签署。
-- 独立依赖安装：在 backend 目录执行 `.\.venv\Scripts\python.exe -m pip install -r requirements-marketplace.txt`。授权函直接生成 PDF，并把仓库内置的 Noto Sans SC 嵌进文件，服务器和下载方都不必另装字体。若 `MARKETPLACE_WATERMARK_FONT` 指向一个真实存在的文件，则仍优先使用该字体。水印预览使用同一套查找。
+- 授权函 PDF 使用的 `reportlab` 已写入 `backend/requirements.txt`。按现有方式重新构建并发布后端镜像即可，不必再登录服务器单独安装。字体使用仓库内置的 Noto Sans SC，并嵌进 PDF。若 `MARKETPLACE_WATERMARK_FONT` 指向一个真实存在的文件，则仍优先使用该字体。
 - `marketplace_authorizations` 是新增独立表，启用模块启动时创建。签署存储全文、版本、SHA-256 摘要、姓名、时间、账号及必要访问信息；签名与完整授权函 PNG 存到私有 OSS 的 `marketplace/authorizations/`。全文与签名由服务端合成，不信任客户端合成的协议图片。未写入 OSS 不返回签署成功。
 - 授权函按账号与版本唯一，逐件权属档案只能由服务端关联本人的签署记录。重新保存材料会重置核验，模板更新须重签及重新关联。只有本人和管理员能获取短时授权函链接。
 - 协议采用数字资产市场当前范围：非独家展示、处理和客服撮合；没有自动转让、线上付款、分成或买家下载授权。ReelBay 仅参考流程，不复制它的支付或商业分成条款。

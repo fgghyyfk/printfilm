@@ -101,7 +101,7 @@ def render_and_store(body: SignInput, signed_at: str, owner_id: int) -> str:
         fail("服务器未找到可用的中文字体，暂时无法生成授权函。", 503)
     except ImportError:
         logger.exception("授权函组件未安装")
-        fail("服务器未安装生成授权函所需组件，请安装 requirements-marketplace.txt 后重启。", 503)
+        fail("后端依赖未更新，暂时无法生成授权函。请重新构建并发布后端后再试。", 503)
     except Exception:
         logger.exception("授权函生成失败")
         fail("授权函生成失败，请稍后重试。", 503)

@@ -1,4 +1,2 @@
-# 下游授权函生成 PDF；原项目依赖文件保持独立。
+# 市场额外说明。PDF 组件已列入 requirements.txt，常规后端镜像会一并安装。
 -r requirements.txt
-Pillow==11.3.0
-reportlab==4.4.4

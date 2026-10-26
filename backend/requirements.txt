@@ -16,4 +16,7 @@ python-dotenv==1.1.0
 email-validator==2.2.0
 edge-tts==7.2.3
 oss2==2.19.1
+# 授权函 PDF。reportlab 会一并使用 Pillow。
+reportlab==4.4.4
+Pillow==11.3.0
 # Optional: pip install "volcengine-python-sdk[ark]" if you prefer official SDK

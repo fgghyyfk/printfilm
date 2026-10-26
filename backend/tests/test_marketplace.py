@@ -438,7 +438,7 @@ def test_authorization_generation_error_is_not_storage(monkeypatch):
     with pytest.raises(HTTPException) as error:
         render_and_store(body, "2026-10-26T00:00:00+00:00", 1)
     assert error.value.status_code == 503
-    assert error.value.detail == "服务器未安装生成授权函所需组件，请安装 requirements-marketplace.txt 后重启。"
+    assert error.value.detail == "后端依赖未更新，暂时无法生成授权函。请重新构建并发布后端后再试。"
 
 
 def test_letter_font_falls_back_when_configured_path_missing(monkeypatch):
