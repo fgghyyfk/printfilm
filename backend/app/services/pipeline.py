@@ -180,6 +180,11 @@ def is_cancelled(project_id: int) -> bool:
     return project_id in _cancelled
 
 
+def clear_pipeline_cancellation(project_id: int) -> None:
+    """Only explicit resume paths clear a previous user-cancellation marker."""
+    _cancelled.discard(project_id)
+
+
 def _is_image_text(project: Project) -> bool:
     return (project.pipeline_mode or "full") == "image_text"
 
@@ -589,12 +594,21 @@ async def run_pipeline(project_id: int, *, phase: str | None = None) -> None:
             project_id,
             {"event": "done", "percent": 100, "video_url": await _final_url(project_id)},
         )
-    except (PipelineCancelled, asyncio.CancelledError):
+    except (PipelineCancelled, asyncio.CancelledError) as exc:
         # 落项目态、推 SSE 后必须 re-raise：本函数由任务平台 executor 驱动，
         # 吞掉会让 TaskRun 误判 succeeded 扣费，并破坏 asyncio 任务取消语义。
-        logger.info("pipeline cancelled project=%s", project_id)
         async with AsyncSessionLocal() as db:
             project = await db.get(Project, project_id)
+            requested = (
+                isinstance(exc, PipelineCancelled)
+                or is_cancelled(project_id)
+                or (project is not None and project.status == ProjectStatus.CANCELLED)
+            )
+            if not requested:
+                # 服务中断后调度器会重排同一任务，保留成功素材及可恢复状态。
+                logger.info("pipeline interrupted; preserving resume state project=%s", project_id)
+                raise
+            logger.info("pipeline cancelled project=%s", project_id)
             if project and project.status != ProjectStatus.DONE:
                 project.status = ProjectStatus.CANCELLED
                 project.error_msg = "用户取消"
@@ -629,7 +643,7 @@ async def run_pipeline(project_id: int, *, phase: str | None = None) -> None:
                     "code": "CANCELLED",
                 },
             )
-            return
+            raise PipelineCancelled(f"project {project_id} cancelled") from exc
         logger.exception("pipeline failed project=%s", project_id)
         fail_msg = (
             "FFmpeg 被系统中断（signal 15），请点击重新拼接"

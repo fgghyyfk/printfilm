@@ -166,10 +166,16 @@ async def _await_kepu(task: TaskRun, aw: Awaitable[Any], **extra: Any) -> dict[s
 
 # 执行科普分阶段流水线（严格按 payload.phase 预扣对应阶段）。
 async def _run_kepu_project_pipeline(task: TaskRun) -> dict[str, Any] | None:
-    from app.services.pipeline import run_pipeline
+    from app.services.pipeline import clear_pipeline_cancellation, run_pipeline
 
     payload = task.payload if isinstance(task.payload, dict) else {}
     phase = payload.get("phase")
+    if task.cancel_requested:
+        return {"cancelled": True, "project_id": task.project_id}
+    # The previous task can have been cancelled before its pipeline ever ran,
+    # leaving a process-local marker. Clear it in the executing worker only for
+    # this fresh task; persistent CANCELLED checks still catch a new cancellation.
+    clear_pipeline_cancellation(_require_int(task.project_id, "project_id"))
     return await _await_kepu(
         task,
         run_pipeline(
@@ -234,8 +240,11 @@ async def _run_kepu_project_audio(task: TaskRun) -> dict[str, Any] | None:
 
 # 执行科普仅合成任务。
 async def _run_kepu_compose(task: TaskRun) -> dict[str, Any] | None:
-    from app.services.pipeline import compose_only
+    from app.services.pipeline import clear_pipeline_cancellation, compose_only
 
+    if task.cancel_requested:
+        return {"cancelled": True, "project_id": task.project_id}
+    clear_pipeline_cancellation(_require_int(task.project_id, "project_id"))
     return await _await_kepu(
         task,
         compose_only(_require_int(task.project_id, "project_id")),
