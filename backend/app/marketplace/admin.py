@@ -91,6 +91,9 @@ async def records(kind: str, db: DB, user: Admin, status: str = "", user_id: int
                               evidence_ids=rights.evidence_ids)
         elif kind == "recruits":
             result = await recruit_data(db, item, True)
+            images = result.get("image_ids") or []
+            if images:
+                result["cover_asset_id"] = int(images[0])
         elif kind == "series":
             result = data(item, *[column.name for column in model.__table__.columns])
             episodes = list((await db.execute(select(SeriesEpisode).where(SeriesEpisode.series_id == item.id).order_by(SeriesEpisode.episode_no))).scalars().all())

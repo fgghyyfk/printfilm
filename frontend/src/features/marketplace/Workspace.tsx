@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowUpRight, Film, Play, RefreshCw } from 'lucide-react'
+import { ArrowUpRight, Film, Play, RefreshCw, UsersRound } from 'lucide-react'
 import { date, labels, money, request, type Listing, type Row } from './api'
 import { Media, Pager } from './shared'
 import Button from '../../components/ui/Button'
@@ -19,8 +19,33 @@ function mineStatus(item: Row) {
   return labels[item.audit_status || ''] || '草稿'
 }
 
+function recruitStatus(item: Row) {
+  if (item.blocked) return '已限制'
+  if (item.state === 'closed') return '已关闭'
+  if (item.state === 'expired') return '已到期'
+  return labels[item.audit_status || ''] || '草稿'
+}
+
 function freeMine(item: Row) {
   return isFreeWork(item)
+}
+
+function MineRecruits({ listing, loading, page, changePage }: { listing: Listing | null; loading: boolean; page: number; changePage: (value: number) => void }) {
+  return <section className="pf-market-discover pf-market-mine">
+    <header className="pf-discover-heading"><div><span className="pf-market-kicker">创作需求</span><h1>我的招募</h1><p>草稿、审核和已通过的需求都在这里。</p></div><Button variant="dark" to="/marketplace/recruits/new" icon>发布招募<ArrowUpRight size={17} /></Button></header>
+    {loading || !listing ? <div key="loading" className="pf-market-grid" role="status">{[0, 1, 2].map(item => <div key={item} className="pf-market-skeleton"><div /><span /><span /></div>)}</div> : listing.items.length ? <div key="ready" className="pf-market-grid">{listing.items.map(item => {
+      const href = `/marketplace/recruits/${item.id}/manage`
+      return <article className="pf-market-item" key={`recruit-${item.id}`}>
+        <div className="pf-market-item-cover">{item.image_ids?.length ? <Media kind="recruit" id={item.id} purpose="image-0" /> : <span className="pf-market-series-mark"><UsersRound size={36} strokeWidth={1.4} /></span>}<span className="pf-market-badge">{recruitStatus(item)}</span><Link className="pf-market-cover-play" to={href} aria-label={`管理${item.title}`}><ArrowUpRight size={16} /></Link></div>
+        <div className="pf-market-item-body">
+          <h3><Link to={href}>{item.title}</Link></h3>
+          <p className="pf-market-author"><span>需</span>截止 {date(item.deadline_at)} · 征集 {item.wanted_count || 0} 条</p>
+          <div className="pf-market-item-price"><div><strong>{money(item.budget_fen)}</strong><span>/ 条预算</span></div><Link to={href} aria-label={`管理${item.title}`}><ArrowUpRight size={20} /></Link></div>
+        </div>
+      </article>
+    })}</div> : <EmptyState title="还没有招募" description="写下创作需求，审核通过后会出现在招募广场。" action="发布招募需求" to="/marketplace/recruits/new" />}
+    <Pager listing={listing} page={page} change={changePage} />
+  </section>
 }
 
 function MineWorks({ listing, loading, page, changePage, remove }: { listing: Listing | null; loading: boolean; page: number; changePage: (value: number) => void; remove: (item: Row) => void }) {
@@ -63,18 +88,17 @@ export default function Workspace() {
   return <><PageHeading title="我的发布与业务进度" description="从作品草稿到合作机会，在这里跟进作品发布与需求审核。招募接单请联系客服。" /><p><Link to="/marketplace/authorization">签署 / 查看 PrintFilm 授权函</Link></p>
     <div className="pf-market-workspace-toolbar"><nav className="pf-market-tabs" aria-label="个人业务分类">{Object.entries(tabs).map(([key, label]) => <button key={key} type="button" aria-pressed={key === kind} onClick={() => { setKind(key); setPage(1); setMediaId(null); setListing(null); setLoading(true) }}>{label}</button>)}</nav><button type="button" onClick={() => setRefresh(v => v + 1)}><RefreshCw size={14} />刷新</button></div>
     {error && <p role="alert">{error}</p>}
-    {kind === 'works' ? <MineWorks listing={listing} loading={loading} page={page} changePage={setPage} remove={item => void removeOwned(item)} /> : <>
+    {kind === 'works' ? <MineWorks listing={listing} loading={loading} page={page} changePage={setPage} remove={item => void removeOwned(item)} /> : kind === 'recruits' ? <MineRecruits listing={listing} loading={loading} page={page} changePage={setPage} /> : <>
       {kind === 'series' && <section className="pf-market-discover pf-market-mine"><header className="pf-discover-heading"><div><span className="pf-market-kicker">剧集资产</span><h1>我的短剧</h1><p>查看系列草稿、分集审核和上架状态。</p></div><Button variant="dark" to="/marketplace/works/new?type=series" icon>发布短剧<ArrowUpRight size={17} /></Button></header>{loading || !listing ? <div key="loading" className="pf-market-grid" role="status">{[0, 1, 2].map(item => <div key={item} className="pf-market-skeleton"><div /><span /><span /></div>)}</div> : listing.items.length ? <div key="ready" className="pf-market-grid">{listing.items.map(item => { const href = `/marketplace/series/${item.id}/edit`; const free = item.sale_type === 'free'; const price = item.copyright_price_fen ?? item.price_fen; return <article className="pf-market-item" key={`series-${item.id}`}><div className="pf-market-item-cover">{item.cover_asset_id ? <Media kind="series" id={item.id} purpose="cover" /> : <span className="pf-market-series-mark"><Film size={36} /></span>}<Link className="pf-market-cover-play" to={href} aria-label={`管理${item.title}`}><Play size={16} /></Link></div><div className="pf-market-item-body"><h3><Link to={href}>{item.title}</Link></h3><p className="pf-market-author"><span>剧</span>{mineStatus(item)} · {item.episode_count || 0} 集</p><div className="pf-market-item-price"><div><strong>{free ? '免费' : item.sale_type === 'platform_unlock' ? '按集解锁' : money(price)}</strong>{!free && <span>{item.sale_type === 'platform_unlock' ? '分集定价' : '参考价'}</span>}</div><Link to={href} aria-label={`管理${item.title}`}><ArrowUpRight size={20} /></Link></div></div></article> })}</div> : <EmptyState title="还没有短剧" description="创建系列后，可逐集上传或导入漫剧分集。" action="发布短剧" to="/marketplace/works/new?type=series" />}<Pager listing={listing} page={page} change={setPage} /></section>}
-      {kind !== 'series' && <>{loading ? <div className="pf-market-empty" role="status">正在读取你的业务进度…</div> : listing?.items.map(item => <article className="pf-market-workspace-item" key={item.id}>
+      {kind !== 'series' && kind !== 'recruits' && <>{loading ? <div className="pf-market-empty" role="status">正在读取你的业务进度…</div> : listing?.items.map(item => <article className="pf-market-workspace-item" key={item.id}>
         <div className="pf-market-record-head"><h2>{item.title || item.filename || item.recruit_title || item.message || `记录 #${item.id}`}</h2><span className="pf-market-badge">{item.blocked ? '已限制' : item.withdrawn ? '已撤回' : labels[item.audit_status ?? item.status ?? item.state ?? item.selection ?? ''] || (kind === 'notifications' ? item.read ? '已读' : '未读' : '业务记录')}</span></div>
         <p>{date(item.created_at)} · 编号 #{item.id}</p>
         {(item.reason || item.note || item.error) && <p className="pf-market-record-note">{item.reason || item.note || item.error}</p>}
-        {kind === 'recruits' && <Link to={`/marketplace/recruits/${item.id}/manage`}>查看与管理</Link>}
         {kind === 'assets' && <><p>类型：{item.kind} · 指纹：{item.fingerprint || '处理后生成'}</p><button type="button" onClick={() => setMediaId(mediaId === item.id ? null : item.id)}>{mediaId === item.id ? '收起预览' : '查看文件预览'}</button>{mediaId === item.id && <AssetPreview id={item.id} />}{item.status === 'failed' && <button type="button" onClick={() => action(`/assets/${item.id}/retry`)}>重试处理</button>}{item.kind === 'video' && item.status === 'ready' && <Link to={`/marketplace/assets/${item.id}/rights?return=${encodeURIComponent('/marketplace/mine')}`}>查看版权审核</Link>}</>}
         {kind === 'rights' && <><p>审核状态：{labels[item.full_status ?? '']}</p><Link to={`/marketplace/assets/${item.asset_id}/rights?return=${encodeURIComponent('/marketplace/mine')}`}>查看与补充材料</Link></>}
         {kind === 'notifications' && <>{item.link && <Link to={item.link}>前往工作台</Link>}<button type="button" disabled={item.read} onClick={() => action(`/notifications/${item.id}/read`)}>{item.read ? '已读' : '标记已读'}</button></>}
       </article>)}
-      {!loading && !error && listing?.items.length === 0 && <EmptyState title="这里还没有记录" description={kind === 'notifications' ? '发布及审核状态发生变化时，通知会出现在这里。' : '你的需求与合作进展，都会在这里留下记录。'} action={kind === 'recruits' ? '发布招募需求' : undefined} to={kind === 'recruits' ? '/marketplace/recruits/new' : '/marketplace'} />}
+      {!loading && !error && listing?.items.length === 0 && kind !== 'recruits' && <EmptyState title="这里还没有记录" description={kind === 'notifications' ? '发布及审核状态发生变化时，通知会出现在这里。' : '你的需求与合作进展，都会在这里留下记录。'} />}
       <Pager listing={listing} page={page} change={setPage} /></>}
     </>}
   </>

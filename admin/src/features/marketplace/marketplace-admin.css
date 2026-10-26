@@ -57,7 +57,7 @@
 .market-ops-stage-layout { display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:22px; align-items:start; }
 .market-ops-stage-player { min-height:360px; background:#111714; border-radius:16px; overflow:hidden; display:flex; flex-direction:column; color:#d5ddd6; }
 .market-ops-original-note { margin:0; padding:10px 16px; background:#1c2820; color:#d7e7cf; font-size:12px; }
-.market-ops-stage-player video { width:100%; max-height:70vh; background:#111714; }
+.market-ops-stage-player video,.market-ops-stage-player img { width:100%; max-height:70vh; object-fit:contain; background:#111714; }
 .market-ops-stage-player p { padding:24px; }
 .market-ops-stage aside { display:flex; flex-direction:column; gap:12px; border:1px solid var(--ops-line); background:#fff; border-radius:16px; padding:22px; }
 .market-ops-stage aside h2 { margin:0; font-size:22px; }

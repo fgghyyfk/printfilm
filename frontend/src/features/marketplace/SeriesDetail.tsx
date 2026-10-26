@@ -56,33 +56,37 @@ export default function SeriesDetail() {
   const price = item.sale_type === 'platform_unlock' ? '按集解锁' : `版权参考价 ${money(item.copyright_price_fen)}`
   return <>
     <PageHeading title={item.title} description={`${item.category || '其他'} · 短剧 · ${item.episodes.length} 集`} back="/marketplace" />
-    <section className="pf-series-stage">
-      <Media key={episode.id} kind="series_episode" id={episode.id} purpose="preview" video autoPlay={autoPlay} onEnded={() => { if (next) select(next.episode_no) }} />
-      <div className="pf-series-transport">
-        <button type="button" disabled={!previous} onClick={() => previous && select(previous.episode_no)}>上一集</button>
-        <span>第 {episode.episode_no} 集 · {episode.title}</span>
-        <button type="button" disabled={!next} onClick={() => next && select(next.episode_no)}>下一集</button>
-      </div>
-    </section>
-    <section className="pf-series-meta">
-      <p>{item.sale_type === 'free' || (item.free_episode_count || 0) >= item.episodes.length ? '全部免费，播放原片' : (item.free_episode_count || 0) > 0 ? `前 ${item.free_episode_count} 集免费播放原片，之后 ${price}` : `收费观看 · ${price}`}</p>
-      <p className="pf-market-text">{item.description || '暂无系列简介'}</p>
-      <p>{free ? '本集免费观看，直接播放原片。使用仍须遵守作者授权范围。' : item.sale_type === 'platform_unlock' ? '未购买时可看短试看，购买后永久在线播放。' : '当前提供短试看，联系客服确认版权价格与完整成片交付。'}</p>
-      {!free && <small>短试看不加水印，最长15秒且不超过原片时长的30%。</small>}
-      {!free && item.sale_type === 'copyright_contact' && <NeedLogin><Contact kind="series_episode" id={episode.id} /></NeedLogin>}
-      {!free && item.sale_type === 'platform_unlock' && <small>平台解锁购买和永久播放由 App 接入，当前网页只播放短试看。</small>}
-    </section>
-    <section className="pf-series-picker" aria-label="选集">
-      {ranges > 1 && <div className="pf-series-ranges">{Array.from({ length: ranges }, (_, group) => {
-        const start = group * pageSize + 1
-        const end = Math.min(item.episodes.length, start + pageSize - 1)
-        return <button key={group} type="button" aria-pressed={group === range} onClick={() => setRange(group)}>{start}–{end}</button>
-      })}</div>}
-      <div className="pf-series-grid">{visible.map(entry => {
-        const locked = !isFreeEpisode(item, entry.episode_no)
-        return <button key={entry.id} type="button" className={entry.episode_no === episode.episode_no ? 'is-current' : ''} aria-current={entry.episode_no === episode.episode_no} onClick={() => select(entry.episode_no)}>{entry.episode_no}{locked && <Lock size={12} aria-label="收费" />}</button>
-      })}</div>
-    </section>
+    <div className="pf-series-layout">
+      <section className="pf-series-stage">
+        <Media key={episode.id} kind="series_episode" id={episode.id} purpose="preview" video autoPlay={autoPlay} onEnded={() => { if (next) select(next.episode_no) }} />
+      </section>
+      <aside className="pf-series-side">
+        <section className="pf-series-meta">
+          <p>{item.sale_type === 'free' || (item.free_episode_count || 0) >= item.episodes.length ? '全部免费，播放原片' : (item.free_episode_count || 0) > 0 ? `前 ${item.free_episode_count} 集免费播放原片，之后 ${price}` : `收费观看 · ${price}`}</p>
+          <p className="pf-market-text">{item.description || '暂无系列简介'}</p>
+          <p>{free ? '本集免费观看，直接播放原片。使用仍须遵守作者授权范围。' : item.sale_type === 'platform_unlock' ? '未购买时可看短试看，购买后永久在线播放。' : '当前提供短试看，联系客服确认版权价格与完整成片交付。'}</p>
+          {!free && <small>短试看不加水印，最长15秒且不超过原片时长的30%。</small>}
+          {!free && item.sale_type === 'copyright_contact' && <NeedLogin><Contact kind="series_episode" id={episode.id} /></NeedLogin>}
+          {!free && item.sale_type === 'platform_unlock' && <small>平台解锁购买和永久播放由 App 接入，当前网页只播放短试看。</small>}
+        </section>
+        <div className="pf-series-transport">
+          <button type="button" disabled={!previous} onClick={() => previous && select(previous.episode_no)}>上一集</button>
+          <span>第 {episode.episode_no} 集 · {episode.title}</span>
+          <button type="button" disabled={!next} onClick={() => next && select(next.episode_no)}>下一集</button>
+        </div>
+        <section className="pf-series-picker" aria-label="选集">
+          {ranges > 1 && <div className="pf-series-ranges">{Array.from({ length: ranges }, (_, group) => {
+            const start = group * pageSize + 1
+            const end = Math.min(item.episodes.length, start + pageSize - 1)
+            return <button key={group} type="button" aria-pressed={group === range} onClick={() => setRange(group)}>{start}–{end}</button>
+          })}</div>}
+          <div className="pf-series-grid">{visible.map(entry => {
+            const locked = !isFreeEpisode(item, entry.episode_no)
+            return <button key={entry.id} type="button" className={entry.episode_no === episode.episode_no ? 'is-current' : ''} aria-current={entry.episode_no === episode.episode_no} onClick={() => select(entry.episode_no)}>{entry.episode_no}{locked && <Lock size={12} aria-label="收费" />}</button>
+          })}</div>
+        </section>
+      </aside>
+    </div>
     <Link to="/marketplace">返回作品广场</Link>
   </>
 }

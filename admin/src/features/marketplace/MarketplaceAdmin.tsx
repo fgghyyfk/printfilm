@@ -73,44 +73,48 @@ function isFreeItem(item: Item) {
   return item.sale_type === 'free'
 }
 
-function priceLabel(item: Item, series = false) {
+function priceLabel(item: Item, series = false, recruit = false) {
+  if (recruit) return `¥${(Number(item.budget_fen || 0) / 100).toFixed(2)}`
   if (isFreeItem(item)) return '免费'
   if (series && item.sale_type === 'platform_unlock') return '按集解锁'
   const fen = series ? Number(item.copyright_price_fen ?? item.price_fen ?? 0) : Number(item.sale_type === 'platform_unlock' ? item.unlock_price_fen : item.price_fen)
   return `¥${(fen / 100).toFixed(2)}`
 }
 
-function ReviewGallery({ items, series, onOpen }: { items: Item[]; series: boolean; onOpen: (item: Item) => void }) {
+function ReviewGallery({ items, series, recruit = false, onOpen }: { items: Item[]; series: boolean; recruit?: boolean; onOpen: (item: Item) => void }) {
   if (!items.length) return null
   return <div className="market-ops-gallery">{items.map(item => <button type="button" className="market-ops-card" key={item.id} onClick={() => onOpen(item)}>
     <span className="market-ops-card-cover"><CoverImage id={typeof item.cover_asset_id === 'number' ? item.cover_asset_id : undefined} /><em className={`market-ops-badge status-${String(item.audit_status || 'draft')}`}>{auditLabel(item)}</em></span>
     <span className="market-ops-card-body">
-      <em>{series ? '短剧' : String(item.category || '作品')}</em>
+      <em>{recruit ? '招募' : series ? '短剧' : String(item.category || '作品')}</em>
       <strong>{String(item.title || '未命名作品')}</strong>
       <small><i>{String(item.author || '创').slice(0, 1)}</i>{String(item.author || `用户 #${item.owner_id || ''}`)}</small>
-      <b>{priceLabel(item, series)}{series ? <span>{Number(item.episode_count || (Array.isArray(item.episodes) ? item.episodes.length : 0))} 集{Number(item.free_episode_count) > 0 ? ` · 前${item.free_episode_count}集免费` : ''}</span> : !isFreeItem(item) && <span>{item.sale_type === 'platform_unlock' ? '解锁价' : '参考价'}</span>}</b>
+      <b>{priceLabel(item, series, recruit)}{recruit ? <span>/ 条预算 · 征集 {String(item.wanted_count || 0)} 条</span> : series ? <span>{Number(item.episode_count || (Array.isArray(item.episodes) ? item.episodes.length : 0))} 集{Number(item.free_episode_count) > 0 ? ` · 前${item.free_episode_count}集免费` : ''}</span> : !isFreeItem(item) && <span>{item.sale_type === 'platform_unlock' ? '解锁价' : '参考价'}</span>}</b>
     </span>
   </button>)}</div>
 }
 
-function ReviewStage({ item, series, onBack, onReview }: { item: Item; series: boolean; onBack: () => void; onReview: (event: FormEvent<HTMLFormElement>, item: Item) => void }) {
+function ReviewStage({ item, series, recruit = false, onBack, onReview }: { item: Item; series: boolean; recruit?: boolean; onBack: () => void; onReview: (event: FormEvent<HTMLFormElement>, item: Item) => void }) {
   const episodes = Array.isArray(item.episodes) ? item.episodes as Item[] : []
   const [episodeId, setEpisodeId] = useState<number | undefined>(typeof episodes[0]?.id === 'number' ? episodes[0].id : undefined)
   const episode = episodes.find(entry => entry.id === episodeId)
   const assetId = series ? (typeof episode?.asset_id === 'number' ? episode.asset_id : undefined) : (typeof item.asset_id === 'number' ? item.asset_id : undefined)
+  const coverId = typeof item.cover_asset_id === 'number' ? item.cover_asset_id : undefined
   return <section className="market-ops-stage">
     <button type="button" className="market-ops-back" onClick={onBack}>返回列表</button>
     <div className="market-ops-stage-layout">
-      <div className="market-ops-stage-player"><p className="market-ops-original-note">管理员审核完整原片</p><Playback key={assetId || 'none'} assetId={assetId} /></div>
+      <div className="market-ops-stage-player">{recruit ? <CoverImage id={coverId} /> : <><p className="market-ops-original-note">管理员审核完整原片</p><Playback key={assetId || 'none'} assetId={assetId} /></>}</div>
       <aside>
         <span className={`market-ops-badge status-${String(item.audit_status || 'draft')}`}>{auditLabel(item)}</span>
         <h2>{String(item.title || '未命名作品')}</h2>
-        <p>{String(item.author || '创作者')} · {priceLabel(item, series)}{series ? ` · ${episodes.length} 集` : ''}</p>
+        <p>{String(item.author || '创作者')} · {priceLabel(item, series, recruit)}{series ? ` · ${episodes.length} 集` : ''}{recruit ? ` · 征集 ${String(item.wanted_count || 0)} 条` : ''}</p>
         <p>{String(item.description || '暂无简介')}</p>
+        {recruit && <p>交付要求：{String(item.requirements || '未填写')}</p>}
         <p>授权意向：{String(item.license_scope || '未填写')}</p>
+        {recruit && <p>截止时间：{String(item.deadline_at || '未填写')}</p>}
         {series && <div className="market-ops-episode-picks">{episodes.map(episode => <button type="button" key={episode.id} aria-pressed={episode.id === episodeId} onClick={() => setEpisodeId(Number(episode.id))}>第 {String(episode.episode_no)} 集</button>)}</div>}
-        <AuthorizationLink details={series ? episodes.find(episode => episode.id === episodeId)?.details : item.details} />
-        {item.audit_status === 'pending' ? <form className="market-ops-review" onSubmit={event => onReview(event, item)}><h3>审核处理</h3><p>看完播放文件和版权材料后，给出这次审核结论。</p><div className="grid gap-3"><section><h3>内容检查</h3><label><input name="checks" value="content" type="checkbox" /> 已检查视频、封面、标题和简介</label></section><section><h3>版权检查</h3><label><input name="checks" value="copyright" type="checkbox" /> 已检查授权函或证书编号、证明材料及版权声明</label></section></div><label className="block">审核依据及原因<textarea name="reason" required maxLength={3000} className="block w-full rounded border bg-background p-2" /></label><div className="flex gap-3"><button type="submit" value="approved" className="market-ops-approve">通过该版本</button><button type="submit" value="rejected" className="market-ops-reject">驳回该版本</button></div></form> : <p>这个版本不是待审核状态。</p>}
+        {!recruit && <AuthorizationLink details={series ? episodes.find(episode => episode.id === episodeId)?.details : item.details} />}
+        {item.audit_status === 'pending' ? <form className="market-ops-review" onSubmit={event => onReview(event, item)}><h3>审核处理</h3><p>{recruit ? '看完需求说明和参考图后，给出这次审核结论。' : '看完播放文件和版权材料后，给出这次审核结论。'}</p>{!recruit && <div className="grid gap-3"><section><h3>内容检查</h3><label><input name="checks" value="content" type="checkbox" /> 已检查视频、封面、标题和简介</label></section><section><h3>版权检查</h3><label><input name="checks" value="copyright" type="checkbox" /> 已检查授权函或证书编号、证明材料及版权声明</label></section></div>}<label className="block">审核依据及原因<textarea name="reason" required maxLength={3000} className="block w-full rounded border bg-background p-2" /></label><div className="flex gap-3"><button type="submit" value="approved" className="market-ops-approve">通过该版本</button><button type="submit" value="rejected" className="market-ops-reject">驳回该版本</button></div></form> : <p>这个版本不是待审核状态。</p>}
       </aside>
     </div>
   </section>
@@ -155,7 +159,7 @@ export default function MarketplaceAdmin() {
   const [entitlementOwnerId, setEntitlementOwnerId] = useState('')
   function navigateTab(next: keyof typeof tabs, nextStatus?: string) {
     if (next === 'jobs' || next === 'events' || next === 'previews' || next === 'submissions' || next === 'orders' || next === 'entitlements' || next === 'ledger' || next === 'payouts') setMaintenanceOpen(true)
-    const fallback = next === 'works' || next === 'series' ? 'pending' : ''
+    const fallback = next === 'works' || next === 'series' || next === 'recruits' ? 'pending' : ''
     setKind(next); setPage(1); setStatus(nextStatus === undefined ? fallback : nextStatus); setSelected(null); setListing(null); setError(''); setMessage('')
   }
   useEffect(() => {
@@ -175,7 +179,7 @@ export default function MarketplaceAdmin() {
     void action(`/${kind}/${item.id}/review`, { version: item.version, decision: submitter.value, reason: form.get('reason'), checks: form.getAll('checks') }).then(ok => { if (ok) setSelected(null) })
   }
   if (!enabled) return <p>下游业务未启用，或无法读取服务状态。</p>
-  const reviewView = kind === 'works' || kind === 'series' ? (selected ? 'detail' : 'cards') : 'records'
+  const reviewView = kind === 'works' || kind === 'series' || kind === 'recruits' ? (selected ? 'detail' : 'cards') : 'records'
   return <div className="market-ops">
     <header className="market-ops-header"><div><div className="market-ops-eyebrow"><ShieldCheck size={15} /> 运营工作台</div><h1>数字资产平台运营</h1><p>集中处理作品、招募与版权审核，跟进举报及客服咨询。</p></div><button type="button" className="market-ops-refresh" onClick={() => setRefresh(v => v + 1)} disabled={loading}><RefreshCw size={16} className={loading ? 'animate-spin' : ''} />刷新数据</button></header>
     <div className="market-ops-stats">{([
@@ -189,7 +193,7 @@ export default function MarketplaceAdmin() {
     {maintenanceOpen && <div className="market-ops-maintenance"><div><strong>运行维护</strong><p>查看作品试看任务、订单权益、历史投稿及平台操作记录。招募接单由客服线下对接。</p></div><nav aria-label="运行维护">{Object.entries(maintenanceTabs).map(([key, label]) => <button type="button" key={key} aria-current={kind === key ? 'page' : undefined} onClick={() => navigateTab(key as keyof typeof tabs)}>{label}</button>)}</nav></div>}
     {kind === 'jobs' && <p className="market-ops-feedback">此处仅保留旧版媒体任务，招募不再创建投稿或审片任务；收费作品的短试看请查看“作品试看任务”。</p>}
     {error && <p role="alert" className="market-ops-feedback is-error">{error}</p>}{message && <p role="status" className="market-ops-feedback">{message}</p>}
-    {kind === 'support' ? <SupportForm /> : kind === 'categories' ? <CategoryForm /> : kind === 'revenue' ? <RevenueConfigForm /> : <><div className="market-ops-filter"><div><h2>{tabs[kind]}</h2><span>{listing ? `共 ${listing.meta.total} 条记录` : '正在加载记录'}</span></div><select aria-label="状态筛选" className="rounded border bg-background p-2" value={status} onChange={e => { setStatus(e.target.value); setPage(1) }}><option value="">全部状态</option>{kind === 'entitlements' ? <><option value="active">有效权益</option><option value="inactive">已停用</option></> : Object.entries(statusNames).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>{kind === 'entitlements' && <div className="market-ops-entitlement-filter"><input aria-label="购买用户编号" type="number" min="1" placeholder="购买用户编号" value={entitlementUserId} onChange={e => { setEntitlementUserId(e.target.value); setPage(1) }} /><input aria-label="创作者编号" type="number" min="1" placeholder="创作者编号" value={entitlementOwnerId} onChange={e => { setEntitlementOwnerId(e.target.value); setPage(1) }} /></div>}<button type="button" onClick={() => setRefresh(v => v + 1)}>刷新</button></div>{kind === 'payouts' && <PayoutCreateForm onSaved={() => setRefresh(v => v + 1)} />}{loading ? <p role="status">正在加载…</p> : reviewView === 'detail' && selected ? <ReviewStage item={selected} series={kind === 'series'} onBack={() => setSelected(null)} onReview={review} /> : reviewView === 'cards' ? <ReviewGallery items={listing?.items ?? []} series={kind === 'series'} onOpen={setSelected} /> : listing?.items.map(item => <article className="market-ops-record" key={`${kind}-${item.id}-${refresh}`}><header className="market-ops-record-head"><div><span className="market-ops-record-id">#{item.id} · {tabs[kind]}</span><h3>{String(item.title || item.filename || item.recruit_title || (kind === 'entitlements' ? `用户 #${item.user_id} 的永久权益` : '业务记录'))}</h3></div><span className={`market-ops-badge status-${String(item.audit_status || item.status || item.selection || (kind === 'entitlements' ? (item.active ? 'active' : 'inactive') : 'draft'))}`}>{statusNames[String(item.audit_status || item.status || item.selection || (kind === 'entitlements' ? (item.active ? 'active' : 'inactive') : 'draft'))] || (kind === 'entitlements' ? (item.active ? '有效' : '已停用') : String(item.status || '记录'))}</span></header><details className="market-ops-details" open={kind === 'works' || kind === 'recruits' || kind === 'series' || kind === 'entitlements'}><summary>作品资料与版权信息</summary><Summary item={item} /></details>
+    {kind === 'support' ? <SupportForm /> : kind === 'categories' ? <CategoryForm /> : kind === 'revenue' ? <RevenueConfigForm /> : <><div className="market-ops-filter"><div><h2>{tabs[kind]}</h2><span>{listing ? `共 ${listing.meta.total} 条记录` : '正在加载记录'}</span></div><select aria-label="状态筛选" className="rounded border bg-background p-2" value={status} onChange={e => { setStatus(e.target.value); setPage(1) }}><option value="">全部状态</option>{kind === 'entitlements' ? <><option value="active">有效权益</option><option value="inactive">已停用</option></> : Object.entries(statusNames).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>{kind === 'entitlements' && <div className="market-ops-entitlement-filter"><input aria-label="购买用户编号" type="number" min="1" placeholder="购买用户编号" value={entitlementUserId} onChange={e => { setEntitlementUserId(e.target.value); setPage(1) }} /><input aria-label="创作者编号" type="number" min="1" placeholder="创作者编号" value={entitlementOwnerId} onChange={e => { setEntitlementOwnerId(e.target.value); setPage(1) }} /></div>}<button type="button" onClick={() => setRefresh(v => v + 1)}>刷新</button></div>{kind === 'payouts' && <PayoutCreateForm onSaved={() => setRefresh(v => v + 1)} />}{loading ? <p role="status">正在加载…</p> : reviewView === 'detail' && selected ? <ReviewStage item={selected} series={kind === 'series'} recruit={kind === 'recruits'} onBack={() => setSelected(null)} onReview={review} /> : reviewView === 'cards' ? <ReviewGallery items={listing?.items ?? []} series={kind === 'series'} recruit={kind === 'recruits'} onOpen={setSelected} /> : listing?.items.map(item => <article className="market-ops-record" key={`${kind}-${item.id}-${refresh}`}><header className="market-ops-record-head"><div><span className="market-ops-record-id">#{item.id} · {tabs[kind]}</span><h3>{String(item.title || item.filename || item.recruit_title || (kind === 'entitlements' ? `用户 #${item.user_id} 的永久权益` : '业务记录'))}</h3></div><span className={`market-ops-badge status-${String(item.audit_status || item.status || item.selection || (kind === 'entitlements' ? (item.active ? 'active' : 'inactive') : 'draft'))}`}>{statusNames[String(item.audit_status || item.status || item.selection || (kind === 'entitlements' ? (item.active ? 'active' : 'inactive') : 'draft'))] || (kind === 'entitlements' ? (item.active ? '有效' : '已停用') : String(item.status || '记录'))}</span></header><details className="market-ops-details" open={kind === 'works' || kind === 'recruits' || kind === 'series' || kind === 'entitlements'}><summary>作品资料与版权信息</summary><Summary item={item} /></details>
       {kind === 'works' && item.sale_type !== 'free' && <WorkPreviewLink id={Number(item.id)} />}
       {typeof item.asset_id === 'number' && <FileLink id={item.asset_id} label="视频预览" purpose="original" video />}
       {kind === 'works' && typeof item.cover_asset_id === 'number' && <FileLink id={item.cover_asset_id} label="作品封面" />}{typeof item.certificate_asset_id === 'number' && <FileLink id={item.certificate_asset_id} label="权属证明／登记证书" />}
@@ -200,7 +204,7 @@ export default function MarketplaceAdmin() {
       {kind === 'reports' && <form className="market-ops-review" onSubmit={e => { e.preventDefault(); const form = new FormData(e.currentTarget); if (window.confirm('确认记录举报处理结果？')) void action(`/reports/${item.id}/resolve`, { resolution: form.get('resolution') }) }}><textarea name="resolution" aria-label="处理结果" required maxLength={3000} className="block w-full rounded border bg-background p-2" /><div className="flex gap-3"><button type="submit" className="market-ops-approve">记录处理结果</button><button type="button" className="market-ops-reject" onClick={() => { const reason = window.prompt('临时限制该举报对象的依据和原因'); if (reason) void action(`/block/${item.target_type}/${item.target_id}`, { blocked: true, reason }) }}>临时限制举报对象</button></div></form>}
       {kind === 'payouts' && <PayoutStatusForm item={item} onSaved={() => setRefresh(v => v + 1)} />}
       {['works', 'recruits', 'submissions'].includes(kind) && <button type="button" className="market-ops-reject" onClick={() => { const reason = window.prompt(`${item.blocked ? '解除限制' : '限制播放和咨询'}的原因`); if (reason) void action(`/block/${({ works: 'work', recruits: 'recruit', submissions: 'submission' } as Record<string, string>)[kind]}/${item.id}`, { blocked: !item.blocked, reason }) }}>{item.blocked ? '解除限制（不自动上架）' : '封禁／临时下架'}</button>}
-    </article>)}{!selected && !loading && !error && listing?.items.length === 0 && <div className="market-ops-empty"><Inbox size={36} /><h3>暂无{tabs[kind]}记录</h3><p>{kind === 'works' || kind === 'series' ? '当前没有待审核内容。可以切换状态查看其他记录。' : '新的业务记录会显示在这里，可切换状态查看。'}</p></div>}{!selected && listing && <PaginationBar page={page} pageSize={listing.meta.page_size} total={listing.meta.total} onPageChange={setPage} />}</>}
+    </article>)}{!selected && !loading && !error && listing?.items.length === 0 && <div className="market-ops-empty"><Inbox size={36} /><h3>暂无{tabs[kind]}记录</h3><p>{kind === 'works' || kind === 'series' || kind === 'recruits' ? '当前没有待审核内容。可以切换状态查看其他记录。' : '新的业务记录会显示在这里，可切换状态查看。'}</p></div>}{!selected && listing && <PaginationBar page={page} pageSize={listing.meta.page_size} total={listing.meta.total} onPageChange={setPage} />}</>}
   </div>
 }
 
