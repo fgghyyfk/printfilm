@@ -1,0 +1,124 @@
+/* 应用侧栏：纸白与石墨底色，荧光绿标记创作和当前位置。 */
+.pf-shell.pf-shell--sidebar {
+  --pf-sidebar-width: 236px;
+  --pf-content-top: 0px;
+  padding-inline-start: var(--pf-sidebar-width);
+}
+
+.pf-shell--sidebar .pf-shell-main:not(.flush) { padding: 34px clamp(24px, 3vw, 48px) 48px; }
+.pf-shell--sidebar .pf-shell-main { min-width: 0; }
+.pf-shell--sidebar .pf-shell-main:focus { outline: none; }
+.pf-shell--sidebar .pf-settings-side,
+.pf-shell--sidebar .pf-history-side { top: calc(var(--pf-content-top) + 24px); }
+.pf-shell--sidebar .pf-team-sidebar { top: calc(var(--pf-content-top) + 24px); }
+.pf-shell--sidebar .pf-create { min-height: calc(100dvh - var(--pf-content-top) - 5rem); }
+.pf-shell--sidebar .pf-editor,
+.pf-shell--sidebar .drama-workspace { min-height: calc(100dvh - var(--pf-content-top)); }
+
+.pf-app-sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  width: var(--pf-sidebar-width);
+  height: 100vh;
+  height: 100dvh;
+  background: #fff;
+  border-right: 1px solid #e6e8e9;
+  color: #18201b;
+}
+
+.pf-sidebar-top { flex: none; padding: 28px 18px 10px; }
+.pf-sidebar-brand { display: flex; align-items: center; justify-content: space-between; padding: 0 5px; margin-bottom: 27px; }
+.pf-sidebar-brand .brand-mark { gap: 10px; }
+.pf-sidebar-brand .brand-logo { width: 30px; height: 30px; }
+.pf-sidebar-brand .brand-word { font-size: 16px; letter-spacing: .065em; }
+.pf-sidebar-workspace { margin-bottom: 18px; }
+.pf-sidebar-workspace .pf-team-switcher { width: 100%; }
+.pf-sidebar-workspace .pf-team-switcher summary { padding: 10px; gap: 9px; background: #f7f8f5; border-color: #e9ece5; border-radius: 10px; font-size: 12px; color: #515c4c; }
+.pf-sidebar-workspace .pf-team-switcher-label { flex: 1; max-width: none; }
+.pf-sidebar-workspace .pf-team-switcher summary > svg:last-child { margin-left: auto; }
+.pf-sidebar-workspace .pf-team-switcher-menu { left: 0; width: 280px; max-width: calc(100vw - 48px); }
+.pf-sidebar-create { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 43px; padding: 11px 14px; border: 1px solid #a8ec00; border-radius: 10px; background: var(--pf-lime); color: #172300; font-size: 13px; font-weight: 650; transition: background .15s, transform .15s; }
+.pf-sidebar-create > svg:last-child { margin-left: auto; }
+.pf-sidebar-create:hover { background: #aaf000; transform: translateY(-1px); }
+.pf-sidebar-navigation { flex: 1; min-height: 0; padding: 8px 14px 12px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #e0e5dc transparent; }
+.pf-sidebar-navigation > .pf-sidebar-link + .pf-sidebar-group { margin-top: 12px; }
+.pf-sidebar-group + .pf-sidebar-group { margin-top: 21px; }
+.pf-sidebar-group-label { display: block; padding: 9px 14px 10px; color: #90978f; font-size: 10px; font-weight: 550; letter-spacing: .1em; }
+.pf-sidebar-link { position: relative; display: flex; align-items: center; gap: 12px; min-height: 44px; margin: 3px 0; padding: 11px 13px; border: 1px solid transparent; border-radius: 9px; color: #6e756e; font-size: 14px; transition: background .15s, color .15s, border-color .15s; }
+.pf-sidebar-link > svg { flex: none; }
+.pf-sidebar-link > span { min-width: 0; }
+.pf-sidebar-link:hover { color: #20291a; background: #f5f7f1; }
+.pf-sidebar-link.is-active { color: #253319; font-weight: 650; background: #eef9dc; border-color: #e3f0d0; }
+.pf-sidebar-link.is-active > svg:first-child { color: #5c762e; }
+.pf-sidebar-link-arrow { margin-left: auto; color: #6f8d3d; }
+.pf-sidebar-bottom { flex: none; margin: 0 18px; padding: 11px 0 17px; border-top: 1px solid #edf0e8; }
+.pf-sidebar-utilities { display: grid; grid-template-columns: .9fr 1.1fr; gap: 5px; }
+.pf-sidebar-utilities > a { display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 33px; border-radius: 7px; color: #858c80; font-size: 11px; }
+.pf-sidebar-utilities > a:hover, .pf-sidebar-utilities > a.is-active { background: #f4f7ed; color: #3f512b; }
+.pf-sidebar-language { display: flex; justify-content: space-between; align-items: center; padding: 13px 9px 14px; color: #999f94; font-size: 10px; }
+.pf-sidebar-language .pf-nav-lang { height: 24px; border-color: #e8ebe3; }
+.pf-sidebar-language .pf-nav-lang button { font-size: 10px; padding-inline: 8px; }
+.pf-sidebar-account { display: flex; align-items: center; gap: 10px; padding: 11px 9px; border: 1px solid #edf0e7; border-radius: 10px; background: #fafbf8; }
+.pf-sidebar-account > span:not(.pf-user-avatar) { display: grid; gap: 3px; flex: 1; min-width: 0; }
+.pf-sidebar-account strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 600; }
+.pf-sidebar-account small { color: #9bA18f; font-size: 10px; }
+.pf-sidebar-account > svg { color: #969e89; flex: none; }
+.pf-sidebar-account:hover, .pf-sidebar-account.is-active { border-color: #cfdcb8; background: #f5f9ed; }
+.pf-sidebar-account .pf-user-avatar { width: 31px; height: 31px; flex: none; }
+.pf-sidebar-account > span.pf-sidebar-account-guest { display: grid; place-items: center; width: 31px; height: 31px; flex: 0 0 31px; background: #edf1e5; border-radius: 50%; color: #7a8c61; }
+.pf-sidebar-icon-button { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: #68735c; }
+.pf-sidebar-icon-button:hover { background: #eef2e6; }
+.pf-sidebar-close, .pf-app-mobile-header, .pf-sidebar-backdrop { display: none; }
+.pf-app-sidebar :focus-visible, .pf-app-mobile-header :focus-visible { outline: 2px solid #708e3b; outline-offset: 3px; }
+.pf-skip-content { position: fixed; top: -60px; left: calc(var(--pf-sidebar-width) + 20px); z-index: 100; padding: 10px 16px; border-radius: 8px; background: #18201b; color: #fff; }
+.pf-skip-content:focus { top: 12px; }
+.pf-project-list-intro { margin: 8px 0 0; font-size: 13px; color: #8b9288; line-height: 1.7; }
+.pf-dialog-root .pf-create-choice { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.pf-dialog-root .pf-create-choice-card { min-width: 0; padding: 16px 13px; }
+.pf-dialog-root .pf-create-choice-card .pf-muted { font-size: 11px; line-height: 1.7; }
+
+@media (min-width: 1001px) and (max-width: 1350px) {
+  .pf-shell--sidebar .pf-create, .pf-shell--sidebar .pf-editor,
+  .pf-shell--sidebar .pf-history-layout { grid-template-columns: minmax(0, 1fr); }
+  .pf-shell--sidebar .pf-history-side { position: static; }
+  .pf-shell--sidebar .pf-team-layout { grid-template-columns: 170px minmax(0, 1fr); gap: 18px; }
+  .pf-shell--sidebar .pf-team-settings-grid { grid-template-columns: minmax(0, 1fr); }
+  .pf-shell--sidebar .pf-team-directory-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pf-shell--sidebar .pf-settings { grid-template-columns: 190px minmax(0, 1fr); gap: 24px; }
+}
+
+@media (max-width: 1000px) {
+  .pf-shell.pf-shell--sidebar { --pf-content-top: 60px; padding-inline-start: 0; }
+  .pf-app-mobile-header { position: sticky; top: 0; z-index: 40; display: flex; align-items: center; gap: 12px; height: 60px; flex: none; padding: 0 18px; background: #ffffffef; border-bottom: 1px solid #e5e9df; backdrop-filter: blur(12px); }
+  .pf-app-mobile-header .brand-mark { gap: 8px; }
+  .pf-app-mobile-header .brand-word { font-size: 13px; letter-spacing: .07em; }
+  .pf-app-mobile-header .brand-logo { width: 26px; height: 26px; }
+  .pf-mobile-current { margin-left: 4px; padding-left: 14px; border-left: 1px solid #e2e7d9; color: #939b87; font-size: 11px; }
+  .pf-mobile-create { display: grid; place-items: center; width: 32px; height: 32px; margin-left: auto; padding: 0; flex: none; background: var(--pf-lime); border: 0; border-radius: 9px; color: #26340f; }
+  .pf-app-sidebar { width: 260px; z-index: 90; visibility: hidden; transform: translateX(-100%); transition: transform .2s ease, visibility .2s; }
+  .pf-app-sidebar.is-open { visibility: visible; transform: translateX(0); box-shadow: 12px 0 60px #18201b20; }
+  .pf-sidebar-close { display: inline-flex; }
+  .pf-sidebar-top { padding-top: 21px; }
+  .pf-sidebar-brand { margin-bottom: 23px; }
+  .pf-sidebar-workspace .pf-team-switcher-menu { width: 224px; }
+  .pf-sidebar-backdrop { position: fixed; inset: 0; z-index: 85; display: block; width: 100%; height: 100%; border: 0; background: #15201045; backdrop-filter: blur(2px); }
+  .pf-shell--sidebar .pf-shell-main:not(.flush) { padding: 26px 22px 40px; }
+  .pf-shell--sidebar .pf-settings { grid-template-columns: minmax(0, 1fr); }
+  .pf-shell--sidebar .pf-settings-side { position: static; }
+  .pf-skip-content { left: 16px; }
+}
+
+@media (max-width: 560px) {
+  .pf-shell--sidebar .pf-shell-main:not(.flush) { padding: 23px 16px 36px; }
+  .pf-app-mobile-header { padding-inline: 12px; gap: 7px; }
+  .pf-mobile-current { max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; padding-left: 10px; }
+  .pf-dialog-root .pf-create-choice { grid-template-columns: minmax(0, 1fr); }
+  .pf-sidebar-workspace .pf-team-switcher-menu { left: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pf-app-sidebar, .pf-sidebar-create, .pf-sidebar-link { transition: none; }
+}

@@ -1,19 +1,8 @@
 import { Navigate, useSearchParams } from 'react-router-dom'
+import { legacyStudioEntryPath } from '../lib/shortVideoRoutes'
 
-/** Legacy `/studio` entry — redirect to multi-step routes. */
+/** 旧短视频首页也进入项目卡片列表，明确的新建/项目链接保留。 */
 export default function StudioPage() {
   const [params] = useSearchParams()
-  const project = params.get('project')
-  const template = params.get('template')
-  const mode = params.get('mode')
-
-  if (project) {
-    return <Navigate to={`/studio/${project}`} replace />
-  }
-
-  const q = new URLSearchParams()
-  if (template) q.set('template', template)
-  if (mode) q.set('mode', mode)
-  const qs = q.toString()
-  return <Navigate to={qs ? `/studio/new?${qs}` : '/studio/new'} replace />
+  return <Navigate to={legacyStudioEntryPath({ project: params.get('project'), template: params.get('template'), mode: params.get('mode') })} replace />
 }

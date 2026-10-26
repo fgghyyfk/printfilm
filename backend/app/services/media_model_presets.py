@@ -35,35 +35,35 @@ PRESET_MODELS: dict[LogicalModelCapability, tuple[dict[str, str], ...]] = {
             "id": "seedream-5.0-pro",
             "label": "Seedream 5.0 Pro",
             "note": "成片定妆首选，角色一致性好；按清晰度计费",
-            "pricing_hint": "清晰度越高越贵",
+            "pricing_hint": "按模型与分辨率定价",
             "eta_hint": "约 20–60 秒/张",
         },
         {
             "id": "seedream-5.0",
             "label": "Seedream 5.0",
             "note": "标准静帧，质量与成本均衡",
-            "pricing_hint": "约 ¥0.33/张",
+            "pricing_hint": "按模型与分辨率定价",
             "eta_hint": "约 15–40 秒/张",
         },
         {
             "id": "seedream-5.0-flash",
             "label": "Seedream 5.0 Flash",
             "note": "更快更省，适合草稿与批量试错",
-            "pricing_hint": "更省 · 约 ¥0.18/张",
+            "pricing_hint": "按模型与分辨率定价",
             "eta_hint": "约 10–25 秒/张",
         },
         {
             "id": "gpt-image-2",
             "label": "GPT Image 2",
             "note": "OpenAI 生图，光影与文字表现好，适合海报与精细静帧",
-            "pricing_hint": "约 ¥0.55/次",
+            "pricing_hint": "按模型与分辨率定价",
             "eta_hint": "约 30–90 秒/张",
         },
         {
             "id": "gpt-image-2.5",
             "label": "GPT Image 2.5",
             "note": "OpenAI 新一代生图，细节与文字更稳，适合定妆与精细静帧",
-            "pricing_hint": "按次计费，通常高于 2.0",
+            "pricing_hint": "按模型与分辨率定价",
             "eta_hint": "约 30–120 秒/张",
         },
     ),
@@ -72,21 +72,21 @@ PRESET_MODELS: dict[LogicalModelCapability, tuple[dict[str, str], ...]] = {
             "id": "seedance-2.5",
             "label": "Seedance 2.5",
             "note": "成片首选，画质更好；4–30 秒，支持到 1080p",
-            "pricing_hint": "相对更贵 · 清晰度越高越贵",
+            "pricing_hint": "按模型与分辨率定价",
             "eta_hint": "约 3–8 分钟/镜",
         },
         {
             "id": "seedance-2.0",
             "label": "Seedance 2.0",
             "note": "标准成片，运镜较稳；4–15 秒，最高 720p",
-            "pricing_hint": "清晰度越高越贵",
+            "pricing_hint": "按模型与分辨率定价",
             "eta_hint": "约 2–5 分钟/镜",
         },
         {
             "id": "seedance-2.0-fast",
             "label": "Seedance 2.0 Fast",
             "note": "2.0 加速档，适合赶进度；4–15 秒，最高 720p",
-            "pricing_hint": "介于标准与 Mini 之间",
+            "pricing_hint": "按模型与分辨率定价",
             "eta_hint": "约 1–4 分钟/镜",
         },
         # seedance-2.0-mini：TokenFree 会转到 doubao-seedance-2-0-mini-260615，
@@ -95,7 +95,7 @@ PRESET_MODELS: dict[LogicalModelCapability, tuple[dict[str, str], ...]] = {
             "id": "MiniMax-H3",
             "label": "MiniMax H3",
             "note": "节奏感强、人物生动；4–15 秒，480p / 768p",
-            "pricing_hint": "出片偏慢 · 约 ¥0.44–0.73/秒",
+            "pricing_hint": "按模型与分辨率定价",
             "eta_hint": "偏慢，4s 约 15 分钟起",
         },
     ),
@@ -130,7 +130,7 @@ IMAGE_RESOLUTIONS_GPT_IMAGE_25: tuple[str, ...] = ("1K", "2K", "4K")
 VIDEO_ASPECT_RATIOS: tuple[str, ...] = ("9:16", "16:9", "1:1")
 VIDEO_RESOLUTIONS_FULL: tuple[str, ...] = ("480p", "720p", "1080p")
 VIDEO_RESOLUTIONS_SAFE: tuple[str, ...] = ("480p", "720p")
-# MiniMax-H3：TokenFree 枚举为小写 480p / 768p
+# MiniMax-H3：内部统一小写；不同上游插件的大小写由提交适配层兼容。
 VIDEO_RESOLUTIONS_MINIMAX_H3: tuple[str, ...] = ("480p", "768p")
 
 
@@ -243,100 +243,10 @@ def clamp_default_to_preset(capability: LogicalModelCapability, model_id: str | 
     return ids[0] if ids else ""
 
 
-def _is_minimax_h3(mid: str) -> bool:
-    return "minimax" in mid and "h3" in mid.replace("-", "").replace("_", "")
-
-
-def _is_seedance_mini(mid: str) -> bool:
-    return "seedance" in mid and "mini" in mid
-
-
-def _is_seedance_fast(mid: str) -> bool:
-    return "seedance" in mid and "fast" in mid
-
-
-def _is_seedance_25(mid: str) -> bool:
-    return "seedance" in mid and ("2.5" in mid or "2-5" in mid)
-
-
-def _is_seedance_20(mid: str) -> bool:
-    """Seedance 2.0 完整档（非 mini / fast / 2.5）。"""
-    if "seedance" not in mid:
-        return False
-    if _is_seedance_mini(mid) or _is_seedance_fast(mid) or _is_seedance_25(mid):
-        return False
-    return (
-        "2-0" in mid
-        or "2.0" in mid
-        or mid in {"seedance-2", "seedance2"}
-        or mid.endswith("seedance-2")
-    )
-
-
 def model_generation_options(model_id: str | None) -> dict[str, Any]:
-    """按模型返回前台可选参数；未知模型给保守默认。"""
-    mid = normalize_model_name(resolve_preset_alias(model_id) or (model_id or ""))
-    if not mid:
+    """Compatibility facade; model capabilities are owned by registered strategies."""
+    from app.services.media_models import get_strategy
+    try:
+        return get_strategy(model_id or "").describe()
+    except ValueError:
         return {}
-
-    image_ids = {normalize_model_name(x) for x in preset_ids("image")}
-    video_ids = {normalize_model_name(x) for x in preset_ids("video")}
-
-    # 图像：Seedream / GPT Image 2 为 1K·2K；GPT Image 2.5 开放 4K
-    if mid in image_ids or "seedream" in mid or mid.startswith("gpt-image"):
-        resolutions = (
-            list(IMAGE_RESOLUTIONS_GPT_IMAGE_25)
-            if "gpt-image-2.5" in mid or "gpt-image-2-5" in mid
-            else list(IMAGE_RESOLUTIONS_STANDARD)
-        )
-        return {
-            "capability": "image",
-            "allowed_aspect_ratios": list(IMAGE_ASPECT_RATIOS),
-            "allowed_resolutions": resolutions,
-        }
-
-    # 视频：预设表与 Seedance / MiniMax 优先
-    # Seedance 2.0 / fast / mini：官方输出时长 4–15s；2.5：4–30s（见方舟文档）
-    if mid in video_ids or "seedance" in mid or _is_minimax_h3(mid):
-        if _is_seedance_mini(mid) or _is_seedance_fast(mid):
-            return {
-                "capability": "video",
-                "allowed_aspect_ratios": list(VIDEO_ASPECT_RATIOS),
-                "allowed_resolutions": list(VIDEO_RESOLUTIONS_SAFE),
-                "duration_min": 4,
-                "duration_max": 15,
-            }
-        if _is_minimax_h3(mid):
-            return {
-                "capability": "video",
-                "allowed_aspect_ratios": list(VIDEO_ASPECT_RATIOS),
-                "allowed_resolutions": list(VIDEO_RESOLUTIONS_MINIMAX_H3),
-                "duration_min": 4,
-                "duration_max": 15,
-            }
-        # 仅 Seedance 2.5 开放 1080p 与 30s；2.0 及其它 Seedance 最高 720p / 15s
-        if _is_seedance_25(mid):
-            return {
-                "capability": "video",
-                "allowed_aspect_ratios": list(VIDEO_ASPECT_RATIOS),
-                "allowed_resolutions": list(VIDEO_RESOLUTIONS_FULL),
-                "duration_min": 4,
-                "duration_max": 30,
-            }
-        if _is_seedance_20(mid) or "seedance" in mid:
-            return {
-                "capability": "video",
-                "allowed_aspect_ratios": list(VIDEO_ASPECT_RATIOS),
-                "allowed_resolutions": list(VIDEO_RESOLUTIONS_SAFE),
-                "duration_min": 4,
-                "duration_max": 15,
-            }
-        return {
-            "capability": "video",
-            "allowed_aspect_ratios": list(VIDEO_ASPECT_RATIOS),
-            "allowed_resolutions": list(VIDEO_RESOLUTIONS_SAFE),
-            "duration_min": 4,
-            "duration_max": 15,
-        }
-
-    return {}

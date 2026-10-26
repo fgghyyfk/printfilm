@@ -87,6 +87,9 @@ def resolve_logical_model_candidates(
             return direct
 
     # 默认/请求模型失效时，回落到同能力第一个可解析模型（DeepSeek / Kimi / 其它兼容均可）
+    if capability in {"image", "video"}:
+        # Media requests never switch model, including when the requested route is unavailable.
+        return []
     for model in snapshot.logical_models:
         if not model.enabled or model.capability != capability:
             continue

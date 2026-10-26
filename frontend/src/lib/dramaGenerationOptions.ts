@@ -126,7 +126,8 @@ export function resolutionsForImageModel(
   imageModels?: MediaModelOption[],
 ): GenerationResolution[] {
   const row = findImageModelRow(modelId, catalog, imageModels)
-  const raw = row?.allowed_resolutions
+  const raw = row?.available_resolutions ?? row?.allowed_resolutions
+  if (Array.isArray(raw) && raw.length === 0) return []
   if (Array.isArray(raw) && raw.length > 0) {
     const filtered = raw.filter((r): r is GenerationResolution =>
       GENERATION_RESOLUTION_OPTIONS.includes(r as GenerationResolution),

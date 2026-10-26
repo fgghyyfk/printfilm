@@ -1,6 +1,8 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { buildPageItems, DEFAULT_PAGE_SIZE } from "@/lib/pagination";
 import { cn } from "@/lib/utils";
+import { Select } from "@/components/ui/select";
+import "@/styles/admin-primitives.css";
 
 type Props = {
   page: number;
@@ -31,19 +33,20 @@ export function PaginationBar({
 
   return (
     <div
-      className={cn("admin-pagination", className)}
+      className={cn("admin-pagination admin-ui-pagination", className)}
     >
       <div className="flex flex-wrap items-center gap-3">
-        <span>
+        <span className="admin-ui-pagination-summary">
           共 <em className="not-italic font-semibold text-[var(--admin-text)]">{total}</em> 条
           <span className="mx-1.5 text-[var(--admin-border)]">·</span>
           {from}-{to}
         </span>
         {onPageSizeChange && (
-          <label className="flex items-center gap-1.5 text-xs">
+          <label className="admin-ui-pagination-size flex items-center gap-2 text-xs">
             <span>每页</span>
-            <select
-              className="admin-select !h-7 !min-w-[4rem] !text-xs"
+            <Select
+              className="admin-ui-pagination-select !h-9 !min-w-[4.5rem] !text-xs"
+              aria-label="每页显示条数"
               value={pageSize}
               onChange={(e) => onPageSizeChange(Number(e.target.value))}
             >
@@ -52,13 +55,13 @@ export function PaginationBar({
                   {n}
                 </option>
               ))}
-            </select>
+            </Select>
             <span>条</span>
           </label>
         )}
       </div>
 
-      <div className="flex items-center gap-1">
+      <nav className="admin-ui-pagination-pages flex items-center gap-1" aria-label="分页导航">
         <button
           type="button"
           className="admin-page-btn"
@@ -78,6 +81,8 @@ export function PaginationBar({
               key={n}
               type="button"
               className={cn("admin-page-btn", n === page && "is-active")}
+              aria-current={n === page ? "page" : undefined}
+              aria-label={`第 ${n} 页`}
               onClick={() => onPageChange(n)}
             >
               {n}
@@ -93,7 +98,7 @@ export function PaginationBar({
         >
           <ChevronRight className="h-4 w-4" />
         </button>
-      </div>
+      </nav>
     </div>
   );
 }

@@ -40,6 +40,7 @@ class AgentSkillOptimizeBody(BaseModel):
     prompt: str = Field(min_length=1, max_length=8000)
     skill_ids: list[int] = Field(default_factory=list)
     task: str = Field(default="video_prompt", max_length=64)
+    project_id: int | None = Field(default=None, ge=1)
 
 
 class AgentSkillOptimizeOut(BaseModel):

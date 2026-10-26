@@ -50,9 +50,11 @@ async def test_await_kepu_reraises_without_request() -> None:
         await _await_kepu(_fake_task(cancel_requested=False), _boom())
 
 
-async def test_await_kepu_success_payload() -> None:
+async def test_await_kepu_success_payload(monkeypatch) -> None:
+    snapshot = AsyncMock(return_value={"kind": "image", "urls": ["/static/shot.png"]})
+    monkeypatch.setattr("app.services.tasks.handlers._kepu_output_snapshot", snapshot)
     out = await _await_kepu(_fake_task(cancel_requested=False), _ok(), shot_id=3)
-    assert out == {"ok": True, "project_id": 7, "shot_id": 3}
+    assert out == {"ok": True, "project_id": 7, "shot_id": 3, "kind": "image", "urls": ["/static/shot.png"]}
 
 
 def test_run_pipeline_reraises_after_cancel_side_effects() -> None:

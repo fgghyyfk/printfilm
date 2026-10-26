@@ -51,6 +51,23 @@ sudo apt-get install -y fonts-wqy-zenhei fonts-wqy-microhei fontconfig
 
 缺字体时字幕会显示为「方框」（□），需装字体后**重新合成**该项目成片。
 
+## 升级前必须检查数据库结构
+
+2026-10-24 本地升级漏跑媒体计费迁移，分集列表因缺少 `task_runs.billing_snapshot` 返回 500。`DATABASE_BOOTSTRAP_ENABLED=false` 会跳过启动建表和补列；重启、未发布价格或健康检查成功都不能代替迁移。
+
+升级现有数据库时，先备份目标库，再用新版本代码及目标环境的数据库配置执行：
+
+```bash
+cd backend
+# 使用该环境的虚拟环境 Python；团队结构等其他迁移仍按对应发布说明执行。
+python scripts/prepare_media_schema.py
+python scripts/prepare_media_schema.py --check
+```
+
+两条命令都必须返回 0 才能重启 API 与任务执行节点。`--check` 在只读事务中校验媒体必需表、列和交付唯一索引，缺失时返回 1；发布脚本或 CI 必须传播该退出码并中止，不能忽略错误继续重启。迁移命令完成后也会校验结构，失败回滚。
+
+重启后除 `/api/health` 外，还须以有权限的登录用户读取目标环境现有项目的分集列表和任务列表，确认返回 200。价格发布另行操作；先完成结构迁移，不要求自动启用新价格。详见 [媒体迁移与故障记录](../docs/MEDIA_MODEL_STRATEGIES.md#发布与兼容)。
+
 ## 3. 启动 API 与任务平台
 
 ```bash

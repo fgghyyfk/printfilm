@@ -1,11 +1,16 @@
-import { useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useMarketplaceEnabled } from "@/features/marketplace/api";
 
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
 import {
 
-  Bell,
+  ArrowUpRight,
+  Aperture,
+  ChevronRight,
+  PanelLeftClose,
+  Search,
+  X,
 
   Clapperboard,
 
@@ -25,7 +30,6 @@ import {
 
   Maximize2,
 
-  Menu,
 
   Receipt,
 
@@ -44,8 +48,7 @@ import {
 import { clearAuth, getCachedUser } from "@/lib/auth";
 
 import { cn } from "@/lib/utils";
-
-
+import { AdminNavigationSearch } from "./AdminNavigationSearch";
 
 type NavItem = {
 
@@ -61,8 +64,6 @@ type NavItem = {
 
 };
 
-
-
 type NavGroup = {
 
   label: string;
@@ -70,8 +71,6 @@ type NavGroup = {
   items: NavItem[];
 
 };
-
-
 
 const navGroups: NavGroup[] = [
 
@@ -90,6 +89,8 @@ const navGroups: NavGroup[] = [
     items: [
 
       { to: "/users", label: "用户管理", icon: Users },
+
+      { to: "/teams", label: "团队管理", icon: Users, matchPrefix: true },
 
       { to: "/orders", label: "订单流水", icon: Receipt },
 
@@ -147,13 +148,14 @@ const navGroups: NavGroup[] = [
 
 ];
 
-
-
-const titles: Record<string, string> = {"/marketplace": "数字资产平台运营",
+const titles: Record<string, string> = {
+  "/marketplace": "数字资产平台运营",
 
   "/": "仪表盘",
 
   "/users": "用户管理",
+
+  "/teams": "团队管理",
 
   "/orders": "订单流水",
 
@@ -181,9 +183,9 @@ const titles: Record<string, string> = {"/marketplace": "数字资产平台运�
 
 };
 
-
-
 function resolveTitle(pathname: string): string {
+
+  if (pathname.startsWith("/teams/")) return "团队详情";
 
   if (pathname.startsWith("/drama-projects/")) return "漫剧项目详情";
 
@@ -197,225 +199,160 @@ function resolveTitle(pathname: string): string {
 
 }
 
-
-
-// Admin shell: dark sidebar + glass top bar
-
+/** 统一运营工作台：桌面折叠导航、移动抽屉与可搜索入口。 */
 export function AdminLayout() {
   const marketplaceEnabled = useMarketplaceEnabled();
-
+  const visibleNavGroups = navGroups.map((group) => group.label === "业务" && marketplaceEnabled
+    ? { ...group, items: [...group.items, { to: "/marketplace", label: "数字资产平台运营", icon: FileVideo } satisfies NavItem] }
+    : group);
   const navigate = useNavigate();
-
   const location = useLocation();
-
   const user = getCachedUser();
-
-  /*
-
-   * collapsed sidebar collapsed state
-
-   */
-
   const [collapsed, setCollapsed] = useState(false);
-
-
-
-  // Logout and return to login
-
-  function handleLogout() {
-
-    clearAuth();
-
-    navigate("/login");
-
-  }
-
-
-
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => window.matchMedia("(max-width: 800px)").matches);
+  const sidebarRef = useRef<HTMLElement>(null);
+  const navigationToggleRef = useRef<HTMLButtonElement>(null);
+  const sidebarCloseRef = useRef<HTMLButtonElement>(null);
+  const mobileDrawerOpen = isMobile && mobileOpen;
   const title = resolveTitle(location.pathname);
-
   const initial = (user?.nickname || user?.email || "A").slice(0, 1).toUpperCase();
 
+  useEffect(() => { setMobileOpen(false); }, [location.pathname]);
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 800px)");
+    function onChange(event: MediaQueryListEvent) {
+      setIsMobile(event.matches);
+      if (!event.matches) setMobileOpen(false);
+    }
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  }, []);
 
+  useLayoutEffect(() => {
+    if (!mobileDrawerOpen) return;
+    const sidebar = sidebarRef.current;
+    if (!sidebar) return;
+    const navigationToggle = navigationToggleRef.current;
+    const previouslyFocused = document.activeElement instanceof HTMLElement && document.activeElement !== document.body
+      ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    sidebarCloseRef.current?.focus({ preventScroll: true });
+
+    function focusableItems() {
+      return Array.from(sidebar!.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])'))
+        .filter((element) => element.tabIndex >= 0 && element.getClientRects().length > 0);
+    }
+    function trapFocus(event: KeyboardEvent) {
+      if (event.key !== "Tab") return;
+      const items = focusableItems();
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (!first || !last) return;
+      if (event.shiftKey && (document.activeElement === first || !sidebar!.contains(document.activeElement))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (document.activeElement === last || !sidebar!.contains(document.activeElement))) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+    function keepFocusInside(event: FocusEvent) {
+      if (event.target instanceof Node && !sidebar!.contains(event.target)) {
+        sidebarCloseRef.current?.focus({ preventScroll: true });
+      }
+    }
+    document.addEventListener("keydown", trapFocus, true);
+    document.addEventListener("focusin", keepFocusInside);
+    return () => {
+      document.removeEventListener("keydown", trapFocus, true);
+      document.removeEventListener("focusin", keepFocusInside);
+      document.body.style.overflow = previousOverflow;
+      if (sidebar.contains(document.activeElement) || document.activeElement === document.body) {
+        const restoreTarget = previouslyFocused?.isConnected ? previouslyFocused : navigationToggle;
+        restoreTarget?.focus({ preventScroll: true });
+      }
+    };
+  }, [mobileDrawerOpen]);
+
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setMobileOpen(false);
+        setSearchOpen((value) => !value);
+      }
+      if (event.key === "Escape") setMobileOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  function handleLogout() { clearAuth(); navigate("/login"); }
+  function toggleNavigation() {
+    if (isMobile) setMobileOpen((value) => !value);
+    else setCollapsed((value) => !value);
+  }
 
   return (
-
-    <div className={cn("admin-app", collapsed && "is-collapsed")}>
-
-      <aside className="admin-sidebar">
-
+    <div className={cn("admin-app", collapsed && "is-collapsed", mobileDrawerOpen && "is-mobile-open")}>
+      <a className="admin-skip-link" href="#admin-main-content">跳至页面内容</a>
+      {mobileDrawerOpen && <button type="button" className="admin-sidebar-scrim" tabIndex={-1} aria-label="关闭导航" onClick={() => setMobileOpen(false)} />}
+      <aside ref={sidebarRef} className="admin-sidebar" id="admin-sidebar" aria-label="管理导航"
+        role={mobileDrawerOpen ? "dialog" : undefined} aria-modal={mobileDrawerOpen ? true : undefined}
+        aria-hidden={isMobile && !mobileOpen ? true : undefined} inert={isMobile && !mobileOpen}>
         <div className="admin-brand">
-
-          <div className="admin-brand-mark">PF</div>
-
-          {!collapsed && (
-
-            <div>
-
-              <div className="admin-brand-name">PRINTFILM</div>
-
-              <div className="admin-brand-sub">管理后台</div>
-
-            </div>
-
-          )}
-
+          <div className="admin-brand-mark"><Aperture size={23} strokeWidth={1.7} /></div>
+          <div className="admin-brand-copy"><div className="admin-brand-name">PRINTFILM<span>®</span></div><div className="admin-brand-sub">运营控制台</div></div>
+          <button ref={sidebarCloseRef} type="button" className="admin-icon-btn admin-sidebar-close" aria-label="关闭导航" onClick={() => setMobileOpen(false)}><X size={18} /></button>
         </div>
-
-        <nav className="admin-nav">
-
-          {navGroups.map((group) => (
-
+        <nav className="admin-nav" aria-label="主导航">
+          {visibleNavGroups.map((group) => (
             <div key={group.label} className="admin-nav-group">
-
-              {!collapsed ? <div className="admin-nav-group-label">{group.label}</div> : null}
-
-              {[...group.items, ...(group.label === "业务" && marketplaceEnabled ? [{ to: "/marketplace", label: "数字资产平台运营", icon: FileVideo } satisfies NavItem] : [])].map((item) => (
-
-                <NavLink
-
-                  key={item.to}
-
-                  to={item.to}
-
-                  end={item.end ?? !item.matchPrefix}
-
-                  className={({ isActive }) =>
-
-                    cn(
-
-                      "admin-nav-item",
-
-                      (isActive || (item.matchPrefix && location.pathname.startsWith(`${item.to}/`))) &&
-
-                        "is-active",
-
-                    )
-
-                  }
-
-                  title={item.label}
-
-                >
-
-                  <item.icon className="h-[18px] w-[18px] shrink-0" />
-
-                  {!collapsed && <span>{item.label}</span>}
-
+              <div className="admin-nav-group-label">{group.label}</div>
+              {group.items.map((item) => (
+                <NavLink key={item.to} to={item.to} end={item.end ?? !item.matchPrefix}
+                  className={({ isActive }) => cn("admin-nav-item", (isActive || (item.matchPrefix && location.pathname.startsWith(`${item.to}/`))) && "is-active")}
+                  title={item.label} onClick={() => setMobileOpen(false)}>
+                  <item.icon className="h-[18px] w-[18px] shrink-0" strokeWidth={1.7} />
+                  <span className="admin-nav-label">{item.label}</span><ChevronRight className="admin-nav-arrow" size={14} />
                 </NavLink>
-
               ))}
-
             </div>
-
           ))}
-
         </nav>
-
+        <div className="admin-sidebar-footnote"><span />PRINTFILM OPERATIONS</div>
         <div className="admin-user-card">
-
           <div className="admin-avatar">{initial}</div>
-
-          {!collapsed && (
-
-            <div className="min-w-0 flex-1">
-
-              <div className="truncate text-[13px] font-medium text-[#e8f0eb]">{user?.email}</div>
-
-              <div className="text-xs text-[rgba(240,245,242,0.45)]">超级管理员</div>
-
-            </div>
-
-          )}
-
-          <button type="button" className="admin-icon-btn !text-[rgba(240,245,242,0.55)] hover:!text-[#e8f0eb]" onClick={handleLogout} title="退出登录">
-
-            <LogOut className="h-4 w-4" />
-
-          </button>
-
+          <div className="admin-user-copy"><strong>{user?.nickname || "管理员"}</strong><span title={user?.email}>{user?.email}</span></div>
+          <button type="button" className="admin-icon-btn admin-logout" onClick={handleLogout} title="退出登录" aria-label="退出登录"><LogOut size={16} /></button>
         </div>
-
       </aside>
-
-
-
-      <div className="admin-main">
-
+      <div className="admin-main" inert={mobileDrawerOpen}>
         <header className="admin-topbar">
-
-          <div className="flex items-center gap-3">
-
-            <button
-
-              type="button"
-
-              className="admin-icon-btn"
-
-              onClick={() => setCollapsed((v) => !v)}
-
-              aria-label="折叠侧栏"
-
-            >
-
-              <Menu className="h-4 w-4" />
-
+          <div className="admin-topbar-leading">
+            <button ref={navigationToggleRef} type="button" className="admin-icon-btn" onClick={toggleNavigation}
+              aria-label={isMobile ? (mobileOpen ? "关闭导航" : "展开导航") : (collapsed ? "展开导航" : "折叠导航")}
+              aria-controls="admin-sidebar" aria-expanded={isMobile ? mobileOpen : !collapsed}>
+              <PanelLeftClose size={19} />
             </button>
-
-            <div>
-
-              <div className="admin-topbar-title">{title}</div>
-
-              <div className="admin-topbar-crumb">PRINTFILM · 运营管理</div>
-
-            </div>
-
+            <div className="admin-topbar-breadcrumb"><span>控制台</span><ChevronRight size={13} /><strong>{title}</strong></div>
           </div>
-
-          <div className="flex items-center gap-1">
-
-            <button type="button" className="admin-icon-btn" title="通知">
-
-              <Bell className="h-4 w-4" />
-
-            </button>
-
-            <button
-
-              type="button"
-
-              className="admin-icon-btn"
-
-              title="全屏"
-
-              onClick={() => {
-
-                if (!document.fullscreenElement) void document.documentElement.requestFullscreen();
-
-                else void document.exitFullscreen();
-
-              }}
-
-            >
-
-              <Maximize2 className="h-4 w-4" />
-
-            </button>
-
+          <div className="admin-topbar-actions">
+            <button type="button" className="admin-command-trigger" aria-label="搜索管理功能" aria-keyshortcuts="Control+K Meta+K" onClick={() => setSearchOpen(true)}><Search size={15} /><span>搜索功能…</span><kbd>Ctrl K</kbd></button>
+            <a className="admin-site-link" href={import.meta.env.DEV ? "http://127.0.0.1:5173" : "/"} target="_blank" rel="noreferrer">用户端<ArrowUpRight size={14} /></a>
+            <button type="button" className="admin-icon-btn admin-fullscreen" title="切换全屏" aria-label="切换全屏" onClick={() => {
+              if (!document.fullscreenElement) void document.documentElement.requestFullscreen().catch(() => undefined);
+              else void document.exitFullscreen().catch(() => undefined);
+            }}><Maximize2 size={17} /></button>
+            <div className="admin-topbar-avatar" title={user?.email}>{initial}</div>
           </div>
-
         </header>
-
-        <main className="admin-content">
-
-          <Outlet />
-
-        </main>
-
+        <main className="admin-content" id="admin-main-content" tabIndex={-1}><Outlet /></main>
       </div>
-
+      <AdminNavigationSearch open={searchOpen} onOpenChange={setSearchOpen} groups={visibleNavGroups} />
     </div>
-
   );
-
 }

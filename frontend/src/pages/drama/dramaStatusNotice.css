@@ -1,0 +1,145 @@
+.drama-status-notice {
+  --notice-ink: #42627c;
+  --notice-bg: #f5f9fc;
+  --notice-line: #e0eaf2;
+  --notice-icon-bg: #e8f0f7;
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  min-width: 0;
+  padding: 13px 15px;
+  border: 1px solid var(--notice-line);
+  border-radius: 12px;
+  background: var(--notice-bg);
+  color: var(--notice-ink);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.drama-status-notice.is-busy,
+.drama-status-notice.is-success {
+  --notice-ink: #167263;
+  --notice-bg: #f2faf7;
+  --notice-line: #d9eee5;
+  --notice-icon-bg: #e1f3eb;
+}
+
+.drama-status-notice.is-warning {
+  --notice-ink: #94621d;
+  --notice-bg: #fffbf2;
+  --notice-line: #f1e4c9;
+  --notice-icon-bg: #fbefda;
+}
+
+.drama-status-notice.is-error {
+  --notice-ink: #b04444;
+  --notice-bg: #fff7f7;
+  --notice-line: #f4dddd;
+  --notice-icon-bg: #fbe8e8;
+}
+
+.drama-status-notice-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--notice-icon-bg);
+}
+
+.drama-status-notice-content {
+  flex: 1;
+  min-width: 0;
+  align-self: center;
+  overflow-wrap: anywhere;
+}
+
+.drama-status-notice-title {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.6;
+}
+
+.drama-status-notice-description {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--notice-ink);
+}
+
+.drama-status-notice-description p {
+  margin: 0;
+}
+
+.drama-status-notice-close {
+  display: grid;
+  place-items: center;
+  flex: 0 0 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.drama-status-notice-close:hover {
+  background: var(--notice-icon-bg);
+}
+
+.drama-status-notice-close:focus-visible,
+.drama-status-notice-details summary:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+
+.drama-status-notice-details {
+  margin-top: 5px;
+  font-size: 11px;
+}
+
+.drama-status-notice-details summary {
+  width: fit-content;
+  cursor: pointer;
+}
+
+.drama-status-notice-details p {
+  margin-top: 4px;
+  white-space: pre-wrap;
+}
+
+.drama-status-notice-spinner {
+  animation: drama-status-notice-spin 1s linear infinite;
+}
+
+@keyframes drama-status-notice-spin {
+  to { transform: rotate(360deg); }
+}
+
+.drama-workspace-alert {
+  margin: 12px 16px 0;
+}
+
+.drama-outline-status-list {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.drama-outline-status-list:empty {
+  display: none;
+}
+
+@media (max-width: 600px) {
+  .drama-status-notice {
+    gap: 9px;
+    padding: 11px 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drama-status-notice-spinner {
+    animation: none;
+  }
+}

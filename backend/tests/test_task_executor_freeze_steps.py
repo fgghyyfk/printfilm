@@ -30,7 +30,7 @@ def test_execute_task_run_source_reads_steps_before_freeze() -> None:
 async def test_freeze_expires_preloaded_steps_relationship(db_session: AsyncSession) -> None:
     """根因：_lock_task(populate_existing) 会使已 selectinload 的 steps 失效。"""
     user = await make_user(db_session, balance_fen=50_000)
-    task = await make_task(db_session, user, domain="api", task_type="v1_image", status="leased")
+    task = await make_task(db_session, user, domain="studio", task_type="tool_image", status="leased")
     db_session.add(TaskStep(task_id=task.id, step_key="main", step_type="run", status="pending"))
     await db_session.commit()
 
@@ -47,7 +47,7 @@ async def test_freeze_expires_preloaded_steps_relationship(db_session: AsyncSess
 async def test_held_step_survives_freeze_populate_existing(db_session: AsyncSession) -> None:
     """修复路径：先持有 step 再 freeze，仍可写步骤状态（不必再碰 task.steps）。"""
     user = await make_user(db_session, balance_fen=50_000)
-    task = await make_task(db_session, user, domain="api", task_type="v1_image", status="leased")
+    task = await make_task(db_session, user, domain="studio", task_type="tool_image", status="leased")
     db_session.add(TaskStep(task_id=task.id, step_key="main", step_type="run", status="pending"))
     await db_session.commit()
 
@@ -80,8 +80,8 @@ async def test_execute_task_run_survives_freeze_populate_existing(
     task = await make_task(
         db_session,
         user,
-        domain="api",
-        task_type="v1_image",
+        domain="studio",
+        task_type="tool_image",
         status="leased",
     )
     db_session.add(
@@ -99,7 +99,12 @@ async def test_execute_task_run_survives_freeze_populate_existing(
     async def same_session():
         yield db_session
 
-    with patch("app.services.tasks.executor.AsyncSessionLocal", same_session):
+    from app.services.tasks.handlers import TaskHandler
+    fake = TaskHandler("studio", "tool_image", AsyncMock(return_value={"ok": True}))
+    with (
+        patch("app.services.tasks.executor.AsyncSessionLocal", same_session),
+        patch("app.services.tasks.executor.get_task_handler", return_value=fake),
+    ):
         await execute_task_run(task_id)
 
     db_session.expire_all()
@@ -120,8 +125,8 @@ async def test_execute_task_run_marks_failed_when_handler_returns_ok_false(
     task = await make_task(
         db_session,
         user,
-        domain="api",
-        task_type="v1_image",
+        domain="studio",
+        task_type="tool_image",
         status="leased",
     )
     db_session.add(
@@ -142,7 +147,7 @@ async def test_execute_task_run_marks_failed_when_handler_returns_ok_false(
     async def same_session():
         yield db_session
 
-    fake = TaskHandler("api", "v1_image", _failing_executor)
+    fake = TaskHandler("studio", "tool_image", _failing_executor)
     with (
         patch("app.services.tasks.executor.AsyncSessionLocal", same_session),
         patch("app.services.tasks.executor.get_task_handler", return_value=fake),
@@ -162,7 +167,7 @@ async def _lease_task_with_step(db_session: AsyncSession):
     from contextlib import asynccontextmanager as _acm
 
     user = await make_user(db_session, balance_fen=50_000)
-    task = await make_task(db_session, user, domain="api", task_type="v1_image", status="leased")
+    task = await make_task(db_session, user, domain="studio", task_type="tool_image", status="leased")
     db_session.add(TaskStep(task_id=task.id, step_key="main", step_type="run", status="pending"))
     await db_session.commit()
 

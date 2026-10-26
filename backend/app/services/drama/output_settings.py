@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 VALID_RATIOS = frozenset({"9:16", "16:9", "1:1"})
-VALID_RESOLUTIONS = frozenset({"480p", "720p", "1080p"})
+VALID_RESOLUTIONS = frozenset({"480p", "720p", "768p", "1080p"})
 
 
 def _pick_ratio(raw: Any) -> str | None:
@@ -36,6 +36,9 @@ def resolve_episode_video_output(
 
 # Seedance / 成片常用像素（偶数边）
 _RATIO_RES_PIXELS: dict[tuple[str, str], tuple[int, int]] = {
+    ("9:16", "768p"): (768, 1366),
+    ("16:9", "768p"): (1366, 768),
+    ("1:1", "768p"): (768, 768),
     ("9:16", "480p"): (480, 854),
     ("9:16", "720p"): (720, 1280),
     ("9:16", "1080p"): (1080, 1920),

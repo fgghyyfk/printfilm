@@ -8,15 +8,13 @@ export function sumDailyUsage(daily: AdminDailyUsage[]) {
     (acc, row) => ({
       calls: acc.calls + row.calls,
       charge_fen: acc.charge_fen + row.charge_fen,
-      cost_fen: acc.cost_fen + (row.cost_fen ?? 0),
     }),
-    { calls: 0, charge_fen: 0, cost_fen: 0 },
+    { calls: 0, charge_fen: 0 },
   );
 }
 
 /** 按当前图表指标读取桶数值 */
 export function readBucketMetric(row: AdminUsageBucket, metric: DashboardMetric): number {
-  if (metric === "cost") return row.cost_fen ?? 0;
   if (metric === "calls") return row.calls;
   return row.charge_fen;
 }
@@ -25,11 +23,6 @@ export function readBucketMetric(row: AdminUsageBucket, metric: DashboardMetric)
 export function formatDashboardMetric(value: number, metric: DashboardMetric): string {
   if (metric === "calls") return value.toLocaleString();
   return `¥${fenToYuan(value)}`;
-}
-
-/** 估算毛利（扣费 - 成本） */
-export function calcProfitFen(chargeFen: number, costFen: number): number {
-  return chargeFen - costFen;
 }
 
 /** 科普项目总数（各状态之和） */

@@ -41,6 +41,7 @@ from app.services.drama.access import (
     filter_valid_project_asset_ids,
     get_owned_drama_project,
     get_owned_episode,
+    require_drama_project_manager,
     load_episode_fragments,
     replace_fragment_asset_refs,
     match_fragments_for_generate,
@@ -69,6 +70,7 @@ from app.services.drama.seed import (
     _script_body_fingerprint,
     require_confirmable_episode_body,
     seed_assets_from_script,
+    seed_assets_from_episode_body,
     seed_episodes_from_script,
     seed_single_episode_from_script,
 )
@@ -213,12 +215,6 @@ async def list_episodes(
     user: User = Depends(get_current_user),
 ) -> list[DramaEpisodeOut]:
     project = await get_owned_drama_project(db, project_id, user, with_script=True)
-    from app.services.drama.seed import merge_duplicate_episodes_by_number
-
-    # 打开分镜页时顺手合并同号重复行
-    merged = await merge_duplicate_episodes_by_number(db, project_id)
-    if merged:
-        await db.commit()
     result = await db.execute(
         select(DramaEpisode)
         .where(DramaEpisode.project_id == project_id)
@@ -335,8 +331,11 @@ async def confirm_episode_from_script(
             project_inner = await get_owned_drama_project(
                 db, body.project_id, user, with_script=True
             )
-            seed_result = await seed_assets_from_script(db, project_inner)
-            await record_seed_assets_llm_usage(db, user, body.project_id, seed_result)
+            if project_inner.team_id is not None:
+                seed_result = await seed_assets_from_episode_body(db, project_inner, body.episode_number)
+            else:
+                seed_result = await seed_assets_from_script(db, project_inner)
+                await record_seed_assets_llm_usage(db, user, body.project_id, seed_result)
             project_after = await get_owned_drama_project(
                 db, body.project_id, user, with_script=True
             )
@@ -784,6 +783,7 @@ async def generate_status(
     user: User = Depends(get_current_user),
 ) -> dict:
     ep = await get_owned_episode(db, episode_id, user)
+    project = await get_owned_drama_project(db, ep.project_id, user)
     active_tasks = await list_active_tasks_for_owner(
         db,
         user.id,
@@ -798,11 +798,6 @@ async def generate_status(
         drama_project_id=ep.project_id,
     )
     episode_tasks = [task for task in active_tasks if task.episode_id == episode_id]
-    await reconcile_orphaned_fragment_generations(
-        db,
-        list(ep.fragments or []),
-        collect_active_fragment_ids_from_tasks(episode_tasks),
-    )
     # 附带本集近期终态分镜视频任务，供队列点开详情（含失败原因）
     from app.models_tasks import TaskRun
     from app.services.tasks.service import TERMINAL_TASK_STATUSES, task_detail_options
@@ -813,7 +808,7 @@ async def generate_status(
                 select(TaskRun)
                 .options(*task_detail_options())
                 .where(
-                    TaskRun.requested_by == user.id,
+                    TaskRun.team_id == project.team_id if project.team_id is not None else ((TaskRun.requested_by == user.id) & TaskRun.team_id.is_(None)),
                     TaskRun.domain == "drama",
                     TaskRun.task_type == "fragment_video",
                     TaskRun.episode_id == episode_id,
@@ -826,6 +821,11 @@ async def generate_status(
         .scalars()
         .unique()
         .all()
+    )
+    # 团队任务同样需要修复取消后残留的 queued；活动集合包含项目中所有成员的任务。
+    await reconcile_orphaned_fragment_generations(
+        db, list(ep.fragments or []), collect_active_fragment_ids_from_tasks(episode_tasks),
+        terminal_tasks=recent_terminal,
     )
     # 分镜 params 可能仍停在 queued，而任务已 awaiting_poll：用任务态校正对外状态
     task_status_by_frag: dict[int, str] = {}
@@ -887,11 +887,16 @@ async def compose_episode(
         raise HTTPException(status_code=404, detail="分集不存在")
     req = body or DramaComposeEpisodeRequest()
     try:
-        url = await compose_episode_video(
-            db,
-            episode=episode,
-            project=project,
-            fragment_ids=req.fragment_ids,
+        async def compose_current_episode():
+            """只合成本次受理的分集，系统占用持续到文件完成。"""
+            return await compose_episode_video(db, episode=episode, project=project, fragment_ids=req.fragment_ids)
+
+        _, url = await run_billed_ephemeral(
+            db, user, domain="drama", task_type="episode_compose", executor=compose_current_episode,
+            drama_project_id=project.id, episode_id=episode.id,
+            payload={"fragment_ids": req.fragment_ids},
+            billable=project.team_id is not None,
+            result_payload_factory=lambda result: {"kind": "video", "urls": [result] if result else []},
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -909,7 +914,19 @@ async def cancel_generate_episode(
 ) -> dict:
     """取消本集全部分镜视频生成（排队/进行中）。"""
     ep = await get_owned_episode(db, episode_id, user)
-    await get_owned_drama_project(db, ep.project_id, user)
+    project = await get_owned_drama_project(db, ep.project_id, user)
+    if project.team_id is not None:
+        from app.services.teams.access import get_team, member_role
+        from app.services.tasks.service import cancel_task_for_user
+        team, membership = await get_team(db, project.team_id, user.id)
+        if member_role(team, membership) == "member":
+            # 普通成员仅取消本人任务，不能重置整集队友的生成状态。
+            tasks = await list_active_tasks_for_owner(db, user.id, drama_project_id=project.id)
+            own = [task for task in tasks if task.requested_by == user.id and task.episode_id == episode_id and task.task_type == "fragment_video" and task.cancelable]
+            for task in own:
+                await cancel_task_for_user(db, user, task.id)
+            return {"ok": True, "episode_id": episode_id, "fragments": len(own)}
+        await require_drama_project_manager(db, project, user.id)
     await cancel_tasks_for_scope(
         db,
         user.id,

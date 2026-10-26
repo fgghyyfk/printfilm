@@ -6,6 +6,10 @@ export type AdminTaskRow = {
   id: number;
   domain: string;
   task_type: string;
+  execution_mode?: "direct" | "queued";
+  queue_type?: "text" | "image" | "video";
+  provider_name?: string | null;
+  provider_status?: string | null;
   status: string;
   priority: number;
   requested_by: number;
@@ -94,6 +98,7 @@ export type AdminTaskDetail = AdminTaskRow & {
   events: AdminTaskEvent[];
   targets: Array<{ id: number; target_type: string; target_id: number }>;
   usage_lines?: AdminUsageEventBrief[];
+  billing_snapshot?: { mode: string; price_version: number | null; items: Array<{ model_id: string; capability: string; params: { resolution: string; duration?: number; count: number }; route: { channel_id: string; channel_name: string; upstream_model: string } }> } | null;
   billing_estimate_fen?: number;
   billing_charged_fen?: number;
   billing_refunded_fen?: number;
@@ -101,6 +106,7 @@ export type AdminTaskDetail = AdminTaskRow & {
 };
 
 export type AdminTaskStats = {
+  queues?: Array<{ name: string; label: string; max_concurrency: number; pending: number; active: number; awaiting_poll: number }>;
   pending_count: number;
   pending_ready_count?: number;
   pending_deferred_count?: number;

@@ -4,7 +4,6 @@ import { Download, Loader2 } from 'lucide-react'
 import DramaPublishModal from '../../features/marketplace/DramaPublishModal'
 import { useMarketplace } from '../../features/marketplace/hooks'
 import type { DramaFragment } from '../../api/drama'
-import { DramaSubtitleBoard } from '../../components/drama/DramaSubtitleBoard'
 import { DramaFragmentSegmentedVideoPlayer } from '../../components/drama/DramaFragmentSegmentedVideoPlayer'
 import { triggerBlobDownload } from '../../lib/clientDownload'
 import {
@@ -14,7 +13,6 @@ import {
   type EpisodeComposeProgress,
 } from '../../lib/composeEpisodeVideoClient'
 import { dialog } from '../../lib/dialog'
-import type { DramaSubtitleMode } from '../../lib/dramaSubtitleBoard'
 
 type Props = {
   fragments: DramaFragment[]
@@ -24,7 +22,6 @@ type Props = {
   episodeId?: number
   projectId?: string
   episodeName?: string
-  subtitleMode: DramaSubtitleMode
   onOpenStoryboard: () => void
   /** 预览历史版本时覆盖当前镜 video src */
   previewVideoUrl?: string | null
@@ -52,7 +49,6 @@ export function EpisodeEditSidePane({
   episodeId,
   projectId,
   episodeName = '本集',
-  subtitleMode,
   onOpenStoryboard,
   previewVideoUrl = null,
   previewPosterUrl = null,
@@ -163,28 +159,21 @@ export function EpisodeEditSidePane({
       {!hasSelection || fragments.length === 0 ? (
         <p className="drama-ep-empty">请选择底部分镜</p>
       ) : (
-        <>
-          <div className="drama-ep-preview-inner">
-            <DramaFragmentSegmentedVideoPlayer
-              fragments={fragments}
-              playingFragmentId={playingFragmentId}
-              onPlayingFragmentChange={onPlayingFragmentChange}
-              aspectRatio={aspectRatio}
-              overrideVideoUrl={previewVideoUrl}
-              overridePosterUrl={previewPosterUrl}
-            />
-            {!fragments.some((f) => f.video) && (
-              <button type="button" className="drama-ep-open-canvas" onClick={onOpenStoryboard}>
-                打开分镜画布
-              </button>
-            )}
-          </div>
-          <DramaSubtitleBoard
+        <div className="drama-ep-preview-inner">
+          <DramaFragmentSegmentedVideoPlayer
             fragments={fragments}
-            episodeName={episodeName}
-            subtitleMode={subtitleMode}
+            playingFragmentId={playingFragmentId}
+            onPlayingFragmentChange={onPlayingFragmentChange}
+            aspectRatio={aspectRatio}
+            overrideVideoUrl={previewVideoUrl}
+            overridePosterUrl={previewPosterUrl}
           />
-        </>
+          {!fragments.some((f) => f.video) && (
+            <button type="button" className="drama-ep-open-canvas" onClick={onOpenStoryboard}>
+              打开分镜画布
+            </button>
+          )}
+        </div>
       )}
       {publishOpen && capabilities?.enabled && projectId && <DramaPublishModal projectId={Number(projectId)} initialEpisodeId={episodeId} onClose={() => setPublishOpen(false)} />}
     </aside>

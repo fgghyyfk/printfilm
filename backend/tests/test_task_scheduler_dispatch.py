@@ -18,10 +18,12 @@ async def isolated_scheduler(monkeypatch):
     monkeypatch.setattr(scheduler, "_scheduler_task", None)
     monkeypatch.setattr(scheduler, "_maintenance_task", None)
     monkeypatch.setattr(scheduler, "_running_jobs", {})
+    monkeypatch.setattr(scheduler, "_running_queues", {})
     monkeypatch.setattr(scheduler, "_cancel_jobs", {})
     monkeypatch.setattr(scheduler, "_stop_event", asyncio.Event())
     monkeypatch.setattr(scheduler, "_intentionally_stopped", False)
     monkeypatch.setattr(scheduler, "_loop_started_mono", 0.0)
+    monkeypatch.setattr(scheduler, "_claim_direct_llm_tasks", AsyncMock())
     monkeypatch.setattr(scheduler, "get_settings", lambda: SimpleNamespace(
         task_runtime_max_concurrency=4,
         task_user_max_concurrency=1,
@@ -55,6 +57,7 @@ class _QueueSession:
         self.rowcount = rowcount
         self.selects = []
         self.claimed = []
+        self.bind = SimpleNamespace(dialect=SimpleNamespace(name="sqlite"))
 
     async def __aenter__(self):
         """进入内存事务。"""
@@ -63,6 +66,10 @@ class _QueueSession:
     async def __aexit__(self, *_args):
         """无需提交真实资源。"""
         return False
+
+    async def scalar(self, _statement, _params=None):
+        """No pre-existing tasks occupy the per-lane database capacity."""
+        return 0
 
     async def execute(self, statement):
         """模拟领取 CAS 与有上限的候选查询。"""
@@ -92,7 +99,7 @@ async def test_claim_pages_past_user_filled_by_this_tick(monkeypatch):
     monkeypatch.setattr(scheduler, "count_user_active_runtime_tasks", AsyncMock(return_value=0))
     monkeypatch.setattr(scheduler, "append_task_event", AsyncMock())
     monkeypatch.setattr(scheduler, "_run_one", AsyncMock())
-    await scheduler._tick()
+    await scheduler._claim_queue("text", datetime.now(UTC))
     assert db.claimed == [1, 17]
     sql = str(db.selects[0].compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
     assert "count(" in sql and "requested_by" in sql
@@ -112,7 +119,7 @@ async def test_failed_compare_and_swap_never_launches_executor(monkeypatch):
     monkeypatch.setattr(scheduler, "_claim_cancel_requests", AsyncMock())
     monkeypatch.setattr(scheduler, "count_user_active_runtime_tasks", AsyncMock(return_value=0))
     monkeypatch.setattr(scheduler, "_run_one", executor)
-    await scheduler._tick()
+    await scheduler._claim_queue("text", datetime.now(UTC))
     assert len(db.selects) == scheduler._MAX_CLAIM_PAGES
     assert db.claimed == []
     executor.assert_not_awaited()
@@ -122,7 +129,8 @@ async def test_failed_compare_and_swap_never_launches_executor(monkeypatch):
 async def test_cancellation_runs_when_normal_capacity_is_full(monkeypatch):
     """取消独立于普通容量，并且只执行取消收敛，不进入业务 handler。"""
     active = asyncio.create_task(asyncio.Event().wait())
-    scheduler._running_jobs.update({i: active for i in range(1, 5)})
+    scheduler._running_jobs.update({i: active for i in range(100, 112)})
+    scheduler._running_queues.update({i: ("text", "image", "video")[(i - 100) // 4] for i in range(100, 112)})
     db = _QueueSession([[9]])
     cancelled = AsyncMock()
     business = AsyncMock()

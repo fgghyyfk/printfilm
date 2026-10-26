@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
 from app.config import get_settings
@@ -50,15 +50,18 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 
-async def init_db() -> None:
+async def init_db(engine_override: AsyncEngine | None = None) -> None:
+    """注册全部模型建表；独立迁移可显式提供引擎而不改变应用连接池。"""
     from app import models  # noqa: F401
     from app import models_agent  # noqa: F401
+    from app import models_creation  # noqa: F401
     from app import models_drama  # noqa: F401
-    from app import models_api  # noqa: F401
     from app import models_settings  # noqa: F401
     from app import models_tasks  # noqa: F401
+    from app import models_teams, models_team_billing, models_team_locks  # noqa: F401
 
-    async with engine.begin() as conn:
+    target_engine = engine_override if engine_override is not None else engine
+    async with target_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
 

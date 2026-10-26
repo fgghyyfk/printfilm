@@ -38,7 +38,7 @@ def test_build_body_continuity_alone_uses_first_frame_and_omits_ratio():
     )
     assert first["image_url"]["url"] == "https://cdn.example.com/prev_last.jpg"
     text = next(item for item in body["content"] if item.get("type") == "text")
-    assert "镜头衔接" in text["text"]
+    assert "镜头衔接" not in text["text"]
 
 
 def test_build_body_continuity_with_reference_uses_reference_image_keeps_ratio():
@@ -72,4 +72,4 @@ def test_build_body_continuity_with_reference_uses_reference_image_keeps_ratio()
     ][-1]
     assert last_image["image_url"]["url"] == "https://cdn.example.com/prev_last.jpg"
     text = next(item for item in body["content"] if item.get("type") == "text")
-    assert "参考图序列最后一张" in text["text"]
+    assert "参考图序列最后一张" not in text["text"]

@@ -14,12 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.models import ToolRun, User
-from app.models_tasks import TaskRun
 from app.services.ark import get_ark
-from app.services.billing import run_billed_ephemeral
 from app.services.drama.billing_util import record_seedream_image_usage
-from app.services.billing.estimates import estimate_task_fen
-from app.services.billing.settlement import billing_active
 from app.services.ffmpeg_compose import extract_video_poster_frame
 from app.services import storage
 
@@ -108,8 +104,8 @@ def motion_hint(level: str | None) -> str:
 # 把上传文件落到用户工具目录
 def save_upload(user_id: int, data: bytes, filename: str) -> Path:
     ext = Path(filename or "bin").suffix.lower() or ".bin"
-    if ext not in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".mov", ".webm"}:
-        raise ValueError("仅支持 png / jpg / webp / gif / mp4 / mov / webm")
+    if ext not in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".mov", ".webm", ".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"}:
+        raise ValueError("不支持的参考文件格式")
     dest = tools_dir(user_id) / f"{uuid.uuid4().hex[:12]}{ext}"
     dest.write_bytes(data)
     return dest
@@ -150,6 +146,7 @@ async def run_image_tool(
     mode: str | None,
     pack: str | None,
     files: list[Path],
+    output_no: int | None = None,
 ) -> dict:
     ark = get_ark()
     size = ratio_to_size(ratio)
@@ -162,7 +159,7 @@ async def run_image_tool(
     elif tool_id in {"i2i", "i2p"}:
         if not files:
             raise ValueError("请上传参考图")
-        refs = [publish_public(files[0])]
+        refs = [publish_public(path) for path in files]
         if tool_id == "i2i":
             full_prompt = f"{full_prompt or '保持主体，生成风格一致的变体'}。{strength_hint(strength)}"
         else:
@@ -194,7 +191,7 @@ async def run_image_tool(
         negative,
         refs or None,
         project_id=0,
-        shot_no=user.id,
+        shot_no=output_no or user.id,
         size=size,
     )
     await record_seedream_image_usage(
@@ -211,134 +208,6 @@ async def run_image_tool(
     return {"kind": "image", "urls": [url], "status": "succeeded"}
 
 
-def _dispatch_tool_image(run_id: int) -> str:
-    """启动工具生图后台任务。"""
-    import asyncio
-
-    asyncio.create_task(execute_image_tool_run(run_id))
-    return f"local-{run_id}"
-
-
-# 入队前同步校验余额（与 run_billed_ephemeral 预扣估算一致）
-async def _ensure_image_tool_balance(db: AsyncSession, user: User, tool_id: str) -> None:
-    if not billing_active(user):
-        return
-    synthetic = TaskRun(domain="studio", task_type="tool_image", payload={"tool_id": tool_id})
-    need = await estimate_task_fen(db, synthetic)
-    available = int(user.balance_fen or 0)
-    if available < need:
-        raise ValueError(f"余额不足：需要 ¥{need/100:.2f}，当前 ¥{available/100:.2f}，请先充值")
-
-
-# 提交生图任务：立即返回 task_id，实际生成在后台执行
-async def enqueue_image_tool(
-    db: AsyncSession,
-    user: User,
-    *,
-    tool_id: str,
-    prompt: str,
-    negative: str,
-    ratio: str | None,
-    strength: str | None,
-    mode: str | None,
-    pack: str | None,
-    files: list[Path],
-    params: dict,
-) -> dict:
-    await _ensure_image_tool_balance(db, user, tool_id)
-    row = ToolRun(
-        user_id=user.id,
-        tool_id=tool_id,
-        kind="image",
-        status="queued",
-        prompt=(prompt or "").strip()[:2000],
-        params={
-            **(params or {}),
-            "file_paths": [str(p) for p in files],
-        },
-    )
-    db.add(row)
-    await db.flush()
-    task_id = _dispatch_tool_image(row.id)
-    row.task_id = task_id
-    await db.flush()
-    return {
-        "kind": "image",
-        "urls": [],
-        "task_id": task_id,
-        "status": "queued",
-        "message": "生图任务已提交，请稍候",
-        "run_id": row.id,
-    }
-
-
-# 后台执行已入队的生图任务并回写 tool_runs
-async def execute_image_tool_run(run_id: int) -> dict:
-    from app.database import AsyncSessionLocal
-
-    async with AsyncSessionLocal() as db:
-        row = await db.get(ToolRun, run_id)
-        if not row:
-            return {"ok": False, "error": "run_not_found"}
-        if row.status == "succeeded" and row.urls:
-            return {"ok": True, "run_id": run_id}
-
-        user = await db.get(User, row.user_id)
-        if not user:
-            row.status = "failed"
-            row.error = "用户不存在"
-            await db.commit()
-            return {"ok": False, "error": row.error}
-
-        stored = row.params if isinstance(row.params, dict) else {}
-        file_paths = [Path(p) for p in stored.get("file_paths") or [] if p]
-        row.status = "running"
-        await db.commit()
-
-        try:
-            async def _exec() -> dict:
-                return await run_image_tool(
-                    db,
-                    user,
-                    tool_id=row.tool_id,
-                    prompt=row.prompt or "",
-                    negative=str(stored.get("negative") or ""),
-                    ratio=stored.get("ratio") or None,
-                    strength=stored.get("strength") or None,
-                    mode=stored.get("mode") or None,
-                    pack=stored.get("pack") or None,
-                    files=file_paths,
-                )
-
-            billing_task, data = await run_billed_ephemeral(
-                db,
-                user,
-                domain="studio",
-                task_type="tool_image",
-                executor=_exec,
-                payload={"tool_id": row.tool_id, "run_id": run_id},
-                commit=False,
-            )
-            urls = ensure_public_urls(list(data.get("urls") or []))
-            row.kind = str(data.get("kind") or "image")
-            row.status = str(data.get("status") or "succeeded")
-            row.urls = urls
-            row.preview_url = urls[0] if urls else row.preview_url
-            row.error = None
-            params = dict(row.params or {})
-            params["billing_task_id"] = billing_task.id
-            row.params = params
-            await db.commit()
-            return {"ok": True, "run_id": run_id, "urls": urls, "billing_task_id": billing_task.id}
-        except Exception as exc:  # noqa: BLE001
-            row.status = "failed"
-            row.error = str(exc)[:512]
-            await db.commit()
-            logger.exception("execute_image_tool_run failed run_id=%s", run_id)
-            return {"ok": False, "run_id": run_id, "error": row.error}
-
-
-# 轮询工具生图任务状态。
 async def poll_image_tool_task(db: AsyncSession, user: User, task_id: str) -> dict:
     stmt = select(ToolRun).where(ToolRun.user_id == user.id, ToolRun.task_id == task_id)
     row = (await db.execute(stmt)).scalar_one_or_none()
@@ -370,8 +239,32 @@ async def start_video_tool(
     duration_raw: str | None,
     motion: str | None,
     files: list[Path],
+    output_no: int | None = None,
+    model_id: str | None = None,
+    resolution: str | None = None,
+    video_mode: str | None = None,
+    references: dict | None = None,
 ) -> dict:
     ark = get_ark()
+    if video_mode:
+        from app.services.media_models.prices import resolve_strategy
+        from app.services.media_models.planning import reference_params
+        strategy = resolve_strategy(model_id or get_settings().model_video)
+        params = {"prompt": prompt.strip(), "duration": int(str(duration_raw or "5").removesuffix("s")),
+                  "resolution": resolution or "480p", "aspect_ratio": ratio or "9:16",
+                  "generate_audio": False, **reference_params(references or {})}
+        for field in ("first_frame", "last_frame"):
+            if params.get(field) and not params[field].startswith(("https://", "http://", "/static/")):
+                params[field] = publish_public(Path(params[field]))
+        for field in ("reference_images", "reference_videos", "reference_audios"):
+            if field in params:
+                params[field] = [url if url.startswith(("https://", "http://", "/static/")) else publish_public(Path(url))
+                                 for url in params[field]]
+        body = strategy.build_provider_request(params, {"upstream_model": model_id or get_settings().model_video})
+        task_id = await ark.gen_video_seedance_body(body, project_id=0)
+        preview = params.get("first_frame") or next(iter(params.get("reference_images") or []), None)
+        return {"kind": "video", "urls": [], "task_id": task_id, "status": "queued", "preview_url": preview,
+                "message": "视频生成中，请稍候"}
     duration = duration_seconds(duration_raw)
     still_path: Path | None = None
     preview_url: str | None = None
@@ -384,7 +277,7 @@ async def start_video_tool(
             f"{text}。电影感静帧，无文字",
             "文字，字幕，水印，logo",
             project_id=0,
-            shot_no=user.id,
+            shot_no=output_no or user.id,
             size=ratio_to_size(ratio or "9:16"),
         )
         await record_seedream_image_usage(
@@ -401,6 +294,13 @@ async def start_video_tool(
             if published:
                 preview_url = published
         image_url = preview_url or still.remote_url
+        from app.services.media_models.runtime import current_snapshot
+        if output_no and (current_snapshot.get() or {}).get("mode") == "fixed_media":
+            run = await db.get(ToolRun, output_no)
+            if run is not None and run.user_id == user.id:
+                # A helper image remains available even if the following video fails.
+                run.preview_url = preview_url
+                await db.commit()
         video_prompt = text
     elif tool_id == "v2v":
         if not files:
@@ -425,8 +325,10 @@ async def start_video_tool(
         image_url,
         video_prompt,
         duration,
-        resolution="480p",
+        resolution=resolution or "480p",
+        ratio=ratio or "9:16",
         generate_audio=False,
+        model=model_id or None,
     )
     digest = hashlib.md5(f"{user.id}:{task_id}".encode()).hexdigest()[:8]
     logger.info("tool video queued user=%s tool=%s task=%s hash=%s", user.id, tool_id, task_id, digest)

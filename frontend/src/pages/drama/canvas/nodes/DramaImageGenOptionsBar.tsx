@@ -1,3 +1,4 @@
+import { MediaCostNotice } from '../../../../components/billing/MediaCostNotice'
 /** 漫剧生图：风格 / 模型 / 画幅选择条（内置风格，无手填） */
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import { BarChart3, ChevronDown, RectangleVertical, Smile } from 'lucide-react'
@@ -45,6 +46,7 @@ export function DramaImageGenOptionsBar({
 }: DramaImageGenOptionsBarProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState<OpenPanel>(null)
+  const [adjustment, setAdjustment] = useState('')
   const catalog = useMediaModelsCatalog()
   const imageModels = catalogImageModels(catalog)
 
@@ -87,6 +89,7 @@ export function DramaImageGenOptionsBar({
       imageModels,
     )
     if (nextRatio !== value.aspect_ratio || nextRes !== value.resolution) {
+      setAdjustment('所选模型不支持原参数，已调整画幅或分辨率，请核对报价后生成。')
       onChange({ ...value, aspect_ratio: nextRatio, resolution: nextRes })
     }
   }, [value.model_id, catalog])
@@ -117,6 +120,8 @@ export function DramaImageGenOptionsBar({
 
   return (
     <div ref={rootRef} className="fc-gen-opts" onMouseDown={stop} onPointerDown={stop}>
+      {adjustment && <span className="media-cost-notice" role="status">{adjustment}</span>}
+      <MediaCostNotice modelId={value.model_id} resolution={value.resolution} />
       <div className="fc-gen-opts-triggers">
         <button
           type="button"

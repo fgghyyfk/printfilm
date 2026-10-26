@@ -16,6 +16,7 @@ from app.deps import get_current_user
 from app.models import Project, Shot, Template, User
 from app.models_drama import DramaAsset, DramaEpisode, DramaEpisodeFragment, DramaProject, DramaScript
 from app.models_tasks import TaskRun
+from app.models_teams import Team, TeamMember
 from app.marketplace import drama_media, drama_publish, storage
 from app.marketplace.models import DramaPublishBatch, Handoff, MarketBase, Series, SeriesEpisode
 from conftest import _ensure_test_database, _resolve_test_database_url
@@ -37,7 +38,7 @@ async def concurrent_publish_ctx(monkeypatch):
             await connection.execute(text(f'CREATE SCHEMA "{schema}"'))
         async with engine.begin() as connection:
             tables = [item.__table__ for item in (
-                User, Template, Project, Shot, DramaProject, DramaScript,
+                User, Team, TeamMember, Template, Project, Shot, DramaProject, DramaScript,
                 DramaAsset, DramaEpisode, DramaEpisodeFragment, TaskRun,
             )]
             await connection.run_sync(lambda sync: Base.metadata.create_all(sync, tables=tables))

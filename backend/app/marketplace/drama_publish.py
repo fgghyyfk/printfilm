@@ -10,6 +10,7 @@ from sqlalchemy import func, or_, select, text, update
 
 from app.models_drama import DramaEpisode, DramaEpisodeFragment, DramaProject
 from app.models_tasks import TaskRun
+from app.services.drama.access import require_drama_project_access
 from .authorization import current as current_authorization
 from .dependencies import Actor, DB, storage_ready
 from .models import DramaPublishBatch, Handoff, Publication, Rights, Series, SeriesEpisode
@@ -41,6 +42,7 @@ async def owned_project(db, owner_id: int, project_id: int):
     project = await db.get(DramaProject, project_id)
     if not project or project.user_id != owner_id:
         fail("漫剧项目不存在或无权访问", 404)
+    await require_drama_project_access(db, project, owner_id)
     return project
 
 

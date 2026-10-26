@@ -34,6 +34,10 @@ export default function EditorPage() {
     api
       .getProject(projectId)
       .then((p) => {
+        if (p.creation_session_id) {
+          nav(`/studio/sessions/${p.creation_session_id}?project=${p.id}`, { replace: true })
+          return
+        }
         setProject(p)
         const first = p.shots[0]
         if (first) {

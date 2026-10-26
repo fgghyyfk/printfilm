@@ -1,3 +1,4 @@
+import { Select } from "@/components/ui/select";
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -54,20 +55,20 @@ export function DramaAssetsPage() {
 
   return (
     <div className="admin-list-page">
-      <PageHeader description="全站漫剧资产：角色、场景、道具等，可按项目与用户筛选" />
+      <PageHeader title="资产库" description="全站漫剧资产：角色、场景、道具等，可按项目与用户筛选" />
       <AdminFilterBar>
         <Input placeholder="名称 / derive_id" value={q} onChange={(e) => setQ(e.target.value)} />
         <AdminUserSearchSelect value={userId} onChange={setUserId} />
         <Input placeholder="项目 ID" value={projectId} onChange={(e) => setProjectId(e.target.value)} />
-        <select className="admin-native-select" value={type} onChange={(e) => setType(e.target.value)}>
+        <Select className="admin-native-select" value={type} onChange={(e) => setType(e.target.value)}>
           <option value="">全部类型</option>
           {ASSET_TYPES.map((t) => (
             <option key={t} value={t}>
               {dramaAssetTypeLabel(t)}
             </option>
           ))}
-        </select>
-        <select
+        </Select>
+        <Select
           className="admin-native-select"
           value={generationStatus}
           onChange={(e) => setGenerationStatus(e.target.value)}
@@ -78,7 +79,7 @@ export function DramaAssetsPage() {
               {formatDramaGenerationStatus(s)}
             </option>
           ))}
-        </select>
+        </Select>
         <Button
           size="sm"
           variant="secondary"

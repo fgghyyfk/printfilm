@@ -1,3 +1,5 @@
+import { useTeamReadOnly } from '../../features/teams/readOnlyContext'
+import { TeamEpisodeEditingBoundary } from '../../features/teams/TeamEditingBoundary'
 /** 分集编辑：复刻原项目四栏布局（资产 / 脚本 / 预览 / 故事板） */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -72,7 +74,7 @@ import {
   applySubtitleModeToFragments,
   subtitleModeUsesModelOutput,
   type DramaSubtitleMode,
-} from '../../lib/dramaSubtitleBoard'
+} from '../../lib/dramaSubtitleSettings'
 import {
   applyCharacterIntroModeToFragments,
   characterIntroModeEnabled,
@@ -86,7 +88,7 @@ import {
   CharacterVoiceBindModal,
   readAssetVoiceBinding,
 } from './CharacterVoiceBindModal'
-import { DramaAssetDetailModal } from './DramaAssetDetailModal'
+import { EditableAssetDetailDialog } from '../../components/assets/EditableAssetDetailDialog'
 import { buildEpisodeDirItems, DramaEpisodeDir } from './DramaEpisodeDir'
 import RequireAuth from './RequireAuth'
 import './drama.css'
@@ -94,7 +96,7 @@ import './drama.css'
 export default function EpisodeEditPage() {
   return (
     <RequireAuth>
-      <EpisodeEditInner />
+      <TeamEpisodeEditingBoundary><EpisodeEditInner /></TeamEpisodeEditingBoundary>
     </RequireAuth>
   )
 }
@@ -128,6 +130,7 @@ function coerceProjectBool(value: unknown, defaultValue: boolean): boolean {
 
 // 分集编辑页主体
 function EpisodeEditInner() {
+  const readOnly = useTeamReadOnly()
   const { projectId, episodeId } = useParams()
   const pid = Number(projectId)
   const eid = Number(episodeId)
@@ -168,6 +171,7 @@ function EpisodeEditInner() {
   const [planModalOpen, setPlanModalOpen] = useState(false)
   const [previewVersionId, setPreviewVersionId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [planning, setPlanning] = useState(false)
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
   const [characterVoiceBusyIds, setCharacterVoiceBusyIds] = useState<Set<number>>(() => new Set())
@@ -250,10 +254,10 @@ function EpisodeEditInner() {
   const previewVideoUrl = previewVersion ? resolveDramaMediaUrl(previewVersion.video) : null
   const previewPosterUrl = previewVersion?.cover ? resolveDramaMediaUrl(previewVersion.cover) : null
   // generateAllLocked 仅提交入队时锁定，生成过程不阻塞编辑
-  const generateAllLocked = busy
+  const generateAllLocked = readOnly || busy
   // planFragmentsLocked 仅本集有视频生成或 AI 分镜进行中时锁定
   const planFragmentsLocked =
-    busy || anyFragmentGenerating || readFragmentPlanStatus(episode) === 'generating'
+    readOnly || busy || anyFragmentGenerating || readFragmentPlanStatus(episode) === 'generating'
   const selectedRefIds = useMemo(
     () => new Set(collectFragmentAssetIds(selected)),
     [selected],
@@ -324,6 +328,7 @@ function EpisodeEditInner() {
 
   // selectedGenerateLocked 锁当前镜「生成」：忙/生成中/衔接/缺参考图等硬门禁
   const selectedGenerateLocked =
+    readOnly ||
     busy ||
     selectedIsGenerating ||
     Boolean(continuityBlockedReason) ||
@@ -331,6 +336,7 @@ function EpisodeEditInner() {
 
   // 持久化镜间衔接开关到项目 params，并让后端重排未开始任务
   async function handleLinkLastFrameChange(enabled: boolean) {
+    if (readOnly) return
     const prevEnabled = linkLastFrame
     const prevParams = projectParams
     const nextParams = { ...projectParams, linkLastFrame: enabled }
@@ -369,6 +375,7 @@ function EpisodeEditInner() {
     nextParams: Record<string, unknown>,
     opts?: { quiet?: boolean },
   ) {
+    if (readOnly) return
     const prevRatio = readEpisodeAspectRatio(episodeParams, projectParams)
     const prevRes = readEpisodeResolution(episodeParams, projectParams)
     const nextRatio = readEpisodeAspectRatio(nextParams, projectParams)
@@ -433,6 +440,7 @@ function EpisodeEditInner() {
 
   // 持久化本集字幕方式，并动态改写当前分镜里的字幕提示词
   async function handleEpisodeSubtitleChange(mode: DramaSubtitleMode) {
+    if (readOnly) return
     if (mode === subtitleMode) return
     const prevParams = episodeParams
     const prevFragments = fragments
@@ -499,6 +507,7 @@ function EpisodeEditInner() {
 
   // 持久化本集人物介绍叠字开关，并动态去掉当前分镜里的介绍行
   async function handleEpisodeCharacterIntroChange(mode: DramaCharacterIntroMode) {
+    if (readOnly) return
     if (mode === characterIntroMode) return
     const prevParams = episodeParams
     const prevFragments = fragments
@@ -654,11 +663,14 @@ function EpisodeEditInner() {
 
   // 进页检查是否有进行中的生成任务或 AI 分镜
   async function resumeGenerateIfNeeded() {
+    let resumingPlan = false
     try {
       const ep = await dramaApi.getEpisode(eid)
       if (readFragmentPlanStatus(ep) === 'generating') {
+        resumingPlan = true
+        setPlanning(true)
         setBusy(true)
-        setStatus('等待生成…')
+        setStatus('AI 分镜中 · 正在等待文字模型返回…')
         const started = Date.now()
         while (Date.now() - started < 10 * 60 * 1000) {
           await new Promise((r) => setTimeout(r, 2500))
@@ -677,7 +689,7 @@ function EpisodeEditInner() {
             setBusy(false)
             return
           }
-          setStatus('等待生成…')
+          setStatus('AI 分镜中 · 正在等待文字模型返回…')
         }
         setBusy(false)
         return
@@ -686,6 +698,8 @@ function EpisodeEditInner() {
       if (st.running > 0) ensureEpisodeVideoStatusPoll()
     } catch {
       /* ignore */
+    } finally {
+      if (resumingPlan) { setPlanning(false); setBusy(false) }
     }
   }
 
@@ -782,6 +796,7 @@ function EpisodeEditInner() {
 
   // 更新当前分镜
   function updateSelected(patch: Partial<DramaFragment>) {
+    if (readOnly) return
     setFragments((prev) =>
       prev.map((f, i) => (i === selectedIndex ? { ...f, ...patch } : f)),
     )
@@ -789,6 +804,7 @@ function EpisodeEditInner() {
 
   // 插入空白分镜
   function insertFrag(at: number) {
+    if (readOnly) return
     setFragments((prev) => {
       const next = [...prev]
       next.splice(at, 0, {
@@ -809,6 +825,7 @@ function EpisodeEditInner() {
 
   // 复制分镜
   function duplicateFrag(index: number) {
+    if (readOnly) return
     const source = fragments[index]
     if (!source) return
     setFragments((prev) => {
@@ -825,6 +842,7 @@ function EpisodeEditInner() {
 
   // 删除分镜
   function deleteFrag(index: number) {
+    if (readOnly) return
     if (fragments.length <= 1) return
     setFragments((prev) => prev.filter((_, i) => i !== index))
     setSelectedIndex((cur) => {
@@ -836,6 +854,7 @@ function EpisodeEditInner() {
 
   // 保存全部分镜（带 id 更新，避免每次重建 id 打断在途生成；标记 user_edited 防自动重切覆盖）
   async function save() {
+    if (readOnly) throw new Error('当前只读，无法保存分镜')
     setBusy(true)
     setError('')
     try {
@@ -891,6 +910,7 @@ function EpisodeEditInner() {
 
   // 仅生成当前选中分镜（保存按 id 更新，生成前仍用保存后返回的 id）
   async function generateSelected() {
+    if (readOnly) return
     if (!selected) {
       setError('请先选择一条分镜')
       return
@@ -994,6 +1014,7 @@ function EpisodeEditInner() {
 
   // 切换历史成片为当前预览视频
   async function activateVideoVersion(versionId: string) {
+    if (readOnly) return
     if (!selected?.id || selectedIsGenerating) return
     const ok = await dialog.confirm({
       title: '切换历史版本',
@@ -1038,6 +1059,7 @@ function EpisodeEditInner() {
 
   // 批量生成：入队本集分镜（forceRegen 覆盖已有成片；入口仅 MiniMax-H3）
   async function generateAll(opts?: { forceRegen?: boolean; skipConfirm?: boolean }) {
+    if (readOnly) return
     if (fragments.length === 0) {
       setError('没有可生成的分镜')
       return
@@ -1152,6 +1174,7 @@ function EpisodeEditInner() {
 
   // 单集 LLM 重新分镜：确认并勾选 Skill 后入队
   function planFragmentsWithLlm() {
+    if (readOnly) return
     if (planFragmentsLocked) {
       setError('当前有视频生成任务进行中，请稍候再重新分镜')
       return
@@ -1159,12 +1182,14 @@ function EpisodeEditInner() {
     setPlanModalOpen(true)
   }
 
-  // 入队后轮询至完成（字幕方式沿用顶栏当前设置）
+  // 文字 LLM 立即执行，页面轮询规划进度（字幕方式沿用顶栏当前设置）。
   async function startPlanFragments(skillIds: number[]) {
+    if (readOnly) return
     setPlanModalOpen(false)
     setBusy(true)
+    setPlanning(true)
     setError('')
-    setStatus('等待生成…')
+    setStatus('AI 分镜中 · 正在等待文字模型返回…')
     try {
       await dramaApi.planEpisodeFragments(eid, {
         force: true,
@@ -1201,17 +1226,21 @@ function EpisodeEditInner() {
           setBusy(false)
           return
         }
-        setStatus('等待生成…')
+        setStatus('AI 分镜中 · 正在等待文字模型返回…')
       }
       throw new Error('AI 分镜超时，请稍后刷新查看')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'AI 分镜失败')
+      setBusy(false)
+    } finally {
+      setPlanning(false)
       setBusy(false)
     }
   }
 
   // 点击资产插入 @ 引用
   function mentionAsset(asset: DramaAsset) {
+    if (readOnly) return
     if (!selected) return
     const mention = `@asset:${asset.id}`
     const raw = selected.content || ''
@@ -1239,6 +1268,7 @@ function EpisodeEditInner() {
 
   // 自定义新建角色 / 场景 / 道具
   async function handleCreateSideAsset() {
+    if (readOnly) return
     const kind = resolveCreateAssetTab()
     const label = kind === 'scene' ? '场景' : kind === 'prop' ? '道具' : '角色'
     const name = await dialog.prompt({
@@ -1269,6 +1299,7 @@ function EpisodeEditInner() {
 
   // 从全局资产库导入到本项目并挂到当前分镜
   async function handleImportSideAsset(source: DramaAsset) {
+    if (readOnly) return
     const kind = normalizeAssetTab(source.type) || resolveCreateAssetTab()
     setAssetCreateBusy(true)
     setError('')
@@ -1287,6 +1318,7 @@ function EpisodeEditInner() {
 
   // 仅取消当前分镜对该资产的关联（不删除项目资产）
   function unlinkSelectedAsset(assetId: number) {
+    if (readOnly) return
     if (!selected) return
     const content = (selected.content || '')
       .replace(new RegExp(`\\s*@asset:${assetId}(?!\\d)`, 'g'), ' ')
@@ -1353,6 +1385,7 @@ function EpisodeEditInner() {
 
   // 将资产生图加入全局队列
   function enqueueAssetImage(asset: DramaAsset) {
+    if (readOnly) return
     if (imageBusyIds.has(asset.id)) return
     const options = {
       ...defaultOptionsForAssetKind(asset.type),
@@ -1396,6 +1429,7 @@ function EpisodeEditInner() {
 
   // 一键 AI 生成角色音色并绑定（各角色独立 busy，互不阻塞）
   async function handleGenerateCharacterVoice(asset: DramaAsset) {
+    if (readOnly) return
     if (characterVoiceBusyIds.has(asset.id)) return
     setCharacterVoiceBusyIds((prev) => new Set(prev).add(asset.id))
     setError('')
@@ -1443,6 +1477,13 @@ function EpisodeEditInner() {
           <h1>{episode.name}</h1>
         </div>
         <div className="drama-ep-header-controls">
+          <button
+            type="button"
+            className="drama-ep-btn-ghost"
+            onClick={openEpisodeStoryboard}
+          >
+            进入画布
+          </button>
           <EpisodeEditHeaderControls
             styleId={videoStyleId}
             modelId={modelId}
@@ -1457,7 +1498,7 @@ function EpisodeEditInner() {
             onLinkLastFrameChange={(enabled) => void handleLinkLastFrameChange(enabled)}
             onSubtitleModeChange={(mode) => void handleEpisodeSubtitleChange(mode)}
             onCharacterIntroModeChange={(mode) => void handleEpisodeCharacterIntroChange(mode)}
-            disabled={busy}
+            disabled={readOnly || busy}
             globalSettingsReadOnly
           />
           <button
@@ -1466,8 +1507,8 @@ function EpisodeEditInner() {
             disabled={planFragmentsLocked}
             onClick={() => void planFragmentsWithLlm()}
           >
-            {busy && (status.includes('分镜') || status.includes('等待生成'))
-              ? '等待生成…'
+            {planning
+              ? 'AI 分镜中…'
               : 'AI 重新分镜'}
           </button>
           {/* MiniMax-H3 支持一次入队本集剩余分镜；其它视频模型仍只走单镜生成 */}
@@ -1478,7 +1519,7 @@ function EpisodeEditInner() {
               disabled={generateAllLocked || fragments.length === 0}
               onClick={() => void generateAll()}
             >
-              {busy ? '入队中…' : '批量生成'}
+              {busy && !planning ? '入队中…' : '批量生成'}
             </button>
           ) : null}
         </div>
@@ -1499,6 +1540,7 @@ function EpisodeEditInner() {
         />
         <div className="drama-ep-workspace">
         <EpisodeEditAssetPanel
+          readOnly={readOnly}
           scope={assetScope}
           tab={assetTab}
           assets={filteredAssets}
@@ -1526,6 +1568,7 @@ function EpisodeEditInner() {
           <div className="drama-ep-editor-head">
             <div>
               <strong>{formatFragLabel(selectedIndex, selectedDuration)}</strong>
+              <MediaCostNotice modelId={modelId} resolution={readEpisodeResolution(episodeParams, projectParams)} seconds={selectedDuration} />
               <p>
                 顶部显示本镜关联；键入 @ 可引用资产或插入时长标签 ·{' '}
                 {formatProjectOutputLabel(
@@ -1538,10 +1581,10 @@ function EpisodeEditInner() {
               时长
               <input
                 type="number"
-                min={4}
-                max={15}
+                min={mediaCatalog?.video_models.find(item => item.id === modelId)?.duration_min ?? 4}
+                max={mediaCatalog?.video_models.find(item => item.id === modelId)?.duration_max ?? 30}
                 value={selectedDuration}
-                disabled={!editing && !selected}
+                disabled={readOnly || (!editing && !selected)}
                 onChange={(e) =>
                   updateSelected({ duration_sec: Number(e.target.value) || 8 })
                 }
@@ -1557,7 +1600,7 @@ function EpisodeEditInner() {
               content={selected?.content || ''}
               assets={assets}
               referencedIds={referencedIds}
-              editing={editing}
+              editing={editing && !readOnly}
               onOpenAsset={focusLinkedAsset}
               onContentChange={(nextContent) => {
                 const fromContent = extractAssetIds(nextContent)
@@ -1621,7 +1664,7 @@ function EpisodeEditInner() {
                 <button
                   type="button"
                   className="drama-ep-btn-ghost"
-                  disabled={busy}
+                  disabled={readOnly || busy}
                   onClick={() => {
                     setEditing(false)
                     void reload()
@@ -1632,7 +1675,7 @@ function EpisodeEditInner() {
                 <button
                   type="button"
                   className="drama-ep-btn-dark"
-                  disabled={busy}
+                  disabled={readOnly || busy}
                   onClick={() => void save()}
                 >
                   {busy ? '保存中…' : '保存'}
@@ -1643,7 +1686,7 @@ function EpisodeEditInner() {
                 <button
                   type="button"
                   className="drama-ep-btn-ghost"
-                  disabled={!selected || selectedIsGenerating || busy}
+                  disabled={readOnly || !selected || selectedIsGenerating || busy}
                   onClick={() => setEditing(true)}
                 >
                   编辑
@@ -1730,7 +1773,6 @@ function EpisodeEditInner() {
           episodeId={episode?.id}
           projectId={projectId}
           episodeName={episode?.name || '本集'}
-          subtitleMode={subtitleMode}
           onOpenStoryboard={openEpisodeStoryboard}
           previewVideoUrl={previewVideoUrl}
           previewPosterUrl={previewPosterUrl}
@@ -1744,7 +1786,7 @@ function EpisodeEditInner() {
           }
           onClearPreview={() => setPreviewVersionId(null)}
           onActivatePreview={
-            previewVersionId
+            previewVersionId && !readOnly
               ? () => {
                   void activateVideoVersion(previewVersionId)
                 }
@@ -1760,6 +1802,7 @@ function EpisodeEditInner() {
             type="button"
             className="drama-ep-insert"
             aria-label="在开头插入分镜"
+            disabled={readOnly}
             onClick={() => insertFrag(0)}
           >
             +
@@ -1851,16 +1894,16 @@ function EpisodeEditInner() {
                 ) : null}
               </div>
               <div className="drama-ep-clip-ops">
-                <button type="button" aria-label="插入" onClick={() => insertFrag(index + 1)} disabled={busy}>
+                <button type="button" aria-label="插入" onClick={() => insertFrag(index + 1)} disabled={readOnly || busy}>
                   +
                 </button>
-                <button type="button" aria-label="复制" onClick={() => duplicateFrag(index)} disabled={busy}>
+                <button type="button" aria-label="复制" onClick={() => duplicateFrag(index)} disabled={readOnly || busy}>
                   ⧉
                 </button>
                 <button
                   type="button"
                   aria-label="删除"
-                  disabled={busy || fragments.length <= 1}
+                  disabled={readOnly || busy || fragments.length <= 1}
                   onClick={() => deleteFrag(index)}
                 >
                   ⌫
@@ -1873,15 +1916,16 @@ function EpisodeEditInner() {
       </footer>
 
       <FragmentPlanSkillModal
-        open={planModalOpen}
+        open={planModalOpen && !readOnly}
         message="将调用大模型按本集剧本重新规划分镜（覆盖并清空现有分镜与已生成镜头），通常需要数十秒。可勾选本次使用的 Skill。字幕方式沿用顶栏当前设置。"
         onCancel={() => setPlanModalOpen(false)}
         onConfirm={(skillIds) => void startPlanFragments(skillIds)}
       />
 
       {detailAsset && (detailAsset.type || '').toLowerCase() !== 'voice' ? (
-        <DramaAssetDetailModal
+        <EditableAssetDetailDialog
           asset={detailAsset}
+          readOnly={readOnly}
           open
           busy={imageBusyIds.has(detailAsset.id)}
           genLabel={assetImageGenLabel(detailAsset)}
@@ -1893,7 +1937,7 @@ function EpisodeEditInner() {
         />
       ) : null}
 
-      {DRAMA_VOICE_BINDING_ENABLED && voiceBindAsset ? (
+      {!readOnly && DRAMA_VOICE_BINDING_ENABLED && voiceBindAsset ? (
         <CharacterVoiceBindModal
           asset={voiceBindAsset}
           projectId={pid}
@@ -1908,7 +1952,7 @@ function EpisodeEditInner() {
       ) : null}
 
       <GlobalAssetPickerModal
-        open={libraryPickerOpen}
+        open={libraryPickerOpen && !readOnly}
         onClose={() => setLibraryPickerOpen(false)}
         projectId={pid}
         defaultTab={resolveCreateAssetTab()}
@@ -1930,3 +1974,4 @@ function EpisodeEditInner() {
     </div>
   )
 }
+import { MediaCostNotice } from '../../components/billing/MediaCostNotice'

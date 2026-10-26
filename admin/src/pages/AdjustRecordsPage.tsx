@@ -64,7 +64,7 @@ export function AdjustRecordsPage() {
 
   return (
     <div className="admin-page">
-      <PageHeader description="用户管理里手动改余额产生的调账流水，含操作人与备注" />
+      <PageHeader title="手动调账" description="用户管理里手动改余额产生的调账流水，含操作人与备注" />
 
       <AdminFilterBar>
         <AdminUserSearchSelect value={userId} onChange={setUserId} />

@@ -96,7 +96,7 @@ export function ProjectsPage() {
 
   return (
     <div className="admin-list-page">
-      <PageHeader description="科普管线项目：状态、镜头、关联任务与费用" />
+      <PageHeader title="科普项目" description="科普管线项目：状态、镜头、关联任务与费用" />
       <AdminFilterBar>
         <Select value={status} onChange={(e) => setStatus(e.target.value)}>
           {PROJECT_STATUS_OPTIONS.map((opt) => (
@@ -245,7 +245,7 @@ export function ProjectsPage() {
               <AdminDetailStatGrid
                 items={[
                   { label: "扣费", value: `¥${fenToYuan(usage?.charge_fen ?? detail.charge_fen ?? 0)}` },
-                  { label: "成本", value: `¥${fenToYuan(usage?.cost_fen ?? 0)}` },
+                  { label: "调用", value: usage?.calls ?? 0 },
                   { label: "Tokens", value: usage?.tokens ?? 0 },
                   {
                     label: "图/视/LLM/TTS",

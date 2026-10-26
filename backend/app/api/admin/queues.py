@@ -3,14 +3,18 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import func, select
 
 from app.config import get_settings
 from app.database import get_db
 from app.deps import get_current_admin
 from app.models import User
+from app.models_tasks import TaskRun
 from app.schemas import AdminQueuesOut
 from app.services.tasks.runtime import runtime_summary
 from app.services.tasks.service import get_task_stats_admin
+from app.services.tasks.queues import QUEUE_LABELS, QUEUE_TYPES, queue_capacity
+from app.services.tasks.execution_policy import llm_task_condition
 
 router = APIRouter()
 
@@ -27,7 +31,11 @@ async def admin_queues(
     stats = await get_task_stats_admin(db)
     runtime = runtime_summary()
     running_jobs = int(runtime.get("scheduler_running_jobs") or 0)
-    max_concurrency = int(settings.task_runtime_max_concurrency)
+    max_concurrency = sum(queue_capacity(settings, queue) for queue in QUEUE_TYPES)
+    queue_rows = (await db.execute(select(TaskRun.queue_type, TaskRun.status, func.count())
+                                  .where(~llm_task_condition(TaskRun))
+                                  .group_by(TaskRun.queue_type, TaskRun.status))).all()
+    counts = {(queue, status): count for queue, status, count in queue_rows}
     pending = int(stats.get("pending_count") or 0)
     active = int(stats.get("active_count") or 0)
     return AdminQueuesOut.model_validate(
@@ -40,12 +48,14 @@ async def admin_queues(
             "reserved_count": int(stats.get("leased_count") or 0),
             "queues": [
                 {
-                    "name": item["domain"],
-                    "label": item["domain"],
-                    "pending": item["pending"],
+                    "name": queue,
+                    "label": QUEUE_LABELS[queue],
+                    "pending": counts.get((queue, "pending"), 0),
+                    "active": sum(counts.get((queue, state), 0) for state in ("leased", "running", "awaiting_poll")),
+                    "max_concurrency": queue_capacity(settings, queue),
                     "sample": [],
                 }
-                for item in stats.get("domains") or []
+                for queue in QUEUE_TYPES
             ],
             "pending_tasks": [],
             "active_tasks": [],

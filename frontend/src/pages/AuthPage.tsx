@@ -1,3 +1,4 @@
+import { USER_UPDATED_EVENT } from '../lib/userEvents'
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
@@ -136,6 +137,7 @@ export default function AuthPage() {
           ? await api.login(trimmedEmail, password)
           : await api.register(trimmedEmail, password, nickname.trim())
       localStorage.setItem('token', res.access_token)
+      window.dispatchEvent(new Event(USER_UPDATED_EVENT))
       nav(nextPath)
     } catch (err) {
       setError(err instanceof Error ? err.message : t('common.fail'))

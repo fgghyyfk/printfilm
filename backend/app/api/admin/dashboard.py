@@ -9,17 +9,14 @@ from app.schemas import (
     AdminDailyUsageOut,
     AdminStatsOut,
     AdminTopUserOut,
-    AdminUpstreamUsageOut,
-    AdminUpstreamUsageSyncOut,
     AdminUsageBucketOut,
 )
 from app.services.admin.stats import build_admin_dashboard_stats
-from app.services.admin.upstream_usage import build_upstream_usage_compare, sync_upstream_usage
 
 router = APIRouter()
 
 _ALLOWED_STATS_DAYS = frozenset({1, 7, 14, 30})
-_ALLOWED_TOP_METRICS = frozenset({"charge", "cost", "calls"})
+_ALLOWED_TOP_METRICS = frozenset({"charge", "calls"})
 
 
 def _validate_stats_days(raw: int) -> int:
@@ -43,7 +40,7 @@ async def admin_stats(
     days: int = Query(default=7, description="趋势与分布时间窗口（天），仅支持 1/7/14/30"),
     domain: str = Query(default="all", max_length=32, description="领域筛选，all 为全部"),
     capability: str = Query(default="all", max_length=32, description="能力筛选，all 为全部"),
-    top_metric: str = Query(default="charge", description="用户排行排序指标：charge/cost/calls"),
+    top_metric: str = Query(default="charge", description="用户排行排序指标：charge/calls"),
     _admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ) -> AdminStatsOut:
@@ -69,37 +66,8 @@ async def admin_stats(
         usage_charge_today_fen=raw["usage_charge_today_fen"],
         usage_charge_month_fen=raw["usage_charge_month_fen"],
         usage_charge_total_fen=raw["usage_charge_total_fen"],
-        usage_cost_today_fen=raw["usage_cost_today_fen"],
-        usage_cost_month_fen=raw["usage_cost_month_fen"],
-        usage_cost_total_fen=raw["usage_cost_total_fen"],
         usage_by_capability=[AdminUsageBucketOut(**x) for x in raw["usage_by_capability"]],
         usage_by_domain=[AdminUsageBucketOut(**x) for x in raw["usage_by_domain"]],
         daily_usage=[AdminDailyUsageOut(**x) for x in raw["daily_usage"]],
         top_users_by_charge=[AdminTopUserOut(**x) for x in raw["top_users_by_charge"]],
     )
-
-
-@router.get("/stats/upstream-usage", response_model=AdminUpstreamUsageOut)
-async def admin_upstream_usage(
-    days: int = Query(30, ge=1, le=90),
-    _admin: User = Depends(get_current_admin),
-    db: AsyncSession = Depends(get_db),
-) -> AdminUpstreamUsageOut:
-    """近 N 日 TokenFree 官方用量与本地成本对照。"""
-    raw = await build_upstream_usage_compare(db, days=days)
-    return AdminUpstreamUsageOut(**raw)
-
-
-@router.post("/stats/upstream-usage/sync", response_model=AdminUpstreamUsageSyncOut)
-async def admin_upstream_usage_sync(
-    days: int = Query(30, ge=1, le=90),
-    force: bool = Query(False),
-    _admin: User = Depends(get_current_admin),
-    db: AsyncSession = Depends(get_db),
-) -> AdminUpstreamUsageSyncOut:
-    """手动刷新官方用量快照。"""
-    try:
-        raw = await sync_upstream_usage(db, days=days, force=force)
-    except RuntimeError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return AdminUpstreamUsageSyncOut(**raw)

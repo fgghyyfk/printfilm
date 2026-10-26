@@ -1,0 +1,16 @@
+.pf-short-video-list-page { margin-inline: auto; }
+.pf-short-video-list-page .pf-pill-tabs { flex-wrap: wrap; gap: 7px; }
+.pf-short-video-filters { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.pf-short-video-filters .pf-type-select { min-height: 43px; border-radius: 10px; }
+.pf-short-video-filters .pf-project-list-search { width: 240px; }
+.pf-short-video-batch { display: flex; justify-content: space-between; gap: 16px; margin: -6px 0 20px; padding: 12px 16px; border: 1px solid #dce8bf; border-radius: 10px; background: #f5f9ed; }
+.pf-shared-project-card--short-video .pf-shared-project-cover { background: radial-gradient(ellipse at 85% 0%, #e2d8ac 0%, transparent 60%), linear-gradient(145deg, #788257, #35412b); }
+.pf-shared-project-card--short-video .pf-shared-project-actions { justify-content: space-between; flex-wrap: wrap; gap: 9px; padding: 0 8px 3px; }
+.pf-shared-project-card--short-video .pf-shared-project-actions .pf-btn-text { min-height: 30px; font-size: 12px; }
+.pf-shared-project-card--short-video .pf-shared-project-menu .pf-icon-btn { width: 30px; height: 30px; border: 1px solid #ffffff66; border-radius: 8px; background: #fffffff0; color: #7a786e; }
+.pf-shared-project-card--short-video .pf-shared-project-menu .pf-icon-btn:hover { background: #fff4f0; color: #a74f3e; }
+.pf-shared-project-card--short-video .pf-shared-project-meta .pf-error { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+@media (max-width: 760px) {
+  .pf-short-video-filters { width: 100%; }
+  .pf-short-video-filters .pf-project-list-search { flex: 1; width: auto; min-width: 150px; }
+}

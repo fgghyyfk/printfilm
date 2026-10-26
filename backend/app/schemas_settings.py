@@ -106,13 +106,6 @@ class AdminModelSettingsOut(BaseModel):
     # 额度告警
     billing_user_alert_enabled: bool = True
     billing_user_alert_interval_fen: int = 10000
-    billing_admin_cost_alert_enabled: bool = False
-    billing_admin_cost_alert_threshold_fen: int = 0
-    billing_admin_cost_alert_emails: str = ""
-    billing_admin_cost_alert_period: str = "monthly"
-    billing_admin_cost_alert_last_period_key: str = ""
-    billing_admin_cost_alert_last_level: int = 0
-
     smtp_enabled: bool = False
     smtp_host: str = ""
     smtp_port: int = 587
@@ -217,11 +210,6 @@ class AdminModelSettingsPatch(BaseModel):
 
     billing_user_alert_enabled: bool | None = None
     billing_user_alert_interval_fen: int | None = None
-    billing_admin_cost_alert_enabled: bool | None = None
-    billing_admin_cost_alert_threshold_fen: int | None = None
-    billing_admin_cost_alert_emails: str | None = None
-    billing_admin_cost_alert_period: str | None = None
-
     smtp_enabled: bool | None = None
     smtp_host: str | None = None
     smtp_port: int | None = None
@@ -322,12 +310,6 @@ def model_config_field_names() -> tuple[str, ...]:
         "new_user_quota",
         "billing_user_alert_enabled",
         "billing_user_alert_interval_fen",
-        "billing_admin_cost_alert_enabled",
-        "billing_admin_cost_alert_threshold_fen",
-        "billing_admin_cost_alert_emails",
-        "billing_admin_cost_alert_period",
-        "billing_admin_cost_alert_last_period_key",
-        "billing_admin_cost_alert_last_level",
         "smtp_enabled",
         "smtp_host",
         "smtp_port",

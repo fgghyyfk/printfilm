@@ -55,10 +55,11 @@ export function TaskDetailSummary({ task, now, onJump }: TaskDetailSummaryProps)
         </div>
         <div className="task-progress"><span style={{ width: `${task.progress_percent}%` }} /></div>
         <span className="task-summary-sub font-mono">{task.current_step_key || "步骤未记录"}{task.current_step_status ? ` · ${task.current_step_status}` : ""}</span>
+        {task.execution_mode === "direct" ? <span className="task-summary-sub">?? LLM ? ????</span> : task.queue_type ? <span className="task-summary-sub">{{ text: "文字", image: "图片", video: "视频" }[task.queue_type]}队列{task.provider_status ? ` · 上游 ${task.provider_status}` : ""}</span> : null}
       </div>
 
       <div className="task-summary-item">
-        <span className="task-summary-label">{upstream.modelFromRequest ? "实际模型" : "任务选择模型"}</span>
+        <span className="task-summary-label">{upstream.latest?.phase === "simulated" ? "模拟模型" : upstream.modelFromRequest ? "实际模型" : "任务选择模型"}</span>
         <span className="task-summary-value break-all">{upstream.model || "未记录"}</span>
         <span className="task-summary-sub">Provider · {upstream.provider || "未记录"}</span>
       </div>

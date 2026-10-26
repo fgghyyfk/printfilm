@@ -22,7 +22,8 @@ from app.schemas_drama import (
     DramaAssetUpdate,
     SeedAssetsFromScriptOut,
 )
-from app.services.drama.access import get_owned_drama_project
+from app.services.drama.access import get_owned_asset, get_owned_drama_project
+from app.services.teams.write_access import workspace_team
 from app.services.billing import run_billed_ephemeral
 from app.services.billing.http import http_exception_for_value_error
 from app.services.drama.billing_util import record_seed_assets_llm_usage
@@ -43,24 +44,21 @@ async def list_assets(
     library_only: bool = False,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
+    scope_team_id: int | None = Depends(workspace_team),
 ) -> list[DramaAssetOut]:
     # Global library = all assets of user's drama projects; optional project filter
-    from app.services.drama.seed import merge_duplicate_library_assets
-
     q = (
         select(DramaAsset)
         .join(DramaProject, DramaAsset.project_id == DramaProject.id)
-        .where(DramaProject.user_id == user.id)
         .order_by(DramaAsset.updated_at.desc())
     )
     if project_id is not None:
         await get_owned_drama_project(db, project_id, user)
-        # 进入资产库时顺带合并同名重复，并清掉误入角色的音色名
-        removed = await merge_duplicate_library_assets(db, int(project_id))
-        purged = await purge_voice_like_character_assets(db, int(project_id))
-        if removed or purged:
-            await db.commit()
         q = q.where(DramaAsset.project_id == project_id)
+    elif isinstance(scope_team_id, int):
+        q = q.where(DramaProject.team_id == scope_team_id)
+    else:
+        q = q.where(DramaProject.user_id == user.id, DramaProject.team_id.is_(None))
     rows = list((await db.execute(q)).scalars().all())
     if library_only:
         canvas_only_types = {"video", "audio", "text"}
@@ -117,6 +115,11 @@ def _merge_asset_params(prev: dict | None, incoming: dict | None) -> dict:
     base = dict(prev or {}) if isinstance(prev, dict) else {}
     patch = dict(incoming or {}) if isinstance(incoming, dict) else {}
     out = {**base, **patch}
+    # 当前媒体快照只由生成/上传/还原路径更新，客户端编辑不能覆盖。
+    if "media_metadata" in base:
+        out["media_metadata"] = base["media_metadata"]
+    else:
+        out.pop("media_metadata", None)
 
     prev_gen = base.get("generation") if isinstance(base.get("generation"), dict) else None
     prev_status = str((prev_gen or {}).get("status") or "").lower()
@@ -152,16 +155,23 @@ async def update_asset(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> DramaAssetOut:
-    from app.models_drama import DramaProject
+    asset = await get_owned_asset(db, asset_id, user)
+    from app.services.drama.asset_metadata import current_media_metadata
 
-    result = await db.execute(
-        select(DramaAsset)
-        .join(DramaProject, DramaAsset.project_id == DramaProject.id)
-        .where(DramaAsset.id == asset_id, DramaProject.user_id == user.id)
+    # Freeze legacy media details before changing the next generation's form options.
+    if (asset.url or asset.cover) and not isinstance((asset.params or {}).get("media_metadata"), dict):
+        asset.params = {**(asset.params or {}), "media_metadata": current_media_metadata(asset.params)}
+    media_changed = (body.url is not None and body.url != asset.url) or (
+        not (body.url or asset.url) and body.cover is not None and body.cover != asset.cover
     )
-    asset = result.scalar_one_or_none()
-    if not asset:
-        raise HTTPException(status_code=404, detail="资产不存在")
+    media_metadata = None
+    if media_changed:
+        media_metadata = {"source": "unknown"}
+        source_id = (body.params or {}).get("importedFromAssetId")
+        if isinstance(source_id, int) and source_id > 0:
+            source = await get_owned_asset(db, source_id, user)
+            if (body.url or body.cover) == (source.url or source.cover):
+                media_metadata = current_media_metadata(source.params)
     for field in ("type", "asset_type", "name", "cover", "url", "params"):
         val = getattr(body, field)
         if val is None:
@@ -173,6 +183,8 @@ async def update_asset(
             )
         else:
             setattr(asset, field, val)
+    if media_metadata is not None:
+        asset.params = {**(asset.params or {}), "media_metadata": media_metadata}
     await db.commit()
     await db.refresh(asset)
     return DramaAssetOut.model_validate(asset)
@@ -192,14 +204,7 @@ async def upload_asset_media(
     if not oss_svc.oss_enabled():
         raise HTTPException(status_code=503, detail="OSS 未启用，无法上传资产媒体")
 
-    result = await db.execute(
-        select(DramaAsset)
-        .join(DramaProject, DramaAsset.project_id == DramaProject.id)
-        .where(DramaAsset.id == asset_id, DramaProject.user_id == user.id)
-    )
-    asset = result.scalar_one_or_none()
-    if not asset:
-        raise HTTPException(status_code=404, detail="资产不存在")
+    asset = await get_owned_asset(db, asset_id, user)
 
     gen = (asset.params or {}).get("generation") if isinstance(asset.params, dict) else None
     status = str((gen or {}).get("status") or "").lower() if isinstance(gen, dict) else ""
@@ -302,11 +307,9 @@ async def upload_asset_media(
         if not asset.asset_type or asset.asset_type == "none":
             asset.asset_type = "image"
     params = dict(asset.params or {})
-    gen = params.get("generation")
-    if isinstance(gen, dict):
-        params["generation"] = {**gen, "status": "done", "source": "upload"}
-    else:
-        params["generation"] = {"status": "done", "source": "upload"}
+    from app.services.drama.asset_metadata import uploaded_media_metadata
+    params["media_metadata"] = uploaded_media_metadata(filename=file.filename, size=size, content_type=content_type)
+    params["generation"] = {"status": "done", "source": "upload", "finished_at": params["media_metadata"]["created_at"]}
     asset.params = params
     await db.commit()
     await db.refresh(asset)
@@ -323,14 +326,7 @@ async def activate_image_version(
     """将资产形象历史版本设为当前。"""
     from app.services.drama.generation import activate_asset_image_version
 
-    result = await db.execute(
-        select(DramaAsset)
-        .join(DramaProject, DramaAsset.project_id == DramaProject.id)
-        .where(DramaAsset.id == asset_id, DramaProject.user_id == user.id)
-    )
-    asset = result.scalar_one_or_none()
-    if not asset:
-        raise HTTPException(status_code=404, detail="资产不存在")
+    asset = await get_owned_asset(db, asset_id, user)
 
     gen = (asset.params or {}).get("generation") if isinstance(asset.params, dict) else None
     status = str((gen or {}).get("status") or "").lower() if isinstance(gen, dict) else ""
@@ -355,14 +351,7 @@ async def delete_asset(
 ) -> dict:
     from app.models_drama import DramaProject
 
-    result = await db.execute(
-        select(DramaAsset)
-        .join(DramaProject, DramaAsset.project_id == DramaProject.id)
-        .where(DramaAsset.id == asset_id, DramaProject.user_id == user.id)
-    )
-    asset = result.scalar_one_or_none()
-    if not asset:
-        raise HTTPException(status_code=404, detail="资产不存在")
+    asset = await get_owned_asset(db, asset_id, user)
     await db.delete(asset)
     await db.commit()
     return {"ok": True}

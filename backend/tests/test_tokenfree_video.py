@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from app.services.ark import ArkGateway, _build_task_result_from_payload
-from app.services.media_ref_limits import MAX_REFERENCE_IMAGES
 from app.services.tokenfree_gateway import TOKENFREE_BASE_URL, TOKENFREE_CHANNEL_ID
 from app.services.tokenfree_video import (
     extract_video_task_id,
@@ -212,8 +211,8 @@ def test_wrap_seedance_payload_from_generate_body_includes_continuity():
     assert "input" not in wrapped["metadata"]
 
 
-def test_wrap_seedance_payload_caps_reference_images():
-    """下游最多 9 张；全部落在 metadata.content。"""
+def test_wrap_seedance_payload_preserves_validated_reference_images():
+    """数量由模型策略提前校验；传输层不能静默截断已通过校验的素材。"""
     content = [{"type": "text", "text": "群戏"}]
     for i in range(12):
         content.append(
@@ -231,7 +230,7 @@ def test_wrap_seedance_payload_caps_reference_images():
         for item in wrapped["metadata"]["content"]
         if item.get("type") == "image_url"
     ]
-    assert len(urls) == MAX_REFERENCE_IMAGES
+    assert len(urls) == 12
     assert "input" not in wrapped["metadata"]
 
 

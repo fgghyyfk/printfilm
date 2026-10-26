@@ -7,14 +7,16 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.schemas_common import PageMeta
 from app.schemas_tasks import TaskRunBriefOut
 
 
 class DramaProjectCreate(BaseModel):
+    team_id: int | None = Field(default=None, gt=0)
     title: str = Field(default="未命名漫剧", max_length=200)
     description: str | None = None
     source: str = Field(default="", description="原始创意文案")
-    episode_count: int = Field(default=12, ge=1, le=120)
+    episode_count: int = Field(default=1, strict=True, ge=1, le=120, description="初始集数，支持 1 至 120 集，后续可在项目中增加分集")
     image_style_id: str = Field(default="")
     # script=大纲分集流程；canvas=自由画布
     workflow: str = Field(default="script", description="script | canvas")
@@ -56,12 +58,10 @@ class DramaAssetOut(BaseModel):
 
 
 class DramaProjectUsageStats(BaseModel):
-    """单部漫剧累计用量：费用与生图/生视频次数。"""
+    """单部漫剧累计用量：扣费与生图/生视频次数。"""
 
     charge_fen: int = 0
     charge_yuan: float = 0.0
-    cost_fen: int = 0
-    cost_yuan: float = 0.0
     tokens: int = 0
     calls: int = 0
     image_gens: int = 0
@@ -113,6 +113,7 @@ class DramaEpisodeUpdate(BaseModel):
 class DramaProjectOut(BaseModel):
     id: int
     user_id: int
+    team_id: int | None = None
     title: str
     description: str | None = None
     content: dict | list | None = None
@@ -132,6 +133,7 @@ class DramaProjectOut(BaseModel):
 
 class DramaProjectListItem(BaseModel):
     id: int
+    team_id: int | None = None
     title: str
     description: str | None = None
     created_at: datetime | None = None
@@ -147,6 +149,13 @@ class DramaProjectListItem(BaseModel):
     active_tasks: list[TaskRunBriefOut] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
+
+
+class DramaProjectListOut(BaseModel):
+    """漫剧/自由画布项目分页列表。"""
+
+    items: list[DramaProjectListItem] = Field(default_factory=list)
+    meta: PageMeta
 
 
 class DramaScriptSummaryRequest(BaseModel):

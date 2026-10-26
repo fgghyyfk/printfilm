@@ -17,7 +17,9 @@ from app.deps import get_current_user
 from app.models import Project, Shot, Template, User
 from app.models_drama import DramaAsset, DramaEpisode, DramaEpisodeFragment, DramaProject, DramaScript
 from app.models_tasks import TaskRun
+from app.models_teams import Team, TeamMember
 from app.marketplace import drama_media, drama_publish, handoff, storage
+from app.marketplace import series as series_api
 from app.marketplace.authorization import VERSION
 from app.marketplace.models import Asset, Authorization, DramaPublishBatch, Handoff, MarketBase, Publication, Rights, Series, SeriesEpisode
 from app.marketplace.service import now
@@ -34,7 +36,7 @@ async def drama_publish_ctx(monkeypatch):
         schema = f"drama_publish_test_{uuid.uuid4().hex}"
         await connection.execute(text(f'CREATE SCHEMA "{schema}"'))
         connection = await connection.execution_options(schema_translate_map={None: schema})
-        tables = [item.__table__ for item in (User, Template, Project, Shot, DramaProject, DramaScript, DramaAsset, DramaEpisode, DramaEpisodeFragment, TaskRun)]
+        tables = [item.__table__ for item in (User, Team, TeamMember, Template, Project, Shot, DramaProject, DramaScript, DramaAsset, DramaEpisode, DramaEpisodeFragment, TaskRun)]
         await connection.run_sync(lambda sync: Base.metadata.create_all(sync, tables=tables))
         await connection.run_sync(MarketBase.metadata.create_all)
         db = AsyncSession(bind=connection, expire_on_commit=False, join_transaction_mode="create_savepoint")
@@ -136,6 +138,37 @@ async def test_context_shows_complete_counts_and_all_owned_target_series(drama_p
     assert [item["id"] for item in body["series"]] == [own.id]
     assert body["storage_configured"] is True and body["authorization_ready"] is False
     assert "/static/" not in response.text
+
+
+async def test_team_creator_loses_publish_access_and_import_source_after_leaving(drama_publish_ctx):
+    """创建者身份不会绕过离队限制，来源列表也保留个人与账号隔离。"""
+    ctx = drama_publish_ctx
+    team = Team(name="市场导入团队", owner_user_id=ctx.other.id)
+    ctx.db.add(team)
+    await ctx.db.flush()
+    membership = TeamMember(team_id=team.id, user_id=ctx.owner.id, role="member", active=True)
+    ctx.db.add(membership)
+    personal, _, _ = await source(ctx)
+    project, _, _ = await source(ctx)
+    foreign, _, _ = await source(ctx, owner=ctx.other)
+    project.team_id = foreign.team_id = team.id
+    await ctx.db.commit()
+    personal_id, project_id, foreign_id = personal.id, project.id, foreign.id
+    path = f"/api/marketplace/printfilm/dramas/{project_id}/publish-context"
+
+    response = await ctx.client.get(path)
+    assert response.status_code == 200, response.text
+    sources = await series_api.import_sources(ctx.db, ctx.owner)
+    assert {item["id"] for item in sources["items"]} == {personal_id, project_id}
+    assert foreign_id not in {item["id"] for item in sources["items"]}
+
+    membership.active = False
+    await ctx.db.commit()
+    response = await ctx.client.get(path)
+    assert response.status_code == 404, response.text
+    assert (await ctx.db.get(DramaProject, project_id)).user_id == ctx.owner.id
+    sources = await series_api.import_sources(ctx.db, ctx.owner)
+    assert [item["id"] for item in sources["items"]] == [personal_id]
 
 
 @pytest.mark.parametrize("case", ["foreign_project", "foreign_episode", "foreign_target"])

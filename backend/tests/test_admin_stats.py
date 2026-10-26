@@ -84,7 +84,7 @@ async def test_dashboard_daily_usage_pads_seven_days(db_session: AsyncSession) -
     stats = await build_admin_dashboard_stats(db_session)
     daily = stats["daily_usage"]
     assert len(daily) == 7
-    assert all("date" in d and "calls" in d and "charge_fen" in d and "cost_fen" in d for d in daily)
+    assert all(set(d) == {"date", "calls", "charge_fen"} for d in daily)
     # 日期升序且连续
     dates = [d["date"] for d in daily]
     assert dates == sorted(dates)
@@ -100,7 +100,7 @@ async def test_dashboard_daily_usage_pads_seven_days(db_session: AsyncSession) -
 
     assert stats["usage_calls_total"] == 2
     assert stats["usage_charge_total_fen"] == 80
-    assert stats["usage_cost_total_fen"] == 20
+    assert not any("cost" in key for key in stats)
     assert stats["usage_calls_today"] == 1
     assert stats["usage_charge_today_fen"] == 50
 
@@ -134,7 +134,7 @@ async def test_dashboard_filters_domain_and_capability(db_session: AsyncSession)
     drama_only = await build_admin_dashboard_stats(db_session, days=7, domain="drama")
     assert sum(b["calls"] for b in drama_only["usage_by_capability"]) == 1
     assert drama_only["usage_by_capability"][0]["key"] == "image"
-    assert drama_only["usage_by_capability"][0]["cost_fen"] == 20
+    assert set(drama_only["usage_by_capability"][0]) == {"key", "calls", "charge_fen"}
 
     video_only = await build_admin_dashboard_stats(db_session, days=7, capability="video")
     assert len(video_only["usage_by_domain"]) == 1
@@ -176,27 +176,37 @@ async def test_dashboard_today_window(db_session: AsyncSession) -> None:
 
 
 @pytest.mark.asyncio
-async def test_admin_stats_http_query_days_accepts_string_query() -> None:
+async def test_admin_stats_http_query_days_accepts_string_query(db_session: AsyncSession) -> None:
     """HTTP ?days=7 应能解析为 int，不能因 Literal 校验返回 422。"""
     import httpx
     from httpx import ASGITransport
 
+    from app.database import get_db
+    from app.deps import get_current_admin
     from app.main import app
 
-    transport = ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        login = await client.post("/api/auth/login", json={"email": "demo@example.com", "password": "demo1234"})
-        if login.status_code != 200:
-            pytest.skip("demo 账号不可用，跳过 HTTP stats 回归")
-        token = login.json()["access_token"]
-        res = await client.get(
-            "/api/admin/stats?days=7",
-            headers={"Authorization": f"Bearer {token}"},
-        )
+    admin = await make_user(db_session)
+    admin.role = "admin"
+
+    async def override_db():
+        yield db_session
+
+    previous_overrides = app.dependency_overrides.copy()
+    app.dependency_overrides[get_current_admin] = lambda: admin
+    app.dependency_overrides[get_db] = override_db
+    try:
+        transport = ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            res = await client.get("/api/admin/stats?days=7")
+    finally:
+        app.dependency_overrides = previous_overrides
+
     assert res.status_code == 200, res.text
     body = res.json()
     assert "usage_calls_month" in body
     assert "usage_calls_total" in body
+    assert not any("cost" in key for key in body)
+    assert all(set(row) == {"date", "calls", "charge_fen"} for row in body["daily_usage"])
 
 
 @pytest.mark.asyncio
@@ -293,11 +303,11 @@ async def test_dashboard_top_users_by_charge(db_session: AsyncSession) -> None:
 
 
 @pytest.mark.asyncio
-async def test_dashboard_top_users_by_cost(db_session: AsyncSession) -> None:
-    """top_metric=cost 时按上游成本排序。"""
+async def test_dashboard_top_users_by_calls(db_session: AsyncSession) -> None:
+    """按调用数排行，扣费与原始成本不会改变排序。"""
     high = await make_user(db_session)
     low = await make_user(db_session)
-    domain = "test_top_users_cost"
+    domain = "test_top_users_calls"
     await _add_usage(
         db_session,
         user_id=high.id,
@@ -316,13 +326,33 @@ async def test_dashboard_top_users_by_cost(db_session: AsyncSession) -> None:
     )
     await db_session.commit()
 
-    stats = await build_admin_dashboard_stats(db_session, days=30, domain=domain, top_metric="cost")
+    await _add_usage(
+        db_session,
+        user_id=high.id,
+        charge_fen=10,
+        created_at=_utc_days_ago(1),
+        domain=domain,
+    )
+    stats = await build_admin_dashboard_stats(db_session, days=30, domain=domain, top_metric="calls")
     top = stats["top_users_by_charge"]
     assert len(top) == 2
     assert top[0]["user_id"] == high.id
-    assert top[0]["cost_fen"] == 500
+    assert top[0]["calls"] == 2
+    assert set(top[0]) == {"user_id", "email", "calls", "charge_fen"}
     assert top[1]["user_id"] == low.id
-    assert top[1]["cost_fen"] == 50
+    assert top[1]["calls"] == 1
+
+
+def test_top_metric_rejects_upstream_cost() -> None:
+    from fastapi import HTTPException
+
+    from app.api.admin.dashboard import _normalize_top_metric
+
+    assert _normalize_top_metric("charge") == "charge"
+    assert _normalize_top_metric("calls") == "calls"
+    with pytest.raises(HTTPException) as exc:
+        _normalize_top_metric("cost")
+    assert exc.value.status_code == 422
 
 
 @pytest.mark.asyncio
@@ -432,6 +462,7 @@ async def test_aggregate_usage_summary_breakdown(db_session: AsyncSession) -> No
     await db_session.commit()
 
     summary = await aggregate_usage_summary(db_session, project_id=pid)
+    assert "cost_fen" not in summary
     assert summary["calls"] == 4
     assert summary["charge_fen"] == 38
     assert summary["image_gens"] == 1
@@ -441,6 +472,7 @@ async def test_aggregate_usage_summary_breakdown(db_session: AsyncSession) -> No
 
     missing_pid = 9_999_999
     batch = await aggregate_usage_summary(db_session, project_ids=[pid, other_pid, missing_pid])
+    assert all("cost_fen" not in item for item in batch.values())
     assert batch[pid]["tts_gens"] == 1
     assert batch[other_pid]["image_gens"] == 1
     assert batch[other_pid]["charge_fen"] == 999
@@ -468,7 +500,7 @@ async def test_aggregate_drama_project_usage(db_session: AsyncSession) -> None:
     summary = await aggregate_usage_summary(db_session, drama_project_id=did)
     assert summary["calls"] == 1
     assert summary["charge_fen"] == 15
-    assert summary["cost_fen"] == 8
+    assert "cost_fen" not in summary
     assert summary["tokens"] == 50
     assert summary["tts_gens"] == 1
 

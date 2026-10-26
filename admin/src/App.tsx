@@ -19,6 +19,8 @@ import { QueuesPage } from "@/pages/QueuesPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { TemplatesPage } from "@/pages/TemplatesPage";
 import { UsersPage } from "@/pages/UsersPage";
+import { TeamsPage } from "@/pages/TeamsPage";
+import { TeamDetailPage } from "@/pages/TeamDetailPage";
 import { WorksPage } from "@/pages/WorksPage";
 import MarketplaceAdmin from "@/features/marketplace/MarketplaceAdmin";
 
@@ -41,6 +43,8 @@ export default function App() {
         <Route element={<AdminLayout />}>
           <Route index element={<DashboardPage />} />
           <Route path="users" element={<UsersPage />} />
+          <Route path="teams" element={<TeamsPage />} />
+          <Route path="teams/:teamId" element={<TeamDetailPage />} />
           <Route path="orders" element={<OrdersPage />} />
           <Route path="adjustments" element={<AdjustRecordsPage />} />
           <Route path="finance" element={<FinanceListPage />} />

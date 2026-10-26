@@ -6,13 +6,14 @@ import logging
 import time
 import uuid
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
-from pydantic import BaseModel
-from sqlalchemy import func, select
+from pydantic import BaseModel, Field
+from sqlalchemy import or_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -30,6 +31,27 @@ from app.services.billing.settlement import (
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/billing", tags=["billing"])
 settings = get_settings()
+
+
+class MediaQuoteItem(BaseModel):
+    model_id: str = Field(min_length=1, max_length=128)
+    params: dict = Field(default_factory=dict)
+
+
+class MediaQuoteBody(BaseModel):
+    items: list[MediaQuoteItem] = Field(min_length=1, max_length=200)
+    price_version: int | None = Field(default=None, ge=1)
+
+
+@router.post("/media/quote")
+async def quote_media(body: MediaQuoteBody, _user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    from app.services.media_models.prices import active_book, quote_items
+    book = await active_book(db)
+    if not book:
+        raise HTTPException(409, detail="媒体固定价格尚未发布")
+    if body.price_version is not None and body.price_version != book["version"]:
+        raise HTTPException(409, detail="价格已更新，请刷新后重试")
+    return quote_items([item.model_dump() for item in body.items], book)
 
 
 class CreateOrderBody(BaseModel):
@@ -64,12 +86,18 @@ async def billing_preflight(
     domain: str = Query(..., min_length=1),
     task_type: str = Query(..., min_length=1),
     count: int = Query(1, ge=1, le=500),
+    team_id: int | None = Query(None, ge=1),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
     """入队前余额预检：返回单项估算与批量总需求。"""
+    member = None
+    team = None
+    if team_id is not None:
+        from app.services.teams.access import get_team
+        team, member = await get_team(db, team_id, user.id)
     if not billing_active(user):
-        return {
+        result = {
             "ok": True,
             "billing_enabled": False,
             "balance_fen": int(user.balance_fen or 0),
@@ -78,17 +106,24 @@ async def billing_preflight(
             "requested_total_fen": 0,
             "required_total_fen": 0,
         }
+        if team_id is not None:
+            if team.owner_user_id == user.id:
+                result["balance_fen"] = int(user.balance_fen or 0)
+            else:
+                result.pop("balance_fen", None)
+        return result
     probe = TaskRun(
         domain=domain.strip(),
         task_type=task_type.strip(),
         requested_by=user.id,
+        team_id=team_id,
         payload={},
     )
     try:
         summary = await ensure_balance_for_task_batch(db, user, probe, count)
     except ValueError as exc:
         raise http_exception_for_value_error(exc) from exc
-    return {
+    result = {
         "ok": True,
         "billing_enabled": True,
         "balance_fen": summary["balance_fen"],
@@ -105,6 +140,10 @@ async def billing_preflight(
         "domain": domain.strip(),
         "task_type": task_type.strip(),
     }
+    if team is not None and team.owner_user_id != user.id:
+        result.pop("balance_fen", None)
+        result.pop("balance_yuan", None)
+    return result
 
 
 def _client_ip(request: Request) -> str:
@@ -185,27 +224,25 @@ async def usage_summary(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
-    """本月 token / 费用汇总，供历史页侧栏展示。"""
+    """本月 token / 扣费汇总，供历史页侧栏展示。"""
     now = datetime.now(timezone.utc)
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     result = await db.execute(
         select(
             func.coalesce(func.sum(UsageEvent.total_tokens), 0),
             func.coalesce(func.sum(UsageEvent.charge_fen), 0),
-            func.coalesce(func.sum(UsageEvent.cost_fen), 0),
             func.count(UsageEvent.id),
         ).where(
-            UsageEvent.user_id == user.id,
+            or_((UsageEvent.user_id == user.id) & UsageEvent.team_id.is_(None), UsageEvent.billing_payer_user_id == user.id),
             UsageEvent.created_at >= month_start,
         )
     )
-    tokens, charge_fen, cost_fen, calls = result.one()
+    tokens, charge_fen, calls = result.one()
     return {
         "period": month_start.strftime("%Y-%m"),
         "tokens": int(tokens or 0),
         "charge_fen": int(charge_fen or 0),
         "charge_yuan": round(int(charge_fen or 0) / 100, 2),
-        "cost_fen": int(cost_fen or 0),
         "calls": int(calls or 0),
         "balance_fen": int(user.balance_fen or 0),
         "balance_yuan": round(int(user.balance_fen or 0) / 100, 2),
@@ -265,14 +302,14 @@ async def usage_events(
     """分页返回当前用户的按次扣费记录（新→旧）。"""
     from app.models_drama import DramaProject
 
-    count_stmt = select(func.count()).select_from(UsageEvent).where(UsageEvent.user_id == user.id)
+    count_stmt = select(func.count()).select_from(UsageEvent).where(or_((UsageEvent.user_id == user.id) & UsageEvent.team_id.is_(None), UsageEvent.billing_payer_user_id == user.id))
     total = int((await db.execute(count_stmt)).scalar_one() or 0)
 
     stmt = (
         select(UsageEvent, Project.title, DramaProject.title)
         .outerjoin(Project, UsageEvent.project_id == Project.id)
         .outerjoin(DramaProject, UsageEvent.drama_project_id == DramaProject.id)
-        .where(UsageEvent.user_id == user.id)
+        .where(or_((UsageEvent.user_id == user.id) & UsageEvent.team_id.is_(None), UsageEvent.billing_payer_user_id == user.id))
         .order_by(UsageEvent.id.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
@@ -322,7 +359,7 @@ async def list_orders(
     await billing.close_expired_pending_orders(db, user_id=user.id)
     result = await db.execute(
         select(Order)
-        .where(Order.user_id == user.id)
+        .where(Order.user_id == user.id, Order.team_id.is_(None))
         .order_by(Order.created_at.desc())
         .limit(limit)
     )
@@ -356,7 +393,7 @@ async def get_order(
     await billing.close_expired_pending_orders(db, user_id=user.id, out_trade_no=out_trade_no)
     result = await db.execute(select(Order).where(Order.out_trade_no == out_trade_no))
     order = result.scalar_one_or_none()
-    if not order or order.user_id != user.id:
+    if not order or order.user_id != user.id or order.team_id is not None:
         raise HTTPException(status_code=404, detail="订单不存在")
     return {
         "out_trade_no": order.out_trade_no,
@@ -377,7 +414,7 @@ async def close_order(
     """用户主动取消支付时关闭待支付订单（过期订单由系统自动关闭）。"""
     result = await db.execute(select(Order).where(Order.out_trade_no == out_trade_no))
     order = result.scalar_one_or_none()
-    if not order or order.user_id != user.id:
+    if not order or order.user_id != user.id or order.team_id is not None:
         raise HTTPException(status_code=404, detail="订单不存在")
     if order.status == "paid":
         raise HTTPException(status_code=400, detail="已支付订单无法关闭")
@@ -420,7 +457,7 @@ async def epay_notify(request: Request, db: AsyncSession = Depends(get_db)) -> P
     # 行锁串行化同一订单的并发回调：第二个回调在锁释放后读到 paid 即幂等返回，
     # 避免重复入账（易支付会对同一笔支付重发多次 notify）。
     result = await db.execute(
-        select(Order).where(Order.out_trade_no == out_trade_no).with_for_update()
+        select(Order).where(Order.out_trade_no == out_trade_no).with_for_update().execution_options(populate_existing=True)
     )
     order = result.scalar_one_or_none()
     if not order:
@@ -429,9 +466,12 @@ async def epay_notify(request: Request, db: AsyncSession = Depends(get_db)) -> P
 
     # amount check
     try:
-        paid_fen = int(round(float(money) * 100))
-    except ValueError:
-        paid_fen = order.amount_fen
+        amount = Decimal(money)
+        if not amount.is_finite() or amount <= 0 or amount * 100 != (amount * 100).to_integral_value():
+            return PlainTextResponse("fail", status_code=400)
+        paid_fen = int(amount * 100)
+    except (InvalidOperation, ValueError):
+        return PlainTextResponse("fail", status_code=400)
     if paid_fen != int(order.amount_fen):
         logger.error(
             "epay amount mismatch order=%s expect=%s got=%s",
@@ -451,13 +491,10 @@ async def epay_notify(request: Request, db: AsyncSession = Depends(get_db)) -> P
     order.status = "paid"
     order.trade_no = trade_no or None
     order.paid_at = datetime.now(timezone.utc)
+    # 历史团队订单回款到原下单人的个人账户，转让不改变收款归属。
     await billing.credit_topup(
-        db,
-        user,
-        int(order.credit_fen),
-        ref_type="order",
-        ref_id=order.out_trade_no,
-        note=f"epay:{order.pay_type}",
+        db, user, int(order.credit_fen), ref_type="order", ref_id=order.out_trade_no,
+        note=f"epay:{order.pay_type}" + (f" legacy_team:{order.team_id}" if order.team_id else ""),
     )
     await db.commit()
     logger.info("epay paid order=%s user=%s credit=%s", out_trade_no, user.id, order.credit_fen)

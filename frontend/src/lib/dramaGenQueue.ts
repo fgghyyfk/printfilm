@@ -1,6 +1,7 @@
 /** 漫剧全局生成队列：图片 / 视频等任务统一展示与恢复 */
 import { useSyncExternalStore } from 'react'
 import type { DramaTaskBrief } from '../api/drama'
+import { subscribeWorkspace, workspaceScope } from '../features/teams/workspaceScope.ts'
 
 export type DramaGenJobKind = 'image' | 'video'
 
@@ -510,6 +511,7 @@ export function ensureEpisodeVideoStatusPoll(): void {
 // 按分集拉取状态并写回队列
 async function pollActiveEpisodeVideoJobs(): Promise<void> {
   if (videoPollInFlight) return
+  const epoch = workspaceScope.epoch
   const active = jobs.filter(
     (job) =>
       job.kind === 'video' &&
@@ -527,11 +529,13 @@ async function pollActiveEpisodeVideoJobs(): Promise<void> {
   videoPollInFlight = true
   try {
     const { dramaApi } = await import('../api/drama')
+    if (epoch !== workspaceScope.epoch) return
     const episodeIds = [...new Set(active.map((job) => job.episodeId as number))]
     await Promise.all(
       episodeIds.map(async (episodeId) => {
         const epJobs = active.filter((job) => job.episodeId === episodeId)
         const st = await dramaApi.generateStatus(episodeId)
+        if (epoch !== workspaceScope.epoch) return
         // 本集已在队列中的分镜（含已完成），用于保留镜序、避免轮询只带进行中子集
         const tracked = jobs.filter(
           (job) =>
@@ -585,6 +589,18 @@ export function subscribeDramaGenQueueOpen(listener: () => void): () => void {
 export function getDramaGenQueueOpenRequestSeq(): number {
   return openRequestSeq
 }
+
+// 队列只显示当前空间；返回项目后由真实生成状态恢复任务。
+// 切换账号也会触发 workspace reset，避免旧身份的任务标题和详情残留。
+subscribeWorkspace(() => {
+  jobs = []
+  dismissedJobIds.clear()
+  if (videoPollTimer) {
+    window.clearInterval(videoPollTimer)
+    videoPollTimer = 0
+  }
+  emit()
+})
 
 // 清空已结束（完成+失败），并记住 id 防止轮询再次写入
 export function clearFinishedDramaGenJobs(): void {

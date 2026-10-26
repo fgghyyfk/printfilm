@@ -1,3 +1,4 @@
+import { Select } from "@/components/ui/select";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Activity, Ban, Layers, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
@@ -146,7 +147,7 @@ export function QueuesPage() {
 
   return (
     <div className="admin-page">
-      <PageHeader
+      <PageHeader title="任务中心"
         description={`统一任务平台 · 自动刷新 ${REFRESH_MS / 1000}s · ${apiOnlyNode ? "本节点仅 API / 队列由执行节点处理" : `本节点并发 ${stats?.scheduler_running_jobs ?? 0}/${stats?.max_concurrency ?? 0}`}`}
         actions={
           <button
@@ -194,19 +195,19 @@ export function QueuesPage() {
               hint={apiOnlyNode ? "队列由执行节点处理" : `全站已租约 ${stats?.leased_count ?? 0}`}
               icon={RefreshCw}
             />
-            <div className="admin-panel admin-stat-card tone-success">
-              <div className="admin-stat-icon">
-                <Ban className="h-5 w-5" />
-              </div>
-              <div className="admin-stat-label">终态统计</div>
-              <div className="admin-stat-value !text-base !leading-relaxed">
-                成功 {stats?.succeeded_count ?? 0} · 失败 {stats?.failed_count ?? 0} · 取消{" "}
-                {stats?.cancelled_count ?? 0}
-              </div>
-              <div className="admin-stat-hint">
-                更新 {stats?.fetched_at ? new Date(stats.fetched_at).toLocaleTimeString() : "—"}
-              </div>
-            </div>
+            <StatCard
+              label="终态统计"
+              icon={Ban}
+              tone="success"
+              value={
+                <span className="admin-terminal-stats">
+                  <span><small>成功</small><strong>{stats?.succeeded_count ?? 0}</strong></span>
+                  <span><small>失败</small><strong>{stats?.failed_count ?? 0}</strong></span>
+                  <span><small>取消</small><strong>{stats?.cancelled_count ?? 0}</strong></span>
+                </span>
+              }
+              hint={`更新 ${stats?.fetched_at ? new Date(stats.fetched_at).toLocaleTimeString() : "—"}`}
+            />
           </div>
 
           <div className="admin-panel mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3 text-xs text-[var(--admin-muted)]">
@@ -222,6 +223,13 @@ export function QueuesPage() {
             <span>待激活表示前置条件或并发空位尚未满足；延时表示尚未到调度时间。</span>
           </div>
 
+          {stats?.queues?.length ? <PageSection title="调度队列" bodyClassName="!pt-0">
+            <div className="grid gap-3 md:grid-cols-3">{stats.queues.map((queue) => <div key={queue.name} className="admin-panel px-4 py-3">
+              <div className="text-sm font-medium">{queue.label}队列 <span className="font-mono text-xs text-[var(--admin-muted)]">{queue.name}</span></div>
+              <div className="mt-2 text-xs text-[var(--admin-muted)]">排队 {queue.pending} · 在途 {queue.active} · 并发 {queue.max_concurrency}</div>
+              {queue.awaiting_poll ? <div className="mt-1 text-xs text-[var(--admin-muted)]">等待上游 {queue.awaiting_poll}</div> : null}
+            </div>)}</div>
+          </PageSection> : null}
           {(stats?.domains.length ?? 0) > 0 ? (
             <PageSection title="各领域任务" bodyClassName="!pt-0">
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -278,7 +286,7 @@ export function QueuesPage() {
             bodyClassName="space-y-4 !pt-0"
           >
             <Toolbar>
-              <select
+              <Select
                 className="admin-select"
                 value={domain}
                 onChange={(e) => {
@@ -292,8 +300,8 @@ export function QueuesPage() {
                     {taskDomainLabel(d)}
                   </option>
                 ))}
-              </select>
-              <select
+              </Select>
+              <Select
                 className="admin-select"
                 value={status}
                 onChange={(e) => {
@@ -317,7 +325,7 @@ export function QueuesPage() {
                     {label}
                   </option>
                 ))}
-              </select>
+              </Select>
               <AdminUserSearchSelect
                 value={filterUserId}
                 onChange={(id) => {

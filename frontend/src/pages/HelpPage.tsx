@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import AppShell from '../components/layout/AppShell'
 import { useI18n } from '../i18n'
 import { filterHelpFaq } from '../lib/helpContent'
+import { GITHUB_REPO_URL } from '../lib/siteLinks'
 
 /** 帮助中心整页：分类入口、上手步骤、可搜索 FAQ */
 export default function HelpPage() {
@@ -83,6 +84,7 @@ export default function HelpPage() {
         </section>
 
         <section className="pf-help-more">
+          <p><a href={GITHUB_REPO_URL} target="_blank" rel="noopener noreferrer">{t('nav.github')}</a></p>
           <p className="pf-muted">
             {t('help.morePrefix')}{' '}
             <Link to="/settings">{t('help.profile')}</Link>

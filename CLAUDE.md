@@ -8,7 +8,7 @@ PRINTFILM（仓库目录 `ai_movie`）：模板驱动的 AI 短视频（科普 k
 
 - **科普短视频**：主题/口播 → 模板拆镜 → 分镜图 →（可选）视频 → 旁白 → FFmpeg 合成；状态机 `SCRIPTING → IMAGING → VIDEOING/AUDIOING → COMPOSING → DONE`
 - **漫剧 drama**：项目 → 剧本摘要/分集 → 资产库（角色/场景/道具/音色）→ 分集分镜 → React Flow 画布
-- 另有工具中心（t2i/i2p/t2v 等）、开放 API（`/api/v1`）、管理后台、可选钱包计费（易支付）
+- 另有图片/视频/音频独立生成入口、短剧 Skills 站外链接、管理后台、可选钱包计费（易支付）
 
 三条独立进程 + 两个容器中间件：FastAPI(:8000)、用户端 Vite(:5173)、管理端 Vite(:5174)、Postgres(:15432)、Redis(:16379)。技术栈：Python 3.12 / FastAPI / SQLAlchemy(asyncpg) / React 19 / TS / Vite 8。需要本机安装 FFmpeg。
 
@@ -50,7 +50,7 @@ pytest tests/test_x.py::test_name       # 单测
 - `poller.py`：NIO 式 Selector，集中非阻塞轮询所有 `awaiting_poll` 的上游任务（信号量 `TASK_POLL_MAX_CONCURRENCY`），完成后触发计费结算
 - `runtime.py` + watchdog：心跳过期自动软重启调度/轮询循环
 
-`TaskRun` 状态与 steps/events/targets 见 `models_tasks.py`；**新任务类型必须在 `tasks/handlers.py` 的 `HANDLERS` 注册表登记 `(domain, task_type)`**（kepu/drama/api/studio/tools 五个 domain）。部分类型注册为 `_noop_ephemeral`——这些在创建请求内联执行，TaskRun 仅用于计费/留痕。管理端任务中心 `/queues` 直接读这些表。
+`TaskRun` 状态与 steps/events/targets 见 `models_tasks.py`；**新任务类型必须在 `tasks/handlers.py` 的 `HANDLERS` 注册表登记 `(domain, task_type)`**（kepu/drama/studio/tools 四个 domain）。部分类型注册为 `_noop_ephemeral`——这些在创建请求内联执行，TaskRun 仅用于计费/留痕。管理端任务中心 `/queues` 直接读这些表。
 
 ### 科普流水线与分阶段计费共用同一就绪判定
 
@@ -73,8 +73,9 @@ pytest tests/test_x.py::test_name       # 单测
 ### 数据层与"迁移"方式
 
 - 异步引擎 asyncpg（`AsyncSessionLocal`，业务全异步）；同步引擎 psycopg2 仅少量场景
-- ORM 按域拆文件：`models.py`（users/projects/shots/templates/计费/订单/tool_runs 等）、`models_drama.py`、`models_tasks.py`、`models_api.py`（API Key）、`models_agent.py`（导演 Skill）、`models_settings.py`
+- ORM 按域拆文件：`models.py`（users/projects/shots/templates/计费/订单/tool_runs 等）、`models_drama.py`、`models_tasks.py`、`models_agent.py`（导演 Skill）、`models_settings.py`
 - **没有 Alemantic 类迁移工具**：启动时 `init_db()` 做 `create_all`，新增列必须手写进 `main.py` 的 `_apply_schema_patches()`（只允许 additive 的 PG DDL；conftest 里的测试 schema 也要同步）。线上建议 uvicorn 单 worker 以规避建表竞态
+- **发布前先迁移并检查**：2026-10-24 因 `DATABASE_BOOTSTRAP_ENABLED=false` 且漏跑媒体迁移，分集查询缺少 `task_runs.billing_snapshot` 返回 500。后续发布必须先备份目标库，运行 `backend/scripts/prepare_media_schema.py`，再加 `--check` 只读验证；任一步非零就停止发布，成功后才重启 API/任务执行节点，并用已登录业务接口冒烟。未发布新价格也必须迁移，`/api/health` 成功不能代替结构或业务检查。详见 `docs/MEDIA_MODEL_STRATEGIES.md` 与本机 `docs/DEPLOY.md`。
 - 启动还会执行：模板 seed（只插缺失，不覆盖后台改动）、内置 Skill seed、`ADMIN_BOOTSTRAP_EMAILS` 提权（只提升已注册用户，不造号，需重启）
 
 ### 媒体与 OSS

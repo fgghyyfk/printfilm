@@ -441,13 +441,6 @@ def billing_key_label(billing_key: str) -> str:
     return labels.get(cap, billing_key or "其他")
 
 
-def billing_model_rate_rows(settings: Settings | None = None) -> list[dict[str, Any]]:
-    """管理端展示：推荐模型走 TokenFree /api/pricing；无缓存时仍列出短名单。"""
-    from app.services.tokenfree_pricing import build_official_rate_rows, cached_rates
-
-    return build_official_rate_rows(cached_rates(), settings)
-
-
 def sku_by_id(sku_id: str) -> dict[str, Any] | None:
     for item in SKUS:
         if item["id"] == sku_id:

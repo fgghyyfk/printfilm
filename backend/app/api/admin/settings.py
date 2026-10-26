@@ -28,6 +28,43 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+class MediaPricePublishBody(BaseModel):
+    prices: dict[str, dict[str, str]]
+    expected_version: int | None = Field(default=None, ge=1)
+
+
+class MediaPriceActivationBody(BaseModel):
+    enabled: bool
+    expected_version: int = Field(ge=1)
+
+
+@router.patch("/settings/billing/media-prices/activation")
+async def activate_media_prices(body: MediaPriceActivationBody, _admin: User = Depends(get_current_admin), db: AsyncSession = Depends(get_db)):
+    from app.services.media_models.prices import set_pricing_enabled
+    await set_pricing_enabled(db, enabled=body.enabled, expected_version=body.expected_version)
+    await db.commit()
+    return {"enabled": body.enabled}
+
+
+@router.get("/settings/billing/media-prices")
+async def get_media_prices(_admin: User = Depends(get_current_admin), db: AsyncSession = Depends(get_db)):
+    from app.services.media_models import strategies
+    from app.services.media_models.prices import active_book, initial_draft
+    book = await active_book(db, include_disabled=True)
+    return {"active_version": book["version"] if book else None,
+            "enabled": book["enabled"] if book else False,
+            "prices": book["prices"] if book else initial_draft(),
+            "strategies": [{"id": strategy.model_id, **strategy.describe()} for strategy in strategies()]}
+
+
+@router.post("/settings/billing/media-prices")
+async def publish_media_prices(body: MediaPricePublishBody, admin: User = Depends(get_current_admin), db: AsyncSession = Depends(get_db)):
+    from app.services.media_models.prices import publish_book
+    result = await publish_book(db, prices=body.prices, expected_version=body.expected_version, user_id=admin.id)
+    await db.commit()
+    return result
+
+
 class AdminUpstreamModelsRequest(BaseModel):
     """按渠道凭证拉取上游 /models 目录。"""
 
@@ -117,30 +154,3 @@ async def admin_list_upstream_models(
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"models": models}
-
-
-@router.get("/settings/billing/model-rates")
-async def admin_billing_model_rates(
-    _admin: User = Depends(get_current_admin),
-) -> dict:
-    """拉取 TokenFree 官方价目，返回推荐文字/图/视频模型费率。"""
-    from app.services.tokenfree_pricing import billing_official_rate_rows, tokenfree_pricing_url
-
-    items = await billing_official_rate_rows()
-    return {"items": items, "source": tokenfree_pricing_url()}
-
-
-@router.get("/settings/tokenfree/quota")
-async def admin_tokenfree_account_quota(
-    _admin: User = Depends(get_current_admin),
-) -> dict:
-    """查询 TokenFree / New API 账户剩余额度（与模型页同一把 Key）。"""
-    from app.services.tokenfree_usage import fetch_tokenfree_account, tokenfree_usage_configured
-
-    if not tokenfree_usage_configured():
-        raise HTTPException(status_code=400, detail="未配置 TokenFree API Key（请先在「模型」填写）")
-    try:
-        return await fetch_tokenfree_account()
-    except RuntimeError as exc:
-        logger.warning("tokenfree quota query failed: %s", exc)
-        raise HTTPException(status_code=502, detail="TokenFree 额度查询失败") from exc

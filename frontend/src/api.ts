@@ -1,5 +1,7 @@
+import { workspaceScope } from './features/teams/workspaceScope'
 import { API_BASE, createJsonRequester, requestResponse, uploadFile } from './api/client'
 import { apiErrorMessage } from './api/http'
+import { curatedCreationTemplates } from './lib/creationTemplates'
 
 /** 科普、账号和计费 API 共用 JSON 传输层。 */
 const request = createJsonRequester()
@@ -65,6 +67,7 @@ export function defaultsFromTemplate(t: Template): {
 }
 
 export type Shot = {
+  video_skip_reason?: string | null
   id: number
   shot_no: number
   duration: number
@@ -105,6 +108,8 @@ export function resolveVoiceId(raw: string, voices: VoicePreset[]): string {
 
 export type Project = {
   id: number
+  target_duration_sec?: number
+  creation_session_id?: number | null
   template_id: string
   title: string
   source_type: string
@@ -126,6 +131,8 @@ export type Project = {
   extra_prompt?: string
   image_model?: string
   video_model?: string
+  image_resolution?: string
+  video_resolution?: string
   ref_image_url: string | null
   created_at: string
   updated_at: string
@@ -154,6 +161,15 @@ export type MediaModelOption = {
   description: string
   provider: string
   recommended?: boolean
+  strategy_id?: string
+  strategy_version?: number
+  billing_unit?: 'image' | 'second'
+  prices?: Record<string, string>
+  price_version?: number | null
+  available?: boolean
+  available_resolutions?: string[]
+  reference_limits?: { images: number; audios: number; videos: number }
+  defaults?: { resolution: string; aspect_ratio: string; duration?: number; count: number }
   /** 该模型允许的清晰度 */
   allowed_resolutions?: string[]
   /** 该模型允许的画幅比例 */
@@ -169,6 +185,9 @@ export type MediaModelOption = {
 }
 
 export type MediaModelsCatalog = {
+  generation_defaults?: { image_resolution: string; video_resolution: string }
+  price_version?: number | null
+  billing_mode?: 'fixed_media' | 'legacy'
   image_models: MediaModelOption[]
   video_models: MediaModelOption[]
   defaults: {
@@ -215,7 +234,6 @@ export type UsageSummary = {
   tokens: number
   charge_fen: number
   charge_yuan: number
-  cost_fen: number
   calls: number
   balance_fen: number
   balance_yuan: number
@@ -334,13 +352,17 @@ export const api = {
     })
   },
   templates() {
-    return request<Template[]>('/api/templates')
+    return request<Template[]>('/api/templates').then(curatedCreationTemplates)
+  },
+  getTemplate(id: string) {
+    return request<Template>(`/api/templates/${encodeURIComponent(id)}`)
   },
   createProject(body: {
     template_id: string
     title: string
     source_type: 'theme' | 'script'
     source_text: string
+    target_duration_sec?: number
     resolution_mode?: 'preview' | 'hd'
     pipeline_mode?: PipelineMode
     output_ratio?: string
@@ -357,6 +379,7 @@ export const api = {
       title?: string
       source_type?: 'theme' | 'script'
       source_text?: string
+      target_duration_sec?: number
       template_id?: string
       pipeline_mode?: PipelineMode
       output_ratio?: string
@@ -367,6 +390,8 @@ export const api = {
       extra_prompt?: string
       image_model?: string
       video_model?: string
+      image_resolution?: string
+      video_resolution?: string
       bgm_lock?: string
       subtitle_preset?: string
       cover_url?: string | null
@@ -587,6 +612,7 @@ export const api = {
       task_type: params.task_type,
       count: String(params.count ?? 1),
     })
+    if (workspaceScope.teamId !== null && params.domain === 'drama') q.set('team_id', String(workspaceScope.teamId))
     return request<BillingPreflight>(`/api/billing/preflight?${q.toString()}`)
   },
   eventsUrl(projectId: number) {

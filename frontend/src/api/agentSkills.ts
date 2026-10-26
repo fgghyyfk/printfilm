@@ -56,6 +56,7 @@ export function deleteAgentSkill(skillId: number) {
 
 /** 描述优化：按勾选 Skill 改写提示词（保留 @asset 与台词） */
 export function optimizePromptWithSkills(body: {
+  project_id?: number
   prompt: string
   skill_ids: number[]
   task?: 'video_prompt' | 'image_prompt' | 'shot_plan'
@@ -63,6 +64,7 @@ export function optimizePromptWithSkills(body: {
   return request<{ prompt: string }>('/api/drama/skills/optimize', {
     method: 'POST',
     body: JSON.stringify({
+      project_id: body.project_id,
       prompt: body.prompt,
       skill_ids: body.skill_ids,
       task: body.task || 'video_prompt',

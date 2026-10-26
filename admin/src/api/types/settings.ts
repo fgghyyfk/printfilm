@@ -78,12 +78,6 @@ export type AdminModelSettings = {
   new_user_quota: number;
   billing_user_alert_enabled: boolean;
   billing_user_alert_interval_fen: number;
-  billing_admin_cost_alert_enabled: boolean;
-  billing_admin_cost_alert_threshold_fen: number;
-  billing_admin_cost_alert_emails: string;
-  billing_admin_cost_alert_period: string;
-  billing_admin_cost_alert_last_period_key: string;
-  billing_admin_cost_alert_last_level: number;
   smtp_enabled: boolean;
   smtp_host: string;
   smtp_port: number;
@@ -142,6 +136,7 @@ export type AdminRoutingSettings = {
   system_channels: AdminRoutingChannel[];
   logical_models: AdminLogicalModel[];
   default_models: AdminDefaultModels;
+  media_reference_limits: Record<string, { images: number; videos: number; audios: number }>;
   validation_errors: string[];
   updated_at?: string | null;
 };

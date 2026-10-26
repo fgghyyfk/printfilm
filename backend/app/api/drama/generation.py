@@ -203,6 +203,10 @@ async def suggest_voice_prompt(
             drama_project_id=project.id,
             asset_id=asset.id,
             commit=True,
+            result_payload_factory=lambda result: {
+                "kind": "text", "text_content": result[0],
+                "speaker": result[1], "sample_text": result[2],
+            },
         )
     except ValueError as exc:
         raise http_exception_for_value_error(exc) from exc
@@ -236,6 +240,7 @@ async def generate_voice(
     prompt = (body.voice_prompt or "").strip()
     if not prompt:
         raise HTTPException(status_code=400, detail="缺少 voice_prompt")
+    team_mode = project.team_id is not None
 
     asset = None
     if body.asset_id:
@@ -251,15 +256,21 @@ async def generate_voice(
             params={"voicePrompt": prompt, "generation": {"status": "generating"}},
         )
         db.add(asset)
-        await db.commit()
-        await db.refresh(asset)
+        if team_mode:
+            await db.flush()
+        else:
+            await db.commit()
+            await db.refresh(asset)
 
     params = dict(asset.params or {})
     params["generation"] = {"status": "generating"}
     params["voicePrompt"] = prompt
     asset.params = params
-    await db.commit()
-    await db.refresh(asset)
+    if team_mode:
+        await db.flush()
+    else:
+        await db.commit()
+        await db.refresh(asset)
 
     character_asset = None
     if body.character_asset_id:
@@ -269,8 +280,12 @@ async def generate_voice(
         if (character_asset.type or "").lower() != "character":
             raise HTTPException(status_code=400, detail="character_asset_id 须为角色资产")
 
-    try:
-        updated = await generate_voice_asset_audio(
+    started = False
+
+    async def _synthesize():
+        nonlocal started
+        started = True
+        return await generate_voice_asset_audio(
             db,
             user,
             project,
@@ -280,12 +295,38 @@ async def generate_voice(
             speaker=body.speaker,
             character_asset=character_asset,
         )
+
+    try:
+        _, updated = await run_billed_ephemeral(
+            db,
+            user,
+            domain="drama",
+            task_type="voice_synthesis",
+            executor=_synthesize,
+            drama_project_id=project.id,
+            asset_id=asset.id,
+            payload={"asset_id": asset.id, "prompt": prompt, "sample_text": body.sample_text},
+            billable=team_mode,
+            result_payload_factory=lambda result: {
+                "kind": "audio", "urls": [result.url] if result.url else [], "asset_id": result.id,
+            },
+        )
     except Exception as exc:  # noqa: BLE001
-        params = dict(asset.params or {})
-        params["generation"] = {"status": "failed", "error": str(exc)[:500]}
-        asset.params = params
-        await db.commit()
-        logger.exception("音色合成失败 project_id=%s asset_id=%s", project.id, asset.id)
+        project_id, asset_id = project.id, asset.id
+        if team_mode and not started:
+            # Admission did not commit: roll back the new asset and queued state
+            # together with the rejected task/budget, leaving no orphan voice asset.
+            await db.rollback()
+        else:
+            params = dict(asset.params or {})
+            params["generation"] = {"status": "failed", "error": str(exc)[:500]}
+            asset.params = params
+            await db.commit()
+        logger.exception("音色合成失败 project_id=%s asset_id=%s", project_id, asset_id)
+        if team_mode and isinstance(exc, HTTPException):
+            raise
+        if team_mode and isinstance(exc, ValueError):
+            raise http_exception_for_value_error(exc) from exc
         raise HTTPException(status_code=500, detail=str(exc)[:500]) from exc
 
     logger.info(

@@ -94,6 +94,7 @@ export function TaskListRow({ task, upstream, billing, now, cancelling, onOpen, 
       <td className="min-w-[200px]">
         <div className="flex items-baseline gap-2">
           <span className="font-mono text-xs font-semibold">#{task.id}</span>
+          {task.execution_mode === "direct" ? <Badge variant="secondary">????</Badge> : task.queue_type ? <Badge variant="secondary">{{ text: "文字", image: "图片", video: "视频" }[task.queue_type]}队列</Badge> : null}
           <span className="task-cell-main">{taskDomainLabel(task.domain)} · {taskTypeLabel(task.task_type)}</span>
         </div>
         <div

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Query
 from sqlalchemy import and_, not_, or_, select
 
 from app.models_drama import DramaProject
+from app.models_teams import TeamMember
 from .dependencies import Actor, DB, Visitor, storage_ready
 from .models import Asset, ContentOrder, Entitlement, EpisodePreview, Handoff, PlaybackJob, Publication, RevenueConfig, Rights, Series, SeriesEpisode
 from .schemas import EpisodeInput, EpisodeUpdate, ImportEpisodesInput, SeriesInput, SeriesUpdate, Version
@@ -167,7 +168,13 @@ async def list_series(db: DB, q: str = Query("", max_length=100), category: str 
 async def import_sources(db: DB, user: Actor):
     """列出当前用户可明确选择导入的漫剧项目和已生成分集。"""
     from .drama_publish import publish_context
-    projects = list((await db.execute(select(DramaProject).where(DramaProject.user_id == user.id).order_by(DramaProject.id.desc()))).scalars().all())
+    active_teams = select(TeamMember.team_id).where(
+        TeamMember.user_id == user.id, TeamMember.active.is_(True),
+    )
+    projects = list((await db.execute(select(DramaProject).where(
+        DramaProject.user_id == user.id,
+        or_(DramaProject.team_id.is_(None), DramaProject.team_id.in_(active_teams)),
+    ).order_by(DramaProject.id.desc()))).scalars().all())
     result = []
     for project in projects:
         context = await publish_context(project.id, db, user)

@@ -91,11 +91,13 @@ async def synthesize_voice_asset(
         resolved_speaker,
         display_name,
     )
+    result_metadata: dict[str, Any] = {}
     audio_url = await ark.tts(
         text,
         resolved_speaker,
         project_id=project.id,
         shot_no=asset.id,
+        result_metadata=result_metadata,
     )
     audio_url = finalize_voice_reference_url(
         audio_url or "",
@@ -116,6 +118,12 @@ async def synthesize_voice_asset(
         params["sourceCharacterAssetId"] = character_asset.id
     gen = params.get("generation") if isinstance(params.get("generation"), dict) else {}
     params["generation"] = {**gen, "status": "done", "url": audio_url}
+    from app.services.drama.asset_metadata import generated_media_metadata
+    params["media_metadata"] = generated_media_metadata(
+        model_id=result_metadata.get("model_id"),
+        prompt=prompt, options={"speaker": result_metadata.get("speaker") or resolved_speaker, "sample_text": text},
+        simulated=bool(result_metadata.get("simulated")),
+    )
     asset.params = params
     await record_line(
         db,

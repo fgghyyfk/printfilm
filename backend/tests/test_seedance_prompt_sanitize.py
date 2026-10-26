@@ -6,6 +6,26 @@ from app.services.drama.build_seedance_generate_body import (
     describe_seedance_content_slots,
     normalize_canvas_freeform_speech,
 )
+
+
+def test_submitted_prompt_keeps_visual_style_and_body_without_other_forced_sections():
+    from app.services.tokenfree_video import prepare_video_create_body
+    reference = [_char(1, "角色甲", audio="https://cdn.example.com/voice.mp3")]
+    script = "@duration:6\n【画面·无配音仅环境音】@asset:1 走到窗前。\n【对白·慢速清晰】角色甲：我们出发。"
+    items = build_seedance_content_items(script, reference, video_style_id="korean-urban-soft",
+        style_board_url="https://cdn.example.com/style.png", continuity_first_frame_url="https://cdn.example.com/last.jpg")
+    body = prepare_video_create_body({"model": "MiniMax-H3", "content": items, "duration": 6, "ratio": "9:16"})
+    prompt = body["prompt"]
+    assert "【强制约束：视频画面风格】" in prompt
+    assert "韩剧" in prompt
+    assert "另附画风参考图" in prompt
+    assert prompt.count("【强制约束：") == 1
+    assert "走到窗前" in prompt and "我们出发" in prompt
+    assert "00:00-00:06" in prompt
+    media = body["metadata"]["content"]
+    assert any(item.get("image_url", {}).get("url") == "https://cdn.example.com/style.png" for item in media)
+    assert any(item.get("image_url", {}).get("url") == "https://cdn.example.com/last.jpg" for item in media)
+    assert any(item.get("audio_url", {}).get("url") == "https://cdn.example.com/voice.mp3" for item in media)
 from app.services.seedance_segments import (
     build_seedance_production_section,
     rewrite_misclassified_visual_voice_lines,
@@ -114,7 +134,7 @@ def test_labeled_speaker_attaches_reference_audio():
     ]
     assert audios == ["https://cdn.example.com/yu.mp3"]
     assert "【对白" in items[0]["text"]
-    assert "【强制约束：角色音色】" in items[0]["text"]
+    assert "【强制约束：角色音色】" not in items[0]["text"]
 
 
 def test_canvas_freeform_say_attaches_reference_audio():
@@ -131,7 +151,7 @@ def test_canvas_freeform_say_attaches_reference_audio():
         if item.get("type") == "audio_url"
     ]
     assert audios == ["https://cdn.example.com/male.mp3"]
-    assert "【强制约束：角色音色】" in items[0]["text"]
+    assert "【强制约束：角色音色】" not in items[0]["text"]
 
 
 def test_brace_dialogue_splits_and_strips_visual_brace_noise():
@@ -155,7 +175,7 @@ def test_brace_dialogue_splits_and_strips_visual_brace_noise():
     assert "【对白·慢速清晰】" in prompt
     assert "我请你吃疯狂星期四" in prompt
     assert "说{" not in prompt.split("【对白")[0]
-    assert "【强制约束：角色音色】" in prompt
+    assert "【强制约束：角色音色】" not in prompt
     assert "@音频1" in prompt
 
     # 画面描述误入花括号 → 只删噪声，不升格对白
@@ -191,7 +211,7 @@ def test_true_third_person_narration_stays_narration():
 
 
 def test_bound_voice_submitted_as_reference_audio():
-    """已绑定试听会提交 reference_audio，并写入音色强制约束。"""
+    """已绑定试听仍提交 reference_audio，不再追加音色强制约束。"""
     items = build_seedance_content_items(_ACI_SCRIPT, _ACI_REFERENCE, burn_subtitles=False)
     audios = [
         item["audio_url"]["url"]
@@ -200,7 +220,7 @@ def test_bound_voice_submitted_as_reference_audio():
     ]
     assert "https://cdn.example.com/aci.mp3" in audios
     text = items[0]["text"]
-    assert "【强制约束：角色音色】" in text
+    assert "【强制约束：角色音色】" not in text
     assert "参考音频" in text
     labels = describe_seedance_content_slots(
         _ACI_REFERENCE,
@@ -217,15 +237,15 @@ def test_peiyue_cue_feeds_production_bgm():
     assert "贴合内容的轻量配乐" not in section
 
 
-def test_prop_locked_in_reference_section():
+def test_prop_reference_is_kept_without_extra_constraint_section():
     prompt = build_seedance_prompt_text(_ACI_SCRIPT, _ACI_REFERENCE, burn_subtitles=False)
-    assert "【强制约束：道具】" in prompt
+    assert "【强制约束：道具】" not in prompt
     assert "@图片4" in prompt
     assert "搬家纸箱" in prompt
 
 
-def test_canvas_image_type_gets_scene_force_constraint():
-    """画布「新图片」(type=image) 须进场景强制约束，并按场景名替换 @asset。"""
+def test_canvas_image_references_keep_indices_without_extra_constraints():
+    """保留画布图片和正文引用序号，不追加场景或角色强制约束段。"""
     image_ref = {
         "id": 9001,
         "type": "image",
@@ -241,16 +261,16 @@ def test_canvas_image_type_gets_scene_force_constraint():
         "背景是肯德基红色招牌与玻璃门。他说：'v我50请你吃疯狂星期四'。"
     )
     prompt = build_seedance_prompt_text(script, [char, image_ref], burn_subtitles=False)
-    assert "【强制约束：场景】" in prompt
+    assert "【强制约束：场景】" not in prompt
     assert "@图片2" in prompt and "新图片" in prompt
-    assert "【强制约束：角色形象】" in prompt
+    assert "【强制约束：角色形象】" not in prompt
     assert "@图片1" in prompt and "妖皇" in prompt
     assert "新图片（@图片2/参考图2）" in prompt
     # @asset: 冒号不得把整段打成对白；他说："…" 应拆出真正对白行并挂 @音频
-    assert "【强制约束：角色音色】" in prompt
+    assert "【强制约束：角色音色】" not in prompt
     assert "@音频1" in prompt
-    # 官方绑定口令：图片N中的角色用音频M说
-    assert "@图片1中的角色「妖皇」必须使用@音频1" in prompt
+    # 不再追加图片N中的角色用音频M说的强制命令。
+    assert "@图片1中的角色「妖皇」必须使用@音频1" not in prompt
     assert "【对白·慢速清晰】" in prompt
     assert "妖皇（@图片1/参考图1，@音频1/参考音频1）" in prompt
     assert "v我50请你吃疯狂星期四" in prompt
@@ -309,8 +329,8 @@ def test_string_voice_audio_url_is_attached():
     ]
     assert audios == ["https://cdn.example.com/yao-str.mp3"]
     prompt = build_seedance_prompt_text(script, [char], burn_subtitles=False)
-    assert "【强制约束：角色音色】" in prompt
-    assert "@音频1" in prompt
+    assert "【强制约束：角色音色】" not in prompt
+    assert "你好" in prompt
 
 
 def test_asset_colon_not_treated_as_speaker_dialogue():
@@ -347,7 +367,7 @@ def test_canvas_music_audio_is_bound_as_reference_audio():
     ]
     assert audios == ["https://cdn.example.com/music.mp3"]
     prompt = str(items[0]["text"])
-    assert "【强制约束：参考音乐】" in prompt
+    assert "【强制约束：参考音乐】" not in prompt
     assert "@音频1" in prompt
     assert "说出全部对白" not in prompt
 

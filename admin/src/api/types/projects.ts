@@ -1,7 +1,6 @@
 /** 用户、科普项目、漫剧资产与模板的管理端接口契约。 */
 export type AdminProjectUsage = {
   charge_fen: number;
-  cost_fen: number;
   tokens: number;
   calls: number;
   image_gens: number;
