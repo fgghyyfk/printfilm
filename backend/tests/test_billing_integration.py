@@ -72,7 +72,7 @@ async def test_freeze_settle_refunds_unused_estimate(db_session: AsyncSession) -
 async def test_ensure_balance_rejects_insufficient_funds(db_session: AsyncSession) -> None:
     """入队前余额预检应抛 ValueError。"""
     user = await make_user(db_session, balance_fen=0)
-    task = await make_task(db_session, user, domain="api", task_type="v1_image")
+    task = await make_task(db_session, user, domain="studio", task_type="tool_image")
     await db_session.commit()
 
     with pytest.raises(ValueError, match="余额不足"):
@@ -89,7 +89,7 @@ async def test_create_task_rejects_insufficient_balance(db_session: AsyncSession
         await create_task(
             db_session,
             user,
-            TaskCreateRequest(domain="api", task_type="v1_image"),
+            TaskCreateRequest(domain="studio", task_type="tool_image"),
             commit=False,
         )
 
@@ -129,18 +129,18 @@ async def test_ensure_balance_counts_pending_unfrozen_tasks(db_session: AsyncSes
 async def test_create_task_stores_billing_estimate_at_enqueue(db_session: AsyncSession) -> None:
     """create_task 入队时应写入 billing_estimate_fen，供后续累计校验。"""
     user = await make_user(db_session, balance_fen=100_000)
-    task = await make_task(db_session, user, domain="api", task_type="v1_image")
+    task = await make_task(db_session, user, domain="studio", task_type="tool_image")
     await db_session.commit()
 
     from app.services.billing.estimates import estimate_task_fen
 
-    probe = TaskRun(domain="api", task_type="v1_image", requested_by=user.id, payload={})
+    probe = TaskRun(domain="studio", task_type="tool_image", requested_by=user.id, payload={})
     expected = await estimate_task_fen(db_session, probe)
 
     created = await create_task(
         db_session,
         user,
-        TaskCreateRequest(domain="api", task_type="v1_image"),
+        TaskCreateRequest(domain="studio", task_type="tool_image"),
         commit=True,
     )
     assert int(created.billing_estimate_fen or 0) == expected
@@ -215,8 +215,8 @@ async def test_settle_deferred_video_poll_idempotent_on_success(db_session: Asyn
     task = await make_task(
         db_session,
         user,
-        domain="api",
-        task_type="v1_video",
+        domain="studio",
+        task_type="tool_video",
         status="awaiting_poll",
         billing_status="none",
         provider_task_id="upstream-ok-1",
@@ -273,8 +273,8 @@ async def test_settle_deferred_video_poll_failed_refunds_freeze(db_session: Asyn
     task = await make_task(
         db_session,
         user,
-        domain="api",
-        task_type="v1_video",
+        domain="studio",
+        task_type="tool_video",
         status="awaiting_poll",
         billing_status="none",
         provider_task_id="upstream-task-1",

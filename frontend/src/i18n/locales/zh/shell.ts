@@ -147,7 +147,6 @@ export const zhShell = {
       assets: '资产管理',
       subscription: '订阅与余额',
       team: '团队管理',
-      api: 'API',
       notify: '通知偏好',
       security: '安全',
     },

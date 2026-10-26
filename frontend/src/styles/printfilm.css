@@ -5044,65 +5044,6 @@ button.pf-shot-editable:disabled {
   color: #b45309;
 }
 
-.pf-api-create {
-  display: flex;
-  gap: 0.6rem;
-  margin: 1rem 0;
-  flex-wrap: wrap;
-}
-
-.pf-api-create input {
-  flex: 1;
-  min-width: 180px;
-  border: 1px solid var(--pf-line);
-  border-radius: 10px;
-  padding: 0.55rem 0.75rem;
-  font: inherit;
-}
-
-.pf-api-secret {
-  margin: 0.75rem 0 1rem;
-  padding: 0.85rem 1rem;
-  border-radius: 12px;
-  border: 1px solid #fde68a;
-  background: #fffbeb;
-}
-
-.pf-api-secret code {
-  display: block;
-  margin: 0.5rem 0;
-  word-break: break-all;
-  font-size: 0.82rem;
-}
-
-.pf-api-key-list {
-  margin-top: 0.75rem;
-}
-
-.pf-api-docs {
-  margin-top: 1.5rem;
-  padding-top: 1.25rem;
-  border-top: 1px solid var(--pf-line);
-}
-
-.pf-api-docs h3 {
-  margin: 0 0 0.75rem;
-  font-size: 1rem;
-}
-
-.pf-api-docs pre {
-  margin: 0.35rem 0 1rem;
-  padding: 0.75rem 0.85rem;
-  border-radius: 10px;
-  background: #0f172a;
-  color: #e2e8f0;
-  font-size: 0.75rem;
-  line-height: 1.45;
-  overflow-x: auto;
-  white-space: pre-wrap;
-  word-break: break-all;
-}
-
 .pf-usage-card-head {
   margin-bottom: 0.85rem;
 }

@@ -288,13 +288,13 @@ async def estimate_task_fen(db: AsyncSession, task: TaskRun, settings: Settings 
         c = charge_fen_official_llm(s.billing_est_llm_tokens, s)
         return _buffered_fen(c, s)
 
-    if domain in {"api", "studio"}:
+    if domain == "studio":
         if task_type == "tool_audio":
             _, c = charge_fen_for_tokens(s.billing_est_tts_tokens, "tts", settings=s)
             return _buffered_fen(c, s)
-        if task_type in {"v1_image", "tool_image"}:
+        if task_type == "tool_image":
             return _catalog_image_fen(s, payload=payload)
-        if task_type in {"v1_video", "v1_seedance", "tool_video"}:
+        if task_type == "tool_video":
             dur = float(payload.get("duration") or 5)
             c = charge_fen_official_video(
                 max(dur, 2.0),

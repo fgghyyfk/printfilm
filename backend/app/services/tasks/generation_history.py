@@ -40,8 +40,7 @@ _TASK_LABELS = {
     "content_expand": "扩写创作内容", "creation_turn": "创作对话", "voice_preview": "配音试听",
     "shot_regen_image": "重新生成分镜图片", "shot_regen_video": "重新生成分镜视频",
     "shot_regen_audio": "重新生成分镜配音", "project_regen_audio": "重新生成全片配音",
-    "project_compose_only": "合成短视频", "v1_image": "API 图片生成", "v1_video": "API 视频生成",
-    "v1_seedance": "API 视频生成", "tool_image": "生成图片", "tool_video": "生成视频", "tool_audio": "生成音频",
+    "project_compose_only": "合成短视频", "tool_image": "生成图片", "tool_video": "生成视频", "tool_audio": "生成音频",
 }
 _PIPELINE_LABELS = {"script": "生成短视频剧本", "storyboard": "规划短视频分镜", "assets": "生成分镜图片",
                     "videos": "生成分镜视频", "audio": "生成短视频配音", "compose": "合成短视频", "produce": "生成短视频"}
@@ -61,7 +60,7 @@ def _kind_expression():
         (and_(TaskRun.task_type == "project_pipeline", phase == "assets"), "image"),
         (and_(TaskRun.task_type == "project_pipeline", phase == "audio"), "audio"),
         (and_(TaskRun.task_type == "project_pipeline", phase.in_(("script", "text", "plan", "storyboard"))), "text"),
-        (TaskRun.task_type.in_(("project_pipeline", "episode_compose", "project_compose_only", "v1_seedance")), "video"),
+        (TaskRun.task_type.in_(("project_pipeline", "episode_compose", "project_compose_only")), "video"),
         (TaskRun.task_type.contains("video"), "video"),
         (TaskRun.task_type.contains("image"), "image"),
         (TaskRun.queue_type.in_(("image", "video")), TaskRun.queue_type),
@@ -82,7 +81,7 @@ def _generation_kind(task) -> str:
         if phase == "audio":
             return "audio"
         return "text" if phase in {"script", "text", "plan", "storyboard"} else "video"
-    if name in {"episode_compose", "project_compose_only", "v1_seedance"} or "video" in name:
+    if name in {"episode_compose", "project_compose_only"} or "video" in name:
         return "video"
     if "image" in name:
         return "image"

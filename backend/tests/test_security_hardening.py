@@ -14,12 +14,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import billing as billing_api
 from app.api import tools as tools_api
-from app.api.v1 import generation as v1_generation
 from app.deps import _user_from_bearer
 from app.models import Order, User, WalletLedger
 from app.services import epay
 
-from tests.conftest import make_task, make_user
+from tests.conftest import make_user
 
 
 class _FakeNotifyRequest:
@@ -103,48 +102,6 @@ def test_epay_verify_constant_time_signature() -> None:
         assert epay.verify({**params, "sign": forged}) is False
         assert epay.verify({**params, "sign": ""}) is False
     assert "compare_digest" in inspect.getsource(epay.verify)
-
-
-async def test_v1_get_task_rejects_other_user(db_session: AsyncSession) -> None:
-    """B 用户不得凭上游 task_id 查询 A 用户的视频任务（IDOR）。"""
-    user_a = await make_user(db_session)
-    user_b = await make_user(db_session)
-    await make_task(
-        db_session,
-        user_a,
-        domain="api",
-        task_type="v1_seedance",
-        status="awaiting_poll",
-        billing_status="frozen",
-        provider_task_id="prov-idor-1",
-    )
-
-    poll = AsyncMock(return_value={"status": "running"})
-    with patch.object(v1_generation, "poll_video_task", poll):
-        with pytest.raises(HTTPException) as exc:
-            await v1_generation.get_task("prov-idor-1", db=db_session, user=user_b)
-    assert exc.value.status_code == 404
-    poll.assert_not_called()
-
-
-async def test_v1_get_task_allows_owner(db_session: AsyncSession) -> None:
-    """归属人查询自己的任务正常透传上游状态。"""
-    user = await make_user(db_session)
-    await make_task(
-        db_session,
-        user,
-        domain="api",
-        task_type="v1_seedance",
-        status="awaiting_poll",
-        billing_status="frozen",
-        provider_task_id="prov-owner-1",
-    )
-
-    poll = AsyncMock(return_value={"status": "running"})
-    with patch.object(v1_generation, "poll_video_task", poll):
-        out = await v1_generation.get_task("prov-owner-1", db=db_session, user=user)
-    assert out.status == "running"
-    poll.assert_awaited_once()
 
 
 async def test_tools_get_task_404_without_local_row(db_session: AsyncSession) -> None:

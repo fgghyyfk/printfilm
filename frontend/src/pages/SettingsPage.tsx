@@ -6,7 +6,6 @@ import { api, type User, type Wallet } from '../api'
 import { dramaApi, type DramaProjectListItem } from '../api/drama'
 import MonthlyUsageCard from '../components/billing/MonthlyUsageCard'
 import UsageChargeRecords from '../components/billing/UsageChargeRecords'
-import ApiKeysPanel from './settings/ApiKeysPanel'
 import AccountProfileCard from './settings/AccountProfileCard'
 import ChangePasswordCard from './settings/ChangePasswordCard'
 import ComingSoon from '../components/ui/ComingSoon'
@@ -25,7 +24,6 @@ type SettingsTab =
   | 'assets'
   | 'subscription'
   | 'team'
-  | 'api'
   | 'notify'
   | 'security'
 
@@ -49,7 +47,6 @@ const SIDE_ITEMS: { id: SettingsTab; soon?: boolean; group?: 'work' | 'account' 
   { id: 'assets', group: 'work' },
   { id: 'subscription', group: 'account' },
   { id: 'team', group: 'account' },
-  { id: 'api', group: 'account' },
   { id: 'notify', soon: true, group: 'account' },
   { id: 'security', group: 'account' },
 ]
@@ -318,8 +315,6 @@ export default function SettingsPage() {
           ) : null}
 
           {tab === 'security' ? <ChangePasswordCard email={user?.email || ''} /> : null}
-
-          {tab === 'api' ? <ApiKeysPanel /> : null}
 
           {tab === 'team' ? <TeamDirectory compact /> : null}
 

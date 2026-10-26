@@ -148,7 +148,6 @@ export const enShell = {
       assets: 'Assets',
       subscription: 'Plan & balance',
       team: 'Team',
-      api: 'API',
       notify: 'Notifications',
       security: 'Security',
     },

@@ -59,9 +59,9 @@ Manage short videos as project cards at `/history`, then start a new project at 
 
 One-shot capabilities without the full pipeline: text-to-image, image-to-image, image-to-product, text-to-video, video-to-video, e-commerce collage.
 
-### 4. Admin console and open API
+### 4. Admin console
 
-Users, orders, templates, task center, model routing. Open API `/api/v1` for image / video generation (Bearer or `X-Api-Key`).
+Users, orders, templates, task center, and model routing.
 
 ## Workflow
 

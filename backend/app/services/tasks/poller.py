@@ -128,7 +128,7 @@ async def _select_and_poll_due() -> None:
     now = datetime.now(UTC)
     batch_limit = max(1, int(get_settings().task_poll_max_concurrency or 20))
     async with AsyncSessionLocal() as db:
-        # 仅 drama fragment_video 走 drama 收尾轮询；api/studio 的轻量 deferred
+        # 仅 drama fragment_video 走 drama 收尾轮询；独立轻量 deferred
         # 视频由 _poll_ephemeral_deferred_tasks 处理，误送 drama poller 会被立即判失败。
         stmt = (
             select(TaskRun.id)
@@ -215,7 +215,7 @@ async def _poll_one_task(task_id: int) -> None:
             await db.commit()
 
 
-# 后台轮询 api/studio 轻量视频任务：主动查上游终态，超时则失败并解冻。
+# 后台轮询独立轻量视频任务（含历史在途任务）：主动查上游终态，超时则失败并解冻。
 async def _poll_ephemeral_deferred_tasks() -> None:
     now = datetime.now(UTC)
     timeout_sec = float(get_settings().ark_video_poll_timeout or 900.0)
@@ -227,7 +227,8 @@ async def _poll_ephemeral_deferred_tasks() -> None:
             select(TaskRun)
             .where(
                 TaskRun.status == "awaiting_poll",
-                TaskRun.domain.in_(["api", "studio"]),
+                TaskRun.domain.not_in(["drama", "kepu"]),
+                TaskRun.provider_task_id.is_not(None),
                 TaskRun.billing_status == "frozen",
                 or_(TaskRun.domain != "studio", TaskRun.task_type != "tool_video",
                     TaskRun.payload["run_id"].as_integer().is_(None)),
@@ -249,7 +250,7 @@ async def _poll_ephemeral_deferred_tasks() -> None:
             logger.exception("ephemeral deferred poll failed task_id=%s", task_id)
 
 
-# 轮询单条 api/studio 轻量 deferred 视频任务：超时判失败、运行中写回退避、终态结算。
+# 轮询单条独立轻量视频任务（含历史在途任务）：超时判失败、运行中写回退避、终态结算。
 async def _poll_one_ephemeral_task(task_id: int, *, now, timeout_sec: float) -> None:
     from app.models import User
     from app.services.billing.ephemeral import settle_deferred_video_poll

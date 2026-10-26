@@ -50,7 +50,7 @@ async def studio(monkeypatch):
 @pytest.mark.parametrize("kind,payload,queue", [
     ("script_summary", {}, "text"), ("voice_synthesis", {}, "text"), ("tool_audio", {}, "text"),
     ("asset_image", {}, "image"), ("tool_image", {}, "image"), ("shot_regen_image", {}, "image"),
-    ("fragment_video", {}, "video"), ("asset_video", {}, "video"), ("v1_seedance", {}, "video"),
+    ("fragment_video", {}, "video"), ("asset_video", {}, "video"),
     ("project_pipeline", {"phase": "script"}, "text"), ("project_pipeline", {"phase": "assets"}, "image"),
     ("project_pipeline", {"phase": "videos"}, "video"),
 ])

@@ -41,7 +41,7 @@ async def test_partial_delivery_uses_snapshot_and_upstream_cannot_replace_retail
     db = db_session
     user = await make_user(db)
     await publish_book(db, prices={"seedream-5.0-pro": {"2K": "0.1234"}}, expected_version=None, user_id=user.id)
-    task = TaskRun(domain="api", task_type="v1_image", requested_by=user.id,
+    task = TaskRun(domain="studio", task_type="tool_image", requested_by=user.id,
                    payload={"model": "seedream-5.0-pro", "resolution": "2K"}, status="running")
     await prepare_task_media(db, task)
     db.add(task)
@@ -70,7 +70,7 @@ async def test_failed_without_delivery_refunds_all(db_session):
     db = db_session
     user = await make_user(db)
     await publish_book(db, prices={"seedance-2.5": {"720p": "0.5000"}}, expected_version=None, user_id=user.id)
-    task = TaskRun(domain="api", task_type="v1_video", requested_by=user.id,
+    task = TaskRun(domain="studio", task_type="tool_video", requested_by=user.id,
                    payload={"model": "seedance-2.5", "resolution": "720p", "duration": 5}, status="running")
     await prepare_task_media(db, task)
     db.add(task)
@@ -132,7 +132,7 @@ async def test_fixed_price_disabled_billing_never_charges_wallet(db_session, mon
     from app.config import get_settings
     user = await make_user(db_session)
     await publish_book(db_session, prices={"seedream-5.0-pro": {"2K": "0.1234"}}, expected_version=None, user_id=user.id)
-    task = TaskRun(domain="api", task_type="v1_image", requested_by=user.id, payload={"model": "seedream-5.0-pro"}, status="running")
+    task = TaskRun(domain="studio", task_type="tool_image", requested_by=user.id, payload={"model": "seedream-5.0-pro"}, status="running")
     await prepare_task_media(db_session, task)
     db_session.add(task)
     await db_session.flush()

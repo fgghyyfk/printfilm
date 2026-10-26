@@ -57,6 +57,6 @@
 | `POST /api/admin/settings/billing/media-prices` | `{prices: {model_id: {resolution: "元单价"}}, expected_version}`，发布不可变新版本 |
 | `PATCH /api/admin/settings/billing/media-prices/activation` | `{enabled, expected_version}`，切换新任务计费模式 |
 
-前端生成请求携带 `X-Media-Price-Version`（旧模式目录为 0）。价格或模式发生变化返回 409，在建任务、冻结资金、提交上游之前结束。刷新目录后由用户重新提交，不自动重发生成请求。开放 API 也可在请求体提供 `price_version`。
+前端生成请求携带 `X-Media-Price-Version`（旧模式目录为 0）。价格或模式发生变化返回 409，在建任务、冻结资金、提交上游之前结束。刷新目录后由用户重新提交，不自动重发生成请求。
 
-图片开放 API 支持 `model`、`resolution`、`count`；视频支持 `model`、`resolution`、`duration` 和画幅。缺省值兼容原请求形式，但模型不支持的组合会返回字段错误，不自动降档。
+站内图片生成按模型、分辨率和数量报价；视频按模型、分辨率和提交时长报价。模型不支持的组合返回字段错误，不自动降档。

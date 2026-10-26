@@ -10,8 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.api import auth, billing, creation, projects, tasks, templates, tools
 from app.api import teams, team_billing, team_content, team_edit_locks
-from app.api import api_keys as user_api_keys
-from app.api.v1 import router as v1_router
 from app.api.admin import router as admin_router
 from app.api.drama import router as drama_router
 from app.config import get_settings
@@ -115,8 +113,6 @@ app.include_router(creation.router, prefix="/api")
 app.include_router(tasks.router, prefix="/api")
 app.include_router(billing.router, prefix="/api")
 app.include_router(tools.router, prefix="/api")
-app.include_router(user_api_keys.router, prefix="/api")
-app.include_router(v1_router, prefix="/api")
 app.include_router(drama_router, prefix="/api")
 app.include_router(teams.router, prefix="/api")
 app.include_router(teams.invitation_router, prefix="/api")

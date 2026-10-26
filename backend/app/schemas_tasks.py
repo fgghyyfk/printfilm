@@ -22,7 +22,7 @@ class TaskTargetBind(BaseModel):
 class TaskCreateRequest(BaseModel):
     """Create a platform task run."""
 
-    domain: str = Field(default="drama", description="drama | kepu | tools | api | studio")
+    domain: str = Field(default="drama", description="drama | kepu | tools | studio")
     task_type: str = Field(min_length=1, max_length=64)
     priority: int = Field(default=100, ge=0, le=1000)
     client_request_id: str | None = Field(default=None, max_length=128)

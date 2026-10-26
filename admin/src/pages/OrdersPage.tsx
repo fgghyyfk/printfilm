@@ -325,7 +325,6 @@ export function OrdersPage() {
               <option value="kepu">科普</option>
               <option value="drama">漫剧</option>
               <option value="studio">工作室</option>
-              <option value="api">开放 API</option>
             </Select>
             <Input
               placeholder="billing_key"

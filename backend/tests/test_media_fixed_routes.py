@@ -79,7 +79,7 @@ async def test_recovery_reuses_accepted_provider_id_without_submit(gateway, db_s
     ark, alpha = gateway
     user = await make_user(db_session)
     op = operation()
-    task = TaskRun(domain="api", task_type="v1_video", requested_by=user.id,
+    task = TaskRun(domain="studio", task_type="tool_video", requested_by=user.id,
                    billing_snapshot={"items": [op]}, media_provider_tasks={op["operation_id"]: "accepted-id"})
     db_session.add(task)
     await db_session.flush()

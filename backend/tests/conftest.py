@@ -95,7 +95,6 @@ async def db_session(billing_enabled: None) -> AsyncIterator[AsyncSession]:
     # 注册全部 ORM 表
     import app.models  # noqa: F401
     import app.models_agent  # noqa: F401
-    import app.models_api  # noqa: F401
     import app.models_drama  # noqa: F401
     import app.models_settings  # noqa: F401
     import app.models_tasks  # noqa: F401
@@ -160,8 +159,8 @@ async def make_task(
     db: AsyncSession,
     user: User,
     *,
-    domain: str = "api",
-    task_type: str = "v1_image",
+    domain: str = "studio",
+    task_type: str = "tool_image",
     status: str = "pending",
     billing_status: str = "none",
     provider_task_id: str | None = None,

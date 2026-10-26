@@ -137,7 +137,7 @@ export const enPages = {
       },
       {
         q: 'What’s in Account?',
-        a: 'Profile, drama projects, AI Short Video history, tool runs, asset library entry, and plan & balance. Team, API, and notifications are still in progress.',
+        a: 'Profile, drama projects, AI Short Video history, tool runs, asset library entry, and plan & balance. Team workspace and account security are available; notification preferences are still in progress.',
       },
       {
         q: 'How do top-ups and charges work?',
@@ -196,7 +196,7 @@ export const enPages = {
       },
       {
         title: 'Enterprise / wire transfer',
-        desc: 'For bulk credits, API partnerships, or invoices, email your company name and request.',
+        desc: 'For bulk credits, business partnerships, or invoices, email your company name and request.',
         href: 'mailto:support@printfilm.com?subject=PRINTFILM%20Enterprise',
         actionLabel: 'Email partnerships',
       },

@@ -93,7 +93,7 @@ async def plan_items(db, task) -> list[dict]:
                               "aspect_ratio": _project_output_ratio(project) or "9:16"},
                     model=project.video_model or settings.model_video, target=shot.id, shot_no=shot.shot_no)
         return items
-    if kind in {"asset_image", "v1_image", "tool_image"}:
+    if kind in {"asset_image", "tool_image"}:
         model = p.get("model_id") or p.get("model") or generation.get("model")
         params = {"aspect_ratio": p.get("aspect_ratio") or p.get("ratio") or generation.get("aspect_ratio") or "1:1",
                   "resolution": p.get("resolution") or p.get("size") or generation.get("resolution") or "2K",
@@ -112,7 +112,7 @@ async def plan_items(db, task) -> list[dict]:
         if kind == "asset_image" and not p.get("aspect_ratio"):
             params["aspect_ratio"] = "3:4" if p.get("kind", "character") == "character" else "16:9"
         add("image", params, model=model, target=task.asset_id or task.shot_id)
-    if kind in {"asset_video", "fragment_video", "v1_video", "v1_seedance", "tool_video"}:
+    if kind in {"asset_video", "fragment_video", "tool_video"}:
         body = dict(mapping(prepared.get("seedance_body"), "prepared.seedance_body"))
         if kind == "asset_video":
             # Canvas workers load linked assets themselves; client-prepared content cannot hide them.
@@ -166,8 +166,8 @@ async def plan_items(db, task) -> list[dict]:
         content_images = isinstance(content, list) and any(isinstance(item, dict) and item.get("type") == "image_url" for item in content)
         if helper_needed and not content_images and not any(references.get(key) for key in ("image_url", "first_frame", "reference_images")):
             references["image_url"] = "pending://generated-first-frame"
-        add("video", {"duration": duration if duration is not None else (5 if task.domain in {"studio", "api"} else 8),
-                      "resolution": resolution or ("480p" if task.domain in {"studio", "api"} else "720p"),
+        add("video", {"duration": duration if duration is not None else (5 if task.domain == "studio" else 8),
+                      "resolution": resolution or ("480p" if task.domain == "studio" else "720p"),
                       "aspect_ratio": ratio or "9:16",
                       **({"generate_audio": p["generate_audio"]} if "generate_audio" in p else {}),
                       **references},

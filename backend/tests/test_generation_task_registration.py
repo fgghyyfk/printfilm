@@ -23,27 +23,25 @@ def inline_runtime(monkeypatch):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("deferred", [False, True])
-async def test_inline_generation_is_committed_before_external_io(monkeypatch, deferred):
+async def test_inline_generation_is_committed_before_external_io(monkeypatch):
     db, task = inline_runtime(monkeypatch)
 
     async def execute():
         db.commit.assert_awaited_once()
         assert task.status == "running"
-        return {"task_id": "provider-42"} if deferred else "新的创作"
+        return "新的创作"
 
-    run = ephemeral.run_billed_ephemeral_deferred if deferred else ephemeral.run_billed_ephemeral
-    await run(db, SimpleNamespace(id=1), domain="api", task_type="v1_video", executor=execute, commit=False)
+    run = ephemeral.run_billed_ephemeral
+    await run(db, SimpleNamespace(id=1), domain="studio", task_type="tool_video", executor=execute, commit=False)
     assert db.commit.await_count == 1
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("deferred", [False, True])
-async def test_inline_failure_remains_after_callers_rollback(monkeypatch, deferred):
+async def test_inline_failure_remains_after_callers_rollback(monkeypatch):
     db, task = inline_runtime(monkeypatch)
-    run = ephemeral.run_billed_ephemeral_deferred if deferred else ephemeral.run_billed_ephemeral
+    run = ephemeral.run_billed_ephemeral
     with pytest.raises(RuntimeError, match="生成失败"):
-        await run(db, SimpleNamespace(id=1), domain="api", task_type="v1_video",
+        await run(db, SimpleNamespace(id=1), domain="studio", task_type="tool_video",
                   executor=AsyncMock(side_effect=RuntimeError("生成失败")), commit=False)
     assert task.status == "failed"
     assert task.finished_at is not None

@@ -42,8 +42,7 @@ def aware(value):
     return value if value.tzinfo else value.replace(tzinfo=UTC)
 
 
-@pytest.mark.parametrize("deferred", [False, True])
-async def test_slow_inline_generation_renews_remote_lease_and_is_never_requeued(inline_sessions, monkeypatch, deferred):
+async def test_slow_inline_generation_renews_remote_lease_and_is_never_requeued(inline_sessions, monkeypatch):
     sessions, user_id = inline_sessions
     monkeypatch.setattr(inline, "INLINE_LEASE_SECONDS", 0.15)
     monkeypatch.setattr(inline, "INLINE_HEARTBEAT_SECONDS", 0.02)
@@ -59,9 +58,9 @@ async def test_slow_inline_generation_renews_remote_lease_and_is_never_requeued(
                 calls += 1
                 started.set()
                 await finish.wait()
-                return "provider-result" if deferred else "完成的文案"
+                return "完成的文案"
 
-            run = ephemeral.run_billed_ephemeral_deferred if deferred else ephemeral.run_billed_ephemeral
+            run = ephemeral.run_billed_ephemeral
             return await run(db, user, domain="drama", task_type="agent_chat", executor=provider)
 
     job = asyncio.create_task(request())
@@ -102,7 +101,7 @@ async def test_slow_inline_generation_renews_remote_lease_and_is_never_requeued(
             tasks = list((await observer.execute(select(TaskRun))).scalars())
             assert len(tasks) == 1 and calls == 1
             task = tasks[0]
-            assert task.status == ("awaiting_poll" if deferred else "succeeded")
+            assert task.status == "succeeded"
             assert task.lease_token is None and task.lease_until is None
     finally:
         finish.set()

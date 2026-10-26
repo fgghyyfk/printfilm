@@ -26,7 +26,7 @@ async def _add_settled_usage(
 ) -> UsageEvent:
     ev = UsageEvent(
         user_id=user_id,
-        domain="api",
+        domain="studio",
         capability="llm",
         billing_key="llm_chat",
         model="test",

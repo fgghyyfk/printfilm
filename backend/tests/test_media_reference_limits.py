@@ -103,21 +103,21 @@ async def test_reference_video_url_is_resolved_before_provider_request(monkeypat
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("task_type,payload", [
-    ("v1_image", {"model": "seedream-5.0-pro", "reference_images": ["a", "b"]}),
-    ("v1_video", {"model": "seedance-2.5", "reference_audios": ["a", "b"]}),
-    ("v1_seedance", {"model": "seedance-2.5", "prepared": {"seedance_body": {
+    ("tool_image", {"model": "seedream-5.0-pro", "reference_images": ["a", "b"]}),
+    ("tool_video", {"model": "seedance-2.5", "reference_audios": ["a", "b"]}),
+    ("tool_video", {"model": "seedance-2.5", "prepared": {"seedance_body": {
         "content": [{"type": "video_url", "video_url": {"url": "a"}}] * 2}}}),
 ])
 async def test_direct_task_requests_are_rejected_during_planning(configured, task_type, payload):
     with pytest.raises(MediaValidationError):
-        await plan_items(None, TaskRun(domain="api", task_type=task_type, payload=payload))
+        await plan_items(None, TaskRun(domain="studio", task_type=task_type, payload=payload))
 
 
 @pytest.mark.asyncio
 async def test_zero_image_limit_blocks_single_image_api_request(configured):
     configured.media_reference_limits["seedream-5.0-pro"]["images"] = 0
     with pytest.raises(MediaValidationError, match="不支持参考图片"):
-        await plan_items(None, TaskRun(domain="api", task_type="v1_image",
+        await plan_items(None, TaskRun(domain="studio", task_type="tool_image",
             payload={"model": "seedream-5.0-pro", "image_url": "https://example.com/a.png"}))
 
 
@@ -180,7 +180,7 @@ async def test_rejected_task_does_not_insert_or_check_balance(configured, monkey
     balance = AsyncMock()
     monkeypatch.setattr("app.services.billing.settlement.ensure_balance_for_task", balance)
     db = SimpleNamespace(add=Mock(), flush=AsyncMock())
-    body = TaskCreateRequest(domain="api", task_type="v1_image",
+    body = TaskCreateRequest(domain="studio", task_type="tool_image",
         payload={"model": "seedream-5.0-pro", "reference_images": ["a", "b"]})
     with pytest.raises(MediaValidationError):
         await service.create_task(db, User(id=1), body)
@@ -192,7 +192,7 @@ async def test_rejected_task_does_not_insert_or_check_balance(configured, monkey
 @pytest.mark.asyncio
 async def test_rejected_media_does_not_read_price_book(configured):
     db = SimpleNamespace(execute=AsyncMock())
-    task = TaskRun(domain="api", task_type="v1_video", payload={"model": "seedance-2.5", "reference_videos": ["a", "b"]})
+    task = TaskRun(domain="studio", task_type="tool_video", payload={"model": "seedance-2.5", "reference_videos": ["a", "b"]})
     with pytest.raises(MediaValidationError):
         await prepare_task_media(db, task)
     db.execute.assert_not_awaited()

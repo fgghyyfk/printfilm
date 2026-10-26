@@ -56,7 +56,6 @@ async def init_db(engine_override: AsyncEngine | None = None) -> None:
     from app import models_agent  # noqa: F401
     from app import models_creation  # noqa: F401
     from app import models_drama  # noqa: F401
-    from app import models_api  # noqa: F401
     from app import models_settings  # noqa: F401
     from app import models_tasks  # noqa: F401
     from app import models_teams, models_team_billing, models_team_locks  # noqa: F401

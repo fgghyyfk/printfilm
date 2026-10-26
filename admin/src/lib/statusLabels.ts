@@ -72,7 +72,6 @@ export const TASK_DOMAIN_LABELS: Record<string, string> = {
   kepu: "AI短视频",
   tools: "工具",
   studio: "工作室",
-  api: "开放 API",
 };
 
 /** Task type → Chinese（轻量同步 + 平台任务） */
@@ -95,9 +94,6 @@ export const TASK_TYPE_LABELS: Record<string, string> = {
   shot_regen_audio: "单镜配音",
   project_regen_audio: "全片配音",
   project_compose_only: "仅合成",
-  v1_image: "API 生图",
-  v1_video: "API 生视频",
-  v1_seedance: "API Seedance",
   tool_image: "工具生图",
   tool_video: "工具生视频",
 };

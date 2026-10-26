@@ -127,7 +127,7 @@ async def test_provider_id_links_require_matching_tool_domain_and_media_kind(his
         assert tasks[api.id]["urls"] == []
         assert tasks[different_kind.id]["urls"] == []
         assert tasks[matched.id]["urls"] == ["https://output.test/id-match.png"]
-        assert tasks[api.id]["prompt"] == "API 图片生成"
+        assert tasks[api.id]["prompt"] == "生成任务"
 
 
 @pytest.mark.asyncio

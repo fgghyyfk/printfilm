@@ -14,7 +14,7 @@ def task_queue(task_type: str, payload: dict | None = None) -> QueueType:
             return "image"
         if phase in {"videos", "compose", "produce"}:
             return "video"
-    if task_type in {"v1_seedance", "project_compose_only"} or "video" in task_type:
+    if task_type == "project_compose_only" or "video" in task_type:
         return "video"
     if "image" in task_type:
         return "image"

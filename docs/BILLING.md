@@ -145,7 +145,6 @@ sequenceDiagram
 | 科普选题扩写 | `run_billed_ephemeral(domain=kepu, content_expand)` |
 | 漫剧资产 seed（轻量同步） | `run_billed_ephemeral(domain=drama, seed_assets)` |
 | 工作室工具 | `run_billed_ephemeral(domain=studio, tool_image/tool_video)` |
-| 开放 API | `run_billed_ephemeral(domain=api, v1_image/v1_video/v1_seedance)` |
 
 ### LLM 操作全清单（`billing_key=llm_chat`）
 
@@ -221,7 +220,7 @@ EPAY_RETURN_URL=https://your-site.example.com/pricing?paid=1
 
 1. 科普：确认分镜只冻出图+配音；继续生成视频另冻视频段；合成走 compose。各阶段任务结束按实际用量结算。
 2. 漫剧分镜视频/资产生成：有 `task_run_id` 的用量行，任务结束扣费。
-3. 漫剧聊天 / 选题扩写 / Skill 优化 / 音色描述 / 开放 API / 工作室工具：响应含 `task_id`（轻量 TaskRun），余额变化正确。
+3. 漫剧聊天 / 选题扩写 / Skill 优化 / 音色描述 / 工作室工具：响应含 `task_id`（轻量 TaskRun），余额变化正确。
 4. 管理端可按 `task_run_id` 或 `billing_key=llm_chat` 查到每条 LLM/图/视频/TTS 费用。
 5. Seedance 视频成功后 `usage_events.estimated=false` 且 `total_tokens` 与官方任务查询一致。
 6. 财务列表支持按时间范围汇总本地扣费与用量，仪表盘和订单用量不显示上游成本、利润或官方对照。

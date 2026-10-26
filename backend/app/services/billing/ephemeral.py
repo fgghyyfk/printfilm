@@ -121,7 +121,7 @@ async def run_billed_ephemeral(
 ) -> tuple[TaskRun, T]:
     """
     创建轻量 TaskRun → 预扣 → 在 billing_scope 内执行 → 结算。
-    用于聊天、开放 API、工作室工具等同步调用。
+    用于聊天、配音与工作室工具等同步调用。
     """
     task = await create_ephemeral_task_row(
         db,
@@ -243,117 +243,6 @@ async def _cancel_inline_task(db: AsyncSession, task: TaskRun, *, billable: bool
     await db.commit()
 
 
-def _extract_provider_task_id(result: Any) -> str:
-    """从 executor 返回值解析上游 task_id。"""
-    if isinstance(result, dict):
-        raw = result.get("task_id") or result.get("provider_task_id") or ""
-        return str(raw).strip()
-    return str(result).strip()
-
-
-async def run_billed_ephemeral_deferred(
-    db: AsyncSession,
-    user: User,
-    *,
-    domain: str,
-    task_type: str,
-    executor: Callable[[], Awaitable[T]],
-    payload: dict | None = None,
-    project_id: int | None = None,
-    drama_project_id: int | None = None,
-    shot_id: int | None = None,
-    fragment_id: int | None = None,
-    asset_id: int | None = None,
-    episode_id: int | None = None,
-    commit: bool = True,
-) -> tuple[TaskRun, T]:
-    """
-    轻量 TaskRun：预扣 → 提交上游异步任务 → 保持 awaiting_poll，轮询终态后再结算。
-    用于开放 API / 工作室生视频，避免提交成功即扣费。
-    """
-    task = await create_ephemeral_task_row(
-        db,
-        user,
-        domain=domain,
-        task_type=task_type,
-        payload=payload,
-        project_id=project_id,
-        drama_project_id=drama_project_id,
-        shot_id=shot_id,
-        fragment_id=fragment_id,
-        asset_id=asset_id,
-        episode_id=episode_id,
-    )
-    try:
-        await freeze_for_task(db, task)
-    except ValueError:
-        task.status = "failed"
-        task.error_code = "insufficient_balance"
-        task.error_message = "余额不足"
-        task.billing_status = "none"
-        await db.flush()
-        raise
-
-    now = datetime.now(UTC)
-    task.status = "running"
-    task.started_at = now
-    start_inline_lease(task, now)
-    await append_task_event(
-        db,
-        task.id,
-        event_type="task.started",
-        status=task.status,
-        message="轻量视频任务开始",
-    )
-    await db.flush()
-
-    await db.commit()
-
-    result: T
-    try:
-        async with hold_inline_lease(task), billing_scope(task.id, team_id=task.team_id, snapshot=task.billing_snapshot), upstream_event_session(db):
-            result = await executor()
-        provider_id = _extract_provider_task_id(result)
-        if not provider_id:
-            raise RuntimeError("上游未返回 task_id")
-        task.status = "awaiting_poll"
-        task.provider_task_id = provider_id
-        task.progress_percent = 30
-        task.next_action_at = now
-        task.result_payload = {"awaiting_poll": True, "provider_task_id": provider_id}
-        await append_task_event(
-            db,
-            task.id,
-            event_type="task.submitted",
-            status=task.status,
-            message="已提交上游，等待轮询",
-            payload={"provider_task_id": provider_id},
-        )
-    except asyncio.CancelledError:
-        await _cancel_inline_task(db, task)
-        raise
-    except Exception as exc:
-        task.status = "failed"
-        task.error_code = "ephemeral_failed"
-        task.error_message = str(exc)[:500]
-        task.finished_at = datetime.now(UTC)
-        await append_task_event(
-            db,
-            task.id,
-            event_type="task.failed",
-            status=task.status,
-            message=str(exc)[:200],
-        )
-        await settle_task(db, task.id)
-        await db.commit()
-        raise
-
-    if commit or task.team_id is not None:
-        await db.commit()
-    await db.refresh(task)
-    return task, result
-
-
 async def settle_deferred_video_poll(
     db: AsyncSession,
     user: User,
@@ -436,7 +325,7 @@ async def settle_deferred_video_poll(
                 user_id=user.id,
                 billing_key=key,
                 model=billing_model,
-                domain=task.domain or "api",
+                domain=task.domain or "studio",
                 task_result=task_result,
                 fallback_duration_sec=payload.get("duration"),
                 resolution=str(payload.get("resolution") or ""),
