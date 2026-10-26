@@ -29,14 +29,14 @@ function SettingsPageHeader() {
       <div className="min-w-0">
         <h1 className="settings-page-title">系统设置</h1>
         <p className="settings-head-desc">
-          TokenFree API Key、运行参数、OSS / 易支付 / 计费与站点配置；密钥加密存库，留空保存不修改。
+          管理生成模型、任务运行、存储连接、支付计费与站点工具。
         </p>
       </div>
       {action ? (
         <button
           type="button"
           className="admin-btn admin-btn-primary settings-save-btn"
-          disabled={action.saving}
+          disabled={action.saving || action.disabled}
           onClick={() => void action.onSave()}
         >
           {action.saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}

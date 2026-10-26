@@ -5,6 +5,7 @@ import { Toaster } from "sonner";
 import App from "./App";
 import "./index.css";
 import "./styles/admin-console.css";
+import "./styles/admin-forms.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
