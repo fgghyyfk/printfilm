@@ -231,6 +231,7 @@ export function CanvasPromptEditor({
         role="textbox"
         aria-multiline="true"
         aria-label="生成提示词"
+        aria-disabled={disabled}
         contentEditable={!disabled}
         suppressContentEditableWarning
         data-placeholder={placeholder}

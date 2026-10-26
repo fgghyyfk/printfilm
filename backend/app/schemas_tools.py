@@ -3,8 +3,46 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+from app.schemas_drama import DramaAssetOut
+
+
+VideoMode = Literal["text_to_video", "first_last_frame", "omni_reference"]
+ReferenceRole = Literal["first_frame", "last_frame", "reference_image", "reference_video", "reference_audio"]
+
+
+class ToolReference(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    role: ReferenceRole
+    file_index: int | None = Field(default=None, ge=0, le=11, strict=True)
+    asset_id: int | None = Field(default=None, ge=1, strict=True)
+
+    @model_validator(mode="after")
+    def exactly_one_source(self):
+        if (self.file_index is None) == (self.asset_id is None):
+            raise ValueError("每个参考资料须选择一个上传文件或资产")
+        return self
+
+
+class ToolEstimateRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    tool_id: Literal["t2v", "v2v"] = "t2v"
+    prompt: str = Field(default="", max_length=7000)
+    model_id: str = Field(default="", max_length=128)
+    video_mode: VideoMode
+    ratio: str = Field(default="9:16", max_length=16)
+    resolution: str = Field(default="480p", max_length=16)
+    duration: str | int = "5s"
+    references: list[ToolReference] = Field(default_factory=list, max_length=12)
+
+
+class ToolReferenceAssetOut(DramaAssetOut):
+    media_kind: Literal["image", "video", "audio"]
 
 
 class ToolRunOut(BaseModel):

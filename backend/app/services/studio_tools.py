@@ -104,8 +104,8 @@ def motion_hint(level: str | None) -> str:
 # 把上传文件落到用户工具目录
 def save_upload(user_id: int, data: bytes, filename: str) -> Path:
     ext = Path(filename or "bin").suffix.lower() or ".bin"
-    if ext not in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".mov", ".webm"}:
-        raise ValueError("仅支持 png / jpg / webp / gif / mp4 / mov / webm")
+    if ext not in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".mov", ".webm", ".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"}:
+        raise ValueError("不支持的参考文件格式")
     dest = tools_dir(user_id) / f"{uuid.uuid4().hex[:12]}{ext}"
     dest.write_bytes(data)
     return dest
@@ -240,8 +240,31 @@ async def start_video_tool(
     motion: str | None,
     files: list[Path],
     output_no: int | None = None,
+    model_id: str | None = None,
+    resolution: str | None = None,
+    video_mode: str | None = None,
+    references: dict | None = None,
 ) -> dict:
     ark = get_ark()
+    if video_mode:
+        from app.services.media_models.prices import resolve_strategy
+        from app.services.media_models.planning import reference_params
+        strategy = resolve_strategy(model_id or get_settings().model_video)
+        params = {"prompt": prompt.strip(), "duration": int(str(duration_raw or "5").removesuffix("s")),
+                  "resolution": resolution or "480p", "aspect_ratio": ratio or "9:16",
+                  "generate_audio": False, **reference_params(references or {})}
+        for field in ("first_frame", "last_frame"):
+            if params.get(field) and not params[field].startswith(("https://", "http://", "/static/")):
+                params[field] = publish_public(Path(params[field]))
+        for field in ("reference_images", "reference_videos", "reference_audios"):
+            if field in params:
+                params[field] = [url if url.startswith(("https://", "http://", "/static/")) else publish_public(Path(url))
+                                 for url in params[field]]
+        body = strategy.build_provider_request(params, {"upstream_model": model_id or get_settings().model_video})
+        task_id = await ark.gen_video_seedance_body(body, project_id=0)
+        preview = params.get("first_frame") or next(iter(params.get("reference_images") or []), None)
+        return {"kind": "video", "urls": [], "task_id": task_id, "status": "queued", "preview_url": preview,
+                "message": "视频生成中，请稍候"}
     duration = duration_seconds(duration_raw)
     still_path: Path | None = None
     preview_url: str | None = None
@@ -302,9 +325,10 @@ async def start_video_tool(
         image_url,
         video_prompt,
         duration,
-        resolution="480p",
+        resolution=resolution or "480p",
         ratio=ratio or "9:16",
         generate_audio=False,
+        model=model_id or None,
     )
     digest = hashlib.md5(f"{user.id}:{task_id}".encode()).hexdigest()[:8]
     logger.info("tool video queued user=%s tool=%s task=%s hash=%s", user.id, tool_id, task_id, digest)

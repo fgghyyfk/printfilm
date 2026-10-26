@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from io import BytesIO
+from typing import Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from PIL import Image
@@ -13,11 +14,16 @@ from app.database import get_db
 from app.deps import get_current_user
 from app.models import ToolRun, User
 from app.models_tasks import TaskRun
-from app.schemas_tools import ToolRunListOut, ToolRunOut, ToolRunRecordOut, ToolTaskOut
+from app.models_drama import DramaAsset, DramaProject
+from app.schemas_tools import ToolEstimateRequest, ToolReferenceAssetOut, ToolRunListOut, ToolRunOut, ToolRunRecordOut, ToolTaskOut
 from app.services.billing import settle_deferred_video_poll
 from app.services.billing.http import http_exception_for_value_error
 from app.services.studio_generation import enqueue_generation, sync_generation_record, validate_generation
 from app.services.studio_tools import get_tool_run, poll_image_tool_task, poll_video_task, save_upload, update_tool_run_task
+from app.services.studio_references import (
+    MAX_UPLOAD_BYTES, ROLE_KIND, asset_kind_expression, parse_references,
+    personal_asset_filters, reference_params, validate_reference_mode, validate_upload,
+)
 
 router = APIRouter(prefix="/tools", tags=["tools"])
 
@@ -30,6 +36,54 @@ async def generation_config(user: User = Depends(get_current_user)) -> dict:
                        "audio": settings.model_audio}}
 
 
+@router.get("/reference-assets")
+async def list_reference_assets(
+    kind: Literal["image", "video", "audio"] | None = None,
+    q: str = Query("", max_length=200), page: int = Query(1, ge=1),
+    page_size: int = Query(24, ge=1, le=50),
+    db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user),
+) -> dict:
+    media_kind = asset_kind_expression()
+    filters = [*personal_asset_filters(user.id), media_kind.in_(["image", "video", "audio"])]
+    if kind:
+        filters.append(media_kind == kind)
+    if q.strip():
+        filters.append(DramaAsset.name.ilike(f"%{q.strip()}%"))
+    query = select(DramaAsset, media_kind).join(DramaProject, DramaProject.id == DramaAsset.project_id).where(*filters)
+    total = await db.scalar(select(func.count()).select_from(query.subquery()))
+    rows = (await db.execute(query.order_by(DramaAsset.updated_at.desc(), DramaAsset.id.desc())
+                            .offset((page - 1) * page_size).limit(page_size))).all()
+    return {"items": [ToolReferenceAssetOut.model_validate({**asset.__dict__, "media_kind": media}) for asset, media in rows],
+            "total": total or 0, "page": page, "page_size": page_size}
+
+
+@router.post("/estimate")
+async def estimate_generation(
+    body: ToolEstimateRequest, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user),
+) -> dict:
+    from app.services.billing.estimates import estimate_task_fen
+    from app.services.billing.settlement import billing_active
+    from app.services.media_models.planning import prepare_task_media
+    params = body.model_dump(exclude={"tool_id", "prompt"})
+    params["references"] = parse_references(params["references"])
+    try:
+        validate_reference_mode(body.video_mode, params["references"])
+        params.update(await reference_params(db, user, params["references"]))
+        validate_generation(body.tool_id, body.prompt, params, 0, quote=True)
+        payload = {**params, "tool_id": body.tool_id, "duration": int(str(body.duration).removesuffix("s")),
+                   "generate_audio": False}
+        task = TaskRun(domain="studio", task_type="tool_video", requested_by=user.id, payload=payload)
+        await prepare_task_media(db, task)
+        enabled = billing_active(user)
+        estimate = await estimate_task_fen(db, task) if enabled else 0
+    except ValueError as exc:
+        raise http_exception_for_value_error(exc) from exc
+    snapshot = task.billing_snapshot or {}
+    return {"estimate_fen": estimate, "estimate_yuan": round(estimate / 100, 2), "billing_enabled": enabled,
+            "billing_mode": snapshot.get("mode", "legacy"), "price_version": snapshot.get("price_version"),
+            "items": [{key: value for key, value in item.items() if key != "route"} for item in snapshot.get("items", [])]}
+
+
 @router.post("/run", response_model=ToolRunOut)
 async def run_tool(
     tool_id: str = Form(..., max_length=16), prompt: str = Form("", max_length=7000),
@@ -38,6 +92,8 @@ async def run_tool(
     pack: str = Form("", max_length=32), duration: str = Form("", max_length=16),
     motion: str = Form("", max_length=16), voice: str = Form("narrator_calm", max_length=64),
     model_id: str = Form("", max_length=128), resolution: str = Form("", max_length=16),
+    video_mode: str = Form("", max_length=32), references: str = Form("[]", max_length=8000),
+    price_version: int | None = Form(default=None, ge=0),
     files: list[UploadFile] | None = File(default=None),
     db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user),
 ) -> ToolRunOut:
@@ -46,14 +102,28 @@ async def run_tool(
                   duration=duration, motion=motion, voice=voice, model_id=model_id, resolution=resolution)
     saved = []
     try:
+        if video_mode:
+            if tid not in {"t2v", "v2v"}:
+                raise ValueError("video_mode: 仅视频生成可使用此模式")
+            refs = parse_references(references)
+            validate_reference_mode(video_mode, refs, len(files or []))
+            params.update(video_mode=video_mode, references=refs)
+            params.update(await reference_params(db, user, refs))
+        elif references != "[]":
+            raise ValueError("references: 请先选择视频生成模式")
+        if price_version:
+            params["price_version"] = price_version
         validate_generation(tid, prompt, params, len(files or []))
-        for item in files or []:
-            raw = await item.read(40 * 1024 * 1024 + 1)
-            if not raw or len(raw) > 40 * 1024 * 1024:
+        upload_kinds = {ref["file_index"]: ROLE_KIND[ref["role"]] for ref in params.get("references", []) if "file_index" in ref}
+        for index, item in enumerate(files or []):
+            raw = await item.read(MAX_UPLOAD_BYTES + 1)
+            if not raw or len(raw) > MAX_UPLOAD_BYTES:
                 raise ValueError("文件不能为空，且单个文件不能超过 40MB")
             name = item.filename or "upload.png"
             suffix = name.rsplit(".", 1)[-1].lower()
-            if suffix in {"mp4", "mov", "webm"} and tid == "v2v":
+            if video_mode:
+                validate_upload(raw, name, upload_kinds[index], item.content_type)
+            elif suffix in {"mp4", "mov", "webm"} and tid == "v2v":
                 pass
             elif suffix in {"jpg", "jpeg", "png", "webp"} and tid != "audio":
                 try:
@@ -64,6 +134,8 @@ async def run_tool(
             else:
                 raise ValueError("请上传 JPG、PNG、WebP 图片，视频参考支持 MP4、MOV、WebM")
             saved.append(save_upload(user.id, raw, name))
+        if video_mode:
+            params.update(await reference_params(db, user, params["references"], files=saved))
         data = await enqueue_generation(db, user, tool_id=tid, prompt=prompt, params=params, files=saved)
         await db.commit()
     except ValueError as exc:
@@ -106,7 +178,10 @@ async def get_tool_task(task_id: str, db: AsyncSession = Depends(get_db), user: 
 
 
 def _record_out(row: ToolRun, task: TaskRun | None = None) -> ToolRunRecordOut:
-    params = {key: value for key, value in (row.params or {}).items() if key != "file_paths"}
+    private = {"file_paths"}
+    if (row.params or {}).get("video_mode"):
+        private.update({"first_frame", "last_frame", "reference_images", "reference_videos", "reference_audios"})
+    params = {key: value for key, value in (row.params or {}).items() if key not in private}
     result = (task.result_payload or {}) if task else {}
     status = {"pending": "queued", "leased": "queued", "awaiting_poll": "running"}.get(task.status, task.status) if task else row.status
     return ToolRunRecordOut(

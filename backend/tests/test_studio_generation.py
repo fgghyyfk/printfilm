@@ -1,7 +1,9 @@
 """Studio integration tests: real SQL and lifecycle, isolated local database, no providers."""
 
 import asyncio
+import json
 from datetime import UTC, datetime, timedelta
+from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -17,6 +19,7 @@ from app.deps import get_current_user
 from app.models import ToolRun, User
 from app.models import UsageEvent
 from app.models_tasks import TaskRun, TaskStep
+from PIL import Image
 from app.services import studio_generation as generation
 from app.services.tasks import executor, scheduler
 from app.services.tasks.queues import task_queue
@@ -258,3 +261,223 @@ async def test_live_remote_lease_is_not_recovered(studio, monkeypatch):
         task.updated_at = datetime.now(UTC) - timedelta(minutes=20)
         await db.commit()
     assert await scheduler.recover_orphaned_tasks() == 1
+
+
+@pytest.fixture
+async def studio_api(studio, monkeypatch, tmp_path):
+    from app.api.tools import router
+    from app.services import studio_tools
+    sessions, user, _ = studio
+    api = FastAPI()
+    api.include_router(router, prefix="/api")
+    api.dependency_overrides[get_current_user] = lambda: user
+    async def database():
+        async with sessions() as db:
+            yield db
+    api.dependency_overrides[get_db] = database
+    monkeypatch.setattr(studio_tools, "tools_dir", lambda _user_id: tmp_path)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=api), base_url="http://test") as client:
+        yield client
+
+
+async def add_reference_asset(sessions, user, *, kind="image", name="Reference", team_id=None, url=None, cover=None):
+    from app.models_drama import DramaAsset, DramaProject
+    async with sessions() as db:
+        project = DramaProject(user_id=user.id, title="References", team_id=team_id)
+        db.add(project)
+        await db.flush()
+        asset = DramaAsset(project_id=project.id, type=kind, asset_type="image", name=name,
+                           url=url, cover=cover)
+        db.add(asset)
+        await db.commit()
+    return asset
+
+
+def video_request(**overrides):
+    return {"tool_id": "t2v", "model_id": "seedance-2.0-fast", "video_mode": "text_to_video",
+            "prompt": "A sunny forest", "duration": "6s", "resolution": "720p", "ratio": "16:9",
+            "references": [], **overrides}
+
+
+def png_bytes():
+    output = BytesIO()
+    Image.new("RGB", (16, 16), "green").save(output, "PNG")
+    return output.getvalue()
+
+
+async def test_reference_library_filters_media_and_personal_ownership(studio, studio_api):
+    sessions, user, other = studio
+    image = await add_reference_asset(sessions, user, kind="character", name="Alice", cover="https://cdn.test/alice.png")
+    video = await add_reference_asset(sessions, user, kind="video", name="Forest", url="https://cdn.test/forest.mp4", cover="https://cdn.test/forest.jpg")
+    voice = await add_reference_asset(sessions, user, kind="voice", name="Narrator", url="https://cdn.test/narrator.mp3")
+    await add_reference_asset(sessions, user, kind="voice", name="No recording", cover="https://cdn.test/voice-cover.png")
+    await add_reference_asset(sessions, other, kind="character", cover="https://cdn.test/private.png")
+    await add_reference_asset(sessions, user, kind="character", team_id=987, cover="https://cdn.test/team.png")
+    result = (await studio_api.get("/api/tools/reference-assets?page_size=2")).json()
+    assert result["total"] == 3 and len(result["items"]) == 2
+    for kind, asset in (("image", image), ("video", video), ("audio", voice)):
+        response = await studio_api.get(f"/api/tools/reference-assets?kind={kind}")
+        assert response.status_code == 200
+        assert [(item["id"], item["media_kind"]) for item in response.json()["items"]] == [(asset.id, kind)]
+    searched = (await studio_api.get("/api/tools/reference-assets?q=Alice")).json()
+    assert searched["total"] == 1 and searched["items"][0]["id"] == image.id
+
+
+async def test_text_video_has_no_helper_image_and_preserves_selected_settings(studio, studio_api, monkeypatch):
+    from app.services import studio_tools
+    sessions, _, _ = studio
+    create = AsyncMock(return_value="text-provider-task")
+    image = AsyncMock()
+    monkeypatch.setattr(studio_tools, "get_ark", lambda: SimpleNamespace(gen_video_seedance_body=create, gen_image=image))
+    request = video_request()
+    response = await studio_api.post("/api/tools/run", data={**request, "references": json.dumps(request["references"])})
+    assert response.status_code == 200
+    task_id = response.json()["platform_task_id"]
+    await executor.execute_task_run(task_id)
+    async with sessions() as db:
+        task = await db.get(TaskRun, task_id)
+        assert task.status == "awaiting_poll"
+        assert len(task.billing_snapshot["items"]) == 1
+        assert task.billing_snapshot["items"][0]["capability"] == "video"
+        assert not task.billing_snapshot["items"][0]["params"]["reference_images"]
+    body = create.await_args.args[0]
+    assert body["model"] == "seedance-2.0-fast" and body["resolution"] == "720p"
+    assert body["duration"] == 6 and body["ratio"] == "16:9"
+    assert body["content"] == [{"type": "text", "text": request["prompt"]}]
+    image.assert_not_awaited()
+
+
+async def test_frame_mode_combines_upload_and_library_asset(studio, studio_api, monkeypatch):
+    from app.services import studio_tools
+    sessions, user, _ = studio
+    last = await add_reference_asset(sessions, user, kind="scene", cover="https://cdn.test/end.png")
+    refs = [{"role": "first_frame", "file_index": 0}, {"role": "last_frame", "asset_id": last.id}]
+    create = AsyncMock(return_value="frame-provider-task")
+    monkeypatch.setattr(studio_tools, "get_ark", lambda: SimpleNamespace(gen_video_seedance_body=create))
+    monkeypatch.setattr(studio_tools, "publish_public", lambda _path: "https://cdn.test/start.png")
+    response = await studio_api.post("/api/tools/run", data={**video_request(video_mode="first_last_frame"), "references": json.dumps(refs)},
+                                     files=[("files", ("start.png", png_bytes(), "image/png"))])
+    assert response.status_code == 200, response.text
+    await executor.execute_task_run(response.json()["platform_task_id"])
+    content = create.await_args.args[0]["content"]
+    assert [(item["role"], item["image_url"]["url"]) for item in content if item["type"] == "image_url"] == [
+        ("first_frame", "https://cdn.test/start.png"), ("last_frame", "https://cdn.test/end.png")]
+    history = (await studio_api.get(f"/api/tools/runs/{response.json()['run_id']}")).json()
+    assert history["params"]["references"] == refs
+    assert "first_frame" not in history["params"] and "file_paths" not in history["params"]
+
+
+async def test_omni_mode_keeps_all_media_roles(studio, studio_api, monkeypatch):
+    from app.services import studio_tools
+    sessions, user, _ = studio
+    image = await add_reference_asset(sessions, user, kind="prop", url="https://cdn.test/item.png")
+    video = await add_reference_asset(sessions, user, kind="video", url="https://cdn.test/motion.mp4")
+    audio = await add_reference_asset(sessions, user, kind="audio", url="https://cdn.test/voice.wav")
+    refs = [{"role": role, "asset_id": asset.id} for role, asset in (
+        ("reference_image", image), ("reference_video", video), ("reference_audio", audio))]
+    create = AsyncMock(return_value="omni-provider-task")
+    monkeypatch.setattr(studio_tools, "get_ark", lambda: SimpleNamespace(gen_video_seedance_body=create))
+    response = await studio_api.post("/api/tools/run", data={**video_request(video_mode="omni_reference"), "references": json.dumps(refs)})
+    assert response.status_code == 200, response.text
+    await executor.execute_task_run(response.json()["platform_task_id"])
+    content = create.await_args.args[0]["content"]
+    assert {item.get("role") for item in content if item["type"] != "text"} == {"reference_image", "reference_video", "reference_audio"}
+
+
+@pytest.mark.parametrize("mode,refs", [
+    ("text_to_video", [{"role": "reference_image", "file_index": 0}]),
+    ("first_last_frame", [{"role": "last_frame", "file_index": 0}]),
+    ("omni_reference", []),
+    ("omni_reference", [{"role": "reference_image", "url": "http://127.0.0.1/private"}]),
+    ("omni_reference", [{"role": "reference_image", "file_index": 0, "asset_id": 1}]),
+])
+async def test_invalid_reference_sources_or_modes_are_rejected(studio_api, mode, refs):
+    response = await studio_api.post("/api/tools/run", data={**video_request(video_mode=mode), "references": json.dumps(refs)})
+    assert response.status_code == 400
+
+
+async def test_reference_ids_cannot_access_other_users_or_teams(studio, studio_api):
+    sessions, user, other = studio
+    foreign = await add_reference_asset(sessions, other, kind="image", url="https://cdn.test/private.png")
+    team = await add_reference_asset(sessions, user, kind="image", team_id=123, url="https://cdn.test/team.png")
+    for asset in (foreign, team):
+        request = video_request(video_mode="first_last_frame", references=[{"role": "first_frame", "asset_id": asset.id}])
+        assert (await studio_api.post("/api/tools/estimate", json=request)).status_code == 400
+        response = await studio_api.post("/api/tools/run", data={**request, "references": json.dumps(request["references"])})
+        assert response.status_code == 400
+
+
+async def test_upload_role_and_file_content_are_validated(studio_api):
+    refs = [{"role": "reference_video", "file_index": 0}]
+    response = await studio_api.post("/api/tools/run", data={**video_request(video_mode="omni_reference"), "references": json.dumps(refs)},
+                                     files=[("files", ("reference.mp4", b"not a video", "video/mp4"))])
+    assert response.status_code == 400
+    refs = [{"role": "reference_audio", "file_index": 0}]
+    response = await studio_api.post("/api/tools/run", data={**video_request(video_mode="omni_reference"), "references": json.dumps(refs)},
+                                     files=[("files", ("image.png", png_bytes(), "image/png"))])
+    assert response.status_code == 400
+
+
+async def test_omni_uploads_accept_video_audio_and_images_without_dropping_any(studio, studio_api, monkeypatch):
+    from app.services import studio_tools
+    import wave
+    output = BytesIO()
+    with wave.open(output, "wb") as audio:
+        audio.setnchannels(1)
+        audio.setsampwidth(2)
+        audio.setframerate(8000)
+        audio.writeframes(b"\0\0" * 16000)
+    # A media container header is enough for admission; the provider remains mocked.
+    files = [("files", ("image.png", png_bytes(), "image/png")),
+             ("files", ("motion.mp4", b"\0\0\0\x18ftypmp42" + b"\0" * 20, "video/mp4")),
+             ("files", ("sound.wav", output.getvalue(), "audio/wav"))]
+    refs = [{"role": role, "file_index": index} for index, role in enumerate(
+        ("reference_image", "reference_video", "reference_audio"))]
+    create = AsyncMock(return_value="uploaded-omni-provider-task")
+    monkeypatch.setattr(studio_tools, "get_ark", lambda: SimpleNamespace(gen_video_seedance_body=create))
+    monkeypatch.setattr(studio_tools, "publish_public", lambda path: f"https://cdn.test/{path.name}")
+    response = await studio_api.post("/api/tools/run", data={**video_request(video_mode="omni_reference"), "references": json.dumps(refs)}, files=files)
+    assert response.status_code == 200, response.text
+    await executor.execute_task_run(response.json()["platform_task_id"])
+    content = create.await_args.args[0]["content"]
+    assert [item.get("role") for item in content if item["type"] != "text"] == [
+        "reference_image", "reference_audio", "reference_video"]
+
+
+async def test_estimate_empty_prompt_matches_admission_and_checks_price_version(studio, studio_api, monkeypatch):
+    from app.models_settings import AppSettings, MediaPriceVersion
+    sessions, user, _ = studio
+    monkeypatch.setattr(get_settings(), "billing_enabled", True)
+    async with sessions() as db:
+        version = MediaPriceVersion(prices={"seedance-2.0-fast": {"720p": "0.2000"}}, created_by=user.id)
+        db.add(version)
+        await db.flush()
+        db.add(AppSettings(id="media_pricing", config_json={"active_version": version.id, "enabled": True}))
+        await db.commit()
+    response = await studio_api.post("/api/tools/estimate", json=video_request(prompt=""))
+    assert response.status_code == 200, response.text
+    quote = response.json()
+    assert quote["estimate_fen"] == 120 and quote["estimate_yuan"] == 1.2
+    assert quote["billing_mode"] == "fixed_media" and quote["billing_enabled"]
+    assert quote["price_version"] == version.id and len(quote["items"]) == 1
+    request = {**video_request(), "references": "[]", "price_version": str(version.id)}
+    response = await studio_api.post("/api/tools/run", data=request)
+    assert response.status_code == 200, response.text
+    async with sessions() as db:
+        task = await db.get(TaskRun, response.json()["platform_task_id"])
+        assert task.billing_estimate_fen == quote["estimate_fen"]
+    response = await studio_api.post("/api/tools/run", data={**request, "price_version": str(version.id + 1)})
+    assert response.status_code == 409
+    assert (await studio_api.post("/api/tools/run", data={**request, "price_version": "0"})).status_code == 200
+
+
+async def test_reference_limits_and_asset_types_apply_to_quotes(studio, studio_api):
+    sessions, user, _ = studio
+    audio = await add_reference_asset(sessions, user, kind="voice", url="https://cdn.test/voice.mp3")
+    request = video_request(video_mode="first_last_frame", references=[{"role": "first_frame", "asset_id": audio.id}])
+    assert (await studio_api.post("/api/tools/estimate", json=request)).status_code == 400
+    request = video_request(model_id="MiniMax-H3", resolution="480p", video_mode="omni_reference",
+                            references=[{"role": "reference_video", "file_index": 0}])
+    assert (await studio_api.post("/api/tools/estimate", json=request)).status_code == 422
+    request = video_request(video_mode="omni_reference", references=[{"role": "reference_image", "file_index": i} for i in range(10)])
+    assert (await studio_api.post("/api/tools/estimate", json=request)).status_code == 422

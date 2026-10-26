@@ -88,6 +88,11 @@ export function DramaMediaModelPicker({
                 <span className="fc-gen-model-card-meta">{metaBits.join(' · ')}</span>
               ) : null}
               {price ? <span className="fc-gen-model-card-price">{price}</span> : null}
+              {m.reference_limits ? (
+                <span className="fc-gen-model-card-meta">
+                  参考上限：图片 {m.reference_limits.images} · 视频 {m.reference_limits.videos} · 音频 {m.reference_limits.audios}
+                </span>
+              ) : null}
             </span>
           </button>
         )

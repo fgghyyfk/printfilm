@@ -302,7 +302,7 @@ async def estimate_task_fen(db: AsyncSession, task: TaskRun, settings: Settings 
                 model=_payload_video_model(payload, s),
                 resolution=str(payload.get("resolution") or "").strip() or "480p",
             )
-            if task_type == "tool_video" and payload.get("tool_id") == "t2v":
+            if task_type == "tool_video" and payload.get("tool_id") == "t2v" and not payload.get("video_mode"):
                 c += _catalog_image_fen(s, payload=payload)
             return _buffered_fen(c, s)
 

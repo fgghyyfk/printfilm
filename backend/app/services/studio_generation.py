@@ -22,19 +22,18 @@ VIDEO_TOOLS = {"t2v", "v2v"}
 VOICES = {"narrator_calm", "warm_storyteller", "teacher_clear"}
 
 
-def validate_generation(tool_id: str, prompt: str, params: dict, file_count: int) -> str:
+def validate_generation(tool_id: str, prompt: str, params: dict, file_count: int, *, quote: bool = False) -> str:
     if tool_id not in IMAGE_TOOLS | VIDEO_TOOLS | {"audio"}:
         raise ValueError("未知生成类型")
     kind = "image" if tool_id in IMAGE_TOOLS else "video" if tool_id in VIDEO_TOOLS else "audio"
-    if tool_id in {"t2i", "t2v", "audio"} and not prompt.strip():
+    video_mode = params.get("video_mode") if kind == "video" else None
+    if not quote and (tool_id in {"t2i", "t2v", "audio"} or video_mode) and not prompt.strip():
         raise ValueError("请填写生成内容")
     if len(prompt) > (2000 if kind == "audio" else 7000):
         raise ValueError("生成内容超过字数限制")
-    if tool_id in {"i2i", "i2p", "v2v"} and not file_count:
+    if tool_id in {"i2i", "i2p", "v2v"} and not video_mode and not file_count:
         raise ValueError("请上传参考文件")
-    if file_count > 9:
-        raise ValueError("最多上传 9 个参考文件")
-    if tool_id == "v2v" and file_count > 1:
+    if tool_id == "v2v" and not video_mode and file_count > 1:
         raise ValueError("视频生成只支持一个参考文件")
     if tool_id == "audio" and file_count:
         raise ValueError("音频生成请直接输入文字")
@@ -44,8 +43,17 @@ def validate_generation(tool_id: str, prompt: str, params: dict, file_count: int
         strategy = resolve_strategy(model)
         if strategy.capability != kind:
             raise ValueError("model: 模型类型不匹配")
+        from app.services.media_models.planning import reference_params
+        if video_mode:
+            from app.services.studio_references import parse_references, validate_reference_mode
+            refs = parse_references(params.get("references") or [])
+            validate_reference_mode(video_mode, refs, None if quote else file_count)
+            references = reference_params(params)
+        else:
+            references = {"reference_images": [f"pending://upload/{i}" for i in range(file_count or (1 if kind == "video" else 0))]}
         strategy.normalize_and_validate({"aspect_ratio": params.get("ratio") or ("1:1" if kind == "image" else "9:16"),
             "resolution": params.get("resolution") or ("2K" if kind == "image" else "480p"),
+            **references,
             **({"duration": str(params.get("duration") or "5").removesuffix("s")} if kind == "video" else {})})
     if kind == "audio" and params.get("voice", "narrator_calm") not in VOICES:
         raise ValueError("不支持的音色")
@@ -61,6 +69,8 @@ async def enqueue_generation(db, user, *, tool_id: str, prompt: str, params: dic
     payload = {**params, "run_id": row.id, "tool_id": tool_id,
                "duration": int(str(params.get("duration") or "5").removesuffix("s")),
                "resolution": params.get("resolution") or ("480p" if kind == "video" else "2K"), "generate_audio": False}
+    if not params.get("video_mode"):
+        payload["reference_images"] = [str(path) for path in files]
     task = await create_task(db, user, TaskCreateRequest(
         domain="studio", task_type=f"tool_{kind}", cancelable=False, payload=payload,
     ), commit=False)
@@ -92,7 +102,9 @@ async def execute_generation(task: TaskRun) -> dict:
             if not provider_id:
                 data = await start_video_tool(db, user, tool_id=row.tool_id, prompt=row.prompt,
                     ratio=params.get("ratio"), duration_raw=params.get("duration"),
-                    motion=params.get("motion"), files=files, output_no=row.id)
+                    motion=params.get("motion"), files=files, output_no=row.id,
+                    model_id=params.get("model_id"), resolution=params.get("resolution"),
+                    video_mode=params.get("video_mode"), references=stored_task.payload)
                 provider_id = data["task_id"]
                 row.preview_url = data.get("preview_url")
             stored_task.provider_task_id = provider_id
@@ -163,8 +175,8 @@ async def poll_generation_video(task_id: int) -> None:
                 result = TaskResult(status="succeeded", total_tokens=usage.get("total_tokens", 0),
                                     completion_tokens=usage.get("completion_tokens", 0), raw_usage=data.get("raw_usage"))
                 await record_seedance_video_usage(db, user_id=user.id, billing_key=seedance_billing_key(generate_audio=False),
-                    model=get_settings().model_video, domain="studio", task_result=result,
-                    fallback_duration_sec=(task.payload or {}).get("duration"), resolution="480p",
+                    model=(task.payload or {}).get("model_id") or get_settings().model_video, domain="studio", task_result=result,
+                    fallback_duration_sec=(task.payload or {}).get("duration"), resolution=(task.payload or {}).get("resolution") or "480p",
                     provider_task_id=task.provider_task_id)
                 row.urls = data["urls"]
                 row.status = "succeeded"

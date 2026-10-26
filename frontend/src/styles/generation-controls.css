@@ -1,62 +1,62 @@
-/* Floating controls are portalled to body, so they own their theme tokens. */
-.gen-floating { --gen-purple: #7450e4; --gen-line: #ece8f3; position: fixed; z-index: 240; overflow: auto; box-sizing: border-box; border: 1px solid #e3dcec; border-radius: 15px; background: #fffffffC; box-shadow: 0 14px 44px #3622461c, 0 2px 8px #36224608; color: #393145; font-family: inherit; backdrop-filter: blur(20px); animation: gen-pop-in .14s ease-out; overscroll-behavior: contain; }
+/* Portal theme tokens are shared with the page in generation.css. */
+.gen-floating { position: fixed; z-index: 240; overflow: auto; box-sizing: border-box; border: 1px solid var(--gen-line); border-radius: 14px; background: #fffffffc; box-shadow: 0 14px 44px #1113181c, 0 2px 8px #11131808; color: var(--pf-ink); font-family: inherit; backdrop-filter: blur(20px); animation: gen-pop-in .14s ease-out; overscroll-behavior: contain; }
 .gen-floating button { font-family: inherit; }
-.gen-layout :is(button, a):focus-visible, .gen-floating button:focus-visible { outline: 3px solid #b8a4ef; outline-offset: 3px; }
+.gen-layout :is(button, a):focus-visible, .gen-floating button:focus-visible { outline: 2px solid var(--gen-focus); outline-offset: 3px; }
 .gen-select { position: relative; min-width: 0; }
-.gen-select-trigger { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 52px; padding: 9px 12px; border: 1px solid #e6e0ed; border-radius: 11px; background: #fff; color: #51455e; text-align: left; cursor: pointer; box-shadow: 0 1px 2px #30264303; transition: border-color .15s, box-shadow .15s, background .15s; }
-.gen-select-trigger:hover { border-color: #c6b5df; background: #fefcff; }
-.gen-select-trigger.is-open { border-color: #ab8edb; box-shadow: 0 0 0 3px #ae8bdf18; }
-.gen-select-icon { display: inline-grid; place-items: center; color: #8c7c9e; flex-shrink: 0; }
+.gen-select-trigger { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 52px; padding: 9px 12px; border: 1px solid var(--gen-line); border-radius: 11px; background: var(--pf-card); color: var(--pf-ink); text-align: left; cursor: pointer; box-shadow: 0 1px 2px #11131803; transition: border-color .15s, box-shadow .15s, background .15s; }
+.gen-select-trigger:hover { border-color: #bdcc9e; background: #fafbf8; }
+.gen-select-trigger.is-open { border-color: #93b46b; box-shadow: 0 0 0 3px #cae88d33; }
+.gen-select-icon { display: inline-grid; place-items: center; color: var(--gen-muted); flex-shrink: 0; }
 .gen-select-value { display: block; flex: 1; min-width: 0; }
-.gen-select-value small { display: block; margin-bottom: 3px; color: #9a8aa6; font-size: 10px; line-height: 1.3; font-weight: 400; }
-.gen-select-value strong { display: block; overflow: hidden; text-overflow: ellipsis; color: #4d3f5b; font-size: 12px; line-height: 1.4; font-weight: 550; white-space: nowrap; }
-.gen-select-chevron { color: #a598b1; flex-shrink: 0; transition: transform .18s; }
-.gen-select-trigger.is-open .gen-select-chevron { transform: rotate(180deg); color: #8960b9; }
+.gen-select-value small { display: block; margin-bottom: 3px; color: var(--gen-muted); font-size: 10px; line-height: 1.3; font-weight: 400; }
+.gen-select-value strong { display: block; overflow: hidden; text-overflow: ellipsis; color: var(--pf-ink); font-size: 12px; line-height: 1.4; font-weight: 550; white-space: nowrap; }
+.gen-select-chevron { color: var(--gen-muted); flex-shrink: 0; transition: transform .18s; }
+.gen-select-trigger.is-open .gen-select-chevron { transform: rotate(180deg); color: var(--gen-accent-ink); }
 .gen-select.is-compact .gen-select-trigger { min-height: 35px; padding: 7px 10px; gap: 10px; border-radius: 8px; }
 .gen-select-popup { padding: 7px; }
-.gen-popup-label { padding: 7px 10px 10px; color: #9b89a8; font-size: 10px; font-weight: 600; letter-spacing: .5px; }
-.gen-select-option { display: flex; align-items: center; gap: 12px; min-height: 54px; margin: 2px 0; padding: 10px 12px; border-radius: 9px; color: #51425f; cursor: pointer; transition: background .1s; }
+.gen-popup-label { padding: 7px 10px 10px; color: var(--gen-muted); font-size: 10px; font-weight: 600; letter-spacing: .5px; }
+.gen-select-option { display: flex; align-items: center; gap: 12px; min-height: 54px; margin: 2px 0; padding: 10px 12px; border-radius: 9px; color: var(--pf-ink); cursor: pointer; transition: background .1s; }
 .gen-select-option > span:not(.gen-option-icon) { flex: 1; min-width: 0; }
 .gen-select-option strong { display: block; font-size: 12px; font-weight: 550; }
-.gen-select-option small { display: block; margin-top: 4px; color: #96849f; font-size: 10px; line-height: 1.5; }
-.gen-select-option.is-highlighted { background: #f7f2fc; }
-.gen-select-option.is-selected { background: #f0e8fb; color: #7d50ac; }
-.gen-option-icon { display: grid; place-items: center; width: 32px; height: 32px; color: #9074a8; background: #f7f3fb; border: 1px solid #ede5f5; border-radius: 8px; flex-shrink: 0; }
-.gen-select-option.is-selected .gen-option-icon { color: #8959b8; background: #eae0f7; border-color: #e4d5f2; }
-.gen-option-check { margin-left: auto; color: #9868bc; flex-shrink: 0; }
+.gen-select-option small { display: block; margin-top: 4px; color: var(--gen-muted); font-size: 10px; line-height: 1.5; }
+.gen-select-option.is-highlighted { background: var(--pf-bg); }
+.gen-select-option.is-selected { background: var(--gen-accent-soft); color: var(--gen-accent-ink); }
+.gen-option-icon { display: grid; place-items: center; width: 32px; height: 32px; color: var(--gen-muted); background: var(--pf-bg); border: 1px solid var(--gen-line); border-radius: 8px; flex-shrink: 0; }
+.gen-select-option.is-selected .gen-option-icon { color: var(--gen-accent-ink); background: #dceeb8; border-color: #d2e5b7; }
+.gen-option-check { margin-left: auto; color: var(--gen-accent-ink); flex-shrink: 0; }
 .gen-date-control { position: relative; min-width: 188px; }
-.gen-date-trigger { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 42px; padding: 10px 13px; border: 1px solid #e4ddec; border-radius: 10px; background: #fff; color: #786589; font-size: 12px; cursor: pointer; white-space: nowrap; transition: border-color .15s, box-shadow .15s; }
+.gen-date-trigger { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 42px; padding: 10px 13px; border: 1px solid var(--gen-line); border-radius: 10px; background: var(--pf-card); color: var(--gen-muted); font-size: 12px; cursor: pointer; white-space: nowrap; transition: border-color .15s, box-shadow .15s; }
 .gen-date-trigger > span { flex: 1; text-align: left; }
-.gen-date-trigger > svg:first-child { color: #a08ab3; }
-.gen-date-trigger:hover { border-color: #bfa5d4; }
-.gen-date-trigger.is-open { border-color: #ac8cd2; box-shadow: 0 0 0 3px #ae8bdf15; }
-.has-value .gen-date-trigger { padding-right: 35px; color: #80509f; border-color: #d2bee3; background: #fcf9ff; }
+.gen-date-trigger > svg:first-child { color: var(--gen-muted); }
+.gen-date-trigger:hover { border-color: #bdcc9e; }
+.gen-date-trigger.is-open { border-color: #93b46b; box-shadow: 0 0 0 3px #cae88d33; }
+.has-value .gen-date-trigger { padding-right: 35px; color: var(--gen-accent-ink); border-color: #d2e5b7; background: #f5f9ed; }
 .has-value .gen-date-trigger > svg:last-child { display: none; }
-.gen-date-clear { position: absolute; right: 8px; top: 50%; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 6px; background: #eee6f7; color: #9a7bb0; transform: translateY(-50%); cursor: pointer; }
+.gen-date-clear { position: absolute; right: 8px; top: 50%; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 6px; background: var(--gen-accent-soft); color: var(--gen-accent-ink); transform: translateY(-50%); cursor: pointer; }
 .gen-calendar-header { display: flex; align-items: center; justify-content: space-between; padding: 13px 16px 10px; }
-.gen-calendar-header > span { display: flex; align-items: center; gap: 8px; color: #61456f; font-size: 12px; font-weight: 600; }
-.gen-calendar-header > span > svg { color: #a58aba; }
-.gen-plain-icon { display: inline-grid; place-items: center; border: 0; padding: 8px; background: transparent; color: #9a82ac; border-radius: 8px; cursor: pointer; }
-.gen-plain-icon:hover { background: #f4edfb; color: #8a59aa; }
-.gen-calendar-presets { display: flex; gap: 7px; padding: 0 16px 15px; border-bottom: 1px solid #f1ebf6; }
-.gen-calendar-presets button { display: flex; align-items: center; justify-content: center; gap: 5px; min-height: 29px; padding: 5px 10px; border: 1px solid #e9dff1; border-radius: 7px; color: #91759f; background: #fff; font-size: 11px; cursor: pointer; }
-.gen-calendar-presets button:hover { background: #f8f3fc; }
-.gen-calendar-presets button.is-active { background: #efe5fa; border-color: #dbc5ec; color: #9765b7; }
+.gen-calendar-header > span { display: flex; align-items: center; gap: 8px; color: var(--pf-ink); font-size: 12px; font-weight: 600; }
+.gen-calendar-header > span > svg { color: var(--gen-muted); }
+.gen-plain-icon { display: inline-grid; place-items: center; border: 0; padding: 8px; background: transparent; color: var(--gen-muted); border-radius: 8px; cursor: pointer; }
+.gen-plain-icon:hover { background: var(--gen-accent-soft); color: var(--gen-accent-ink); }
+.gen-calendar-presets { display: flex; gap: 7px; padding: 0 16px 15px; border-bottom: 1px solid var(--gen-line); }
+.gen-calendar-presets button { display: flex; align-items: center; justify-content: center; gap: 5px; min-height: 29px; padding: 5px 10px; border: 1px solid var(--gen-line); border-radius: 7px; color: var(--gen-muted); background: var(--pf-card); font-size: 11px; cursor: pointer; }
+.gen-calendar-presets button:hover { background: var(--pf-bg); }
+.gen-calendar-presets button.is-active { background: var(--gen-accent-soft); border-color: #d2e5b7; color: var(--gen-accent-ink); }
 .gen-calendars { position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: 22px; padding: 13px 18px 18px; }
 .gen-calendar-month { min-width: 0; }
-.gen-calendar-month-label { margin: 8px 28px 17px; text-align: center; color: #684674; font-size: 12px; font-weight: 600; }
-.gen-calendar-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); margin-bottom: 6px; color: #ac98b7; text-align: center; font-size: 10px; }
+.gen-calendar-month-label { margin: 8px 28px 17px; text-align: center; color: var(--pf-ink); font-size: 12px; font-weight: 600; }
+.gen-calendar-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); margin-bottom: 6px; color: var(--gen-muted); text-align: center; font-size: 10px; }
 .gen-calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); row-gap: 3px; }
-.gen-calendar-grid > button { position: relative; min-width: 0; height: 31px; border: 0; border-radius: 7px; background: transparent; color: #80618f; font-size: 11px; font-variant-numeric: tabular-nums; cursor: pointer; }
-.gen-calendar-grid > button:hover { background: #f1e8fa; color: #9a61be; }
-.gen-calendar-grid > button.is-in-range { background: #f1e7fa; border-radius: 2px; color: #a071c1; }
-.gen-calendar-grid > button.is-range-edge { border-radius: 7px; background: #a67bc9; color: #fff; box-shadow: 0 2px 4px #9b6fc826; }
-.gen-calendar-grid > button.is-today:not(.is-range-edge)::after { content: ''; position: absolute; bottom: 3px; left: calc(50% - 1.5px); width: 3px; height: 3px; border-radius: 50%; background: #ac89c3; }
-.gen-calendar-prev, .gen-calendar-next { position: absolute; top: 13px; color: #a286b7; }
+.gen-calendar-grid > button { position: relative; min-width: 0; height: 31px; border: 0; border-radius: 7px; background: transparent; color: var(--pf-ink); font-size: 11px; font-variant-numeric: tabular-nums; cursor: pointer; }
+.gen-calendar-grid > button:hover { background: var(--gen-accent-soft); color: var(--gen-accent-ink); }
+.gen-calendar-grid > button.is-in-range { background: var(--gen-accent-soft); border-radius: 2px; color: var(--gen-accent-ink); }
+.gen-calendar-grid > button.is-range-edge { border-radius: 7px; background: var(--gen-accent); color: #172300; box-shadow: 0 2px 4px #1113180a; }
+.gen-calendar-grid > button.is-today:not(.is-range-edge)::after { content: ''; position: absolute; bottom: 3px; left: calc(50% - 1.5px); width: 3px; height: 3px; border-radius: 50%; background: var(--gen-accent-ink); }
+.gen-calendar-prev, .gen-calendar-next { position: absolute; top: 13px; color: var(--gen-muted); }
 .gen-calendar-prev { left: 15px; }
 .gen-calendar-next { right: 15px; }
-.gen-calendar-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 13px 16px; border-top: 1px solid #f0e9f6; background: #fdfbff; }
-.gen-calendar-footer > div { display: flex; align-items: center; gap: 8px; font-size: 10px; color: #9d82ad; font-variant-numeric: tabular-nums; }
+.gen-calendar-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 13px 16px; border-top: 1px solid var(--gen-line); background: var(--pf-bg); }
+.gen-calendar-footer > div { display: flex; align-items: center; gap: 8px; font-size: 10px; color: var(--gen-muted); font-variant-numeric: tabular-nums; }
 .gen-calendar-footer .gen-primary { min-height: 34px; padding: 8px 12px; font-size: 11px; }
 @keyframes gen-pop-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 @media (max-width: 650px) {
@@ -77,6 +77,6 @@
   .gen-select-icon svg { width: 16px; }
 }
 @media (prefers-reduced-motion: reduce) { .gen-floating { animation: none; } }
-.media-cost-notice { display: inline-block; margin: 4px 8px; font-size: 12px; line-height: 1.6; color: var(--text-secondary, #64716c); }
-.gen-price-summary { padding: 12px 20px; border-bottom: 1px solid var(--border-color, #e3e8e4); }
+.media-cost-notice { display: inline-block; margin: 4px 8px; font-size: 12px; line-height: 1.6; color: var(--pf-muted); }
+.gen-price-summary { padding: 12px 20px; border-bottom: 1px solid var(--gen-line); }
 .gen-price-summary > span { display: inline-block; margin-left: 12px; font-size: 12px; }
