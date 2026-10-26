@@ -292,7 +292,6 @@ function GenerationWorkspace({ kind }: { kind: MediaKind }) {
       actions={detail.urls.length > 1 && <div className="pf-asset-detail-utilities" role="group" aria-label={text('生成结果', 'Generation results')}>
         {detail.urls.map((url, index) => <button type="button" key={url} className="pf-btn pf-btn-sm" aria-pressed={resultIndex === index} onClick={() => selectResult(index)}>{text(`结果 ${index + 1}`, `Result ${index + 1}`)}</button>)}
       </div>}>
-      <section className="pf-asset-detail-history"><dl className="pf-asset-detail-meta"><dt>{text('任务 ID', 'Task ID')}</dt><dd>{detail.task_id || detail.id}</dd></dl></section>
     </AssetDetailDialog>}
   </GenerationLayout>
 }

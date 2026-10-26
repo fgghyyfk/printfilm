@@ -49,7 +49,7 @@ function TaskHistoryContent() {
   const { detail, asset: detailAsset, error: detailError, resultIndex, selectResult, openDetail, closeDetail } = useToolRunDetail()
   const [downloading, setDownloading] = useState<string | null>(null)
   const Icon = taskIcons[kind]
-  const createPath = kind === 'all' ? '/tools' : kind === 'text' ? '/studio/new' : `/tools/${kind}`
+  const createPath = kind === 'all' ? '/' : kind === 'text' ? '/studio/new' : `/tools/${kind}`
   const labels: Record<string, string> = {
     all: text('全部', 'All'), processing: text('处理中', 'Processing'), succeeded: text('已完成', 'Completed'),
     failed: text('失败', 'Failed'), cancelled: text('已取消', 'Cancelled'), queued: text('排队中', 'Queued'), running: text('处理中', 'Processing'),
@@ -156,13 +156,14 @@ function TaskHistoryContent() {
         const RowIcon = taskIcons[item.kind as TaskKind] || FileText
         const recordKey = generationRecordKey(item)
         const billingState = generationBillingState(item)
+        const ratio = typeof (item.params?.aspect_ratio ?? item.params?.ratio) === 'string' ? String(item.params?.aspect_ratio ?? item.params?.ratio) : ''
         const formatLabel = item.kind === 'video' ? 'MP4' : item.kind === 'audio' ? 'MP3' : item.kind === 'text' ? text('文字', 'Text') : text('图片', 'Image')
         return <article className={`gen-task-row ${item.status === 'failed' ? 'has-error' : ''}`} key={recordKey}>
         <button className="gen-task-cover" type="button" onClick={() => openDetail(item)} aria-label={text('查看生成结果', 'View result')}>
           {item.kind === 'image' && (item.preview_url || item.urls[0]) ? <img src={resolveToolMediaUrl(item.preview_url || item.urls[0])} alt="" /> : item.kind === 'video' && item.preview_url ? <img src={resolveToolMediaUrl(item.preview_url)} alt="" /> : item.kind === 'video' && item.urls[0] ? <video src={resolveToolMediaUrl(item.urls[0])} preload="metadata" muted /> : <RowIcon size={28} />}
           <span className="gen-cover-overlay"><Eye size={18} /></span>
         </button>
-        <div className="gen-task-description"><button type="button" className="gen-task-title" onClick={() => openDetail(item)} title={item.prompt}>{item.prompt || item.task_type || text('未命名创作', 'Untitled creation')}</button><div className="gen-task-metadata"><span className="gen-task-tag">{kindLabels[item.kind as TaskKind] || 'AI'}</span>{(item.params?.ratio || item.params?.aspect_ratio) && <span className="gen-task-tag">{item.params.ratio || item.params.aspect_ratio}</span>}<span className="gen-task-number">#{item.platform_task_id || item.id}</span>{item.provider_task_id && <code title={item.provider_task_id}>{text('上游', 'Upstream')} {item.provider_task_id}</code>}</div>{item.error && <button type="button" className="gen-task-error" onClick={() => openDetail(item)} title={item.error}><AlertCircle size={12} /><span>{errorSummary(item.error)}</span><ArrowUpRight size={12} /></button>}</div>
+        <div className="gen-task-description"><button type="button" className="gen-task-title" onClick={() => openDetail(item)} title={item.prompt}>{item.prompt || text('生成任务', 'Generation task')}</button><div className="gen-task-metadata"><span className="gen-task-tag">{kindLabels[item.kind as TaskKind] || 'AI'}</span>{ratio && <span className="gen-task-tag">{ratio}</span>}</div>{item.error && <button type="button" className="gen-task-error" onClick={() => openDetail(item)} title={item.error}><AlertCircle size={12} /><span>{errorSummary(item.error)}</span><ArrowUpRight size={12} /></button>}</div>
         <div className="gen-task-state"><span className={`gen-state is-${item.status}`}><RowStatusIcon size={13} />{labels[item.status] || item.status}</span><small>{formatLabel}</small></div>
         <div className="gen-task-cost"><strong>{billingState === 'hidden' ? '—' : `¥${((item.billing_charged_fen || 0) / 100).toFixed(2)}`}</strong><small>{billingLabels[billingState]}</small></div>
         <div className="gen-task-time"><span>{when(item.created_at)}</span><small>{text('耗时', 'Duration')} {elapsed(item)}</small></div>
@@ -181,7 +182,6 @@ function TaskHistoryContent() {
       actions={detail.urls.length > 1 && <div className="pf-asset-detail-utilities" role="group" aria-label={text('生成结果', 'Generation results')}>
         {detail.urls.map((url, index) => <button type="button" key={url} className="pf-btn pf-btn-sm" aria-pressed={resultIndex === index} onClick={() => selectResult(index)}>{text(`结果 ${index + 1}`, `Result ${index + 1}`)}</button>)}
       </div>}>
-      <section className="pf-asset-detail-history"><dl className="pf-asset-detail-meta"><dt>{text('任务 ID', 'Task ID')}</dt><dd>{detail.platform_task_id || detail.id}</dd>{detail.task_type && <><dt>{text('任务类型', 'Task type')}</dt><dd>{detail.task_type}</dd></>}</dl></section>
     </AssetDetailDialog>}
   </GenerationLayout>
 }

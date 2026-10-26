@@ -1187,6 +1187,7 @@ async def run_episode_fragment_plan_job(
 
 # 任务平台（NIO）：Worker 短生命周期 — prepare → submit → 注册 awaiting_poll，由 Selector 轮询。
 async def submit_fragment_video_task(task: TaskRun) -> dict[str, Any]:
+    from app.services.tasks.generation_metadata import prepared_generation_params
     from app.services.tasks.service import append_task_event, get_task_for_runtime, set_task_step_state
 
     payload = task.payload if isinstance(task.payload, dict) else {}
@@ -1287,6 +1288,7 @@ async def submit_fragment_video_task(task: TaskRun) -> dict[str, Any]:
             next_payload["generation_attempts"] = attempts
             next_payload["attempt_limit"] = max_attempts
             next_payload["prepared"] = serialize_fragment_video_prepared(prepared)
+            next_payload["generation_params"] = prepared_generation_params(next_payload["prepared"])
             task_row.status = "pending"
             task_row.progress_percent = 25
             task_row.current_step_status = "prepared"
@@ -1330,6 +1332,8 @@ async def submit_fragment_video_task(task: TaskRun) -> dict[str, Any]:
         frag.params = params
         task_row.progress_percent = max(int(task_row.progress_percent or 0), 30)
         task_row.current_step_status = "submitting"
+        generation_params = prepared_generation_params(serialize_fragment_video_prepared(prepared))
+        task_row.payload = {**payload, "generation_params": generation_params}
         await db.commit()
 
         provider_task_id = await submit_prepared_fragment_video(prepared, project_id=project.id)
@@ -1355,6 +1359,7 @@ async def submit_fragment_video_task(task: TaskRun) -> dict[str, Any]:
         task_row.lease_until = None
         next_payload = dict(payload)
         next_payload.pop("prepared", None)
+        next_payload["generation_params"] = generation_params
         next_payload["nio_phase"] = "poll"
         next_payload["generation_attempts"] = attempts
         next_payload["attempt_limit"] = max_attempts
@@ -1454,6 +1459,16 @@ async def _recover_complete_fragment_video(
         "ok": True, "fragment_id": int(fragment_id), "kind": "video",
         "urls": [fragment.video] if fragment and fragment.video else [],
     }
+    if fragment:
+        # Freeze metadata with this output; later fragment edits cannot rewrite task history.
+        params = fragment.params if isinstance(fragment.params, dict) else {}
+        generation = params.get("generation") if isinstance(params.get("generation"), dict) else {}
+        if generation.get("video") == fragment.video:
+            result_payload["media_info"] = {
+                field: generation[key] for field, key in (
+                    ("duration_sec", "video_duration_sec"), ("width", "video_width"), ("height", "video_height"))
+                if isinstance(generation.get(key), (int, float)) and generation[key] > 0
+            }
     if recovered:
         result_payload["recovered"] = True
     await _complete_task(db, locked, result_payload)

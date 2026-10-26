@@ -17,33 +17,22 @@ from sqlalchemy.orm import selectinload
 
 from app.models import Project, Shot, ToolRun, User
 from app.models_drama import DramaAsset, DramaEpisode, DramaEpisodeFragment, DramaProject
-from app.models_tasks import TaskRun
+from app.models_tasks import TaskEvent, TaskRun
 from app.schemas_generation_history import GenerationListOut, GenerationRecordOut
+from app.services.tasks.generation_metadata import (
+    merge_generation_params, planned_generation_params, prepared_generation_params,
+    public_generation_params, request_matches_generation, submitted_generation_params,
+)
 from app.services.tasks.service import TaskAccessContext, _task_team_access
 
 _AUDIO_TYPES = ("voice_synthesis", "voice_preview", "tool_audio", "shot_regen_audio", "project_regen_audio")
 _TEXT_TYPES = ("script_summary", "episode_script", "fragment_plan", "seed_assets", "agent_chat",
                "skill_optimize", "voice_prompt", "content_expand", "creation_turn")
-_SAFE_PARAMS = frozenset({"prompt", "negative", "model_id", "model", "ratio", "aspect_ratio", "resolution",
-                          "duration", "duration_sec", "voice", "voice_id", "phase", "video_mode", "mode",
-                          "strength", "motion", "pack", "image_style_id", "episode_number"})
 _TEXT_FIELDS = ("text_content", "text", "content", "summary", "script", "body", "answer")
 _TEXT_OBJECT_FIELDS = frozenset({*_TEXT_FIELDS, "title", "name", "description", "prompt", "narration",
                                  "number", "episode_number", "sort_order", "duration_sec", "kind", "type"})
 _TEXT_COLLECTIONS = ("episodes", "fragments", "assets", "shots", "messages")
 _TERMINAL_STATUSES = ("succeeded", "failed", "cancelled")
-_TASK_LABELS = {
-    "script_summary": "生成剧本摘要", "episode_script": "生成分集剧本", "fragment_plan": "规划分镜",
-    "seed_assets": "提取剧本资产", "asset_image": "生成资产图片", "asset_video": "生成资产视频",
-    "fragment_video": "生成分镜视频", "agent_chat": "创作助手对话", "skill_optimize": "优化创作提示词",
-    "voice_prompt": "生成配音提示词", "voice_synthesis": "生成角色配音", "episode_compose": "合成分集视频",
-    "content_expand": "扩写创作内容", "creation_turn": "创作对话", "voice_preview": "配音试听",
-    "shot_regen_image": "重新生成分镜图片", "shot_regen_video": "重新生成分镜视频",
-    "shot_regen_audio": "重新生成分镜配音", "project_regen_audio": "重新生成全片配音",
-    "project_compose_only": "合成短视频", "tool_image": "生成图片", "tool_video": "生成视频", "tool_audio": "生成音频",
-}
-_PIPELINE_LABELS = {"script": "生成短视频剧本", "storyboard": "规划短视频分镜", "assets": "生成分镜图片",
-                    "videos": "生成分镜视频", "audio": "生成短视频配音", "compose": "合成短视频", "produce": "生成短视频"}
 
 
 def _public_status(status: str) -> str:
@@ -114,8 +103,7 @@ def _safe_url(value) -> str | None:
 
 
 def _safe_params(data) -> dict:
-    return {key: value for key, value in (data.items() if isinstance(data, dict) else [])
-            if key in _SAFE_PARAMS and isinstance(value, (str, int, float, bool)) and len(str(value)) <= 7000}
+    return public_generation_params(data)
 
 
 def _result_urls(result, kind: str) -> list[str]:
@@ -150,7 +138,8 @@ def _text_output(result) -> str:
 
 
 def project_generation(task, *, viewer_id: int, owner_user_id: int | None = None,
-                       linked_tool: ToolRun | None = None, fallback: dict | None = None) -> GenerationRecordOut:
+                       linked_tool: ToolRun | None = None, fallback: dict | None = None,
+                       submitted_params: dict | None = None) -> GenerationRecordOut:
     """Project only safe public fields from already persisted task data."""
     kind = _generation_kind(task)
     result = task.result_payload if isinstance(task.result_payload, dict) else {}
@@ -166,14 +155,22 @@ def project_generation(task, *, viewer_id: int, owner_user_id: int | None = None
         preview = _safe_url(linked_tool.preview_url)
     if not preview and kind == "image" and urls:
         preview = urls[0]
-    params = {**_safe_params(linked_tool.params if linked_tool is not None else {}), **_safe_params(task.payload)}
+    payload = task.payload if isinstance(task.payload, dict) else {}
+    params = merge_generation_params(
+        linked_tool.params if linked_tool is not None else {}, payload,
+        planned_generation_params(task, kind), prepared_generation_params(payload.get("prepared")),
+        payload.get("generation_params"), submitted_params,
+    )
+    media = result.get("media_info")
+    if isinstance(media, dict):
+        for field, key in (("duration_sec", "media_duration_sec"), ("width", "media_width"), ("height", "media_height")):
+            value = media.get(field)
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and 0 < value < 1_000_000:
+                params[key] = value
     prompt = str(params.get("prompt") or (linked_tool.prompt if linked_tool is not None else "") or "")
     if not prompt:
         prompt = next((str((task.payload or {}).get(key) or "") for key in ("text", "instruction", "draft", "name")
                        if isinstance((task.payload or {}).get(key), str) and (task.payload or {}).get(key)), "")
-    if not prompt:
-        prompt = (_PIPELINE_LABELS.get((task.payload or {}).get("phase"), "生成 AI 短视频")
-                  if task.task_type == "project_pipeline" else _TASK_LABELS.get(task.task_type, "生成任务"))
     can_view_money = task.team_id is None or viewer_id in {task.requested_by, owner_user_id}
     created_at = getattr(task, "created_at", None)
     return GenerationRecordOut(
@@ -307,6 +304,43 @@ async def _legacy_entity_outputs(db, tasks) -> dict[int, dict]:
     return outputs
 
 
+async def _submitted_parameters(db, tasks) -> dict[int, dict]:
+    """Recover only accepted matching requests, never current editable project/fragment fields."""
+    candidates = {task.id: task for task in tasks
+                  if _generation_kind(task) in {"image", "video"} and task.task_type != "project_pipeline"}
+    if not candidates:
+        return {}
+    payload = TaskEvent.payload
+    rows = (await db.execute(select(
+        TaskEvent.task_id, payload["provider_task_id"].as_string(),
+        payload["is_video_submit"].as_boolean(), payload["endpoint"].as_string(),
+        payload["request"]["body"], TaskEvent.event_type, payload["provider"].as_string(),
+        payload["simulated"].as_boolean(), payload["operation"].as_string(),
+        payload["request_stage"].as_string(), payload["request_id"].as_string(),
+    ).where(TaskEvent.task_id.in_(candidates), TaskEvent.event_type.in_(
+        ("upstream.request.accepted", "upstream.request.simulated")),
+            payload["method"].as_string() == "POST").order_by(TaskEvent.id.desc()))).all()
+    recovered = {}
+    for task_id, provider_id, is_video, endpoint, body, event_type, provider, simulated, operation, stage, request_id in rows:
+        if task_id in recovered:
+            continue
+        task = candidates[task_id]
+        kind = _generation_kind(task)
+        if event_type == "upstream.request.simulated":
+            if (provider != "local-mock" or simulated is not True or stage != "http_ready"
+                    or operation != f"{kind}.generate"):
+                continue
+            if kind == "video":
+                provider_id = f"local-media-{request_id}" if request_id else None
+                is_video = True
+        if not request_matches_generation(_generation_kind(task), endpoint, is_video_submit=is_video):
+            continue
+        if _generation_kind(task) == "video" and task.provider_task_id and provider_id != task.provider_task_id:
+            continue
+        recovered[task_id] = submitted_generation_params(body)
+    return recovered
+
+
 async def _load_records(db, user, references, owner_user_id):
     task_ids = [row.id for row in references if row.source == "task"]
     tool_ids = [row.id for row in references if row.source == "tool"]
@@ -319,8 +353,10 @@ async def _load_records(db, user, references, owner_user_id):
     for task_id, tool in linked:
         linked_by_task.setdefault(task_id, tool)
     fallback = await _legacy_entity_outputs(db, tasks)
+    submitted = await _submitted_parameters(db, tasks)
     records = {f"task:{task.id}": project_generation(task, viewer_id=user.id, owner_user_id=owner_user_id,
-                                                    linked_tool=linked_by_task.get(task.id), fallback=fallback.get(task.id)) for task in tasks}
+        linked_tool=linked_by_task.get(task.id), fallback=fallback.get(task.id),
+        submitted_params=submitted.get(task.id)) for task in tasks}
     records.update({f"tool:{tool.id}": _legacy_projection(tool) for tool in tools})
     return [records[f"{row.source}:{row.id}"] for row in references]
 

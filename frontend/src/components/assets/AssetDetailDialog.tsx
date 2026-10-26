@@ -3,7 +3,8 @@ import { useEffect, useState, type ReactNode } from 'react'
 import Modal from '../ui/Modal'
 import { Copy, Download, Maximize2, Minimize2, X } from 'lucide-react'
 import { resolveDramaMediaUrl } from '../../api/drama'
-import { assetDetailInfo, type AssetDetailRecord } from '../../lib/assetDetails'
+import { assetDetailInfo, formatMediaDuration, type AssetDetailRecord } from '../../lib/assetDetails'
+import { formatDateTime } from '../../i18n'
 import { canvasMediaFilename, downloadCanvasMedia, downloadCanvasText, isPlayableVideoUrl } from '../../lib/canvasNodeMedia'
 import { AssetVisual } from './AssetLibrary'
 import './asset-detail.css'
@@ -36,6 +37,7 @@ export function AssetDetailDialog({ asset, open = true, onClose, actions, childr
   const [feedback, setFeedback] = useState('')
   const [downloading, setDownloading] = useState(false)
   const [dimensions, setDimensions] = useState('')
+  const [mediaDuration, setMediaDuration] = useState('')
   const info = assetDetailInfo(asset)
   const title = asset.name || info.filename || '资产详情'
   const url = resolveDramaMediaUrl(asset.url || asset.cover)
@@ -46,7 +48,7 @@ export function AssetDetailDialog({ asset, open = true, onClose, actions, childr
   const labels: Record<string, string> = { character: '角色', scene: '场景', prop: '道具', voice: '音色', image: '图片', video: '视频', audio: '音频', text: '文本' }
 
   useEffect(() => {
-    if (open) { setZoomed(false); setFeedback(''); setDimensions('') }
+    if (open) { setZoomed(false); setFeedback(''); setDimensions(''); setMediaDuration('') }
   }, [open, asset.id, asset.url])
 
   /** 复制完整提示词，折叠展示不会截断复制内容。 */
@@ -71,8 +73,8 @@ export function AssetDetailDialog({ asset, open = true, onClose, actions, childr
   return <Modal open={open} onClose={onClose} size="xl" className="pf-asset-detail-shell">
     <div className={`pf-asset-detail-dialog${zoomed ? ' is-zoomed' : ''}`}>
       <section className={`pf-asset-detail-media is-${kind}`} aria-label="媒体预览">
-        {kind === 'video' && url ? <video key={url} src={url} poster={resolveDramaMediaUrl(asset.cover)} controls playsInline preload="metadata" onLoadedMetadata={(event) => { const media = event.currentTarget; setDimensions(`${media.videoWidth} × ${media.videoHeight}`) }} />
-          : kind === 'audio' ? <div className="pf-asset-detail-audio"><AssetVisual asset={asset} />{url && <audio key={url} src={url} controls preload="metadata" />}</div>
+        {kind === 'video' && url ? <video key={url} src={url} poster={resolveDramaMediaUrl(asset.cover)} controls playsInline preload="metadata" onLoadedMetadata={(event) => { const media = event.currentTarget; setDimensions(media.videoWidth > 0 && media.videoHeight > 0 ? `${media.videoWidth} × ${media.videoHeight}` : ''); setMediaDuration(formatMediaDuration(media.duration)) }} />
+          : kind === 'audio' ? <div className="pf-asset-detail-audio"><AssetVisual asset={asset} />{url && <audio key={url} src={url} controls preload="metadata" onLoadedMetadata={(event) => setMediaDuration(formatMediaDuration(event.currentTarget.duration))} />}</div>
           : kind === 'text' ? <pre>{text || '暂无文本'}</pre>
           : url ? <img key={url} src={url} alt={title} onLoad={(event) => { const media = event.currentTarget; setDimensions(`${media.naturalWidth} × ${media.naturalHeight}`) }} />
           : <AssetVisual asset={asset} />}
@@ -92,8 +94,9 @@ export function AssetDetailDialog({ asset, open = true, onClose, actions, childr
             <dt>来源</dt><dd>{info.source}</dd>
             {info.source !== '上传' && <><dt>模型</dt><dd title={info.model}>{info.model || '未记录'}</dd></>}
             {dimensions && <><dt>媒体尺寸</dt><dd>{dimensions}</dd></>}
+            {(mediaDuration || info.mediaDuration) && <><dt>{kind === 'audio' ? '音频时长' : '成片时长'}</dt><dd>{mediaDuration || info.mediaDuration}</dd></>}
             {info.fileSize !== null && <><dt>文件大小</dt><dd>{info.fileSize >= 1048576 ? `${(info.fileSize / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(info.fileSize / 1024))} KB`}</dd></>}
-            {info.createdAt && <><dt>记录时间</dt><dd title={info.createdAt}>{info.createdAt.replace('T', ' ').slice(0, 16)}</dd></>}
+            {info.createdAt && <><dt>记录时间</dt><dd title={info.createdAt}>{formatDateTime(info.createdAt)}</dd></>}
             {asset.project_id && <><dt>来源项目</dt><dd>#{asset.project_id}</dd></>}
             {info.parameters.map((item) => <div className="pf-asset-detail-meta-row" key={item.key}><dt>{item.label}</dt><dd title={item.value}>{item.value}</dd></div>)}
           </dl>

@@ -12,7 +12,7 @@ from app.database import Base, get_db
 from app.deps import get_current_user
 from app.models import Project, Shot, Template, ToolRun, User
 from app.models_drama import DramaAsset, DramaEpisode, DramaEpisodeFragment, DramaProject
-from app.models_tasks import TaskRun
+from app.models_tasks import TaskEvent, TaskRun
 from app.models_teams import Team, TeamMember
 from app.services.tasks.generation_history import project_generation
 
@@ -127,7 +127,7 @@ async def test_provider_id_links_require_matching_tool_domain_and_media_kind(his
         assert tasks[api.id]["urls"] == []
         assert tasks[different_kind.id]["urls"] == []
         assert tasks[matched.id]["urls"] == ["https://output.test/id-match.png"]
-        assert tasks[api.id]["prompt"] == "生成任务"
+        assert tasks[api.id]["prompt"] == ""
 
 
 @pytest.mark.asyncio
@@ -241,7 +241,7 @@ def test_projection_accepts_only_outputs_and_safe_parameters():
         steps=[], team_id=None, requested_by=1)
     output = project_generation(row, viewer_id=1)
     assert output.urls == ["https://output.test/generated.png"]
-    assert output.params == {"prompt": "a tree", "ratio": "1:1"}
+    assert output.params == {"prompt": "a tree", "ratio": "1:1", "aspect_ratio": "1:1"}
     assert output.preview_url == output.urls[0]
     assert "secret" not in output.model_dump_json() and "private.png" not in output.model_dump_json()
     row.result_payload = {"url": "C:/secret.png"}
@@ -259,6 +259,117 @@ def test_text_and_step_projections_exclude_upstream_traces():
     row.steps = [SimpleNamespace(output_payload={"video_url": "https://output.test/result.mp4", "api_key": "private"})]
     result = project_generation(row, viewer_id=1)
     assert result.urls == ["https://output.test/result.mp4"] and result.text_content == ""
+
+
+@pytest.mark.asyncio
+async def test_history_restores_actual_submission_without_other_attempts_or_helper_images(history):
+    """Current accepted video parameters override requested/planned data, without leaking traces."""
+    sessions, (user, _, _), _team = history
+    async with sessions() as db:
+        row = TaskRun(domain="drama", task_type="fragment_video", queue_type="video", status="succeeded",
+            requested_by=user.id, provider_task_id="final-video",
+            payload={"model_id": "requested", "duration_sec": 12, "ratio": "9:16"},
+            billing_snapshot={"items": [{"capability": "video", "model_id": "planned",
+                                         "params": {"duration": 10, "aspect_ratio": "9:16"}}]},
+            result_payload={"urls": ["https://output.test/video.mp4"],
+                            "media_info": {"duration_sec": 8.04, "width": 854, "height": 480}})
+        db.add(row)
+        await db.flush()
+        actual = {"model": "MiniMax-H3", "seconds": "6", "ratio": "16:9", "resolution": "480p",
+                  "generate_audio": False, "content": [{"type": "text", "text": "Final submitted scene"},
+                  {"type": "image_url", "image_url": {"url": "https://private.test/reference.png"}}], "api_key": "private"}
+        for event_type, provider_id, is_video, body in (
+            ("upstream.request.accepted", "final-video", True, actual),
+            ("upstream.request.accepted", None, False, {"model": "helper-image", "prompt": "Helper still"}),
+            ("upstream.request.failed", "final-video", True, {"model": "failed", "prompt": "Failed retry"}),
+            ("upstream.request.accepted", "other-video", True, {"model": "other", "prompt": "Other attempt"}),
+        ):
+            db.add(TaskEvent(task_id=row.id, event_type=event_type, payload={
+                "method": "POST", "endpoint": "https://gateway.test/v1/videos" if is_video else "https://gateway.test/v1/images/generations",
+                "is_video_submit": is_video, "provider_task_id": provider_id,
+                "request": {"body": body, "headers": {"Authorization": "private-header"}},
+            }))
+        await db.commit()
+    async with await client_for(sessions, user) as client:
+        response = await client.get(f"/api/tasks/generations/{row.id}")
+        assert response.status_code == 200
+        record = response.json()
+        assert record["prompt"] == "Final submitted scene"
+        assert record["params"]["model_id"] == "MiniMax-H3"
+        assert record["params"]["duration"] == record["params"]["duration_sec"] == "6"
+        assert record["params"]["ratio"] == record["params"]["aspect_ratio"] == "16:9"
+        assert record["params"]["generate_audio"] is False
+        assert record["params"]["media_duration_sec"] == 8.04
+        assert record["params"]["media_width"] == 854 and record["params"]["media_height"] == 480
+        assert "private" not in response.text and "Helper still" not in response.text
+    async with sessions() as db:
+        persisted = await db.get(TaskRun, row.id)
+        assert persisted.payload == {"model_id": "requested", "duration_sec": 12, "ratio": "9:16"}
+
+
+def test_history_uses_prepared_snapshot_and_leaves_unknown_prompt_empty():
+    """Helper operations cannot supply video parameters; missing historical prompts stay unknown."""
+    row = SimpleNamespace(id=1, task_type="fragment_video", domain="drama", queue_type="video", status="running",
+        payload={"generation_params": {"prompt": "Frozen scene", "model_id": "actual", "duration": 6}},
+        billing_snapshot={"items": [{"capability": "video", "model_id": "planned", "params": {"duration": 8}},
+                                    {"capability": "image", "model_id": "helper", "params": {"prompt": "Helper"}}]},
+        result_payload={}, steps=[], team_id=None, requested_by=1)
+    output = project_generation(row, viewer_id=1)
+    assert output.prompt == "Frozen scene" and output.params["model_id"] == "actual"
+    assert output.params["duration"] == 6
+    row.payload = {}
+    assert project_generation(row, viewer_id=1).prompt == ""
+
+
+@pytest.mark.asyncio
+async def test_history_restores_matching_local_simulated_http_parameters(history):
+    """本地模拟同样保留最终参数，但必须匹配实际产出 request_id，不串入后续请求。"""
+    sessions, (user, _, _), _team = history
+    async with sessions() as db:
+        row = TaskRun(domain="drama", task_type="fragment_video", queue_type="video", status="succeeded",
+                      requested_by=user.id, provider_task_id="local-media-matching", payload={})
+        db.add(row)
+        await db.flush()
+        for request_id, overrides in (("matching", {}), ("later", {}), ("matching", {"provider": "untrusted"}),
+                                       ("matching", {"request_stage": "business_input"})):
+            db.add(TaskEvent(task_id=row.id, event_type="upstream.request.simulated", payload={
+                "method": "POST", "endpoint": "https://gateway.test/v1/videos", "provider": "local-mock",
+                "simulated": True, "operation": "video.generate", "request_stage": "http_ready",
+                "request_id": request_id,
+                "request": {"body": {"model": "MiniMax-H3", "prompt": f"Prompt {request_id}", "seconds": "12",
+                    "metadata": {"ratio": "9:16", "resolution": "480p", "generate_audio": True,
+                                 "duration": 12, "api_key": "private", "prompt": "Nested unrelated prompt"}}},
+                **overrides,
+            }))
+        await db.commit()
+    async with await client_for(sessions, user) as client:
+        response = await client.get(f"/api/tasks/generations/{row.id}")
+        assert response.status_code == 200
+        record = response.json()
+        assert record["prompt"] == "Prompt matching"
+        assert record["params"]["duration"] == "12" and record["params"]["resolution"] == "480p"
+        assert record["params"]["aspect_ratio"] == "9:16" and record["params"]["generate_audio"] is True
+        assert "Nested unrelated" not in response.text and "private" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_image_history_restores_the_final_responses_input(history):
+    """TokenFree /responses 生图实际文案在 input，画幅等计费规格来自本次固定快照。"""
+    sessions, (user, _, _), _team = history
+    async with sessions() as db:
+        row = task(user, billing_snapshot={"items": [{"capability": "image", "model_id": "gpt-image-2",
+                                                      "params": {"aspect_ratio": "3:4", "resolution": "2K"}}]})
+        db.add(row)
+        await db.flush()
+        db.add(TaskEvent(task_id=row.id, event_type="upstream.request.accepted", payload={
+            "method": "POST", "endpoint": "https://gateway.test/v1/responses",
+            "request": {"body": {"model": "gpt-image-2", "input": "Character sheet. Final canvas must be 3:4."}},
+        }))
+        await db.commit()
+    async with await client_for(sessions, user) as client:
+        record = (await client.get(f"/api/tasks/generations/{row.id}")).json()
+        assert record["prompt"] == "Character sheet. Final canvas must be 3:4."
+        assert record["params"]["model_id"] == "gpt-image-2" and record["params"]["aspect_ratio"] == "3:4"
 
 
 @pytest.mark.asyncio

@@ -188,11 +188,12 @@ def write_fragment_video_output_meta(
     video_path: Path | str | None = None,
 ) -> None:
     from app.services import storage as storage_svc
-    from app.services.ffmpeg_compose import probe_video_dimensions
+    from app.services.ffmpeg_compose import probe_duration, probe_video_dimensions
 
     params = dict(fragment.params or {}) if isinstance(fragment.params, dict) else {}
     width = 0
     height = 0
+    duration = None
     path = video_path if isinstance(video_path, Path) else None
     if path is None and isinstance(video_path, str) and video_path.strip():
         path = storage_svc.local_path_from_url(video_path.strip())
@@ -204,6 +205,7 @@ def write_fragment_video_output_meta(
         dims = probe_video_dimensions(path)
         if dims:
             width, height = dims
+        duration = probe_duration(path)
     ratio_label = (
         infer_aspect_ratio_from_pixels(width, height)
         if width > 0 and height > 0
@@ -211,15 +213,25 @@ def write_fragment_video_output_meta(
     )
     params["aspect_ratio"] = ratio_label
     params["resolution"] = resolution
+    params.pop("video_width", None)
+    params.pop("video_height", None)
     if width > 0 and height > 0:
         params["video_width"] = width
         params["video_height"] = height
+    params.pop("video_duration_sec", None)
+    if duration is not None and duration > 0:
+        params["video_duration_sec"] = duration
     gen = dict(params.get("generation") or {}) if isinstance(params.get("generation"), dict) else {}
     gen["aspect_ratio"] = ratio_label
     gen["resolution"] = resolution
+    gen.pop("video_width", None)
+    gen.pop("video_height", None)
     if width > 0 and height > 0:
         gen["video_width"] = width
         gen["video_height"] = height
+    gen.pop("video_duration_sec", None)
+    if duration is not None and duration > 0:
+        gen["video_duration_sec"] = duration
     params["generation"] = gen
     fragment.params = params
 

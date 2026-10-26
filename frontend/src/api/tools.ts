@@ -50,7 +50,7 @@ export type ToolRunRecord = {
   preview_url?: string | null
   urls: string[]
   task_id?: string | null
-  params?: Record<string, string> | null
+  params?: Record<string, unknown> | null
   error?: string | null
   created_at: string
   platform_task_id?: number | null

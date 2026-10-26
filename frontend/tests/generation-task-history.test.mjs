@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { generationRecordKey, generationDetailPath, generationBillingState } from '../src/lib/generationTaskHistory.ts'
 import { toolRunDetailAsset } from '../src/lib/toolRunDetails.ts'
+import { assetDetailInfo } from '../src/lib/assetDetails.ts'
 import { scopedRequestInit, setWorkspaceTeam } from '../src/features/teams/workspaceScope.ts'
 
 const record = { id: 42, tool_id: 'image', kind: 'image', status: 'succeeded', prompt: 'A portrait', urls: [], created_at: '2026-10-26T10:00:00Z' }
@@ -36,6 +37,41 @@ test('成功媒体仍按所选结果预览，视频首帧不能作为成片地�
   assert.equal(asset.type, 'video')
   assert.equal(asset.url, '/static/b.mp4')
   assert.equal(asset.cover, '/static/frame.png')
+})
+
+test('详情不把内部任务编号写入标题，未记录提示词保持为空', () => {
+  const asset = toolRunDetailAsset({ ...record, kind: 'video', prompt: '', task_type: 'fragment_video', provider_task_id: 'private-provider-id' })
+  assert.equal(asset.name, '视频生成')
+  assert.equal(asset.params.media_metadata.prompt, '')
+  assert.doesNotMatch(JSON.stringify(asset.params), /fragment_video|private-provider-id/)
+})
+
+test('提交参数保留数值和布尔值，请求时长与成片时长分开', () => {
+  const asset = toolRunDetailAsset({ ...record, kind: 'video', urls: ['/static/movie.mp4'], params: {
+    model_id: 'actual-model', model: 'old-model', ratio: '1:1', aspect_ratio: '9:16', resolution: '480p',
+    duration: '12s', media_duration_sec: 8, video_mode: 'first_last_frame', seed: 0,
+    generate_audio: false, watermark: false, count: 1, references: [{ secret: 'not-for-display' }],
+  } })
+  const info = assetDetailInfo(asset)
+  assert.equal(info.model, 'actual-model')
+  assert.equal(info.mediaDuration, '8 秒')
+  const values = Object.fromEntries(info.parameters.map((item) => [item.label, item.value]))
+  assert.equal(values['设定时长'], '12 秒')
+  assert.equal(values['设定画幅'], '9:16')
+  assert.equal(values['设定分辨率'], '480p')
+  assert.equal(values['生成方式'], '首尾帧')
+  assert.equal(values['生成声音'], '否')
+  assert.equal(values['水印'], '否')
+  assert.equal(values['随机种子'], '0')
+  assert.equal(values['生成数量'], '1')
+  assert.doesNotMatch(JSON.stringify(asset.params), /references|not-for-display/)
+})
+
+test('未记录的媒体时长不能用任务执行耗时推算', () => {
+  const asset = toolRunDetailAsset({ ...record, kind: 'video', started_at: '2026-10-26T10:00:00Z', finished_at: '2026-10-26T10:00:12Z', params: {} })
+  const info = assetDetailInfo(asset)
+  assert.equal(info.mediaDuration, '')
+  assert.equal(info.parameters.some((item) => item.label.includes('时长')), false)
 })
 
 test('结算状态不根据完成时间推断，隐藏费用不能显示成免费', () => {
