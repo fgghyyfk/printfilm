@@ -7,6 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.schemas_common import PageMeta
 from app.schemas_tasks import TaskRunBriefOut
 
 
@@ -148,6 +149,13 @@ class DramaProjectListItem(BaseModel):
     active_tasks: list[TaskRunBriefOut] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
+
+
+class DramaProjectListOut(BaseModel):
+    """漫剧/自由画布项目分页列表。"""
+
+    items: list[DramaProjectListItem] = Field(default_factory=list)
+    meta: PageMeta
 
 
 class DramaScriptSummaryRequest(BaseModel):

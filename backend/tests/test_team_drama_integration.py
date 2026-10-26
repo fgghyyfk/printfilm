@@ -111,9 +111,9 @@ async def test_old_drama_routes_require_current_membership_and_separate_spaces(d
     a = drama_api
     a.auth["user"] = a.member
     assert (await a.client.get(f"/api/drama/projects/{a.project.id}")).status_code == 200
-    assert (await a.client.get("/api/drama/projects")).json() == []
+    assert (await a.client.get("/api/drama/projects")).json()["items"] == []
     scoped = await a.client.get("/api/drama/projects", headers={"X-Team-Id": str(a.team_id)})
-    assert [row["id"] for row in scoped.json()] == [a.project.id]
+    assert [row["id"] for row in scoped.json()["items"]] == [a.project.id]
     a.auth["user"] = a.outsider
     assert (await a.client.get(f"/api/drama/projects/{a.project.id}")).status_code == 404
     a.auth["user"] = a.owner

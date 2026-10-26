@@ -4,6 +4,7 @@ import { useTeamReadOnly } from '../../../features/teams/readOnlyContext'
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
 import { X } from 'lucide-react'
 import type { EpisodeAssetNodeData } from './buildEpisodeFlow'
+import { AssetCard } from '../../../components/assets/AssetLibrary'
 
 type Props = NodeProps<Node<EpisodeAssetNodeData>> & {
   onUnlinkAsset?: (fragmentId: number, assetId: number) => void
@@ -16,22 +17,7 @@ function EpisodeAssetNodeComponent({ data, selected, onUnlinkAsset }: Props) {
 
   return (
     <div className={`ep-asset-node${selected ? ' is-selected' : ''}`}>
-      <div className="ep-asset-node-head">
-        <span>{data.typeLabel}</span>
-        {links.length > 1 ? (
-          <span className="ep-asset-node-count" title="关联分镜数">
-            {links.length} 镜
-          </span>
-        ) : null}
-      </div>
-      <div className="ep-asset-node-thumb">
-        {data.previewUrl ? (
-          <img src={data.previewUrl} alt="" draggable={false} />
-        ) : (
-          <span>{(data.name || '?')[0]}</span>
-        )}
-      </div>
-      <div className="ep-asset-node-name">{data.name}</div>
+      <AssetCard asset={{ name: data.name, type: data.typeLabel, cover: data.previewUrl }} compact selected={selected} footer={`关联 ${links.length} 个分镜`}>
       {selected && links.length > 0 ? (
         <div className="ep-asset-node-links nodrag nopan">
           {links.map((link) => (
@@ -50,6 +36,7 @@ function EpisodeAssetNodeComponent({ data, selected, onUnlinkAsset }: Props) {
           ))}
         </div>
       ) : null}
+      </AssetCard>
       <Handle className="ep-frag-handle" type="source" position={Position.Right} />
     </div>
   )

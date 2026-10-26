@@ -46,31 +46,6 @@ export function dramaProjectEntryPath(
   return `/drama/projects/${id}`
 }
 
-/** 共享列表筛选，先匹配工作流和搜索，再应用项目进度。 */
-export function filterDramaProjectList(
-  items: DramaProjectListItem[],
-  { workflow, filter = 'all', query = '' }: {
-    workflow: DramaWorkflow
-    filter?: DramaProjectFilter
-    query?: string
-  },
-): DramaProjectListItem[] {
-  const needle = query.trim().toLocaleLowerCase()
-  return items.filter((item) => {
-    if (resolveDramaWorkflow(item) !== workflow) return false
-    if (needle && !item.title.toLocaleLowerCase().includes(needle)) return false
-    if (workflow === 'canvas') {
-      if (filter === 'draft') return !item.asset_count
-      if (filter === 'running') return item.asset_count > 0
-      return filter !== 'done'
-    }
-    if (filter === 'draft') return !item.has_script
-    if (filter === 'running') return item.has_script && item.episode_count > 0
-    if (filter === 'done') return item.has_script && item.episode_count >= 8
-    return true
-  })
-}
-
 /** 列表卡片 meta 文案 */
 export function formatDramaCardMeta(item: DramaProjectListItem): string {
   if (isCanvasWorkflow(item)) {

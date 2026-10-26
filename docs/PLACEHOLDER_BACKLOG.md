@@ -12,6 +12,7 @@
 |------|----------|
 | 左侧主导航 / 窄屏抽屉 | `frontend/src/components/layout/SiteNav.tsx`、`AppShell.tsx` |
 | 漫剧 / 自由画布列表 | `frontend/src/pages/drama/DramaListPage.tsx`、`CanvasListPage.tsx` |
+| 共享项目卡片 / 新建弹窗 | `frontend/src/components/projects/ProjectCard.tsx`、`ProjectCreateDialog.tsx`、`frontend/src/lib/projectCreateForm.ts` |
 | 帮助抽屉 | `frontend/src/components/ui/HelpCenter.tsx`、`Modal.tsx`（`variant=drawer`） |
 | 新建 | `frontend/src/pages/studio/CreateProjectPage.tsx` |
 | 风格 | `frontend/src/pages/studio/StyleConfigPage.tsx` |
@@ -33,6 +34,9 @@
 | G-04 | 用户资料下拉（设置/账单） | 待开发 | P2 | 当前头像点击为退出 |
 | G-05 | 顶部主菜单改为左侧分组导航 | 已完成待部署 | P0 | 创作组：工作台、漫剧、自由画布、AI 短视频、小工具；资源协作组：资产、团队、定价；帮助、GitHub、语言和账户放底部。窄屏使用导航抽屉，全屏分镜/画布编辑器保留独立布局 |
 | G-06 | 自由画布提升为一级入口 | 已完成待部署 | P0 | 新增 `/canvas` 独立画布列表；`/drama` 只展示剧本项目。共用现有 `workflow` 服务端筛选、项目管理与个人/团队权限；旧 API 不传 `workflow` 仍返回全部可访问项目，现有编辑地址兼容 |
+| G-07 | 个人漫剧 / 自由画布 / 团队统一项目卡片 | 已完成待部署 | P1 | 共用 `ProjectCard` / `ProjectGrid`：封面叠字、状态胶囊、简介与真实费用信息；仅有真实分集数据时显示进度。菜单、复选框与打开操作独立，保留团队删除权限和历史账单 |
+| G-08 | 统一新建入口、弹窗与项目输入样式 | 已完成待部署 | P1 | 取消网格内大尺寸新增占位卡，新建按钮置于项目标题右侧；共用 `ProjectCreateDialog`，区分漫剧和画布字段；计划集数严格校验 1–120 整数，支持字段错误聚焦、提交防重和失败保留输入 |
+| G-09 | 资产库增加图片 / 视频 / 音频及无项目素材 | 已完成待部署 | P1 | 删除顶部三个快捷跳转；新增只读 `/api/drama/library-assets` 聚合项目资产和独立工具正式输出，支持未关联项目筛选、来源独立 key、搜索分页、预览下载与个人/团队隔离。媒体分类可覆盖角色等业务分类；科普镜头/成片及未建资产的分镜视频尚未纳入 |
 
 ---
 

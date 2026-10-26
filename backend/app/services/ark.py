@@ -1939,8 +1939,11 @@ class ArkGateway:
         project_id: int | None = None,
         shot_no: int | None = None,
         duration_hint: float = 4.0,
+        result_metadata: dict | None = None,
     ) -> str:
         """整片/单镜配音：TokenFree 多 TTS → edge-tts；失败则抛错，不写静音。"""
+        if result_metadata is not None:
+            result_metadata.clear()
         voice_map = {
             "narrator_calm": "zh_female_cancan_uranus_bigtts",
             "warm_storyteller": "zh_female_tianmeixiaoyuan_uranus_bigtts",
@@ -1958,6 +1961,8 @@ class ArkGateway:
             dest.parent.mkdir(parents=True, exist_ok=True)
             if not dest.exists() or dest.stat().st_size < 1000:
                 await self._tts_edge(clean, dest)
+            if result_metadata is not None:
+                result_metadata.update(model_id="edge-tts", speaker=edge_tts_voice_for_speaker(""), simulated=True)
             return f"/static/mock/audio_{digest}.mp3"
 
         dest_dir = storage.project_dir(project_id or 0)
@@ -1979,9 +1984,13 @@ class ArkGateway:
                 ok = await self._tts_openai_speech(clean, speaker, dest, model=model_id)
                 if ok:
                     if getattr(self.settings, "local_media_mock", False):
+                        if result_metadata is not None:
+                            result_metadata.update(model_id=model_id, speaker=speaker, simulated=True)
                         return local_media_mock.media_url("default.mp3")
                     url = await _accept_if_audible("tokenfree-speech")
                     if url:
+                        if result_metadata is not None:
+                            result_metadata.update(model_id=model_id, speaker=speaker)
                         logger.info(
                             "TTS tokenfree ok shot=%s model=%s bytes=%s",
                             shot_no,
@@ -2001,6 +2010,8 @@ class ArkGateway:
             await self._tts_edge(clean, dest, voice_hint=speaker)
             url = await _accept_if_audible("edge-tts")
             if url:
+                if result_metadata is not None:
+                    result_metadata.update(model_id="edge-tts", speaker=edge_tts_voice_for_speaker(speaker))
                 logger.info("TTS edge-tts ok shot=%s speaker=%s bytes=%s", shot_no, speaker, dest.stat().st_size)
                 return url
         except Exception as exc:  # noqa: BLE001

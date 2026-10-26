@@ -1,8 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowUpRight, Check, Clapperboard, UsersRound } from 'lucide-react'
+import { ArrowUpRight, Check, UsersRound } from 'lucide-react'
 import Modal from '../../components/ui/Modal'
 import Button from '../../components/ui/Button'
+import ProjectCreateDialog, { type ProjectCreateValues } from '../../components/projects/ProjectCreateDialog'
 import { useTeamPreview } from './useTeamPreview'
 import { TEAM_COLORS } from './types'
 
@@ -48,38 +49,12 @@ export function CreateTeamModal({ open, onClose }: { open: boolean; onClose: () 
 export function CreateTeamProjectModal({ open, onClose, teamId }: { open: boolean; onClose: () => void; teamId: string }) {
   const { createProject } = useTeamPreview()
   const navigate = useNavigate()
-  /* title 项目名称；description 简介；episodes 集数；error 校验提示。 */
-  const [title, setTitle] = useState('')
-  const [description, setDescription] = useState('')
-  const [episodes, setEpisodes] = useState('12')
-  const [source, setSource] = useState('')
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
-  useEffect(() => { if (open) { setTitle(''); setDescription(''); setEpisodes('12'); setSource(''); setError('') } }, [open])
 
-  /** 将通过校验的项目加入当前团队列表。 */
-  async function submit(event: FormEvent) {
-    event.preventDefault()
-    if (busy) return
-    setBusy(true); setError('')
-    try {
-      const id = await createProject(teamId, { title, description: description.trim(), source: source.trim(), episodes: Number(episodes) })
-      onClose()
-      navigate(`/drama/projects/${id}`)
-    } catch (cause) { setError(cause instanceof Error ? cause.message : '创建失败，请重试') }
-    finally { setBusy(false) }
+  async function submit(values: ProjectCreateValues) {
+    const id = await createProject(teamId, { title: values.title, description: values.description, source: values.source, episodes: values.episodeCount })
+    onClose()
+    navigate(`/drama/projects/${id}`)
   }
 
-  return <Modal open={open} onClose={onClose} dismissible={!busy} title="新建团队项目">
-    <form className="pf-team-form" onSubmit={submit}>
-      <div className="pf-team-form-intro"><span className="pf-team-mark"><Clapperboard size={24} /></span><div><strong>一个故事，一起完成</strong><p>团队所有成员都可以查看和参与这个项目。</p></div></div>
-      <label className="pf-team-field">项目名称<input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} required maxLength={60} placeholder="为新故事取个名字" /></label>
-      <label className="pf-team-field">故事简介<textarea value={description} onChange={(event) => setDescription(event.target.value)} maxLength={500} rows={3} placeholder="故事从哪里开始？" /></label>
-      <label className="pf-team-field">创作内容<textarea value={source} onChange={(event) => setSource(event.target.value)} required minLength={20} rows={4} placeholder="描述故事创意或粘贴原始剧本，至少 20 个字" /></label>
-      <label className="pf-team-field">计划集数<input type="number" min={1} max={100} step={1} required value={episodes} onChange={(event) => setEpisodes(event.target.value)} /></label>
-      <p className="pf-team-form-note">创建项目不会自动提交生成任务。后续生成费用由团队所有者的个人余额支付。</p>
-      {error && <p className="pf-team-alert" role="alert">{error}</p>}
-      <div className="pf-team-modal-actions"><Button onClick={onClose}>取消</Button><Button variant="lime" type="submit" disabled={busy}>创建项目</Button></div>
-    </form>
-  </Modal>
+  return <ProjectCreateDialog key={teamId} open={open} onClose={onClose} kind="drama" contextLabel="团队项目 · 成员共同创作" titleRequired titleMaxLength={60} sourceMaxLength={100000} allowImageStyle={false} onSubmit={submit} footerNote="创建项目不会自动提交生成任务。后续生成费用由团队所有者的个人余额支付。" />
 }

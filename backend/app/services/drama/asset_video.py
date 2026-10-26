@@ -268,6 +268,13 @@ async def generate_asset_video(
         res=res,
         duration=duration,
         style_id=style_id,
+        generation_options={
+            **{key: body[key] for key in ("generate_audio", "watermark", "camera_fixed", "seed") if key in body},
+            "duration_sec": body.get("duration", duration),
+            "resolution": body.get("resolution", res),
+            "aspect_ratio": body.get("ratio") or "auto",
+        },
+        actual_model=body.get("model"),
     )
     await _bill_asset_video(
         db,
@@ -304,6 +311,8 @@ async def _publish_asset_video(
     res: str,
     duration: int,
     style_id: str | None,
+    generation_options: dict | None = None,
+    actual_model: str | None = None,
 ) -> str:
     """落成片与封面，并写回资产参数。"""
     from app.services import storage as storage_svc
@@ -332,12 +341,17 @@ async def _publish_asset_video(
     params["visualPrompt"] = content
     params["generation"] = {"status": "done"}
     params["videoOptions"] = {
-        "model_id": model_id or "seedance-2-5",
+        "model_id": model_id or actual_model or get_settings().model_video,
         "aspect_ratio": ratio,
         "resolution": res,
         "duration_sec": duration,
         "image_style_id": style_id,
     }
+    from app.services.drama.asset_metadata import generated_media_metadata
+    params["media_metadata"] = generated_media_metadata(
+        model_id=actual_model or model_id or get_settings().model_video, prompt=content,
+        options={**params["videoOptions"], **(generation_options or {})},
+    )
     asset.params = params
     return video_url
 

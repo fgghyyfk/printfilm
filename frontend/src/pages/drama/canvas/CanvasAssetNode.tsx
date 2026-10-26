@@ -18,8 +18,9 @@ import {
   type Node,
   type NodeProps,
 } from '@xyflow/react'
-import { AudioLines, Image as ImageIcon, Landmark, Loader2, Maximize2, Play, UserRound } from 'lucide-react'
+import { AudioLines, Loader2, Maximize2, Play } from 'lucide-react'
 import { resolveDramaMediaUrl } from '../../../api/drama'
+import { AssetCover, AssetVisual } from '../../../components/assets/AssetLibrary'
 import { isPlayableVideoUrl } from '../../../lib/canvasNodeMedia'
 import { useCanvasStore } from './CanvasStore'
 import {
@@ -30,7 +31,8 @@ import {
   type CanvasAssetNodeData,
 } from './canvasTypes'
 import { CanvasNodeGeneratePanel } from './nodes/CanvasNodeGeneratePanel'
-import { CanvasNodePreviewModal } from './CanvasNodePreviewModal'
+import { AssetDetailDialog } from '../../../components/assets/AssetDetailDialog'
+import { dramaApi, type DramaAsset } from '../../../api/drama'
 import { CanvasNodeUploadBar } from './nodes/CanvasNodeUploadBar'
 import { DRAMA_VOICE_BINDING_ENABLED } from '../../../lib/dramaVoiceBinding'
 
@@ -64,20 +66,9 @@ function CanvasAssetVideoPreview({
   )
 }
 
-/** 按类型返回占位图标 */
-function PlaceholderIcon({ kind }: { kind: CanvasAssetNodeData['kind'] }) {
-  const className = 'fc-placeholder-icon'
-  if (kind === 'character') return <UserRound className={className} size={40} strokeWidth={1.4} />
-  if (kind === 'scene') return <Landmark className={className} size={40} strokeWidth={1.4} />
-  if (kind === 'video') return <Play className={className} size={40} strokeWidth={1.4} />
-  if (kind === 'audio') return <AudioLines className={className} size={32} strokeWidth={1.4} />
-  if (kind === 'text') return null
-  return <ImageIcon className={className} size={40} strokeWidth={1.4} />
-}
-
 /** 渲染单个画布资产节点 */
 function CanvasAssetNodeComponent({ id, data, selected }: NodeProps<Node<CanvasAssetNodeData>>) {
-  const { updateNodeTextContent, renameNode } = useCanvasStore()
+  const { projectId, updateNodeTextContent, renameNode } = useCanvasStore()
   const updateNodeInternals = useUpdateNodeInternals()
   const option = CANVAS_NODE_OPTION_BY_KIND[data.kind]
   const Icon = option.icon
@@ -119,6 +110,7 @@ function CanvasAssetNodeComponent({ id, data, selected }: NodeProps<Node<CanvasA
   const [renaming, setRenaming] = useState(false)
   const [draftName, setDraftName] = useState(displayName)
   const [previewOpen, setPreviewOpen] = useState(false)
+  const [previewAsset, setPreviewAsset] = useState<DramaAsset | null>(null)
   const [mediaAspect, setMediaAspect] = useState<number | null>(null)
   // 音频节点用 mediaUrl；角色音色只用 voiceUrl 做预览弹层，卡片内仍显示形象图
   const voiceSrc = data.kind === 'character' ? resolveDramaMediaUrl(voiceUrl) : ''
@@ -194,6 +186,14 @@ function CanvasAssetNodeComponent({ id, data, selected }: NodeProps<Node<CanvasA
     }
   }
 
+  useEffect(() => {
+    if (!previewOpen || !data.assetId) return
+    let active = true
+    setPreviewAsset(null)
+    void dramaApi.listAssets(projectId).then((rows) => { if (active) setPreviewAsset(rows.find((asset) => asset.id === data.assetId) || null) }).catch(() => undefined)
+    return () => { active = false }
+  }, [previewOpen, projectId, data.assetId])
+
   /** 双击卡片：放大预览（单击留给选中 / 提示词面板） */
   const handleCardDoubleClick = (event: MouseEvent) => {
     const target = event.target as HTMLElement
@@ -250,15 +250,18 @@ function CanvasAssetNodeComponent({ id, data, selected }: NodeProps<Node<CanvasA
       </div>
 
       <div
-        className={`fc-asset-card${canPreview ? ' is-previewable' : ''}`}
+        className={`pf-library-card fc-asset-card${canPreview ? ' is-previewable' : ''}`}
         title={canPreview ? '双击放大预览' : undefined}
         onDoubleClick={handleCardDoubleClick}
       >
-        <div
+        <AssetCover
+          asset={{ name: displayName, type: data.kind }}
+          showLabels={!isText && data.kind !== 'audio'}
+          busy={data.generating}
           className={`fc-asset-body is-${data.kind}${orientationClass}`}
           style={
             data.kind === 'text' || data.kind === 'audio'
-              ? undefined
+              ? { aspectRatio: 'auto' }
               : { width: frameSize.width, height: frameSize.height }
           }
         >
@@ -304,7 +307,7 @@ function CanvasAssetNodeComponent({ id, data, selected }: NodeProps<Node<CanvasA
               onLoad={handleImageLoad}
             />
           ) : (
-            <PlaceholderIcon kind={data.kind} />
+            <AssetVisual asset={{ name: displayName, type: data.kind }} />
           )}
           {canPreview ? (
             <button
@@ -318,8 +321,8 @@ function CanvasAssetNodeComponent({ id, data, selected }: NodeProps<Node<CanvasA
               <Maximize2 size={14} strokeWidth={2.2} />
             </button>
           ) : null}
-        </div>
-        {footerLabel ? <div className="fc-asset-footer">{footerLabel}</div> : null}
+        </AssetCover>
+        {footerLabel ? <div className="pf-library-card-foot">{footerLabel}</div> : null}
       </div>
 
       {showGenerate ? (
@@ -347,14 +350,9 @@ function CanvasAssetNodeComponent({ id, data, selected }: NodeProps<Node<CanvasA
       <Handle className="fc-handle" type="target" position={Position.Left} />
       <Handle className="fc-handle" type="source" position={Position.Right} />
       {previewOpen && canPreview ? (
-        <CanvasNodePreviewModal
-          payload={{
-            kind: data.kind,
-            title: displayName,
-            mediaUrl: mediaSrc || null,
-            voiceUrl: (data.kind === 'audio' ? audioSrc : voiceSrc) || null,
-            textContent,
-          }}
+        <AssetDetailDialog
+          asset={previewAsset || { id: data.assetId, type: data.kind, asset_type: data.kind, name: displayName, url: mediaSrc || (data.kind === 'audio' ? audioSrc : null), params: { textContent, media_metadata: { source: 'unknown' } }, project_id: projectId }}
+          audioUrl={data.kind === 'character' ? voiceSrc : undefined}
           onClose={() => setPreviewOpen(false)}
         />
       ) : null}

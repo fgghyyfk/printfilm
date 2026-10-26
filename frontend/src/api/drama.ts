@@ -5,6 +5,30 @@ import { teamsApi } from './teams'
 import { projectTeam } from '../features/teams/editLocks'
 import { workspaceScope } from '../features/teams/workspaceScope'
 
+/** 只读资产目录：工具结果 ID 不可作为可编辑的 DramaAsset ID 使用。 */
+export type MediaLibraryItem = {
+  key: string
+  id: number
+  source_kind: 'drama' | 'tool'
+  source_id: number
+  type: string
+  asset_type: string
+  media_kind: 'image' | 'video' | 'audio'
+  name?: string | null
+  cover?: string | null
+  url?: string | null
+  params?: Record<string, unknown> | null
+  project_id?: number | null
+  project_title?: string | null
+  project_url?: string | null
+  updated_at?: string | null
+}
+export type MediaLibraryType = 'all' | 'character' | 'scene' | 'prop' | 'voice' | 'image' | 'video' | 'audio'
+export type MediaLibraryPage = {
+  items: MediaLibraryItem[]
+  meta: { total: number; total_all: number; page: number; page_size: number }
+}
+
 /** 漫剧 API 沿用原有错误提示，并共用登录态与 JSON 解析。 */
 const rawRequest = createJsonRequester((response, detail) =>
   throwApiError(response.status, detail, '请求失败'),
@@ -142,6 +166,21 @@ export type DramaProjectListItem = {
   active_tasks?: DramaTaskBrief[]
 }
 
+/** 漫剧 / 自由画布项目分页列表：条目 + 分页元信息 */
+export type DramaProjectListPage = {
+  items: DramaProjectListItem[]
+  meta: { page: number; page_size: number; total: number }
+}
+
+/** 项目列表筛选参数，均由服务端处理 */
+export type DramaProjectListParams = {
+  workflow?: 'script' | 'canvas'
+  status?: 'all' | 'running' | 'done' | 'draft'
+  q?: string
+  page?: number
+  page_size?: number
+}
+
 export type DramaAsset = {
   id: number
   type: string
@@ -239,8 +278,16 @@ export type DramaVoiceGenerateResult = {
 }
 
 export const dramaApi = {
-  listProjects: (params?: { workflow?: 'script' | 'canvas' }) =>
-    request<DramaProjectListItem[]>(`/api/drama/projects${params?.workflow ? `?workflow=${params.workflow}` : ''}`),
+  listProjects: (params?: DramaProjectListParams) => {
+    const sp = new URLSearchParams()
+    if (params?.workflow) sp.set('workflow', params.workflow)
+    if (params?.status && params.status !== 'all') sp.set('status', params.status)
+    if (params?.q) sp.set('q', params.q)
+    if (params?.page) sp.set('page', String(params.page))
+    if (params?.page_size) sp.set('page_size', String(params.page_size))
+    const qs = sp.toString()
+    return request<DramaProjectListPage>(`/api/drama/projects${qs ? `?${qs}` : ''}`)
+  },
   createProject: (body: {
     title?: string
     description?: string
@@ -319,6 +366,13 @@ export const dramaApi = {
       body: JSON.stringify({ message, project_id }),
     }),
 
+  listLibraryAssets: (filters: { type?: MediaLibraryType; projectId?: number; unassigned?: boolean; q?: string; page?: number; pageSize?: number }, signal?: AbortSignal) => {
+    const params = new URLSearchParams({ type: filters.type || 'all', page: String(filters.page || 1), page_size: String(filters.pageSize || 12) })
+    if (filters.projectId) params.set('project_id', String(filters.projectId))
+    if (filters.unassigned) params.set('unassigned', 'true')
+    if (filters.q) params.set('q', filters.q)
+    return request<MediaLibraryPage>(`/api/drama/library-assets?${params}`, { signal })
+  },
   listAssets: async (projectId?: number, options?: { libraryOnly?: boolean }) => {
     const params = new URLSearchParams()
     if (projectId != null) params.set('project_id', String(projectId))

@@ -567,6 +567,7 @@ def archive_asset_image_version(
     from datetime import datetime, timezone
 
     params = dict(asset.params or {}) if isinstance(asset.params, dict) else {}
+    from app.services.drama.asset_metadata import current_media_metadata
     stamp = f"{int(datetime.now(timezone.utc).timestamp())}_{uuid.uuid4().hex[:8]}"
     archived_url = _snapshot_version_media_url(current, label=stamp)
     prompt = ""
@@ -582,6 +583,7 @@ def archive_asset_image_version(
         "prompt": prompt[:2000] if prompt else None,
         "createdAt": datetime.now(timezone.utc).isoformat(),
         "source": source,
+        "media_metadata": current_media_metadata(params),
     }
     versions = params.get("image_versions")
     if not isinstance(versions, list):
@@ -599,6 +601,7 @@ def activate_asset_image_version(
     version_id: str,
 ) -> dict[str, Any]:
     params = dict(asset.params or {}) if isinstance(asset.params, dict) else {}
+    from app.services.drama.asset_metadata import current_media_metadata
     versions_raw = params.get("image_versions")
     if not isinstance(versions_raw, list):
         raise ValueError("没有可切换的历史版本")
@@ -636,12 +639,14 @@ def activate_asset_image_version(
                 "prompt": prompt[:2000] if prompt else None,
                 "createdAt": datetime.now(timezone.utc).isoformat(),
                 "source": "replaced",
+                "media_metadata": current_media_metadata(params),
             },
         )
 
     asset.cover = target_url[:1024]
     asset.url = target_url[:1024]
     params = dict(asset.params or {}) if isinstance(asset.params, dict) else {}
+    params["media_metadata"] = dict(target.get("media_metadata") or {"source": "unknown"})
     gen = dict(params.get("generation") or {}) if isinstance(params.get("generation"), dict) else {}
     gen.update({
         "status": "done",
@@ -1345,18 +1350,24 @@ async def generate_asset_image(
     gen_meta = {
         "prompt": stored_prompt,
         "image_style_id": style_id,
-        "model_id": model_id or "seedream-5-0-pro",
+        "model_id": model_id or model,
         "aspect_ratio": ratio,
         "resolution": res,
         "generation": {
             "status": "done",
             "finished_at": finished_at,
-            "model_id": model_id or "seedream-5-0-pro",
+            "model_id": model_id or model,
             "aspect_ratio": ratio,
             "resolution": res,
             "image_style_id": style_id,
         },
     }
+    from app.services.drama.asset_metadata import generated_media_metadata
+    gen_meta["media_metadata"] = generated_media_metadata(
+        model_id=model, prompt=full_prompt.strip(),
+        options={"aspect_ratio": ratio, "resolution": res, "size": size, "image_style_id": style_id},
+        requested_model_id=model_id,
+    )
 
     if asset is None:
         asset = DramaAsset(

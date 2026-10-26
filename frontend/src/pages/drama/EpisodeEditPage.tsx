@@ -88,7 +88,7 @@ import {
   CharacterVoiceBindModal,
   readAssetVoiceBinding,
 } from './CharacterVoiceBindModal'
-import { DramaAssetDetailModal } from './DramaAssetDetailModal'
+import { EditableAssetDetailDialog } from '../../components/assets/EditableAssetDetailDialog'
 import { buildEpisodeDirItems, DramaEpisodeDir } from './DramaEpisodeDir'
 import RequireAuth from './RequireAuth'
 import './drama.css'
@@ -1922,7 +1922,7 @@ function EpisodeEditInner() {
       />
 
       {detailAsset && (detailAsset.type || '').toLowerCase() !== 'voice' ? (
-        <DramaAssetDetailModal
+        <EditableAssetDetailDialog
           asset={detailAsset}
           readOnly={readOnly}
           open

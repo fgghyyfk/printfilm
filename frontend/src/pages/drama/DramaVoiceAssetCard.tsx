@@ -1,7 +1,8 @@
 /** 资产库「音色」Tab 单卡：描述编辑、试听与合成 */
-import { AudioLines, Trash2, Volume2 } from 'lucide-react'
+import { Trash2 } from 'lucide-react'
 import { resolveDramaMediaUrl, type DramaAsset } from '../../api/drama'
 import { CharacterVoicePreviewButton } from '../../components/drama/CharacterVoicePreviewButton'
+import { AssetCard } from '../../components/assets/AssetLibrary'
 
 type Props = {
   asset: DramaAsset
@@ -29,30 +30,22 @@ export function DramaVoiceAssetCard({
   const hasAudio = Boolean(audioSrc)
 
   return (
-    <article className="drama-voice-card">
-      <header className="drama-voice-card-head">
-        <div className="drama-voice-card-badge" aria-hidden>
-          <AudioLines size={18} strokeWidth={1.75} />
-        </div>
-        <div className="drama-voice-card-title">
-          <h3>{asset.name || '未命名音色'}</h3>
-          <span className={`drama-voice-card-status${hasAudio ? ' is-ready' : ' is-pending'}`}>
-            {hasAudio ? '已合成' : '待合成'}
-          </span>
-        </div>
-        <button
-          type="button"
-          className="drama-voice-card-delete"
-          aria-label={`删除 ${asset.name || '音色'}`}
-          disabled={synthBusy}
-          onClick={onDelete}
-        >
-          <Trash2 size={15} strokeWidth={1.75} />
+    <AssetCard
+      asset={asset}
+      subtitle={`项目 #${asset.project_id}`}
+      footer="项目资产"
+      updatedAt={asset.updated_at}
+      busy={synthBusy}
+      status={synthBusy ? '合成中' : hasAudio ? '已合成' : '待合成'}
+      actions={<>
+        {hasAudio && <CharacterVoicePreviewButton url={asset.url || ''} label={asset.name || undefined} variant="button" size="sm" onError={onError} />}
+        <button type="button" className="pf-btn pf-btn-lime pf-btn-sm" disabled={synthBusy || !promptValue.trim()} onClick={onSynth}>
+          {synthBusy ? '合成中…' : hasAudio ? '重新合成' : '按提示词合成'}
         </button>
-      </header>
-
-      <div className="drama-voice-card-body">
-        <label className="drama-voice-card-field">
+        <button type="button" className="pf-btn pf-btn-sm drama-btn-danger-text" aria-label={`删除 ${asset.name || '音色'}`} disabled={synthBusy} onClick={onDelete}><Trash2 size={14} />删除</button>
+      </>}
+    >
+        <label className="pf-library-voice-field">
           <span>音色描述</span>
           <textarea
             rows={3}
@@ -64,37 +57,7 @@ export function DramaVoiceAssetCard({
           />
         </label>
 
-        <div className={`drama-voice-card-player${hasAudio ? '' : ' is-empty'}`}>
-          {hasAudio ? (
-            <>
-              <CharacterVoicePreviewButton
-                url={asset.url || ''}
-                label={asset.name || undefined}
-                variant="button"
-                size="sm"
-                onError={onError}
-              />
-              <audio className="drama-voice-card-audio" controls preload="none" src={audioSrc} />
-            </>
-          ) : (
-            <>
-              <Volume2 size={16} strokeWidth={1.75} aria-hidden />
-              <span>填写描述后合成试听</span>
-            </>
-          )}
-        </div>
-      </div>
-
-      <footer className="drama-voice-card-foot">
-        <button
-          type="button"
-          className="pf-btn pf-btn-lime pf-btn-sm drama-voice-card-synth"
-          disabled={synthBusy || !promptValue.trim()}
-          onClick={onSynth}
-        >
-          {synthBusy ? '合成中…' : hasAudio ? '重新合成' : '按提示词合成'}
-        </button>
-      </footer>
-    </article>
+        {hasAudio && <audio className="pf-library-audio" controls preload="none" src={audioSrc} />}
+    </AssetCard>
   )
 }

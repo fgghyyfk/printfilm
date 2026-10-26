@@ -42,33 +42,7 @@
 .pf-team-project-search input { min-width: 0; width: 100%; padding: 0; border: 0; outline: none; background: transparent; font-size: 12px; color: #30382a; font-family: inherit; }
 .pf-team-project-search input::placeholder { color: #a3a99a; }
 .pf-team-project-search:focus-within { border-color: #b0ca6c; box-shadow: 0 0 0 3px #dcf19d38; }
-.pf-team-project-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
-.pf-team-project-card { display: flex; flex-direction: column; min-width: 0; padding: 0; text-align: left; border: 1px solid #e7e9e2; border-radius: 12px; background: #fff; overflow: hidden; cursor: pointer; transition: box-shadow .2s, transform .2s, border-color .2s; font-family: inherit; }
-.pf-team-project-card:hover { transform: translateY(-3px); border-color: #cbd7ac; box-shadow: 0 10px 24px #303f2010; }
-.pf-team-project-card:focus-visible, .pf-team-asset-card:focus-visible, .pf-team-overview-stat:focus-visible { outline: 3px solid #a4ca4b; outline-offset: 3px; }
-.pf-team-project-cover { display: block; position: relative; aspect-ratio: 1.7; overflow: hidden; background: #3b4034; }
-.pf-team-project-cover > img, .pf-team-asset-cover > img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .35s; }
-.pf-team-project-card:hover .pf-team-project-cover > img, .pf-team-asset-card:hover .pf-team-asset-cover > img { transform: scale(1.035); }
-.pf-team-project-cover-shade, .pf-team-asset-cover-shade { position: absolute; inset: 0; background: linear-gradient(180deg, #151a1b14 0%, #12181700 28%, #111713d9 100%); }
-.pf-team-project-status { position: absolute; top: 13px; left: 13px; display: inline-flex; gap: 5px; align-items: center; padding: 5px 8px; border-radius: 5px; background: #f8fbf2ed; font-size: 10px; line-height: 1; color: #485537; }
-.pf-team-project-status > i { width: 5px; height: 5px; border-radius: 50%; background: #8bac47; }
-.pf-team-project-status--producing { background: #e1fa9ff2; color: #3a5015; }
-.pf-team-project-status--producing > i { background: #75972a; }
-.pf-team-project-status--draft { background: #f2f0e8ed; color: #72694d; }
-.pf-team-project-status--draft > i { background: #ab9b67; }
-.pf-team-project-cover-title { position: absolute; left: 18px; bottom: 17px; right: 42px; display: grid; gap: 7px; }
-.pf-team-project-cover-title small { color: #e4e9d8dc; font-size: 10px; letter-spacing: .06em; }
-.pf-team-project-cover-title strong { font-size: 20px; line-height: 1.3; color: #fff; font-weight: 600; text-shadow: 0 1px 8px #0005; }
-.pf-team-project-open { display: grid; place-items: center; position: absolute; right: 13px; bottom: 18px; width: 27px; height: 27px; border-radius: 50%; color: #fff; border: 1px solid #ffffff5e; background: #fff1; }
-.pf-team-project-card-body { display: flex; flex-direction: column; padding: 17px 18px 14px; }
-.pf-team-project-card-description { color: #8a9282; font-size: 11px; line-height: 1.7; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 37px; }
-.pf-team-project-progress-meta { display: flex; align-items: center; justify-content: space-between; margin: 17px 0 7px; font-size: 10px; color: #858e7b; }
-.pf-team-project-progress-meta strong { font-size: 11px; font-weight: 650; color: #515d41; }
-.pf-team-project-progress-meta em { font-style: normal; color: #a2aa98; font-weight: 400; }
-.pf-team-project-progress { display: block; height: 4px; border-radius: 4px; background: #eff2e9; overflow: hidden; }
-.pf-team-project-progress > span { height: 100%; display: block; border-radius: 4px; background: #bedf78; }
-.pf-team-project-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 5px; padding-top: 15px; margin-top: 15px; border-top: 1px solid #f0f1eb; }
-.pf-team-project-card-foot > span:last-child { color: #a3aa99; font-size: 10px; }
+.pf-team-overview-stat:focus-visible { outline: 3px solid #a4ca4b; outline-offset: 3px; }
 .pf-team-project-people { display: inline-flex; align-items: center; padding-left: 4px; }
 .pf-team-project-people .pf-team-avatar { width: 25px; height: 25px; margin-left: -4px; border: 2px solid white; font-size: 9px; }
 .pf-team-project-people-more { font-size: 10px; margin-left: 4px; color: #87907c; }
@@ -92,40 +66,13 @@
 .pf-team-project-detail-note { display: flex; align-items: flex-start; gap: 7px; font-size: 11px; color: #8a957d; line-height: 1.7; margin: 18px 0 0; }
 .pf-team-project-detail-note svg { flex-shrink: 0; margin-top: 1px; }
 .pf-team-project-delete { margin-right: auto; color: #a45345; }
-.pf-team-asset-banner { display: flex; align-items: center; gap: 15px; padding: 19px 22px; border: 1px solid #e4ead7; border-radius: 12px; background: #f6f8ef; margin-top: 22px; }
-.pf-team-asset-banner-icon { display: grid; place-items: center; width: 43px; height: 43px; flex-shrink: 0; border-radius: 11px; background: #e7efcf; color: #7e9846; }
-.pf-team-asset-banner strong { font-weight: 550; color: #566344; font-size: 13px; }
-.pf-team-asset-banner p { color: #929e81; font-size: 11px; line-height: 1.8; margin: 5px 0 0; }
-.pf-team-asset-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; }
-.pf-team-asset-card { display: flex; flex-direction: column; min-width: 0; padding: 0; border: 1px solid #e6eadf; border-radius: 11px; overflow: hidden; background: #fff; text-align: left; cursor: pointer; transition: transform .2s, border-color .2s; font-family: inherit; }
-.pf-team-asset-card:hover { transform: translateY(-3px); border-color: #afc67d; }
-.pf-team-asset-cover { position: relative; display: block; aspect-ratio: 1; overflow: hidden; background: #363e31; }
-.pf-team-asset-voice-art { display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 10px; width: 100%; height: 100%; min-height: 180px; aspect-ratio: 1; background: radial-gradient(ellipse at 50% 35%, #526646, #273627 80%); color: #c7e79c; border-radius: inherit; }
-.pf-team-asset-voice-art small { font-size: 10px; letter-spacing: .2em; color: #b9cba7; }
-.pf-team-asset-type { position: absolute; top: 11px; left: 11px; padding: 4px 7px; border: 1px solid #ffffff48; border-radius: 4px; font-size: 9px; color: #fff; background: #13241445; backdrop-filter: blur(7px); }
-.pf-team-asset-cover-name { position: absolute; display: grid; gap: 6px; left: 14px; right: 25px; bottom: 16px; color: white; }
-.pf-team-asset-cover-name strong { font-size: 16px; font-weight: 550; line-height: 1.4; }
-.pf-team-asset-cover-name small { font-size: 9px; color: #d8e3ce; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
-.pf-team-asset-open { position: absolute; bottom: 16px; right: 10px; color: #e6eedc; }
-.pf-team-asset-card-foot { display: flex; gap: 5px; justify-content: space-between; padding: 12px 13px; font-size: 9px; color: #929e83; }
-.pf-team-asset-detail { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 26px; align-items: start; margin-bottom: 23px; }
-.pf-team-asset-detail > img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 9px; }
-.pf-team-asset-detail h3 { font-size: 24px; margin: 15px 0 12px; color: #38442b; letter-spacing: -.03em; }
-.pf-team-asset-detail p { font-size: 12px; color: #89977a; line-height: 1.9; margin-bottom: 23px; }
-.pf-team-asset-detail dl { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 13px; font-size: 11px; line-height: 1.7; }
-.pf-team-asset-detail dt { color: #a4ad9a; }
-.pf-team-asset-detail dd { color: #647451; margin: 0; overflow-wrap: anywhere; }
-.pf-team-asset-copy-status { padding-top: 6px; margin-bottom: 0; color: #6e863e; font-size: 12px; }
-@media (min-width: 1450px) {
-  .pf-team-project-grid { gap: 25px; }
-  .pf-team-asset-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-}
+
+
 @media (max-width: 1100px) {
   .pf-team-overview-stats { gap: 12px; }
   .pf-team-overview-stat { padding: 19px 17px 16px; }
-  .pf-team-project-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .pf-team-overview-bottom { grid-template-columns: 1fr 1fr; gap: 18px; }
-  .pf-team-asset-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
   .pf-team-overview-welcome { padding: 27px; }
   .pf-team-overview-welcome-mark { right: 150px; }
 }
@@ -136,15 +83,9 @@
   .pf-team-overview-bottom { grid-template-columns: 1fr; }
   .pf-team-project-toolbar { align-items: stretch; }
   .pf-team-project-search { width: 100%; }
-  .pf-team-asset-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
-  .pf-team-project-grid { gap: 13px; }
-  .pf-team-project-cover-title { left: 13px; bottom: 14px; }
-  .pf-team-project-cover-title strong { font-size: 17px; }
-  .pf-team-project-card-body { padding: 13px; }
-  .pf-team-asset-detail { gap: 18px; }
+
 }
 @media (max-width: 480px) {
-  .pf-team-project-grid { grid-template-columns: 1fr; }
   .pf-team-overview-stat { gap: 14px; padding: 18px 14px; }
   .pf-team-overview-stat small { font-size: 9px; }
   .pf-team-overview-stat > strong { font-size: 26px; }
@@ -153,18 +94,9 @@
   .pf-team-project-filters .pf-team-pill { padding: 7px 9px; font-size: 11px; }
   .pf-team-project-episode { gap: 9px; padding: 12px; flex-wrap: wrap; }
   .pf-team-project-episode > .pf-team-project-occupancy { width: 100%; padding-left: 31px; }
-  .pf-team-asset-detail { grid-template-columns: 1fr; }
-  .pf-team-asset-detail > img { max-height: 270px; }
-  .pf-team-asset-card-foot { padding: 11px 9px; font-size: 8px; }
-  .pf-team-asset-cover-name { left: 11px; bottom: 12px; }
-  .pf-team-asset-cover-name strong { font-size: 14px; }
-  .pf-team-asset-banner { padding: 16px; gap: 11px; }
+
   .pf-team-overview-rules { padding: 25px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .pf-team-project-card, .pf-team-asset-card, .pf-team-overview-stat, .pf-team-project-cover > img, .pf-team-asset-cover > img { transition: none; }
+  .pf-team-overview-stat { transition: none; }
 }
-
-.pf-team-project-main { display: block; padding: 0; width: 100%; border: 0; background: transparent; text-align: left; cursor: pointer; color: inherit; font: inherit; }
-.pf-team-project-card-actions { display: flex; justify-content: flex-end; padding: 0 12px 8px; }
-.pf-team-project-card-actions .pf-btn { color: #a45345; font-size: 10px; }

@@ -73,7 +73,10 @@ async def list_projects(db, team_id: int, user_id: int, page: int, page_size: in
 def asset_card(asset: DramaAsset) -> dict:
     """团队资产展示只返回必要字段，完整副本响应走现有 DramaAssetOut。"""
     params = asset.params if isinstance(asset.params, dict) else {}
-    return dict(id=asset.id, name=asset.name or "未命名资产", type=asset.type, cover=asset.cover or "", url=asset.url or "", project_id=asset.project_id, description=str(params.get("description") or params.get("prompt") or ""), updated_at=asset.updated_at)
+    from app.services.drama.asset_metadata import current_media_metadata
+    detail_params = {key: params[key] for key in ("visualPrompt", "voicePrompt", "description", "prompt") if key in params}
+    detail_params["media_metadata"] = current_media_metadata(params)
+    return dict(id=asset.id, name=asset.name or "未命名资产", type=asset.type, asset_type=asset.asset_type or "image", cover=asset.cover or "", url=asset.url or "", project_id=asset.project_id, description=str(params.get("description") or params.get("prompt") or ""), params=detail_params, updated_at=asset.updated_at)
 
 
 async def list_assets(db, team_id: int, user_id: int, page: int, page_size: int, q: str, asset_type: str | None, project_id: int | None):
@@ -200,6 +203,8 @@ async def copy_asset(db, team_id: int | None, user_id: int, asset_id: int, targe
     copier = await copier_for(db, target)
     try:
         params = await copier.rewrite(asset.params or {}, clean=True)
+        from app.services.drama.asset_metadata import current_media_metadata
+        params["media_metadata"] = await copier.rewrite(current_media_metadata(asset.params))
         params["copy_origin"] = {"asset_id": asset.id, "project_id": asset.project_id}
         clone = DramaAsset(project_id=target_id, type=asset.type, asset_type=asset.asset_type, name=asset.name, cover=await copier.rewrite(asset.cover), url=await copier.rewrite(asset.url), params=params, derive_id=None)
         db.add(clone)

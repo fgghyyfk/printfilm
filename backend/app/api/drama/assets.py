@@ -115,6 +115,11 @@ def _merge_asset_params(prev: dict | None, incoming: dict | None) -> dict:
     base = dict(prev or {}) if isinstance(prev, dict) else {}
     patch = dict(incoming or {}) if isinstance(incoming, dict) else {}
     out = {**base, **patch}
+    # 当前媒体快照只由生成/上传/还原路径更新，客户端编辑不能覆盖。
+    if "media_metadata" in base:
+        out["media_metadata"] = base["media_metadata"]
+    else:
+        out.pop("media_metadata", None)
 
     prev_gen = base.get("generation") if isinstance(base.get("generation"), dict) else None
     prev_status = str((prev_gen or {}).get("status") or "").lower()
@@ -150,9 +155,23 @@ async def update_asset(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> DramaAssetOut:
-    from app.models_drama import DramaProject
-
     asset = await get_owned_asset(db, asset_id, user)
+    from app.services.drama.asset_metadata import current_media_metadata
+
+    # Freeze legacy media details before changing the next generation's form options.
+    if (asset.url or asset.cover) and not isinstance((asset.params or {}).get("media_metadata"), dict):
+        asset.params = {**(asset.params or {}), "media_metadata": current_media_metadata(asset.params)}
+    media_changed = (body.url is not None and body.url != asset.url) or (
+        not (body.url or asset.url) and body.cover is not None and body.cover != asset.cover
+    )
+    media_metadata = None
+    if media_changed:
+        media_metadata = {"source": "unknown"}
+        source_id = (body.params or {}).get("importedFromAssetId")
+        if isinstance(source_id, int) and source_id > 0:
+            source = await get_owned_asset(db, source_id, user)
+            if (body.url or body.cover) == (source.url or source.cover):
+                media_metadata = current_media_metadata(source.params)
     for field in ("type", "asset_type", "name", "cover", "url", "params"):
         val = getattr(body, field)
         if val is None:
@@ -164,6 +183,8 @@ async def update_asset(
             )
         else:
             setattr(asset, field, val)
+    if media_metadata is not None:
+        asset.params = {**(asset.params or {}), "media_metadata": media_metadata}
     await db.commit()
     await db.refresh(asset)
     return DramaAssetOut.model_validate(asset)
@@ -286,11 +307,9 @@ async def upload_asset_media(
         if not asset.asset_type or asset.asset_type == "none":
             asset.asset_type = "image"
     params = dict(asset.params or {})
-    gen = params.get("generation")
-    if isinstance(gen, dict):
-        params["generation"] = {**gen, "status": "done", "source": "upload"}
-    else:
-        params["generation"] = {"status": "done", "source": "upload"}
+    from app.services.drama.asset_metadata import uploaded_media_metadata
+    params["media_metadata"] = uploaded_media_metadata(filename=file.filename, size=size, content_type=content_type)
+    params["generation"] = {"status": "done", "source": "upload", "finished_at": params["media_metadata"]["created_at"]}
     asset.params = params
     await db.commit()
     await db.refresh(asset)

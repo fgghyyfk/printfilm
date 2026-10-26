@@ -116,8 +116,8 @@ export default function SettingsPage() {
     const load = async () => {
       try {
         if (tab === 'projects') {
-          const rows = await dramaApi.listProjects()
-          if (!cancelled) setDramaItems(rows.slice(0, 8))
+          const res = await dramaApi.listProjects({ page: 1, page_size: 8 })
+          if (!cancelled) setDramaItems(res.items)
         } else {
           const res = await api.listProjects({ page: 1, page_size: 8 })
           if (!cancelled) setKepuItems(res.items)

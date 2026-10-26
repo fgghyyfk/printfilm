@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select, update
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import and_, exists, false, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -14,9 +14,11 @@ from app.deps import get_current_user
 from app.models import UsageEvent, User
 from app.models_drama import DramaAsset, DramaEpisode, DramaProject, DramaScript
 from app.models_tasks import TaskRun
+from app.schemas_common import PageMeta
 from app.schemas_drama import (
     DramaProjectCreate,
     DramaProjectListItem,
+    DramaProjectListOut,
     DramaProjectOut,
     DramaProjectUpdate,
     DramaProjectUsageStats,
@@ -32,7 +34,12 @@ from app.services.drama.usage_stats import (
     empty_usage_stats,
     get_drama_project_usage,
 )
-from app.services.drama.workflow import build_project_params, resolve_drama_workflow
+from app.services.drama.workflow import (
+    CANVAS_SOURCE_MARKER,
+    CANVAS_TITLE_MARKER,
+    build_project_params,
+    resolve_drama_workflow,
+)
 from app.services.tasks.service import cancel_tasks_for_scope, rebalance_project_fragment_video_queue
 
 router = APIRouter()
@@ -71,31 +78,104 @@ def _project_out(project: DramaProject, usage: DramaProjectUsageStats | None = N
     )
 
 
-@router.get("/projects", response_model=list[DramaProjectListItem])
+def _escape_like(value: str) -> str:
+    """转义 LIKE 通配符，保证搜索词按字面匹配。"""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _legacy_canvas_condition():
+    """workflow 字段落地前的自由画布项目：靠标题或占位创意文案识别。"""
+    return or_(
+        DramaProject.title.like(f"%{CANVAS_TITLE_MARKER}%"),
+        exists(
+            select(DramaScript.id).where(
+                DramaScript.project_id == DramaProject.id,
+                DramaScript.source.like(f"%{CANVAS_SOURCE_MARKER}%"),
+            )
+        ),
+    )
+
+
+def _workflow_condition(workflow: str):
+    """工作流判定的 SQL 表达，语义与 resolve_drama_workflow 保持一致。"""
+    # 与 Python strip() 对齐：btrim 显式去掉空白字符，而非仅空格
+    params_wf = func.lower(func.btrim(func.coalesce(DramaProject.params["workflow"].as_string(), ""), " \t\n\r\v\f"))
+    declared = params_wf.in_(["canvas", "script"])
+    legacy = _legacy_canvas_condition()
+    if workflow == "canvas":
+        return or_(params_wf == "canvas", and_(~declared, legacy))
+    return or_(params_wf == "script", and_(~declared, ~legacy))
+
+
+def _status_condition(status: str | None):
+    """列表进度筛选的 SQL 表达，语义与原前端筛选保持一致。"""
+    if not status or status == "all":
+        return None
+    episode_count = (
+        select(func.count(DramaEpisode.id)).where(DramaEpisode.project_id == DramaProject.id).scalar_subquery()
+    )
+    asset_count = (
+        select(func.count(DramaAsset.id)).where(DramaAsset.project_id == DramaProject.id).scalar_subquery()
+    )
+    has_script = exists(select(DramaScript.id).where(DramaScript.project_id == DramaProject.id))
+    if status == "draft":
+        canvas_cond = asset_count == 0
+        script_cond = ~has_script
+    elif status == "running":
+        canvas_cond = asset_count > 0
+        script_cond = and_(has_script, episode_count > 0)
+    else:  # done：画布无完成态，漫剧以 8 集为完本线
+        canvas_cond = false()
+        script_cond = and_(has_script, episode_count >= 8)
+    return or_(
+        and_(_workflow_condition("canvas"), canvas_cond),
+        and_(_workflow_condition("script"), script_cond),
+    )
+
+
+@router.get("/projects", response_model=DramaProjectListOut)
 async def list_projects(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
     scope_team_id: int | None = Depends(workspace_team),
     workflow: Literal["script", "canvas"] | None = None,
-) -> list[DramaProjectListItem]:
-    # List current user's drama projects
+    status: Literal["all", "running", "done", "draft"] | None = Query(None, description="all|running|done|draft"),
+    q: str | None = Query(None, description="标题搜索"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(9, ge=1, le=200),
+) -> DramaProjectListOut:
+    # List current workspace's drama projects, paged；筛选与分页均在服务端完成
     team_id = scope_team_id if isinstance(scope_team_id, int) else None
-    condition = DramaProject.team_id == team_id if team_id is not None else ((DramaProject.user_id == user.id) & DramaProject.team_id.is_(None))
+    conditions = [
+        DramaProject.team_id == team_id
+        if team_id is not None
+        else ((DramaProject.user_id == user.id) & DramaProject.team_id.is_(None))
+    ]
+    if workflow is not None:
+        conditions.append(_workflow_condition(workflow))
+    status_cond = _status_condition(status)
+    if status_cond is not None:
+        conditions.append(status_cond)
+    needle = (q or "").strip()
+    if needle:
+        conditions.append(DramaProject.title.ilike(f"%{_escape_like(needle)}%", escape="\\"))
+
+    total = (await db.execute(select(func.count()).select_from(DramaProject).where(*conditions))).scalar_one()
+    page_count = max(1, -(-total // page_size))
+    page = min(page, page_count)
     result = await db.execute(
         select(DramaProject)
-        .where(condition)
+        .where(*conditions)
         .options(
             selectinload(DramaProject.script),
             selectinload(DramaProject.assets),
             selectinload(DramaProject.episodes).selectinload(DramaEpisode.fragments),
         )
-        .order_by(DramaProject.updated_at.desc())
+        .order_by(DramaProject.updated_at.desc(), DramaProject.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
     )
     rows = list(result.scalars().all())
-    # Reuse the compatibility resolver so pre-workflow canvas projects remain
-    # discoverable. Omitting the filter keeps the existing all-projects API.
-    if workflow is not None:
-        rows = [p for p in rows if resolve_drama_workflow(p) == workflow]
     usage_map = await aggregate_drama_usage_by_project_ids(
         db, user_id=await _usage_actor(db, team_id, user.id), project_ids=[p.id for p in rows], team_id=team_id
     )
@@ -119,7 +199,7 @@ async def list_projects(
                 usage=usage_map.get(p.id) or empty_usage_stats(),
             )
         )
-    return items
+    return DramaProjectListOut(items=items, meta=PageMeta(page=page, page_size=page_size, total=total))
 
 
 @router.post("/projects", response_model=DramaProjectOut)

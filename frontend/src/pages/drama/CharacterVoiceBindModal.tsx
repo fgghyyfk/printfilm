@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { dramaApi, resolveDramaMediaUrl, type DramaAsset } from '../../api/drama'
 import Modal from '../../components/ui/Modal'
+import { AssetCard, AssetEmpty, AssetGrid, AssetTypeFilter } from '../../components/assets/AssetLibrary'
 
 const AUDIO_ACCEPT = 'audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/mp4,audio/m4a,.mp3,.wav,.m4a'
 
@@ -40,7 +41,7 @@ export function readVoicePrompt(asset: DramaAsset): string {
 }
 
 // 从角色资产 params 读取已绑定音色
-export function readAssetVoiceBinding(asset: DramaAsset): VoiceBinding | null {
+export function readAssetVoiceBinding(asset: Pick<DramaAsset, 'params'>): VoiceBinding | null {
   const params = (asset.params || {}) as Record<string, unknown>
   const raw = params.voiceAudio
   if (raw && typeof raw === 'object') {
@@ -364,42 +365,20 @@ export function CharacterVoiceBindModal({
         画布里也可以把「音频」节点连到角色，效果一样。
       </p>
 
-      <div className="drama-voice-mode-tabs">
-        <button
-          type="button"
-          className={mode === 'pick' ? 'active' : ''}
-          onClick={() => setMode('pick')}
+      <div className="pf-library-toolbar">
+        <AssetTypeFilter
+          options={[{ value: 'pick', label: '选择已有' }, { value: 'upload', label: '上传音频' }, { value: 'create', label: 'AI 合成' }] as const}
+          value={mode}
           disabled={anyBusy}
-        >
-          选择已有
-        </button>
-        <button
-          type="button"
-          className={mode === 'upload' ? 'active' : ''}
-          onClick={() => setMode('upload')}
-          disabled={anyBusy}
-        >
-          上传音频
-        </button>
-        <button
-          type="button"
-          className={mode === 'create' ? 'active' : ''}
-          onClick={() => {
-            setMode('create')
-            if (!newPrompt.trim() && !promptBusy) {
-              promptRequestedRef.current = false
-            }
-          }}
-          disabled={anyBusy}
-        >
-          AI 合成
-        </button>
+          ariaLabel="音色来源"
+          onChange={(value) => { setMode(value); if (value === 'create' && !newPrompt.trim() && !promptBusy) promptRequestedRef.current = false }}
+        />
       </div>
 
       {mode === 'pick' ? (
-        <div className="drama-voice-list">
+        <AssetGrid picker>
           {voiceAssets.length === 0 ? (
-            <p className="drama-muted">还没有可用音色，请先「上传音频」或「AI 合成」。</p>
+            <AssetEmpty>还没有可用音色，请先「上传音频」或「AI 合成」。</AssetEmpty>
           ) : (
             voiceAssets.map((voice) => {
               const hasAudio = Boolean(voice.url)
@@ -410,18 +389,14 @@ export function CharacterVoiceBindModal({
                   ? '已合成'
                   : '已上传'
               return (
-                <label key={voice.id} className="drama-voice-option">
-                  <input
-                    type="radio"
-                    name="drama-voice-asset"
-                    checked={selectedId === voice.id}
-                    onChange={() => setSelectedId(voice.id)}
-                  />
-                  <span>
-                    {voice.name || `音色#${voice.id}`}
-                    <small>{statusLabel}</small>
-                  </span>
-                  {hasAudio && canResynth ? (
+                <AssetCard
+                  key={voice.id}
+                  asset={voice}
+                  selected={selectedId === voice.id}
+                  subtitle={statusLabel}
+                  footer="项目音色"
+                  onOpen={() => setSelectedId(voice.id)}
+                  actions={hasAudio && canResynth ? <>
                     <button
                       type="button"
                       className="pf-btn pf-btn-sm"
@@ -433,12 +408,12 @@ export function CharacterVoiceBindModal({
                     >
                       重合成
                     </button>
-                  ) : null}
-                </label>
+                  </> : undefined}
+                />
               )
             })
           )}
-        </div>
+        </AssetGrid>
       ) : mode === 'upload' ? (
         <div className="drama-voice-create-form">
           <p className="drama-muted" style={{ margin: 0 }}>
