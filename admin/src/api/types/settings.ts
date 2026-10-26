@@ -135,6 +135,7 @@ export type AdminRoutingSettings = {
   system_channels: AdminRoutingChannel[];
   logical_models: AdminLogicalModel[];
   default_models: AdminDefaultModels;
+  media_reference_limits: Record<string, { images: number; videos: number; audios: number }>;
   validation_errors: string[];
   updated_at?: string | null;
 };

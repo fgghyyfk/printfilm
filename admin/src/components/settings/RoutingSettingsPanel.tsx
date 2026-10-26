@@ -1,4 +1,6 @@
+import { Select } from "@/components/ui/select";
 import { useCallback, useEffect, useState } from "react";
+import { Eye, EyeOff, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { api, type AdminRoutingSettings } from "@/api/client";
 import {
@@ -25,6 +27,9 @@ const TOKENFREE_BASE_URL = "https://www.tokenfree.com/v1";
 const TOKENFREE_CONSOLE_URL = "https://www.tokenfree.com/channels";
 
 const DEFAULT_KEYS = ["text_model", "image_model", "video_model", "audio_model"] as const;
+const MEDIA_FIELDS = ["images", "videos", "audios"] as const;
+type MediaField = (typeof MEDIA_FIELDS)[number];
+const MEDIA_LABELS: Record<MediaField, string> = { images: "参考图片", videos: "参考视频", audios: "参考音频" };
 
 function buildReadiness(data: AdminRoutingSettings | null, hasKey: boolean) {
   const defaults = data?.default_models;
@@ -53,6 +58,8 @@ export function RoutingSettingsPanel() {
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [showKey, setShowKey] = useState(false);
+  const [referenceDrafts, setReferenceDrafts] = useState<Record<string, Partial<Record<MediaField, string>>>>({});
   const [defaultRemaps, setDefaultRemaps] = useState<
     Array<{ capability: ModelCapability; from: string; to: string }>
   >([]);
@@ -76,6 +83,8 @@ export function RoutingSettingsPanel() {
         ),
       });
       setApiKeyInput("");
+      setReferenceDrafts({});
+      setShowKey(false);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "加载模型配置失败");
     } finally {
@@ -88,6 +97,19 @@ export function RoutingSettingsPanel() {
   }, [load]);
 
   const readiness = buildReadiness(data, hasKey);
+  const referenceErrors: Record<string, Partial<Record<MediaField, string>>> = {};
+  Object.entries(data?.media_reference_limits ?? {}).forEach(([id, limits]) => {
+    MEDIA_FIELDS.forEach((field) => {
+      if (PRESET_MODELS.image.some((model) => model.id === id) && field !== "images") return;
+      const raw = referenceDrafts[id]?.[field] ?? String(limits[field]);
+      const value = Number(raw);
+      if (!raw.trim() || !Number.isInteger(value) || value < 0 || value > 100) {
+        referenceErrors[id] = { ...referenceErrors[id], [field]: "请输入 0–100 的整数" };
+      }
+    });
+  });
+  const referenceErrorCount = Object.values(referenceErrors).reduce((total, fields) => total + Object.keys(fields).length, 0);
+  const keyError = hasKey ? undefined : "请填写 API Key，保存后即可调用模型。";
 
   function setDefaultModel(key: (typeof DEFAULT_KEYS)[number], value: string) {
     const cap = key.replace("_model", "") as ModelCapability;
@@ -103,7 +125,7 @@ export function RoutingSettingsPanel() {
   }
 
   async function handleSave() {
-    if (!data) return;
+    if (!data || saving || keyError || referenceErrorCount > 0) return;
     setSaving(true);
     try {
       const defaults = normalizeDefaults(data.default_models);
@@ -124,6 +146,7 @@ export function RoutingSettingsPanel() {
             },
           ],
           default_models: defaults,
+          media_reference_limits: data.media_reference_limits,
         }),
       });
       setData({
@@ -132,6 +155,8 @@ export function RoutingSettingsPanel() {
       });
       setDefaultRemaps([]);
       setApiKeyInput("");
+      setReferenceDrafts({});
+      setShowKey(false);
       toast.success("模型配置已保存");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "保存失败");
@@ -144,8 +169,10 @@ export function RoutingSettingsPanel() {
     return <SettingsLoading label="加载模型配置…" />;
   }
 
+  if (!data) return <SettingsSurface><p>模型配置加载失败。</p><button type="button" className="admin-btn admin-btn-secondary mt-3" onClick={() => void load()}>重新加载</button></SettingsSurface>;
+
   return (
-    <SettingsTabShell onSave={() => void handleSave()} saving={saving} saveLabel="保存">
+    <SettingsTabShell onSave={handleSave} saving={saving} disabled={Boolean(keyError) || referenceErrorCount > 0} saveLabel="保存模型设置">
       <SettingsSurface className="settings-readiness-bar">
         <div className="settings-readiness-title">配置就绪</div>
         <div className="settings-readiness-row">
@@ -186,73 +213,86 @@ export function RoutingSettingsPanel() {
         </SettingsSurface>
       ) : null}
 
-      <SettingsPanel
-        title="TokenFree New API"
-        description="上游已锁定。填写 API Key 后，从下方四个预设下拉选择站点默认模型并保存。"
-      >
-        <div className="settings-field-grid">
-          <LabeledControl label="接口地址" className="settings-field-span-full">
-            <input className="settings-input" value={TOKENFREE_BASE_URL} readOnly />
-            <p className="mt-1 text-xs text-[#909399]">
-              控制台：
-              <a className="ml-1 text-[#409eff] hover:underline" href={TOKENFREE_CONSOLE_URL} target="_blank" rel="noreferrer">
-                {TOKENFREE_CONSOLE_URL}
-              </a>
-            </p>
-          </LabeledControl>
-          <LabeledControl
-            label="API Key"
-            hint={hasSavedKey ? "已保存，留空不修改" : "未配置"}
-            className="settings-field-span-full"
-          >
-            <div className="settings-secret-row">
-              <input
-                className="settings-input is-secret"
-                type="password"
-                placeholder={hasSavedKey ? "已保存，留空则不修改" : "粘贴 TokenFree API Key"}
-                value={apiKeyInput}
-                onChange={(e) => setApiKeyInput(e.target.value)}
-              />
-              {apiKeyInput ? (
-                <button
-                  type="button"
-                  className="admin-btn admin-btn-secondary settings-mini-btn"
-                  onClick={() => setApiKeyInput("")}
-                >
-                  清除
-                </button>
-              ) : null}
-            </div>
-          </LabeledControl>
+      <SettingsPanel title="连接模型服务" description="使用 TokenFree API Key 连接上游。接口地址已预设，完成授权后再选择默认模型。">
+        <LabeledControl label="TokenFree API Key" required={!hasSavedKey} optional={hasSavedKey} error={keyError}
+          hint={hasSavedKey ? "已保存密钥。留空会保留原值；输入新密钥将在保存后替换。" : "在 TokenFree 控制台创建密钥并粘贴到此处。"}>
+          <div className="settings-secret-row">
+            <input className="settings-input is-secret" type={showKey ? "text" : "password"}
+              autoComplete="new-password" autoCapitalize="off" spellCheck={false}
+              required={!hasSavedKey} aria-invalid={Boolean(keyError)}
+              placeholder={hasSavedKey ? "已保存，留空保留当前密钥" : "粘贴 API Key"}
+              value={apiKeyInput} onChange={(e) => setApiKeyInput(e.target.value)} />
+            <button type="button" className="admin-btn admin-btn-secondary settings-mini-btn" aria-label={showKey ? "隐藏 API Key" : "显示 API Key"} aria-pressed={showKey} onClick={() => setShowKey((value) => !value)}>
+              {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+            {apiKeyInput ? <button type="button" className="admin-btn admin-btn-secondary settings-mini-btn" onClick={() => { setApiKeyInput(""); setShowKey(false); }}>撤销输入</button> : null}
+          </div>
+        </LabeledControl>
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-[var(--admin-muted)]">
+          <span>连接地址 <code className="ml-1 text-[var(--admin-text)]">{TOKENFREE_BASE_URL}</code></span>
+          <a className="inline-flex items-center gap-1.5 font-medium text-[var(--admin-forest)] hover:underline" href={TOKENFREE_CONSOLE_URL} target="_blank" rel="noreferrer">打开 TokenFree 控制台<ExternalLink className="h-3.5 w-3.5" /></a>
         </div>
       </SettingsPanel>
 
-      <SettingsPanel
-        title="默认模型"
-        description="用户端可使用全部预设；此处仅设置站点默认。配音目前仅一项。"
-      >
+      <SettingsPanel title="默认生成模型" description="为每类任务选择站点默认模型。用户创作时仍可切换到其它预设模型。">
         <div className="settings-field-grid settings-field-grid--2">
           {CAPABILITY_ORDER.map((cap) => {
             const key = `${cap}_model` as (typeof DEFAULT_KEYS)[number];
             const options = PRESET_MODELS[cap];
+            const hints: Record<ModelCapability, string> = { text: "用于脚本、摘要与分镜规划。", image: "用于角色、场景、道具等参考图生成。", video: "用于分镜视频生成。", audio: "用于角色配音；当前提供一款预设模型。" };
             return (
-              <LabeledControl key={key} label={CAPABILITY_LABELS[cap]}>
-                <select
-                  className="settings-select"
-                  value={data?.default_models[key] ?? options[0]?.id ?? ""}
-                  onChange={(e) => setDefaultModel(key, e.target.value)}
-                >
-                  {options.map((row) => (
-                    <option key={row.id} value={row.id}>
-                      {row.label}
-                    </option>
-                  ))}
-                </select>
+              <LabeledControl key={key} label={`${CAPABILITY_LABELS[cap]}模型`} hint={hints[cap]} required>
+                <Select className="settings-select" value={data.default_models[key] ?? options[0]?.id ?? ""} required
+                  aria-label={`${CAPABILITY_LABELS[cap]}默认模型`} onChange={(e) => setDefaultModel(key, e.target.value)}>
+                  {options.map((row) => <option key={row.id} value={row.id}>{row.label}</option>)}
+                </Select>
               </LabeledControl>
             );
           })}
         </div>
       </SettingsPanel>
+
+      <details className="settings-advanced">
+        <summary><span>高级模型设置</span><span>{referenceErrorCount > 0 ? `${referenceErrorCount} 项参考上限待修正` : "按模型配置参考素材数量"}</span></summary>
+        <SettingsPanel title="参考素材上限" description="限制单次生成可携带的参考图片、视频和音频数量。每项为 0–100 的整数，0 表示不支持；首尾帧与画风板也计入图片数量。">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead><tr className="border-b text-xs text-[var(--admin-muted)]">
+                <th scope="col" className="px-2 py-3 font-medium">模型</th>
+                <th scope="col" className="px-2 py-3 font-medium">图片 / 张</th>
+                <th scope="col" className="px-2 py-3 font-medium">视频 / 段</th>
+                <th scope="col" className="px-2 py-3 font-medium">音频 / 段</th>
+              </tr></thead>
+              <tbody>{Object.entries(data.media_reference_limits ?? {}).map(([id, limits]) => (
+                <tr key={id} className="border-b last:border-0">
+                  <th scope="row" className="px-2 py-3 font-medium">{[...PRESET_MODELS.image, ...PRESET_MODELS.video].find((model) => model.id === id)?.label ?? id}<code className="mt-1 block text-[10px] font-normal text-[var(--admin-muted)]">{id}</code></th>
+                  {MEDIA_FIELDS.map((field) => {
+                    const unsupported = PRESET_MODELS.image.some((model) => model.id === id) && field !== "images";
+                    const error = referenceErrors[id]?.[field];
+                    return <td key={field} className="px-2 py-3 align-top">
+                      {unsupported ? <span className="inline-flex h-10 items-center text-xs text-[var(--admin-muted)]">不支持</span> : <>
+                        <input type="number" min="0" max="100" step="1" required
+                          aria-label={`${id} ${MEDIA_LABELS[field]}上限`} aria-invalid={Boolean(error)}
+                          className="settings-input !w-24" value={referenceDrafts[id]?.[field] ?? limits[field]} disabled={saving}
+                          onChange={(event) => {
+                            const raw = event.target.value;
+                            setReferenceDrafts((prev) => ({ ...prev, [id]: { ...prev[id], [field]: raw } }));
+                            const value = Number(raw);
+                            if (!raw.trim() || !Number.isInteger(value) || value < 0 || value > 100) return;
+                            setData((prev) => prev ? { ...prev, media_reference_limits: { ...prev.media_reference_limits,
+                              [id]: { ...prev.media_reference_limits[id], [field]: value } } } : prev);
+                          }} />
+                        {error ? <p className="mt-1 text-[11px] text-[#b64d43]" role="alert">{error}</p> : null}
+                      </>}
+                    </td>;
+                  })}
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+          <p className="mt-4 text-xs leading-6 text-[var(--admin-muted)]">这些值用于提交任务前的数量校验。生成图片的模型仅接受图片参考；实际可用能力以对应上游模型为准。</p>
+        </SettingsPanel>
+      </details>
     </SettingsTabShell>
   );
 }

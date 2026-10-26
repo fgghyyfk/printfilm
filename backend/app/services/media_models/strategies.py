@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from copy import copy
 from decimal import Decimal, InvalidOperation, ROUND_CEILING
 from typing import Any
 
@@ -43,6 +44,27 @@ class MediaModelStrategy:
     max_count = 1  # Existing gateway delivers one output per request.
     duration_min = 4
     duration_max = 15
+
+    def with_reference_limits(self, limits: dict[str, int] | None):
+        if limits is None:
+            return self
+        from app.schemas_routing import MediaReferenceLimits
+        limits = MediaReferenceLimits.model_validate(limits).model_dump()
+        configured = copy(self)
+        configured.max_reference_images = limits["images"]
+        configured.max_reference_videos = limits["videos"]
+        configured.max_reference_audios = limits["audios"]
+        return configured
+
+    def validate_reference_counts(self, *, images: int = 0, videos: int = 0, audios: int = 0) -> None:
+        for field, label, actual, maximum in (
+            ("reference_images", "参考图片", images, self.max_reference_images),
+            ("reference_videos", "参考视频", videos, self.max_reference_videos),
+            ("reference_audios", "参考音频", audios, self.max_reference_audios),
+        ):
+            if actual > maximum:
+                message = f"最多支持 {maximum} 个{label}" if maximum else f"不支持{label}"
+                raise MediaValidationError(field, f"{self.model_id} {message}，当前 {actual} 个")
 
     def describe(self) -> dict[str, Any]:
         result: dict[str, Any] = {
@@ -97,15 +119,14 @@ class MediaModelStrategy:
             raise MediaValidationError("aspect_ratio", f"支持 {', '.join(self.ratios)}")
         out["aspect_ratio"] = ratio
         out["count"] = integer(out["count"], "count", 1, self.max_count)
-        for field, maximum in (("reference_images", self.max_reference_images),
-                               ("reference_audios", self.max_reference_audios),
-                               ("reference_videos", self.max_reference_videos)):
-            values = params.get(field, params.get("ref_urls", []) if field == "reference_images" else [])
-            if not isinstance(values, list) or len(values) > maximum:
-                raise MediaValidationError(field, f"最多支持 {maximum} 个参考素材")
+        for field in ("reference_images", "reference_audios", "reference_videos", "ref_urls"):
+            values = params.get(field, [])
+            if not isinstance(values, list):
+                raise MediaValidationError(field, "参考素材必须是 URL 数组")
             if any(not isinstance(value, str) or not value.strip() for value in values):
                 raise MediaValidationError(field, "参考素材必须是非空 URL 字符串")
             out[field] = values
+        out["reference_images"] = [*out["reference_images"], *out.pop("ref_urls")]
         if params.get("image_url"):
             if not isinstance(params["image_url"], str):
                 raise MediaValidationError("image_url", "必须是 URL 字符串")
@@ -114,8 +135,8 @@ class MediaModelStrategy:
         styles = params.get("style_ref_urls") or []
         if not isinstance(styles, list) or any(not isinstance(value, str) or not value.strip() for value in styles):
             raise MediaValidationError("style_ref_urls", "必须是参考图 URL 数组")
-        if len(out["reference_images"]) + len(styles) > self.max_reference_images:
-            raise MediaValidationError("reference_images", "主体和风格参考图合计超限")
+        self.validate_reference_counts(images=len(out["reference_images"]) + len(styles),
+                                       audios=len(out["reference_audios"]), videos=len(out["reference_videos"]))
         if self.capability == "video":
             out["duration"] = integer(params.get("duration", params.get("seconds", 8)),
                                       "duration", self.duration_min, self.duration_max)
@@ -135,14 +156,17 @@ class MediaModelStrategy:
             images = [x for x in content if isinstance(x, dict) and x.get("type") == "image_url"]
             audios = [x for x in content if isinstance(x, dict) and x.get("type") == "audio_url"]
             videos = [x for x in content if isinstance(x, dict) and x.get("type") == "video_url"]
-            for name, values, maximum in (("reference_images", images, self.max_reference_images),
-                                           ("reference_audios", audios, self.max_reference_audios),
-                                           ("reference_videos", videos, self.max_reference_videos)):
-                if len(values) + len(out[name]) > maximum:
-                    raise MediaValidationError(name, f"最多支持 {maximum} 个参考素材")
-            if len(images) + len(out["reference_images"]) + bool(params.get("first_frame")) + bool(params.get("last_frame")) > self.max_reference_images:
-                raise MediaValidationError("reference_images", "首尾帧与参考图合计超限")
+            self.validate_reference_counts(
+                images=len(images) + len(out["reference_images"]) + len(styles)
+                       + bool(params.get("first_frame")) + bool(params.get("last_frame")),
+                audios=len(audios) + len(out["reference_audios"]),
+                videos=len(videos) + len(out["reference_videos"]),
+            )
             roles = {x.get("role") for x in images}
+            if params.get("first_frame"):
+                roles.add("first_frame")
+            if out["reference_images"] or styles:
+                roles.add("reference_image")
             if "first_frame" in roles and "reference_image" in roles:
                 raise MediaValidationError("reference_images", "首帧不能与多参考图同时使用")
         return out
@@ -185,6 +209,8 @@ class MediaModelStrategy:
                                   ("audio", "reference_audios", "reference_audio"),
                                   ("video", "reference_videos", "reference_video")):
             content.extend({"type": f"{kind}_url", f"{kind}_url": {"url": url}, "role": role} for url in p[field])
+        content.extend({"type": "image_url", "image_url": {"url": url}, "role": "reference_image"}
+                       for url in p.get("style_ref_urls", []))
         body.update(model=model, ratio=p["aspect_ratio"], content=content)
         return body
 

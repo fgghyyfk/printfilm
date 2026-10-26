@@ -84,7 +84,7 @@ def operation_for(capability: str, *, target: int | None = None, shot_no: int | 
 def execution_params(capability: str, params: dict, *, target: int | None = None, shot_no: int | None = None, model: str | None = None) -> tuple[Any, dict, ResolvedModelRoute | None]:
     operation = operation_for(capability, target=target, shot_no=shot_no, model=model)
     if operation:
-        strategy = get_strategy(operation["strategy_id"])
+        strategy = get_strategy(operation["strategy_id"]).with_reference_limits(operation.get("reference_limits"))
         # Admission owns billing dimensions. Runtime supplies prompt and actual reference URLs.
         merged = {**params, **{key: operation["params"][key] for key in ("resolution", "duration", "aspect_ratio") if key in operation["params"]}}
         validated = strategy.normalize_and_validate(merged)

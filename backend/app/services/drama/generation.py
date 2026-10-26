@@ -1575,7 +1575,7 @@ async def prepare_fragment_video_for_submit(
         image_url = item.url
         break
 
-    if ref_payloads and (catalog.images or catalog.audios):
+    if ref_payloads and (catalog.images or catalog.audios or catalog.videos):
         body = build_seedance_generate_body(
             {
                 "content": prompt,

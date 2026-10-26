@@ -13,7 +13,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.services.media_ref_limits import MAX_REFERENCE_IMAGES
 
 
 async def post_video_create(client: Any, method: str, url: str, *, request_call: Any = None, **kwargs: Any) -> Any:
@@ -194,19 +193,18 @@ def wrap_seedance_payload_for_newapi(payload: dict[str, Any]) -> dict[str, Any]:
             duration_text = str(duration).strip()
     ratio = str(src.get("ratio") or "").strip()
     uses_reference_images = any(role == "reference_image" for role in image_roles)
-    capped_images: list[str] = []
-    capped_roles: list[str] = []
+    unique_images: list[str] = []
+    unique_roles: list[str] = []
     seen_urls: set[str] = set()
     for url, role in zip(images, image_roles):
         if url in seen_urls:
             continue
         seen_urls.add(url)
-        capped_images.append(url)
-        capped_roles.append(role)
-        if len(capped_images) >= MAX_REFERENCE_IMAGES:
-            break
-    images = capped_images
-    image_roles = capped_roles
+        unique_images.append(url)
+        unique_roles.append(role)
+    # Model strategy validation owns reference limits; transport must never silently drop references.
+    images = unique_images
+    image_roles = unique_roles
 
     # 方舟字段直接挂在 metadata 根上（插件 UnmarshalMetadata → requestPayload）
     metadata: dict[str, Any] = {}

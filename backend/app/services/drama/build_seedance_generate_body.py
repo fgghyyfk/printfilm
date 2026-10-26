@@ -144,6 +144,8 @@ class SeedanceReferenceCatalog:
     audios: list[SeedanceReferenceFile] = field(default_factory=list)
     image_index_by_asset_id: dict[int, int] = field(default_factory=dict)
     audio_index_by_asset_id: dict[int, int] = field(default_factory=dict)
+    videos: list[SeedanceReferenceFile] = field(default_factory=list)
+    video_index_by_asset_id: dict[int, int] = field(default_factory=dict)
 
 
 # 将 ORM 资产转为 Seedance 引用 payload
@@ -216,7 +218,7 @@ def resolve_reference_image_url(asset: dict[str, Any]) -> str | None:
     category_type = str(asset.get("type") or "").strip().lower()
 
     # 音色/音频节点：cover 可能被写成试听 URL，绝不能进 image_url
-    if asset_type in {"audio", "voice"} or category_type in {"audio", "voice", "narration"}:
+    if asset_type in {"audio", "voice", "video"} or category_type in {"audio", "voice", "narration", "video"}:
         return None
 
     candidate = ""
@@ -580,6 +582,7 @@ def build_seedance_reference_catalog(
     catalog = SeedanceReferenceCatalog()
     seen_image_asset_ids: set[int] = set()
     seen_audio_asset_ids: set[int] = set()
+    seen_video_asset_ids: set[int] = set()
     filter_audio = script is not None
     voice_script = _prepare_voice_script(script, reference) if filter_audio else ""
     speaking = (
@@ -589,6 +592,12 @@ def build_seedance_reference_catalog(
 
     for asset in reference or []:
         asset_id = int(asset["id"])
+        if asset.get("type") == "video" or asset.get("assetType") == "video":
+            video_url = str(asset.get("url") or "").strip()
+            if video_url and asset_id not in seen_video_asset_ids:
+                seen_video_asset_ids.add(asset_id)
+                catalog.videos.append(SeedanceReferenceFile(asset_id=asset_id, url=video_url))
+            continue
         image_url = resolve_reference_image_url(asset)
 
         if image_url and asset_id not in seen_image_asset_ids:
@@ -619,6 +628,9 @@ def build_seedance_reference_catalog(
     }
     catalog.audio_index_by_asset_id = {
         item.asset_id: index + 1 for index, item in enumerate(catalog.audios)
+    }
+    catalog.video_index_by_asset_id = {
+        item.asset_id: index + 1 for index, item in enumerate(catalog.videos)
     }
     return catalog
 
@@ -677,6 +689,9 @@ def describe_seedance_content_slots(
         kind_zh = _KIND_ZH.get(kind, "音色")
         name = str(asset.get("name") or "").strip() or f"资产#{audio.asset_id}"
         labels.append(f"{kind_zh}音色「{name}」")
+    for video in catalog.videos:
+        asset = asset_by_id.get(video.asset_id) or {}
+        labels.append(f"参考视频「{asset.get('name') or video.asset_id}」")
     if (continuity_first_frame_url or "").strip():
         labels.append("上一镜尾帧")
     return labels
@@ -687,6 +702,7 @@ def format_body_asset_mention(
     name: str,
     image_index: int | None,
     audio_index: int | None = None,
+    video_index: int | None = None,
 ) -> str:
     """正文资产提及：角色可同时挂 @图片N 与 @音频N，便于模型对齐口令。"""
     parts: list[str] = []
@@ -694,6 +710,8 @@ def format_body_asset_mention(
         parts.append(f"@图片{image_index}/参考图{image_index}")
     if audio_index is not None:
         parts.append(f"@音频{audio_index}/参考音频{audio_index}")
+    if video_index is not None:
+        parts.append(f"@视频{video_index}/参考视频{video_index}")
     if parts:
         return f"{name}（{'，'.join(parts)}）"
     return name
@@ -758,6 +776,7 @@ def replace_asset_mention_token(
         _asset_prompt_name_for_mention(asset),
         image_index,
         audio_index,
+        catalog.video_index_by_asset_id.get(asset_id),
     )
 
 
@@ -783,6 +802,9 @@ def replace_asset_mentions_without_duplicate_names(
                 parts.append(f"@图片{image_index}/参考图{image_index}")
             if _mention_audio_index(asset_by_id.get(asset_id), catalog) is not None:
                 parts.append(f"@音频{audio_index}/参考音频{audio_index}")
+            video_index = catalog.video_index_by_asset_id.get(asset_id)
+            if video_index is not None:
+                parts.append(f"@视频{video_index}/参考视频{video_index}")
             token = f"（{'，'.join(parts)}）" if parts else ""
         end = match.end()
         skip = 0
@@ -1005,7 +1027,7 @@ def build_seedance_content_items(
     items: list[dict[str, Any]] = []
 
     continuity = (continuity_first_frame_url or "").strip()
-    has_reference_media = bool(catalog.images or catalog.audios)
+    has_reference_media = bool(catalog.images or catalog.audios or catalog.videos)
 
     if prompt_text:
         items.append({"type": "text", "text": prompt_text})
@@ -1023,6 +1045,10 @@ def build_seedance_content_items(
     for audio in catalog.audios:
         items.append(
             {"type": "audio_url", "audio_url": {"url": audio.url}, "role": "reference_audio"}
+        )
+    for video in catalog.videos:
+        items.append(
+            {"type": "video_url", "video_url": {"url": video.url}, "role": "reference_video"}
         )
 
     if continuity:
@@ -1106,7 +1132,7 @@ def build_seedance_generate_body(input_params: BuildSeedanceGenerateBodyInput) -
     style_board_url = (input_params.get("style_board_url") or "").strip() or None
     if not catalog.images:
         style_board_url = None
-    use_first_frame_mode = bool(continuity) and not (catalog.images or catalog.audios)
+    use_first_frame_mode = bool(continuity) and not (catalog.images or catalog.audios or catalog.videos)
     # 缺省与产品一致：后期叠字，不烧模型字幕 / 不叠人物介绍
     burn_subtitles = input_params.get("burn_subtitles")
     if burn_subtitles is None:

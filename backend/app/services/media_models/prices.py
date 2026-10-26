@@ -91,7 +91,9 @@ def quote_items(items: list[dict], book: dict) -> dict:
 def resolve_strategy(model_id: str):
     from app.services.model_settings import get_routing_snapshot
     logical = next((x for x in get_routing_snapshot().logical_models if x.id.lower() == model_id.lower()), None)
-    return get_strategy(logical.strategy_id if logical and logical.strategy_id else model_id)
+    strategy = get_strategy(logical.strategy_id if logical and logical.strategy_id else model_id)
+    limits = getattr(get_routing_snapshot(), "media_reference_limits", {}).get(strategy.model_id)
+    return strategy.with_reference_limits(limits)
 
 
 def initial_draft() -> dict:

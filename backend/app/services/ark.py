@@ -1479,9 +1479,10 @@ class ArkGateway:
                 copy["image_url"] = {
                     "url": await self._resolve_media_ref(safe_url, prefer_https=True)
                 }
-            elif item.get("type") == "audio_url":
-                raw_url = (item.get("audio_url") or {}).get("url") or ""
-                copy["audio_url"] = {
+            elif item.get("type") in {"audio_url", "video_url"}:
+                media_key = item["type"]
+                raw_url = (item.get(media_key) or {}).get("url") or ""
+                copy[media_key] = {
                     "url": await self._resolve_media_ref(str(raw_url), prefer_https=True)
                 }
             resolved.append(copy)
