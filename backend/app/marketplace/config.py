@@ -34,3 +34,15 @@ def is_marketplace_enabled() -> bool:
     """菜单和接口以系统设置里的开关为准；还没保存过时回落到 MARKETPLACE_ENABLED。"""
     from app.config import get_settings
     return bool(get_settings().marketplace_enabled)
+
+
+def resolve_cjk_font() -> str:
+    """优先使用已配置且存在的字体；否则用仓库内置或系统中的中文字体。"""
+    configured = Path(get_marketplace_settings().watermark_font)
+    if configured.is_file():
+        return str(configured)
+    from app.services.ffmpeg_compose import _find_cjk_font
+    found = _find_cjk_font()
+    if not found:
+        raise FileNotFoundError("未找到中文字体")
+    return found

@@ -60,8 +60,10 @@ async def render_preview(snapshot):
             if limit <= 0:
                 raise ValueError("视频过短，无法生成受限试看")
             limit_args = ["-t", str(limit)]
-        font = Path(settings.watermark_font)
-        if not font.is_file():
+        from .config import resolve_cjk_font
+        try:
+            font = Path(resolve_cjk_font())
+        except (OSError, FileNotFoundError):
             raise ValueError("水印字体不可用")
         escaped_font = str(font.resolve()).replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
         # 作者名已去掉转码特殊字符；上下两处烧录。

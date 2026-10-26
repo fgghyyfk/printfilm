@@ -32,10 +32,10 @@ function WorkPreviewLink({ id }: { id: number }) {
   return <div className="market-ops-file"><button type="button" onClick={async () => { try { setUrl((await request<{ url: string }>(`/api/marketplace/media/work/${id}/preview`)).url); setError('') } catch (e) { setError((e as Error).message) } }}>查看水印试看</button>{url && <video src={url} controls className="my-3 max-h-[500px] w-full" />}{error && <p role="alert">{error}</p>}</div>
 }
 function AuthorizationLink({ details }: { details: unknown }) {
-  const [url, setUrl] = useState(''); const [error, setError] = useState('')
+  const [url, setUrl] = useState(''); const [filename, setFilename] = useState('授权函.pdf'); const [error, setError] = useState('')
   const id = details && typeof details === 'object' && 'authorization_id' in details ? Number(details.authorization_id) : 0
   if (!id) return null
-  return <div className="market-ops-file"><button type="button" onClick={async () => { try { setUrl((await request<{ url: string }>(`/api/marketplace/authorizations/${id}/letter`)).url); setError('') } catch (e) { setError((e as Error).message) } }}>查看授权函</button>{url && <a href={url} target="_blank" rel="noreferrer"><img src={url} alt="已签署授权函" className="my-3 max-h-[600px] max-w-full object-contain" /></a>}{error && <p role="alert">{error}</p>}</div>
+  return <div className="market-ops-file"><button type="button" onClick={async () => { try { const value = await request<{ url: string; filename?: string }>(`/api/marketplace/authorizations/${id}/letter`); setUrl(value.url); setFilename(value.filename || '授权函.pdf'); setError('') } catch (e) { setError((e as Error).message) } }}>查看授权函</button>{url && (filename.endsWith('.pdf') ? <a href={url} target="_blank" rel="noreferrer">下载授权函 PDF</a> : <a href={url} target="_blank" rel="noreferrer"><img src={url} alt="已签署授权函" className="my-3 max-h-[600px] max-w-full object-contain" /></a>)}{error && <p role="alert">{error}</p>}</div>
 }
 
 function CoverImage({ id }: { id?: number }) {

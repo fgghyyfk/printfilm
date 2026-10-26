@@ -413,6 +413,28 @@ def signing_body():
             "strokes": [[[20 + i * 12, 60 + (i % 3) * 20] for i in range(25)]]}
 
 
+def test_bundled_cjk_font_is_used_when_configured_path_missing(monkeypatch):
+    """没有系统字体、配置路径也不存在时，使用仓库内置的 Noto Sans SC。"""
+    from pathlib import Path
+    from reportlab.pdfbase.ttfonts import TTFont
+    from app.marketplace.config import resolve_cjk_font
+    monkeypatch.setattr(get_marketplace_settings(), "watermark_font", "Z:/missing-font.ttf")
+    monkeypatch.delenv("FRAMECUT_FONT", raising=False)
+    found = resolve_cjk_font()
+    assert Path(found).name == "NotoSansSC-Regular.ttf"
+    assert Path(found).is_file()
+    TTFont("BundledCJKTest", found, subfontIndex=0)
+
+
+def test_letter_font_falls_back_when_configured_path_missing(monkeypatch):
+    """配置路径和系统字体都不存在时，明确报缺少字体。"""
+    from app.marketplace.config import resolve_cjk_font
+    monkeypatch.setattr(get_marketplace_settings(), "watermark_font", "Z:/missing-font.ttf")
+    monkeypatch.setattr("app.services.ffmpeg_compose._find_cjk_font", lambda: None)
+    with pytest.raises(FileNotFoundError):
+        resolve_cjk_font()
+
+
 def source_details(source):
     return {"source": source, "author": "测试作者", "holder": "测试权利人", "relationship": "本人",
             "acquisition": "original", "scope": "展示和线下洽谈", "third_party": "无第三方素材",
@@ -421,15 +443,13 @@ def source_details(source):
 
 
 async def test_printfilm_signed_letter_review_and_public_flow(ctx, monkeypatch):
-    """真实渲染签名图，OSS 仅用传输替身；签署不能自动批准作品。"""
-    from PIL import Image
+    """真实生成授权函 PDF，OSS 仅用传输替身；签署不能自动批准作品。"""
     from app.marketplace.models import Authorization
     fake_oss(monkeypatch)
     uploaded = []
     def capture(key, path, content_type):
-        with Image.open(path) as image:
-            assert image.format == "PNG" and image.width >= 800
-        assert key.startswith("marketplace/authorizations/") and content_type == "image/png"
+        assert path.read_bytes().startswith(b"%PDF")
+        assert key.endswith("/letter.pdf") and content_type == "application/pdf"
         uploaded.append(key)
     monkeypatch.setattr(storage, "upload", capture)
     video = await asset(ctx)
@@ -439,9 +459,9 @@ async def test_printfilm_signed_letter_review_and_public_flow(ctx, monkeypatch):
     signed = await ctx.client.post("/api/marketplace/authorization", json=signing_body())
     assert signed.status_code == 200, signed.text
     authorization_id = signed.json()["id"]
-    assert len(uploaded) == 2
+    assert len(uploaded) == 1
     assert (await ctx.client.post("/api/marketplace/authorization", json=signing_body())).json()["id"] == authorization_id
-    assert len(uploaded) == 2
+    assert len(uploaded) == 1
     archive = await ctx.db.get(Authorization, authorization_id)
     assert archive.signer_name == "测试签署人" and len(archive.body_hash) == 64 and archive.body
     payload["version"] = 0

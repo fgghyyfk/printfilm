@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from . import storage
-from .config import get_marketplace_settings
+from .config import get_marketplace_settings, resolve_cjk_font
 from .dependencies import Actor, DB, storage_ready
 from .models import Authorization
 from .schemas import Input
@@ -57,36 +57,84 @@ def summary(item):
     return data(item, "id", "template_version", "signer_name", "created_at", "body_hash") if item else None
 
 
-@storage.transport
-def render_and_store(body: SignInput, signed_at: str, owner_id: int) -> tuple[str, str]:
-    """服务端合成全文和签名，先完成私有 OSS 写入再登记签署成功。"""
-    from PIL import Image, ImageDraw, ImageFont
-    font = ImageFont.truetype(get_marketplace_settings().watermark_font, 26)
-    lines = []
-    for paragraph in [TITLE, f"版本：{VERSION}", *BODY.splitlines(), f"签署人：{body.signer_name}", f"账号：{owner_id}  签署时间（UTC）：{signed_at}", "手写签名："]:
+def _pdf_font(path: str) -> str:
+    """注册本次签署使用的中文字体。ttc 取第一个字面。"""
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    name = f"MarketplaceCJK{uuid.uuid4().hex[:8]}"
+    pdfmetrics.registerFont(TTFont(name, path, subfontIndex=0))
+    return name
+
+
+def _wrap(text: str, font_name: str, size: float, width: float) -> list[str]:
+    from reportlab.pdfbase import pdfmetrics
+    lines: list[str] = []
+    for paragraph in text.splitlines() or [""]:
         line = ""
         for char in paragraph:
-            if font.getlength(line + char) > 1000:
+            if pdfmetrics.stringWidth(line + char, font_name, size) > width:
                 lines.append(line)
                 line = ""
             line += char
-        lines.extend([line, ""])
-    signature = Image.new("RGB", (800, 240), "white")
-    draw = ImageDraw.Draw(signature)
-    for stroke in body.strokes:
-        draw.line(stroke, fill="black", width=3, joint="curve")
-    letter = Image.new("RGB", (1120, 100 + len(lines)*40 + 260), "white")
-    draw = ImageDraw.Draw(letter)
-    for i, line in enumerate(lines):
-        draw.text((60, 50 + i*40), line, font=font, fill="black")
-    letter.paste(signature, (60, 50 + len(lines)*40))
+        lines.append(line)
+    return lines
+
+
+@storage.transport
+def render_and_store(body: SignInput, signed_at: str, owner_id: int) -> str:
+    """把条款和手写签名直接写成 PDF，再存入私有 OSS。"""
+    from reportlab.pdfgen import canvas
+    try:
+        font_name = _pdf_font(resolve_cjk_font())
+    except (OSError, FileNotFoundError):
+        fail("服务器未找到可用的中文字体，暂时无法生成授权函。请安装 Noto CJK 或文泉驿字体后重试。", 503)
     prefix = f"marketplace/authorizations/u{owner_id}/{uuid.uuid4().hex}"
+    key = f"{prefix}/letter.pdf"
     with tempfile.TemporaryDirectory(prefix="printfilm-authorization-") as folder:
-        for name, image in (("signature", signature), ("letter", letter)):
-            path = Path(folder) / f"{name}.png"
-            image.save(path)
-            storage.upload(f"{prefix}/{name}.png", path, "image/png")
-    return f"{prefix}/signature.png", f"{prefix}/letter.png"
+        path = Path(folder) / "letter.pdf"
+        _write_letter(path, font_name, body, signed_at, owner_id)
+        storage.upload(key, path, "application/pdf")
+    return key
+
+
+def _write_letter(path: Path, font_name: str, body: SignInput, signed_at: str, owner_id: int) -> None:
+    """按 A4 排版全文，签名用矢量笔画，不另存图片。"""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+    page_width, page_height = A4
+    margin, size, leading = 48, 11, 16
+    text_width = page_width - margin * 2
+    document = canvas.Canvas(str(path), pagesize=A4)
+    document.setTitle(TITLE)
+    document.setFont(font_name, size)
+    y = page_height - margin
+    paragraphs = [TITLE, f"版本：{VERSION}", *BODY.splitlines(), f"签署人：{body.signer_name}", f"账号：{owner_id}    签署时间（UTC）：{signed_at}", "手写签名："]
+    for paragraph in paragraphs:
+        for line in _wrap(paragraph, font_name, size, text_width) or [""]:
+            if y < margin + 150:
+                document.showPage()
+                document.setFont(font_name, size)
+                y = page_height - margin
+            document.drawString(margin, y, line)
+            y -= leading
+        y -= 4
+    scale = text_width / 800
+    signature_height = 240 * scale
+    if y - signature_height < margin:
+        document.showPage()
+        document.setFont(font_name, size)
+        y = page_height - margin
+    document.setLineWidth(1.4)
+    document.setLineCap(1)
+    document.setLineJoin(1)
+    for stroke in body.strokes:
+        pen = document.beginPath()
+        start_x, start_y = stroke[0]
+        pen.moveTo(margin + start_x * scale, y - start_y * scale)
+        for point_x, point_y in stroke[1:]:
+            pen.lineTo(margin + point_x * scale, y - point_y * scale)
+        document.drawPath(pen, stroke=1, fill=0)
+    document.save()
 
 
 @router.get("/authorization", response_model=dict)
@@ -102,9 +150,9 @@ async def sign(body: SignInput, request: Request, db: DB, user: Actor):
     if existing:
         return summary(existing)
     signed_at = now()
-    signature_key, letter_key = await asyncio.to_thread(render_and_store, body, signed_at.isoformat(), user.id)
+    letter_key = await asyncio.to_thread(render_and_store, body, signed_at.isoformat(), user.id)
     item = Authorization(owner_id=user.id, template_version=VERSION, signer_name=body.signer_name,
-                         body=BODY, body_hash=hashlib.sha256(BODY.encode()).hexdigest(), signature_key=signature_key,
+                         body=BODY, body_hash=hashlib.sha256(BODY.encode()).hexdigest(), signature_key=letter_key,
                          letter_key=letter_key, created_at=signed_at, client_ip=(request.client.host if request.client else "")[:64],
                          user_agent=request.headers.get("user-agent", "")[:512])
     db.add(item)
@@ -126,7 +174,8 @@ async def letter(record_id: int, db: DB, user: Actor):
     item = await db.get(Authorization, record_id)
     if not item or (item.owner_id != user.id and user.role != "admin"):
         fail("授权函不存在或无权查看", 404)
-    url = await asyncio.to_thread(storage.signed, item.letter_key, "image/png")
+    pdf = item.letter_key.lower().endswith(".pdf")
+    url = await asyncio.to_thread(storage.signed, item.letter_key, "application/pdf" if pdf else "image/png")
     event(db, user.id, "authorization", item.id, "read")
     await db.commit()
-    return {"url": url, "expires_in": get_marketplace_settings().signed_url_seconds}
+    return {"url": url, "expires_in": get_marketplace_settings().signed_url_seconds, "filename": "授权函.pdf" if pdf else "授权函.png"}
