@@ -9,7 +9,7 @@ import { workspaceScope } from '../features/teams/workspaceScope'
 export type MediaLibraryItem = {
   key: string
   id: number
-  source_kind: 'drama' | 'tool'
+  source_kind: 'drama' | 'tool' | 'drama_fragment' | 'task' | 'short_video'
   source_id: number
   type: string
   asset_type: string
@@ -19,6 +19,7 @@ export type MediaLibraryItem = {
   url?: string | null
   params?: Record<string, unknown> | null
   project_id?: number | null
+  project_kind?: 'drama' | 'short_video' | null
   project_title?: string | null
   project_url?: string | null
   updated_at?: string | null
@@ -366,9 +367,11 @@ export const dramaApi = {
       body: JSON.stringify({ message, project_id }),
     }),
 
-  listLibraryAssets: (filters: { type?: MediaLibraryType; projectId?: number; unassigned?: boolean; q?: string; page?: number; pageSize?: number }, signal?: AbortSignal) => {
+  listLibraryAssets: (filters: { type?: MediaLibraryType; mediaKind?: MediaLibraryItem['media_kind']; projectId?: number; projectKind?: 'drama' | 'short_video'; unassigned?: boolean; q?: string; page?: number; pageSize?: number }, signal?: AbortSignal) => {
     const params = new URLSearchParams({ type: filters.type || 'all', page: String(filters.page || 1), page_size: String(filters.pageSize || 12) })
+    if (filters.mediaKind) params.set('media_kind', filters.mediaKind)
     if (filters.projectId) params.set('project_id', String(filters.projectId))
+    if (filters.projectKind) params.set('project_kind', filters.projectKind)
     if (filters.unassigned) params.set('unassigned', 'true')
     if (filters.q) params.set('q', filters.q)
     return request<MediaLibraryPage>(`/api/drama/library-assets?${params}`, { signal })
