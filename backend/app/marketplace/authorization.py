@@ -5,9 +5,11 @@ import logging
 from pathlib import Path
 import tempfile
 from typing import Annotated, Literal
+from urllib.parse import quote
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import Response
 from pydantic import Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -15,20 +17,12 @@ from sqlalchemy.exc import IntegrityError
 from . import storage
 from .config import get_marketplace_settings, resolve_cjk_font
 from .dependencies import Actor, DB, storage_ready
+from .letter_template import BODY, NOTICES, TITLE, VERSION, archived_text
 from .models import Authorization
 from .schemas import Input
 from .service import data, event, fail, now
 
 logger = logging.getLogger("marketplace.authorization")
-
-VERSION = "printfilm-marketplace-2026-10-v1"
-TITLE = "PrintFilm 生成作品展示与撮合授权函"
-BODY = """一、适用作品：本人以本账号提交至数字资产市场并声明为 PrintFilm 生成的作品。本授权函可被本账号后续作品引用，但每件作品的来源、权属、素材及授权范围仍由平台逐件核验。
-二、权属声明：本人为作品权利人或有权代表权利人提交作品，保证提供的生成记录、创作贡献和素材许可真实。音乐、字体、肖像、改编及第三方素材须具有相应使用权；本函不构成著作权登记证书，也不证明作品绝无侵权。
-三、授权范围：本人非独家授权平台在审核通过、本人选择上架期间，存储及处理作品，制作压缩水印预览，在市场展示作品介绍和预览，并协助联系潜在需求方。投稿完整水印审片仅向相应需求方及审核人员开放。
-四、交易边界：本函不转让作品版权，不授予平台或买家自动购买、再许可或原片下载权。具体价格、用途、期限、地域、合同、收款和原片交付由相关方在线下另行确认。选择候选或联系客服不构成成交。
-五、下架与争议：本人可下架作品或撤回投稿以停止新展示和新审片链接。已签发的短时链接最长五分钟后失效。平台收到有初步证据的投诉时可暂停展示、播放和咨询，要求补充材料并保留处置记录。
-六、签署与记录：本人已完整阅读并理解以上内容，自愿以真实姓名及手写签名确认。平台保存条款版本、全文摘要、签署时间、账号、签署图像及必要的访问记录，供授权核验与争议处理使用。条款更新后需重新签署；旧记录留档。"""
 
 Point = tuple[Annotated[float, Field(ge=0, le=800, allow_inf_nan=False)], Annotated[float, Field(ge=0, le=240, allow_inf_nan=False)]]
 Stroke = Annotated[list[Point], Field(min_length=2, max_length=1000)]
@@ -38,6 +32,9 @@ class SignInput(Input):
     template_version: str = Field(max_length=60)
     signer_name: str = Field(min_length=2, max_length=80)
     accepted_terms: Literal[True]
+    adult: Literal[True]
+    read_all: Literal[True]
+    accept_key: Literal[True]
     strokes: list[Stroke] = Field(min_length=1, max_length=40)
 
     @model_validator(mode="after")
@@ -118,7 +115,7 @@ def _write_letter(path: Path, font_name: str, body: SignInput, signed_at: str, o
     document.setTitle(TITLE)
     document.setFont(font_name, size)
     y = page_height - margin
-    paragraphs = [TITLE, f"版本：{VERSION}", *BODY.splitlines(), f"签署人：{body.signer_name}", f"账号：{owner_id}    签署时间（UTC）：{signed_at}", "手写签名："]
+    paragraphs = [TITLE, f"版本：{VERSION}", *archived_text().splitlines(), f"签署人：{body.signer_name}", f"账号：{owner_id}    签署时间（UTC）：{signed_at}", "手写签名："]
     for paragraph in paragraphs:
         for line in _wrap(paragraph, font_name, size, text_width) or [""]:
             if y < margin + 150:
@@ -149,7 +146,7 @@ def _write_letter(path: Path, font_name: str, body: SignInput, signed_at: str, o
 
 @router.get("/authorization", response_model=dict)
 async def status(db: DB, user: Actor):
-    return {"template": {"version": VERSION, "title": TITLE, "body": BODY}, "current": summary(await current(db, user.id))}
+    return {"template": {"version": VERSION, "title": TITLE, "notices": list(NOTICES), "body": BODY}, "current": summary(await current(db, user.id))}
 
 
 @router.post("/authorization", response_model=dict, dependencies=[Depends(storage_ready)])
@@ -161,8 +158,9 @@ async def sign(body: SignInput, request: Request, db: DB, user: Actor):
         return summary(existing)
     signed_at = now()
     letter_key = await asyncio.to_thread(render_and_store, body, signed_at.isoformat(), user.id)
+    text = archived_text()
     item = Authorization(owner_id=user.id, template_version=VERSION, signer_name=body.signer_name,
-                         body=BODY, body_hash=hashlib.sha256(BODY.encode()).hexdigest(), signature_key=letter_key,
+                         body=text, body_hash=hashlib.sha256(text.encode()).hexdigest(), signature_key=letter_key,
                          letter_key=letter_key, created_at=signed_at, client_ip=(request.client.host if request.client else "")[:64],
                          user_agent=request.headers.get("user-agent", "")[:512])
     db.add(item)
@@ -189,3 +187,27 @@ async def letter(record_id: int, db: DB, user: Actor):
     event(db, user.id, "authorization", item.id, "read")
     await db.commit()
     return {"url": url, "expires_in": get_marketplace_settings().signed_url_seconds, "filename": "授权函.pdf" if pdf else "授权函.png"}
+
+
+def _disposition(filename: str, download: bool) -> str:
+    """预览用 inline，只有明确下载时才用 attachment。"""
+    encoded = quote(filename)
+    kind = "attachment" if download else "inline"
+    ascii_name = "letter.pdf" if filename.endswith(".pdf") else "letter.png"
+    return f"{kind}; filename=\"{ascii_name}\"; filename*=UTF-8''{encoded}"
+
+
+@router.get("/authorizations/{record_id}/file", dependencies=[Depends(storage_ready)])
+async def letter_file(record_id: int, db: DB, user: Actor, download: bool = False):
+    """把已签署授权函以文件流返回。默认在线打开，download=true 时才作为附件下载。"""
+    item = await db.get(Authorization, record_id)
+    if not item or (item.owner_id != user.id and user.role != "admin"):
+        fail("授权函不存在或无权查看", 404)
+    pdf = item.letter_key.lower().endswith(".pdf")
+    payload = await asyncio.to_thread(storage.read, item.letter_key)
+    filename = "授权函.pdf" if pdf else "授权函.png"
+    event(db, user.id, "authorization", item.id, "download" if download else "preview")
+    await db.commit()
+    return Response(content=payload, media_type="application/pdf" if pdf else "image/png", headers={
+        "Content-Disposition": _disposition(filename, download), "Cache-Control": "private, no-store",
+    })

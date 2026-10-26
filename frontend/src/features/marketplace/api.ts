@@ -69,6 +69,26 @@ export async function request<T>(path: string, method = 'GET', body?: unknown, s
   return result as T
 }
 
+/** 已签署授权函的文件流。默认由接口 inline 返回，页面再用本地对象地址预览。 */
+export async function letterFile(id: number): Promise<Blob> {
+  const token = localStorage.getItem('token')
+  let response: Response
+  try {
+    response = await fetch(`${base}/api/marketplace/authorizations/${id}/file`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+  } catch {
+    throw new Error('授权函暂时无法打开')
+  }
+  if (!response.ok) {
+    if (response.status === 401) window.location.assign(`/auth?next=${encodeURIComponent(window.location.pathname + window.location.search)}`)
+    const result = await response.json().catch(() => ({}))
+    const detail = result.detail
+    throw new Error(typeof detail === 'string' ? detail : '授权函暂时无法打开')
+  }
+  return response.blob()
+}
+
 // 只在需要观看时申请短时链接，不能把 object_key 放到前端。
 export async function media(kind: string, id: number, purpose: string) {
   return (await request<{ url: string }>(`/media/${kind}/${id}/${purpose}`)).url
