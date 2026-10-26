@@ -3757,19 +3757,6 @@ textarea.admin-control {
   }
 }
 
-@media (max-width: 900px) {
-  .admin-app {
-    --admin-sidebar-w: 72px;
-  }
-  .admin-brand-name,
-  .admin-brand-sub,
-  .admin-nav-group-label,
-  .admin-nav-item span,
-  .admin-user-card .min-w-0 {
-    display: none;
-  }
-}
-
 /* 任务详情弹窗 */
 .task-detail-modal.admin-modal--full {
   max-width: min(1120px, calc(100vw - 32px)) !important;

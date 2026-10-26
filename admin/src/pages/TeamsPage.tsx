@@ -33,7 +33,7 @@ export function TeamsPage() {
   }
 
   return <div className="space-y-5">
-    <PageHeader description="查看全部团队、成员、所有者账户与消费上限，追溯每一笔团队消费。" actions={<Button type="button" variant="outline" disabled={loading} onClick={reload}><RefreshCw className="h-4 w-4" />刷新</Button>} />
+    <PageHeader title="团队管理" description="查看全部团队、成员、所有者账户与消费上限，追溯每一笔团队消费。" actions={<Button type="button" variant="outline" disabled={loading} onClick={reload}><RefreshCw className="h-4 w-4" />刷新</Button>} />
     <form onSubmit={(event) => { event.preventDefault(); search(); }}>
       <AdminFilterBar trailing={<Badge variant="info">{data ? `${data.meta.total} 个团队` : "团队管理"}</Badge>}>
         <AdminSearchInput value={draft} onChange={setDraft} placeholder="搜索团队名称、ID、所有者昵称或邮箱" />
