@@ -1,4 +1,4 @@
-"""TokenFree 公开 /api/pricing：推荐模型官方价与预估。"""
+"""TokenFree 公开 /api/pricing：模型价格解析与计费预估。"""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from typing import Any
 import httpx
 
 from app.config import Settings, get_settings
-from app.services.tokenfree_gateway import TOKENFREE_CONSOLE_URL, tokenfree_site_origin
+from app.services.tokenfree_gateway import tokenfree_site_origin
 from app.services.tokenfree_usage import usd_cny_rate
 
 logger = logging.getLogger(__name__)
@@ -154,94 +154,6 @@ KIE_SUNBURST_USD_4K = 0.08
 KIE_SUNBURST_CREDITS_1K = 6
 KIE_SUNBURST_CREDITS_2K = 10
 KIE_SUNBURST_CREDITS_4K = 16
-
-# 产品里好用、目录有、方便去 TokenFree 核对的短名单
-RECOMMENDED_MODELS: tuple[dict[str, Any], ...] = (
-    {
-        "id": "kimi-k2.6",
-        "capability": "text",
-        "label": "Kimi K2.6",
-        "note": "默认剧本/分镜，中文长上下文",
-        "recommended": True,
-    },
-    {
-        "id": "deepseek-v3.2",
-        "capability": "text",
-        "label": "DeepSeek V3.2",
-        "note": "便宜备选，扩写与闲聊",
-        "recommended": False,
-    },
-    {
-        "id": "qwen3.5-plus",
-        "capability": "text",
-        "label": "Qwen 3.5 Plus",
-        "note": "便宜中文日常对话",
-        "recommended": False,
-    },
-    {
-        "id": "seedream-5.0-pro",
-        "capability": "image",
-        "label": "Seedream 5.0 Pro",
-        "note": "定妆与分镜静帧首选",
-        "recommended": True,
-    },
-    {
-        "id": "seedream-5.0",
-        "capability": "image",
-        "label": "Seedream 5.0",
-        "note": "标准静帧",
-        "recommended": False,
-    },
-    {
-        "id": "seedream-5.0-flash",
-        "capability": "image",
-        "label": "Seedream 5.0 Flash",
-        "note": "更快更省草稿档",
-        "recommended": False,
-    },
-    {
-        "id": "gpt-image-2",
-        "capability": "image",
-        "label": "GPT Image 2",
-        "note": "OpenAI 生图，约 ¥0.55/次",
-        "recommended": False,
-    },
-    {
-        "id": "gpt-image-2.5",
-        "capability": "image",
-        "label": "GPT Image 2.5",
-        "note": "OpenAI 新一代生图，细节与文字更稳",
-        "recommended": False,
-    },
-    {
-        "id": "seedance-2.5",
-        "capability": "video",
-        "label": "Seedance 2.5",
-        "note": "默认成片，最长约 30 秒",
-        "recommended": True,
-    },
-    {
-        "id": "seedance-2.0",
-        "capability": "video",
-        "label": "Seedance 2.0",
-        "note": "标准 2.0，4–15 秒",
-        "recommended": False,
-    },
-    {
-        "id": "MiniMax-H3",
-        "capability": "video",
-        "label": "MiniMax H3",
-        "note": "4–15 秒，480p / 768p",
-        "recommended": False,
-    },
-    {
-        "id": "qwen-tts-2025-05-22",
-        "capability": "audio",
-        "label": "Qwen TTS",
-        "note": "默认配音；TokenFree 目录按量计费",
-        "recommended": True,
-    },
-)
 
 _cache: dict[str, "OfficialRate"] | None = None
 _cache_at: float = 0.0
@@ -870,78 +782,6 @@ def charge_fen_official_video(
     return charge
 
 
-def build_official_rate_rows(
-    rates: dict[str, OfficialRate],
-    settings: Settings | None = None,
-) -> list[dict[str, Any]]:
-    """管理端推荐模型费率表（含用户价）。"""
-    s = settings or get_settings()
-    usd_cny = usd_cny_rate(s)
-    items: list[dict[str, Any]] = []
-    for spec in RECOMMENDED_MODELS:
-        rate = lookup_rate(str(spec["id"]), rates)
-        official_yuan = 0.0
-        basis = "missing"
-        rate_label = "TokenFree 价目未收录，请到控制台核对"
-        if spec["capability"] == "video" and rate and rate.billing_expr:
-            hint = format_video_pricing_hint(str(spec["id"]))
-            fen = charge_fen_official_video(5.0, s, model=str(spec["id"]), resolution="720p")
-            if hint and fen:
-                official_yuan = round(fen / 100.0, 4)
-                basis = "billing_expr"
-                rate_label = hint
-        elif spec["capability"] == "video":
-            hint = format_video_pricing_hint(str(spec["id"]))
-            tiers = VENDOR_VIDEO_YUAN_5S_BY_RES.get(str(spec["id"]))
-            if hint and tiers and "480p" in tiers:
-                official_yuan = round(float(tiers["480p"]), 4)
-                basis = "vendor_sec"
-                listed = ""
-                if rate and rate.placeholder:
-                    listed = f"；TokenFree 表 model_ratio={rate.model_ratio} 疑似占位"
-                rate_label = f"结算参考 {hint}{listed}"
-        elif spec["capability"] == "image" and (
-            "sunburst" in str(spec["id"]).lower() or "gpt-image" in str(spec["id"]).lower()
-        ) and not (rate and rate.billing == "per_call" and rate.usd_per_call > 0):
-            from app.services.billing.pricing import kie_fen_per_credit
-
-            credits = kie_sunburst_credits_for_size("2K")
-            fen = max(1, int(round(credits * kie_fen_per_credit(s))))
-            official_yuan = round(fen / 100.0, 4)
-            basis = "kie_sunburst"
-            rate_label = (
-                f"Kie sunburst 2K {credits} 积分 ≈ ¥{official_yuan:.2f}"
-                f"（1K {KIE_SUNBURST_CREDITS_1K} / 4K {KIE_SUNBURST_CREDITS_4K} 积分）"
-            )
-        elif rate and rate.billing == "per_call":
-            official_yuan = rate.cny_per_call
-            basis = "per_call"
-            rate_label = f"TokenFree ${rate.usd_per_call:.4f}/次 ≈ ¥{official_yuan:.4f}"
-        elif rate and rate.billing == "token":
-            official_yuan = rate.cny_out_per_1m
-            basis = "token"
-            rate_label = f"TokenFree 输入 ¥{rate.cny_in_per_1m:.4f} / 输出 ¥{rate.cny_out_per_1m:.4f} 每百万"
-        items.append(
-            {
-                "id": spec["id"],
-                "label": spec["label"],
-                "provider": "tokenfree",
-                "capability": spec["capability"],
-                "recommended": bool(spec["recommended"]),
-                "note": spec["note"],
-                "basis": basis,
-                "rate_label": rate_label,
-                "official_cost_yuan": official_yuan,
-                "user_charge_yuan": official_yuan,
-                "placeholder": bool(rate.placeholder) if rate else False,
-                "markup": 1.0,
-                "usd_cny": usd_cny,
-                "verify_url": TOKENFREE_CONSOLE_URL,
-            }
-        )
-    return items
-
-
 def media_model_pricing_hint(
     model_id: str,
     *,
@@ -1025,10 +865,3 @@ async def ensure_official_rates(settings: Settings | None = None) -> dict[str, O
     if fallback:
         set_cached_rates(fallback)
     return fallback
-
-
-async def billing_official_rate_rows(settings: Settings | None = None) -> list[dict[str, Any]]:
-    """拉取（或复用）官方价后生成推荐模型费率表。"""
-    s = settings or get_settings()
-    rates = await ensure_official_rates(s)
-    return build_official_rate_rows(rates, s)

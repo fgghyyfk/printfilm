@@ -28,7 +28,11 @@ async def test_owner_pays_actor_and_usage_remain_member(db_session, monkeypatch)
     assert sum(e.delta_fen for e in entries) == -180
     assert all(f"team:{team.id} actor:{member.id}" in e.note for e in entries)
     from app.api.billing import usage_events, usage_summary
-    assert (await usage_summary(db=db_session, user=owner))["charge_fen"] == 180
+    summary = await usage_summary(db=db_session, user=owner)
+    assert summary["charge_fen"] == 180
+    assert summary["calls"] == 1
+    assert "cost_fen" not in summary
+    assert (await usage_summary(db=db_session, user=member))["charge_fen"] == 0
     assert (await usage_events(page=1, page_size=20, db=db_session, user=owner))["items"][0]["id"] == event.id
     assert (await usage_events(page=1, page_size=20, db=db_session, user=member))["items"] == []
 

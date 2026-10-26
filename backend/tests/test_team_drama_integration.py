@@ -190,10 +190,12 @@ async def test_team_canvas_cannot_overwrite_assets_and_usage_is_private(drama_ap
     await a.db.commit()
     a.auth["user"] = a.member
     usage = (await a.client.get(f"/api/drama/projects/{a.project.id}")).json()["usage"]
-    assert usage["charge_fen"] == 30 and usage["cost_fen"] == 0
+    assert usage["charge_fen"] == 30
+    assert "cost_fen" not in usage and "cost_yuan" not in usage
     a.auth["user"] = a.owner
     usage = (await a.client.get(f"/api/drama/projects/{a.project.id}")).json()["usage"]
-    assert usage["charge_fen"] == 130 and usage["cost_fen"] == 0
+    assert usage["charge_fen"] == 130
+    assert "cost_fen" not in usage and "cost_yuan" not in usage
 
 
 def test_main_registers_team_api_routes():

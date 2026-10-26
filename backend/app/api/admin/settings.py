@@ -154,30 +154,3 @@ async def admin_list_upstream_models(
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"models": models}
-
-
-@router.get("/settings/billing/model-rates")
-async def admin_billing_model_rates(
-    _admin: User = Depends(get_current_admin),
-) -> dict:
-    """拉取 TokenFree 官方价目，返回推荐文字/图/视频模型费率。"""
-    from app.services.tokenfree_pricing import billing_official_rate_rows, tokenfree_pricing_url
-
-    items = await billing_official_rate_rows()
-    return {"items": items, "source": tokenfree_pricing_url()}
-
-
-@router.get("/settings/tokenfree/quota")
-async def admin_tokenfree_account_quota(
-    _admin: User = Depends(get_current_admin),
-) -> dict:
-    """查询 TokenFree / New API 账户剩余额度（与模型页同一把 Key）。"""
-    from app.services.tokenfree_usage import fetch_tokenfree_account, tokenfree_usage_configured
-
-    if not tokenfree_usage_configured():
-        raise HTTPException(status_code=400, detail="未配置 TokenFree API Key（请先在「模型」填写）")
-    try:
-        return await fetch_tokenfree_account()
-    except RuntimeError as exc:
-        logger.warning("tokenfree quota query failed: %s", exc)
-        raise HTTPException(status_code=502, detail="TokenFree 额度查询失败") from exc

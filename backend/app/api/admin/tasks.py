@@ -58,14 +58,12 @@ async def _load_usage_lines(db: AsyncSession, task_id: int) -> list[AdminUsageEv
         items.append(
             AdminUsageEventBriefOut(
                 id=row.id,
-                  billing_detail=row.billing_detail,
-                  cost_status=row.cost_status,
+                billing_detail=row.billing_detail,
                 billing_key=row.billing_key,
                 capability=row.capability,
                 model=row.model or "",
                 total_tokens=int(row.total_tokens or 0),
                 charge_fen=int(row.charge_fen or 0),
-                cost_fen=int(row.cost_fen or 0),
                 estimated=bool(row.estimated),
                 billing_basis=basis,
                 billing_basis_label=billing_basis_label(basis),

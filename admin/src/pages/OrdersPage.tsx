@@ -153,7 +153,7 @@ export function OrdersPage() {
 
   return (
     <div className="admin-list-page">
-      <PageHeader description="查看充值单、钱包流水与 AI 用量明细" />
+      <PageHeader title="订单流水" description="查看充值单、钱包流水与 AI 用量明细" />
       <Tabs value={tab} onValueChange={onTabChange}>
         <TabsList>
           <TabsTrigger value="orders">充值订单</TabsTrigger>
@@ -347,7 +347,7 @@ export function OrdersPage() {
             <Select value={usageBasis} onChange={(e) => setUsageBasis(e.target.value)}>
               <option value="">全部计费依据</option>
               <option value="estimate">估算</option>
-              <option value="upstream">实测（上游）</option>
+              <option value="upstream">实测</option>
               <option value="upstream_usage">实测(token)</option>
               <option value="upstream_cost">实测(费用)</option>
             </Select>
@@ -412,7 +412,6 @@ export function OrdersPage() {
                   <TableHead>模型</TableHead>
                   <TableHead>Tokens</TableHead>
                   <TableHead>扣费</TableHead>
-                  <TableHead>上游成本</TableHead>
                   <TableHead>计费依据</TableHead>
                 </TableRow>
               </TableHeader>
@@ -446,7 +445,6 @@ export function OrdersPage() {
                     <TableCell className="max-w-[120px] truncate text-xs">{row.model || "—"}</TableCell>
                     <TableCell>{row.total_tokens ?? 0}</TableCell>
                     <TableCell>¥{fenToYuan(row.charge_fen ?? 0)}</TableCell>
-                    <TableCell>¥{fenToYuan(row.cost_fen ?? 0)}</TableCell>
                     <TableCell>
                       <Badge
                         variant={
@@ -456,10 +454,10 @@ export function OrdersPage() {
                         }
                         title={
                           row.billing_basis === "upstream_cost"
-                            ? "按 TokenFree 返回的实际费用扣费"
+                            ? "按记录的实际费用扣费"
                             : row.billing_basis === "upstream_usage"
-                              ? "按 TokenFree usage token × 官方单价扣费"
-                              : "上游未返回 usage，按配置估算 token 扣费"
+                              ? "按实际 Token 用量与配置单价扣费"
+                              : "按配置估算 Token 扣费"
                         }
                       >
                         {row.billing_basis_label ?? (row.estimated ? "估算" : "实测")}

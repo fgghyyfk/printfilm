@@ -81,8 +81,6 @@ export type DramaEpisodeBody = {
 export type DramaProjectUsageStats = {
   charge_fen: number
   charge_yuan: number
-  cost_fen: number
-  cost_yuan: number
   tokens: number
   calls: number
   image_gens: number

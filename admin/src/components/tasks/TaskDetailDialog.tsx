@@ -430,14 +430,13 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
                           <th>模型</th>
                           <th>Tokens</th>
                           <th>扣费</th>
-                          <th>上游成本</th>
                           <th>计费依据</th>
                         </tr>
                       </thead>
                       <tbody>
                         {(task.usage_lines?.length ?? 0) === 0 ? (
                           <tr>
-                            <td colSpan={8} className="text-center text-sm text-[#909399]">
+                            <td colSpan={7} className="text-center text-sm text-[#909399]">
                               暂无用量记录
                             </td>
                           </tr>
@@ -450,7 +449,6 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
                               <td className="max-w-[120px] truncate text-xs">{line.model || "—"}</td>
                               <td>{line.total_tokens ?? 0}</td>
                               <td>¥{fenToYuan(line.charge_fen ?? 0)}</td>
-                              <td>{line.cost_status === 'pending' ? '待核实' : `¥${fenToYuan(line.cost_fen ?? 0)}`}</td>
                               <td>{line.billing_detail?.mode === 'fixed_media' ? <>
                                 <div>{line.billing_detail.resolution} · ¥{line.billing_detail.unit_price_yuan} × {line.billing_detail.duration ?? 1}{line.billing_detail.duration ? ' 秒' : ' 张'}</div>
                                 <div className="text-xs text-[var(--admin-muted)]">价格 #{line.billing_detail.price_version} · {line.billing_detail.route.channel_name || line.billing_detail.route.channel_id} · {line.billing_detail.delivered ? '已交付' : '未交付'}</div>

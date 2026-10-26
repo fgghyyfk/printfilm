@@ -231,7 +231,6 @@ export type UsageSummary = {
   tokens: number
   charge_fen: number
   charge_yuan: number
-  cost_fen: number
   calls: number
   balance_fen: number
   balance_yuan: number

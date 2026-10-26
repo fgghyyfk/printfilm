@@ -134,15 +134,7 @@ class Settings(BaseSettings):
     billing_user_alert_enabled: bool = True
     billing_user_alert_interval_fen: int = 10000
 
-    # 平台总费用邮件告警（按上游 cost_fen 聚合）
-    billing_admin_cost_alert_enabled: bool = False
-    billing_admin_cost_alert_threshold_fen: int = 0
-    billing_admin_cost_alert_emails: str = ""
-    billing_admin_cost_alert_period: str = "monthly"
-    billing_admin_cost_alert_last_period_key: str = ""
-    billing_admin_cost_alert_last_level: int = 0
-
-    # SMTP（管理员费用告警邮件）
+    # SMTP（密码重置与团队邀请邮件）
     smtp_enabled: bool = False
     smtp_host: str = ""
     smtp_port: int = 587

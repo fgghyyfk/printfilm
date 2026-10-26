@@ -224,27 +224,25 @@ async def usage_summary(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
-    """本月 token / 费用汇总，供历史页侧栏展示。"""
+    """本月 token / 扣费汇总，供历史页侧栏展示。"""
     now = datetime.now(timezone.utc)
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     result = await db.execute(
         select(
             func.coalesce(func.sum(UsageEvent.total_tokens), 0),
             func.coalesce(func.sum(UsageEvent.charge_fen), 0),
-            func.coalesce(func.sum(UsageEvent.cost_fen), 0),
             func.count(UsageEvent.id),
         ).where(
             or_((UsageEvent.user_id == user.id) & UsageEvent.team_id.is_(None), UsageEvent.billing_payer_user_id == user.id),
             UsageEvent.created_at >= month_start,
         )
     )
-    tokens, charge_fen, cost_fen, calls = result.one()
+    tokens, charge_fen, calls = result.one()
     return {
         "period": month_start.strftime("%Y-%m"),
         "tokens": int(tokens or 0),
         "charge_fen": int(charge_fen or 0),
         "charge_yuan": round(int(charge_fen or 0) / 100, 2),
-        "cost_fen": int(cost_fen or 0),
         "calls": int(calls or 0),
         "balance_fen": int(user.balance_fen or 0),
         "balance_yuan": round(int(user.balance_fen or 0) / 100, 2),

@@ -257,17 +257,15 @@ class AdminTaskEventListOut(BaseModel):
 
 
 class AdminUsageEventBriefOut(BaseModel):
-    billing_detail: dict | None = None
-    cost_status: str | None = None
     """Compact usage line for task billing tab."""
 
+    billing_detail: dict | None = None
     id: int
     billing_key: str
     capability: str | None = None
     model: str = ""
     total_tokens: int = 0
     charge_fen: int = 0
-    cost_fen: int = 0
     estimated: bool = False
     billing_basis: str = "estimate"
     billing_basis_label: str = "估算"
@@ -292,7 +290,6 @@ class AdminUsageEventOut(BaseModel):
     provider: str | None = None
     total_tokens: int = 0
     charge_fen: int = 0
-    cost_fen: int = 0
     estimated: bool = False
     billing_basis: str = "estimate"
     billing_basis_label: str = "估算"

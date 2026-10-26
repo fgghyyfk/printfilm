@@ -57,12 +57,10 @@ class DramaAssetOut(BaseModel):
 
 
 class DramaProjectUsageStats(BaseModel):
-    """单部漫剧累计用量：费用与生图/生视频次数。"""
+    """单部漫剧累计用量：扣费与生图/生视频次数。"""
 
     charge_fen: int = 0
     charge_yuan: float = 0.0
-    cost_fen: int = 0
-    cost_yuan: float = 0.0
     tokens: int = 0
     calls: int = 0
     image_gens: int = 0

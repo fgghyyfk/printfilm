@@ -4,8 +4,6 @@ import type { DramaProjectUsageStats } from '../api/drama'
 export const EMPTY_DRAMA_USAGE: DramaProjectUsageStats = {
   charge_fen: 0,
   charge_yuan: 0,
-  cost_fen: 0,
-  cost_yuan: 0,
   tokens: 0,
   calls: 0,
   image_gens: 0,

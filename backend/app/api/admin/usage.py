@@ -44,7 +44,6 @@ def _usage_event_out(
         provider=ev.provider,
         total_tokens=int(ev.total_tokens or 0),
         charge_fen=int(ev.charge_fen or 0),
-        cost_fen=int(ev.cost_fen or 0),
         estimated=bool(ev.estimated),
         billing_basis=basis,
         billing_basis_label=billing_basis_label(basis),

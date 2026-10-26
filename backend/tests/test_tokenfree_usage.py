@@ -1,9 +1,8 @@
-"""TokenFree / New API 额度换算与日用量聚合。"""
+"""TokenFree / New API 结算日志与额度换算。"""
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-
+import httpx
 import pytest
 
 from app.config import get_settings
@@ -11,12 +10,8 @@ from app.services.billing.display import resolve_billing_basis
 from app.services.billing.pricing import parse_upstream_cost_fen
 from app.services.tokenfree_gateway import tokenfree_site_origin
 from app.services.tokenfree_usage import (
-    aggregate_quota_data_by_day,
-    billing_usage_to_cost_fen,
-    fetch_tokenfree_account,
+    fetch_tokenfree_consume_logs,
     quota_to_cost_fen,
-    usage_dates_are_ignored,
-    used_quota_from_raw_json,
 )
 
 
@@ -30,37 +25,6 @@ def test_quota_to_cost_fen_one_usd():
     settings.billing_usd_cny = 7.0
     assert quota_to_cost_fen(500_000, settings) == 700
     assert quota_to_cost_fen(0, settings) == 0
-
-
-def test_billing_usage_to_cost_fen_one_usd():
-    settings = get_settings()
-    settings.billing_usd_cny = 7.0
-    # OpenAI 兼容 total_usage 单位是 0.01 USD，100 = $1
-    assert billing_usage_to_cost_fen(100, settings) == 700
-
-
-def test_usage_dates_are_ignored_when_values_match():
-    assert usage_dates_are_ignored(1200.0, 1200.0, 1200.0) is True
-    assert usage_dates_are_ignored(10.0, 20.0, 30.0) is False
-    assert usage_dates_are_ignored(0.0, 0.0, 0.0) is False
-
-
-def test_aggregate_quota_data_by_day():
-    settings = get_settings()
-    settings.billing_usd_cny = 7.0
-    day_ts = int(datetime(2026, 9, 10, tzinfo=UTC).timestamp())
-    items = [
-        {"created_at": day_ts, "quota": 250_000, "prompt_tokens": 10, "completion_tokens": 5},
-        {"date": "2026-09-10", "quota": 250_000, "token_used": 20},
-    ]
-    daily = aggregate_quota_data_by_day(items, settings)
-    assert daily["2026-09-10"]["quota"] == 500_000
-    assert daily["2026-09-10"]["cost_fen"] == 700
-
-
-def test_used_quota_from_raw_json():
-    assert used_quota_from_raw_json('{"used_quota": 123}') == 123
-    assert used_quota_from_raw_json("not-json") is None
 
 
 def test_parse_upstream_cost_fen_from_newapi_quota():
@@ -128,33 +92,41 @@ def test_resolve_billing_basis_newapi_quota():
 
 
 @pytest.mark.asyncio
-async def test_fetch_tokenfree_account_prefers_self_when_dashboard_missing(monkeypatch: pytest.MonkeyPatch):
-    async def fake_get(path: str, *, params: dict | None = None):
-        if path.endswith("/api/user/self"):
-            return {"success": True, "data": {"quota": 500_000, "used_quota": 0}}
-        return None
+@pytest.mark.parametrize("zero_based", [False, True])
+async def test_consume_logs_keep_billing_requests_and_pagination(monkeypatch, zero_based):
+    """结算仍能按时间和模型检索真实消费日志，并兼容从第0页起的站点。"""
+    rows = [{"quota": 500_000, "model_name": "test-model"}]
+    pages = []
 
-    monkeypatch.setattr("app.services.tokenfree_usage._try_tokenfree_get", fake_get)
-    settings = get_settings()
-    settings.billing_usd_cny = 7.0
-    account = await fetch_tokenfree_account(settings)
-    assert account["quota"] == 500_000
-    assert account["remain_fen"] == 700
+    def handle(request):
+        assert request.url.path == "/api/log/self"
+        assert request.headers["Authorization"] == "Bearer test-key"
+        assert request.url.params["type"] == "2"
+        assert request.url.params["start_timestamp"] == "100"
+        assert request.url.params["end_timestamp"] == "200"
+        assert request.url.params["model_name"] == "test-model"
+        page = request.url.params["p"]
+        pages.append(page)
+        items = [] if zero_based and page == "1" else rows
+        return httpx.Response(200, json={"success": True, "data": {"total": 1, "items": items}})
+
+    client_type = httpx.AsyncClient
+    transport = httpx.MockTransport(handle)
+    monkeypatch.setattr("app.services.tokenfree_usage.resolve_tokenfree_api_key", lambda: "test-key")
+    monkeypatch.setattr("app.services.tokenfree_usage.tokenfree_site_origin", lambda: "https://example.test")
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: client_type(transport=transport, **kwargs))
+
+    assert await fetch_tokenfree_consume_logs(100, 200, model_name=" test-model ") == rows
+    assert pages == (["1", "0"] if zero_based else ["1"])
 
 
 @pytest.mark.asyncio
-async def test_fetch_tokenfree_account_from_dashboard_usage(monkeypatch: pytest.MonkeyPatch):
-    async def fake_get(path: str, *, params: dict | None = None):
-        if path.endswith("/subscription"):
-            return {"hard_limit_usd": 2.0}
-        if "billing/usage" in path:
-            return {"total_usage": 100}
-        return None
+@pytest.mark.parametrize("status,body", [(401, "unauthorized"), (200, "not-json"), (200, '{"success": false}')])
+async def test_consume_logs_unavailable_does_not_interrupt_billing(monkeypatch, status, body):
+    client_type = httpx.AsyncClient
+    transport = httpx.MockTransport(lambda request: httpx.Response(status, text=body))
+    monkeypatch.setattr("app.services.tokenfree_usage.resolve_tokenfree_api_key", lambda: "test-key")
+    monkeypatch.setattr("app.services.tokenfree_usage.tokenfree_site_origin", lambda: "https://example.test")
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: client_type(transport=transport, **kwargs))
 
-    monkeypatch.setattr("app.services.tokenfree_usage._try_tokenfree_get", fake_get)
-    settings = get_settings()
-    settings.billing_usd_cny = 7.0
-    account = await fetch_tokenfree_account(settings)
-    assert account["used_usd"] == 1.0
-    assert account["quota"] == 500_000
-    assert account["remain_fen"] == 700
+    assert await fetch_tokenfree_consume_logs(100, 200) == []

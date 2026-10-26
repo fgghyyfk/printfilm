@@ -176,14 +176,13 @@ export function UserDetailDrawer({ userId, open, onOpenChange, initialUser }: Us
                     <th>时间</th>
                     <th>能力</th>
                     <th>扣费</th>
-                    <th>成本</th>
                     <th>任务</th>
                   </tr>
                 </thead>
                 <tbody>
                   {usage.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="!text-center text-[var(--admin-muted)]">
+                      <td colSpan={4} className="!text-center text-[var(--admin-muted)]">
                         暂无用量
                       </td>
                     </tr>
@@ -195,7 +194,6 @@ export function UserDetailDrawer({ userId, open, onOpenChange, initialUser }: Us
                         </td>
                         <td>{row.capability || "—"}</td>
                         <td>¥{fenToYuan(row.charge_fen ?? 0)}</td>
-                        <td>¥{fenToYuan(row.cost_fen ?? 0)}</td>
                         <td>
                           {row.task_run_id ? (
                             <AdminEntityLink kind="task" id={row.task_run_id} />

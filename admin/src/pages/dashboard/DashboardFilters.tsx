@@ -5,7 +5,7 @@ import { AdminFilterBar } from "@/components/admin/AdminFilterBar";
 export type DashboardDays = "1" | "7" | "14" | "30";
 export type DashboardDomain = "all" | "drama" | "kepu" | "api" | "tools" | "studio";
 export type DashboardCapability = "all" | "llm" | "image" | "video" | "tts";
-export type DashboardMetric = "charge" | "cost" | "calls";
+export type DashboardMetric = "charge" | "calls";
 
 export type DashboardFilterState = {
   days: DashboardDays;
@@ -61,7 +61,6 @@ const CAPABILITY_OPTIONS = [
 
 const METRIC_OPTIONS = [
   { value: "charge", label: "扣费" },
-  { value: "cost", label: "成本" },
   { value: "calls", label: "调用" },
 ];
 

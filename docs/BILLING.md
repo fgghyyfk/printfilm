@@ -82,7 +82,9 @@ billing_expr USD sell = official_CNY / 7.3 * 1.5
 
 预扣：生图 API 按逻辑模型路由解析出的上游模型名原样调用 TokenFree（如渠道启用的 `gpt-image-2` / `gpt-image-2.5` / `seedream-5-0-pro`，不做硬改写；`gpt-image-2-5` 等历史写法规范到 `gpt-image-2.5`）。价目里有按次价或表达式时，预扣与结算都用该规则（例如 `gpt-image-2` 的 `model_price`），价目键会互查点分/连字符。价目缺失时 **gpt-image / sunburst** 才按 Kie 积分档保底（1K 6 / 2K 10 / 4K 16 积分；默认 3.5 分/积分）。**按张官价不再乘 `billing_estimate_buffer`（默认 1.2）**。LLM / 视频 / TTS 估价仍乘缓冲。视频有 `billing_expr` 时按表达式（分辨率 × 秒，默认无参考视频）；没有表达式才用本站秒价表。漫剧缺省按 720P。勿把 New API 的美元 `cost` 当人民币。
 
-管理端「官方用量对照」复用模型页 TokenFree API Key，拉取 New API 日消耗（`/api/data/self` 或 billing usage，日期无效时按累计额度差分记到当天）并与本地成本对照。
+管理端财务按日汇总用户扣费、调用次数与 Token 用量，不再同步上游日消耗、展示成本对照或计算利润。
+
+项目、漫剧和个人用量接口同样只返回扣费与用量；后端已移除成本报表聚合、上游账户/日用量查询和日报快照模型。结算所需的费用换算与单次消费记录继续用于核实实际扣费。
 
 ## TaskRun 计费流程
 
@@ -203,18 +205,17 @@ EPAY_RETURN_URL=https://your-site.example.com/pricing?paid=1
 | POST | `/api/billing/epay/notify` | 易支付回调 |
 | GET | `/api/admin/usage-events` | 管理端用量明细分页 |
 | GET | `/api/admin/tasks/{id}` | 任务详情含 `usage_lines` 与计费字段 |
-| GET | `/api/admin/stats/upstream-usage` | 近 N 日官方/本地成本对照 |
-| POST | `/api/admin/stats/upstream-usage/sync` | 手动刷新官方用量快照 |
-| GET | `/api/admin/settings/billing/model-rates` | 推荐模型 TokenFree 官方价（/api/pricing） |
-| GET | `/api/admin/settings/tokenfree/quota` | 查询 TokenFree 账户剩余额度 |
+| GET | `/api/admin/stats` | 充值、扣费、调用趋势与用户排行 |
+| GET | `/api/admin/finance/daily` | 近 N 日用户扣费、调用次数与 Token 用量 |
 
 ## 管理端
 
-- **设置 → 支付与计费**：按 TokenFree 官方成本 1:1 扣费；可查看模型费率表与查询 TokenFree 余额。
+- **设置 → 支付与计费**：配置支付接入、用户计费及消费提醒；图片与视频价格独立发布。
 - **订单与流水** → 「用量明细」Tab：按用户/任务/领域筛选 `usage_events`。
 - **任务队列** → 列表「费用」列显示 `billing_charged_fen`（冻结中显示预扣）。
 - **任务详情** → 「计费」Tab：预扣/实扣/退回 + 用量行列表。
-- **仪表盘** → 「TokenFree 官方用量对照」：本地成本 vs New API 用量（需在「模型」填写 TokenFree API Key）。
+- **仪表盘 → 财务账单**：充值、用户扣费与最近已支付订单。
+- **财务列表**：按日展示用户扣费、调用次数、Token 及汇总，无需配置上游查询密钥。
 
 ## 验收清单
 
@@ -223,8 +224,8 @@ EPAY_RETURN_URL=https://your-site.example.com/pricing?paid=1
 3. 漫剧聊天 / 选题扩写 / Skill 优化 / 音色描述 / 开放 API / 工作室工具：响应含 `task_id`（轻量 TaskRun），余额变化正确。
 4. 管理端可按 `task_run_id` 或 `billing_key=llm_chat` 查到每条 LLM/图/视频/TTS 费用。
 5. Seedance 视频成功后 `usage_events.estimated=false` 且 `total_tokens` 与官方任务查询一致。
-6. 配置 TokenFree API Key 后，管理端可刷新并查看近 30 日官方/本地成本对照。
-7. 单次调用若带 New API `quota` / `quota_consumed`，按额度折人民币后按官方成本 1:1 扣费；管理端可查询 TokenFree 余额。
+6. 财务列表支持按时间范围汇总本地扣费与用量，仪表盘和订单用量不显示上游成本、利润或官方对照。
+7. 单次调用若带 New API `quota` / `quota_consumed`，原计费规则仍按额度折人民币结算；图片与视频启用站内价格时按已发布价格扣费。
 
 
 团队模式现按所有者个人账户统一付款，同时限制团队总月额度与成员月额度；任务保存受理时付款人，转让不改变旧任务扣款对象。团队充值/独立调账入口已停用，历史账目兼容规则见 [TEAM_MODE.md](TEAM_MODE.md)。

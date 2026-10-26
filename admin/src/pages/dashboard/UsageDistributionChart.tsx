@@ -32,7 +32,6 @@ type UsageDistributionChartProps = {
 };
 
 function readMetric(row: AdminUsageBucket, metric: DashboardMetric): number {
-  if (metric === "cost") return row.cost_fen ?? 0;
   if (metric === "calls") return row.calls;
   return row.charge_fen;
 }

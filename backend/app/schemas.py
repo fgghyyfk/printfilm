@@ -310,14 +310,12 @@ class AdminUsageBucketOut(BaseModel):
     key: str
     calls: int = 0
     charge_fen: int = 0
-    cost_fen: int = 0
 
 
 class AdminDailyUsageOut(BaseModel):
     date: str
     calls: int = 0
     charge_fen: int = 0
-    cost_fen: int = 0
 
 
 class AdminTopUserOut(BaseModel):
@@ -325,60 +323,25 @@ class AdminTopUserOut(BaseModel):
     email: str | None = None
     calls: int = 0
     charge_fen: int = 0
-    cost_fen: int = 0
-
-
-class AdminUpstreamUsageDayOut(BaseModel):
-    """官方与本地上游成本对照（单日）。"""
-
-    date: str
-    local_cost_fen: int = 0
-    local_tokens: int = 0
-    official_tokens: int = 0
-    official_cost_fen: int = 0
-    delta_fen: int = 0
-    delta_pct: float | None = None
-
-
-class AdminUpstreamUsageOut(BaseModel):
-    configured: bool = False
-    days: int = 30
-    last_sync_at: str | None = None
-    series: list[AdminUpstreamUsageDayOut] = Field(default_factory=list)
-
-
-class AdminUpstreamUsageSyncOut(BaseModel):
-    configured: bool = False
-    synced: int = 0
-    skipped: int = 0
-    last_sync_at: str | None = None
 
 
 class AdminFinanceDailyRowOut(BaseModel):
-    """单日财务对照行。"""
+    """单日本地扣费与用量。"""
 
     date: str
     charge_fen: int = 0
-    cost_fen: int = 0
     tokens: int = 0
-    actual_cost_fen: int = 0
-    profit_fen: int = 0
-    profit_pct: float | None = None
+    calls: int = 0
 
 
 class AdminFinanceDailyTotalsOut(BaseModel):
     charge_fen: int = 0
-    cost_fen: int = 0
     tokens: int = 0
-    actual_cost_fen: int = 0
-    profit_fen: int = 0
-    profit_pct: float | None = None
+    calls: int = 0
 
 
 class AdminFinanceDailyOut(BaseModel):
-    configured: bool = False
     days: int = 30
-    last_sync_at: str | None = None
     totals: AdminFinanceDailyTotalsOut = Field(default_factory=AdminFinanceDailyTotalsOut)
     series: list[AdminFinanceDailyRowOut] = Field(default_factory=list)
 
@@ -387,7 +350,6 @@ class AdminProjectUsageOut(BaseModel):
     """项目级用量摘要。"""
 
     charge_fen: int = 0
-    cost_fen: int = 0
     tokens: int = 0
     calls: int = 0
     image_gens: int = 0
@@ -433,9 +395,6 @@ class AdminStatsOut(BaseModel):
     usage_charge_today_fen: int = 0
     usage_charge_month_fen: int = 0
     usage_charge_total_fen: int = 0
-    usage_cost_today_fen: int = 0
-    usage_cost_month_fen: int = 0
-    usage_cost_total_fen: int = 0
     usage_by_capability: list[AdminUsageBucketOut] = Field(default_factory=list)
     usage_by_domain: list[AdminUsageBucketOut] = Field(default_factory=list)
     daily_usage: list[AdminDailyUsageOut] = Field(default_factory=list)

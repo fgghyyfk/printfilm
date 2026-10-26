@@ -1,7 +1,7 @@
-from datetime import date, datetime
+from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -238,21 +238,6 @@ class UsageEvent(Base):
     delivery_key: Mapped[str | None] = mapped_column(String(192), nullable=True, unique=True)
     cost_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-
-
-class UpstreamUsageDaily(Base):
-    """TokenFree / New API 官方日用量快照，用于与本地 usage_events 对照。"""
-
-    __tablename__ = "upstream_usage_daily"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    usage_date: Mapped[date] = mapped_column(Date, unique=True, index=True)
-    official_tokens: Mapped[int] = mapped_column(Integer, default=0)
-    official_cost_fen: Mapped[int] = mapped_column(Integer, default=0)
-    local_cost_fen: Mapped[int] = mapped_column(Integer, default=0)
-    local_tokens: Mapped[int] = mapped_column(Integer, default=0)
-    raw_json: Mapped[str | None] = mapped_column(Text, nullable=True)
-    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class WalletLedger(Base):

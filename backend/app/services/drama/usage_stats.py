@@ -1,4 +1,4 @@
-"""漫剧项目用量聚合：按 usage_events.drama_project_id 汇总费用与生图/生视频次数。"""
+"""漫剧项目用量聚合：按 usage_events.drama_project_id 汇总扣费与生图/生视频次数。"""
 
 from __future__ import annotations
 
@@ -39,7 +39,6 @@ async def aggregate_drama_usage_by_project_ids(
         select(
             UsageEvent.drama_project_id,
             func.coalesce(func.sum(UsageEvent.charge_fen), 0),
-            func.coalesce(func.sum(UsageEvent.cost_fen), 0),
             func.coalesce(func.sum(UsageEvent.total_tokens), 0),
             func.count(UsageEvent.id),
             func.coalesce(func.sum(image_case), 0),
@@ -53,16 +52,13 @@ async def aggregate_drama_usage_by_project_ids(
     for row in result.all():
         pid = int(row[0])
         charge_fen = int(row[1] or 0)
-        cost_fen = 0 if team_id is not None else int(row[2] or 0)
         out[pid] = DramaProjectUsageStats(
             charge_fen=charge_fen,
             charge_yuan=round(charge_fen / 100.0, 2),
-            cost_fen=cost_fen,
-            cost_yuan=round(cost_fen / 100.0, 2),
-            tokens=int(row[3] or 0),
-            calls=int(row[4] or 0),
-            image_gens=int(row[5] or 0),
-            video_gens=int(row[6] or 0),
+            tokens=int(row[2] or 0),
+            calls=int(row[3] or 0),
+            image_gens=int(row[4] or 0),
+            video_gens=int(row[5] or 0),
         )
     return out
 
