@@ -3,6 +3,7 @@ import { type DramaAsset } from '../../api/drama'
 import { AssetCard, AssetEmpty, AssetGrid, AssetTypeFilter } from '../../components/assets/AssetLibrary'
 import { CharacterVoicePreviewButton } from '../../components/drama/CharacterVoicePreviewButton'
 import { readAssetVoiceBinding } from './CharacterVoiceBindModal'
+import { useCharacterVoiceGenerationEnabled } from '../../hooks/usePublicCapabilities'
 import {
   ASSET_TABS,
   normalizeAssetTab,
@@ -64,6 +65,7 @@ export function EpisodeEditAssetPanel({
   onCreateAsset,
   onImportAsset,
 }: Props) {
+  const voiceGenerationEnabled = useCharacterVoiceGenerationEnabled()
   return (
     <aside className="drama-ep-assets">
       <div className="drama-ep-assets-top">
@@ -163,7 +165,7 @@ export function EpisodeEditAssetPanel({
                       插入
                     </button>
                   )}
-                  {isCharacter && onGenerateVoice ? (
+                  {isCharacter ? (
                     voice ? (
                       <CharacterVoicePreviewButton
                         url={voice.url}
@@ -172,7 +174,7 @@ export function EpisodeEditAssetPanel({
                         className="drama-ep-asset-voice-btn is-bound"
                         onError={onVoiceError}
                       />
-                    ) : (
+                    ) : voiceGenerationEnabled && onGenerateVoice ? (
                       <button
                         type="button"
                         className="drama-ep-asset-voice-btn"
@@ -181,7 +183,7 @@ export function EpisodeEditAssetPanel({
                       >
                         {voiceGenerating ? '生成中…' : '生成音色'}
                       </button>
-                    )
+                    ) : null
                   ) : null}
                 </>}
               />

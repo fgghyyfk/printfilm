@@ -66,6 +66,8 @@ class Settings(BaseSettings):
     drama_user_video_job_limit: int = 12
     # 单个分镜视频最大尝试次数；超过后直接失败，避免长时间卡在同一镜
     drama_fragment_max_attempts: int = 3
+    # 角色新音色设计暂未开放；已有音色和普通项目配音继续可用。
+    drama_voice_generation_enabled: bool = False
     # 科普 full：Seedance 视频内置口播+环境音，后期不再叠外部 TTS
     kepu_seedance_native_audio: bool = True
     # 仅当 native_audio=false 时生效：Seedance 只要操作音效，口播改后期 TTS（默认开）

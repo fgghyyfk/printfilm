@@ -3,6 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { dramaApi, resolveDramaMediaUrl, type DramaAsset } from '../../api/drama'
 import Modal from '../../components/ui/Modal'
 import { AssetCard, AssetEmpty, AssetGrid, AssetTypeFilter } from '../../components/assets/AssetLibrary'
+import { useCharacterVoiceGenerationEnabled } from '../../hooks/usePublicCapabilities'
+import { VOICE_GENERATION_DISABLED_MESSAGE } from '../../lib/publicCapabilities'
 
 const AUDIO_ACCEPT = 'audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/mp4,audio/m4a,.mp3,.wav,.m4a'
 
@@ -115,6 +117,7 @@ export function CharacterVoiceBindModal({
   onBound,
   onError,
 }: Props) {
+  const voiceGenerationEnabled = useCharacterVoiceGenerationEnabled()
   /*
    * voiceAssets 项目内 voice/audio 资产
    * selectedId 选中音色
@@ -142,6 +145,7 @@ export function CharacterVoiceBindModal({
   // 根据角色设定 AI 生成音色描述
   const fetchVoicePrompt = useCallback(
     async (force = false) => {
+      if (!voiceGenerationEnabled) return
       if (promptBusy) return
       if (!force && newPrompt.trim()) return
       setPromptBusy(true)
@@ -158,7 +162,7 @@ export function CharacterVoiceBindModal({
         setPromptBusy(false)
       }
     },
-    [asset.id, newPrompt, onError, projectId, promptBusy],
+    [asset.id, newPrompt, onError, projectId, promptBusy, voiceGenerationEnabled],
   )
 
   useEffect(() => {
@@ -190,10 +194,14 @@ export function CharacterVoiceBindModal({
 
   // 进入「AI 合成」时自动生成音色描述
   useEffect(() => {
-    if (!open || mode !== 'create' || promptRequestedRef.current) return
+    if (!open || !voiceGenerationEnabled || mode !== 'create' || promptRequestedRef.current) return
     promptRequestedRef.current = true
     void fetchVoicePrompt(true)
-  }, [open, mode, fetchVoicePrompt])
+  }, [open, mode, fetchVoicePrompt, voiceGenerationEnabled])
+
+  useEffect(() => {
+    if (!voiceGenerationEnabled && mode === 'create') setMode('pick')
+  }, [voiceGenerationEnabled, mode])
 
   if (!open) return null
 
@@ -234,6 +242,7 @@ export function CharacterVoiceBindModal({
 
   // 按提示词新建并合成 voice 资产
   async function handleCreateAndSynth() {
+    if (!voiceGenerationEnabled) { onError(VOICE_GENERATION_DISABLED_MESSAGE); return }
     const prompt = newPrompt.trim()
     if (!prompt || synthBusy) return
     setSynthBusy(true)
@@ -259,6 +268,7 @@ export function CharacterVoiceBindModal({
 
   // 对已有 voice 资产重新合成
   async function handleResynth(voice: DramaAsset) {
+    if (!voiceGenerationEnabled) { onError(VOICE_GENERATION_DISABLED_MESSAGE); return }
     const prompt = readVoicePrompt(voice)
     if (!prompt || synthBusy) return
     setSynthBusy(true)
@@ -358,8 +368,8 @@ export function CharacterVoiceBindModal({
       }
     >
       <p className="drama-muted">
-        给「{asset.name || '角色'}」配上说话声音。选一段试听、上传录音，或用 AI
-        合成都可以。之后生成带对白的镜头时，会尽量按这段声音来念。
+        给「{asset.name || '角色'}」配上说话声音。选择已有音色或上传录音{voiceGenerationEnabled ? '，也可用 AI 合成' : ''}。
+        之后生成带对白的镜头时，会尽量按这段声音来念。
       </p>
       <p className="drama-muted" style={{ marginTop: -6, fontSize: 12 }}>
         画布里也可以把「音频」节点连到角色，效果一样。
@@ -367,7 +377,7 @@ export function CharacterVoiceBindModal({
 
       <div className="pf-library-toolbar">
         <AssetTypeFilter
-          options={[{ value: 'pick', label: '选择已有' }, { value: 'upload', label: '上传音频' }, { value: 'create', label: 'AI 合成' }] as const}
+          options={[{ value: 'pick', label: '选择已有' }, { value: 'upload', label: '上传音频' }, ...(voiceGenerationEnabled ? [{ value: 'create' as const, label: 'AI 合成' }] : [])] as const}
           value={mode}
           disabled={anyBusy}
           ariaLabel="音色来源"
@@ -378,7 +388,7 @@ export function CharacterVoiceBindModal({
       {mode === 'pick' ? (
         <AssetGrid picker>
           {voiceAssets.length === 0 ? (
-            <AssetEmpty>还没有可用音色，请先「上传音频」或「AI 合成」。</AssetEmpty>
+            <AssetEmpty>还没有可用音色，请先「上传音频」{voiceGenerationEnabled ? '或「AI 合成」' : ''}。</AssetEmpty>
           ) : (
             voiceAssets.map((voice) => {
               const hasAudio = Boolean(voice.url)
@@ -396,7 +406,7 @@ export function CharacterVoiceBindModal({
                   subtitle={statusLabel}
                   footer="项目音色"
                   onOpen={() => setSelectedId(voice.id)}
-                  actions={hasAudio && canResynth ? <>
+                  actions={voiceGenerationEnabled && hasAudio && canResynth ? <>
                     <button
                       type="button"
                       className="pf-btn pf-btn-sm"
@@ -438,7 +448,7 @@ export function CharacterVoiceBindModal({
             {uploadBusy ? '上传中…' : '选择音频文件'}
           </button>
         </div>
-      ) : (
+      ) : voiceGenerationEnabled ? (
         <div className="drama-voice-create-form">
           <label className="drama-field">
             <span>音色名称</span>
@@ -487,7 +497,7 @@ export function CharacterVoiceBindModal({
             {synthBusy ? '合成中…' : '合成试听'}
           </button>
         </div>
-      )}
+      ) : null}
 
       {previewUrl ? (
         <audio className="drama-voice-audio" controls src={previewUrl} />

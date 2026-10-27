@@ -18,6 +18,7 @@ from app.schemas_tasks import TaskCreateRequest, TaskEventCreate, TaskStepCreate
 from app.services.tasks.handlers import get_task_handler
 from app.services.tasks.queues import task_queue
 from app.services.tasks.execution_policy import is_direct_llm_task, llm_task_condition
+from app.services.drama.voice_generation_policy import ensure_voice_generation_task_enabled
 
 logger = logging.getLogger("app.tasks.service")
 
@@ -124,6 +125,7 @@ async def create_task(
     commit: bool = True,
 ) -> TaskRun:
     """创建任务；文字 LLM 提交后立即执行，媒体任务留给调度器。"""
+    ensure_voice_generation_task_enabled(body.domain, body.task_type)
     if body.payload is not None:
         body.payload = {key: value for key, value in body.payload.items() if not key.startswith("_team_")}
     if body.drama_project_id is not None:

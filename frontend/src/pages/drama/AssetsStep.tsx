@@ -33,6 +33,8 @@ import { pageCountOf } from '../../lib/pagination'
 import { readVisualPrompt } from '../../lib/dramaVisualPrompt'
 import { filterDramaLibraryAssets } from '../../lib/dramaLibraryAssets'
 import { DRAMA_VOICE_BINDING_ENABLED } from '../../lib/dramaVoiceBinding'
+import { useCharacterVoiceGenerationEnabled } from '../../hooks/usePublicCapabilities'
+import { VOICE_GENERATION_DISABLED_MESSAGE } from '../../lib/publicCapabilities'
 import {
   dramaAssetImageGenButtonLabel,
   dramaAssetNeedsImageGeneration,
@@ -70,6 +72,7 @@ function needsImageGeneration(asset: DramaAsset): boolean {
 
 // 渲染资产库步骤
 export function AssetsStep({ projectId, onError }: AssetsStepProps) {
+  const voiceGenerationEnabled = useCharacterVoiceGenerationEnabled()
   /*
    * assets 项目资产
    * tab 当前分类
@@ -368,6 +371,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
 
   // 一键 AI 生成音色并绑定（各角色独立 busy，互不阻塞）
   async function handleGenerateCharacterVoice(asset: DramaAsset) {
+    if (!voiceGenerationEnabled) { onError(VOICE_GENERATION_DISABLED_MESSAGE); return }
     if (characterVoiceBusyIds.has(asset.id) || batchVoiceBusy) return
     setCharacterVoiceBusyIds((prev) => new Set(prev).add(asset.id))
     try {
@@ -387,6 +391,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
 
   // 批量按角色设定生成音色
   async function batchGenerateCharacterVoices() {
+    if (!voiceGenerationEnabled) { onError(VOICE_GENERATION_DISABLED_MESSAGE); return }
     if (batchVoiceBusy || selectedCharacterAssets.length === 0) return
     const ok = await dialog.confirm({
       title: '批量生成音色',
@@ -471,6 +476,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
 
   // 按提示词合成 voice 资产试听
   async function handleSynthVoice(asset: DramaAsset) {
+    if (!voiceGenerationEnabled) { onError(VOICE_GENERATION_DISABLED_MESSAGE); return }
     const prompt = (voicePromptDrafts[asset.id] ?? readVoicePrompt(asset)).trim()
     if (!prompt) {
       onError('请先填写音色描述')
@@ -748,7 +754,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
             </button>
           ) : null}
 
-          {DRAMA_VOICE_BINDING_ENABLED && tab === 'character' ? (
+          {DRAMA_VOICE_BINDING_ENABLED && voiceGenerationEnabled && tab === 'character' ? (
             <button
               type="button"
               className="pf-btn pf-btn-lime"
@@ -811,7 +817,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
                     )
                   }
                 }}
-                onSynth={() => void handleSynthVoice(asset)}
+                onSynth={voiceGenerationEnabled ? () => void handleSynthVoice(asset) : undefined}
                 onDelete={() => void handleDeleteVoice(asset)}
                 onError={onError}
               />
@@ -833,7 +839,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
               onOpen={() => setDetailAsset(asset)}
               actions={<>
                 {mediaSrc && <button type="button" className="pf-btn pf-btn-sm" onClick={() => setPreviewAsset(asset)}>查看大图</button>}
-                {tab === 'character' && isCharacter ? (
+                {voiceGenerationEnabled && tab === 'character' && isCharacter ? (
                   <label
                     className="drama-voice-multi-select"
                     style={{ display: 'inline-flex', gap: 8, alignItems: 'center', marginRight: 8, cursor: 'pointer' }}
@@ -870,7 +876,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
                           label={voice.label}
                           onError={onError}
                         />
-                      ) : (
+                      ) : voiceGenerationEnabled ? (
                         <button
                           type="button"
                           className="pf-btn pf-btn-sm pf-btn-lime"
@@ -883,7 +889,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
                         >
                           {characterVoiceBusyIds.has(asset.id) ? '生成中…' : '生成音色'}
                         </button>
-                      )
+                      ) : null
                     ) : null}
                     <button
                       type="button"

@@ -10,7 +10,7 @@ type Props = {
   synthBusy: boolean
   onPromptChange: (value: string) => void
   onPromptBlur: () => void
-  onSynth: () => void
+  onSynth?: () => void
   onDelete: () => void
   onError: (message: string) => void
 }
@@ -39,9 +39,9 @@ export function DramaVoiceAssetCard({
       status={synthBusy ? '合成中' : hasAudio ? '已合成' : '待合成'}
       actions={<>
         {hasAudio && <CharacterVoicePreviewButton url={asset.url || ''} label={asset.name || undefined} variant="button" size="sm" onError={onError} />}
-        <button type="button" className="pf-btn pf-btn-lime pf-btn-sm" disabled={synthBusy || !promptValue.trim()} onClick={onSynth}>
+        {onSynth && <button type="button" className="pf-btn pf-btn-lime pf-btn-sm" disabled={synthBusy || !promptValue.trim()} onClick={onSynth}>
           {synthBusy ? '合成中…' : hasAudio ? '重新合成' : '按提示词合成'}
-        </button>
+        </button>}
         <button type="button" className="pf-btn pf-btn-sm drama-btn-danger-text" aria-label={`删除 ${asset.name || '音色'}`} disabled={synthBusy} onClick={onDelete}><Trash2 size={14} />删除</button>
       </>}
     >

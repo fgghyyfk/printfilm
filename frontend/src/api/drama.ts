@@ -1,5 +1,6 @@
 import { throwApiError } from '../lib/apiError'
 import { API_BASE, createJsonRequester } from './client'
+import { ensureCharacterVoiceGenerationEnabled } from './publicCapabilities'
 import { withDramaEditLock, recordDramaResponse } from '../features/teams/editLocks'
 import { teamsApi } from './teams'
 import { projectTeam } from '../features/teams/editLocks'
@@ -574,7 +575,7 @@ export const dramaApi = {
       body: JSON.stringify(body),
     }),
 
-  generateVoice: (body: {
+  generateVoice: async (body: {
     project_id: number
     asset_id?: number
     name?: string
@@ -582,17 +583,21 @@ export const dramaApi = {
     sample_text?: string
     speaker?: string
     character_asset_id?: number
-  }) =>
-    request<DramaVoiceGenerateResult>('/api/drama/generation/voice', {
+  }) => {
+    await ensureCharacterVoiceGenerationEnabled()
+    return request<DramaVoiceGenerateResult>('/api/drama/generation/voice', {
       method: 'POST',
       body: JSON.stringify(body),
-    }),
+    })
+  },
 
-  suggestVoicePrompt: (body: { project_id: number; asset_id: number }) =>
-    request<DramaVoicePromptResult>('/api/drama/generation/voice_prompt', {
+  suggestVoicePrompt: async (body: { project_id: number; asset_id: number }) => {
+    await ensureCharacterVoiceGenerationEnabled()
+    return request<DramaVoicePromptResult>('/api/drama/generation/voice_prompt', {
       method: 'POST',
       body: JSON.stringify(body),
-    }),
+    })
+  },
 
   getCanvas: (projectId: number) =>
     request<{ project_id: number; nodes: unknown[]; edges: unknown[] }>(
