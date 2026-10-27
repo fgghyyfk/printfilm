@@ -53,6 +53,21 @@ Authorization: Bearer <login-jwt>
 
 当前新建短片采用 `/api/projects` 分步创作流程：准备文案、创建或更新项目、生成分镜与素材，再由用户确认后合成成片。
 
+`POST /api/projects` 与 `PATCH /api/projects/{project_id}` 使用 `pipeline_mode` 区分制作方式：
+
+| 模式 | 素材与生成顺序 |
+| --- | --- |
+| `full` | 分镜脚本 → 参考图模式生成分镜图片 → 图片生成镜头视频 → 合成成片 |
+| `image_text` | 分镜脚本 → 参考图模式生成分镜图片与配音 → 静图合成成片 |
+
+当前新建页面默认选择 `full`，仍可选择 `image_text`。图片沿用选定模板的画风参考图、项目 `ref_image_url` 及已有镜头参考，锁定画风和角色；镜头视频以本镜图片作为首帧，并参考上一镜尾帧保持衔接。`image_model` / `video_model` 分别选择图片与视频模型，`image_resolution` / `video_resolution` 保存相应清晰度，`target_duration_sec` 为 15～180 秒的目标时长。完整视频模式沿用原有视频内置口播逻辑；静图模式保留外部配音。
+
+画风图优先取模板 `seedream_config.style_ref_urls`，未配置时取模板封面；四个内置画风的旧模板行即使封面为空，也使用随代码提供的封面图。历史 `ref_images` 继续作为主体参考，用户图优先；后镜另加上一镜图片，画风参考独立传递。真实生成时，本地图片需同步发布到 OSS 或通过公网 `PUBLIC_BASE_URL/static/...` 访问，无法访问时返回明确错误，避免静默变成纯文字生图。镜头图片与视频参考均跳过需要鉴权的 TokenFree 产物地址，使用已保存的媒体。
+
+调用 `POST /api/projects/{project_id}/generate` 每次只提交当前待执行的一段任务，阶段由后端素材就绪状态判定：`script`、`assets`、`videos`。素材阶段完成后，完整模式再次调用生成接口才进入视频阶段；静图模式跳过视频阶段。全部素材就绪时生成接口返回 409，改用 `POST /api/projects/{project_id}/compose` 合成。各阶段仅预扣本次尚未完成的媒体费用，已有图片和视频会复用。
+
+单镜调整可使用 `POST /api/projects/{project_id}/shots/{shot_id}/regen-image` 与 `.../regen-video`；后者仅支持 `full`，并要求该镜已有图片。生成期间不能切换制作模式；通过 PATCH 切换模式会保留原分镜素材，作废原成片并按新模式回到待生成或待合成阶段。若要重新拆分镜，可调用生成接口并设置 `restart=true`，这会清除原分镜和素材。
+
 旧版对话创作会话的创建、列表、详情、消息、取消、重试与 SSE 接口已删除，访问这些旧入口返回 404。其前端会话状态与轮询代码也已移除。
 
 仅保留 `POST /api/creation-sessions/{session_id}/open-editor`，归入“科普项目与作品”分组，用于将历史项目转入当前工作台。该接口会先等待旧任务停止并结算，再交接原项目及素材；历史任务执行与恢复代码、数据库记录保留。

@@ -22,6 +22,50 @@ def reference_params(payload: dict) -> dict:
     return {key: payload[key] for key in REFERENCE_FIELDS if key in payload}
 
 
+def _kepu_stored_reference(*candidates: str | None) -> str | None:
+    """Inspect saved refs without publishing files or forwarding private artifacts."""
+    from app.services.tokenfree_image import is_tokenfree_image_url
+    from app.services.tokenfree_video import is_tokenfree_content_url
+
+    for raw in candidates:
+        url = str(raw or "").strip()
+        if url and not is_tokenfree_image_url(url) and not is_tokenfree_content_url(url):
+            return url
+    return None
+
+
+def _kepu_stored_image_ref(shot) -> str | None:
+    return _kepu_stored_reference(getattr(shot, "image_url", None), getattr(shot, "image_ark_url", None))
+
+
+def _kepu_video_refs(shot, previous, pending_video_ids: set[int]) -> list[str]:
+    """Reserve future tail slots; the worker supplies their actual URLs later."""
+    refs = [_kepu_stored_image_ref(shot) or f"pending://shot-{shot.shot_no}-image"]
+    if previous is None:
+        return refs
+    tail = _kepu_stored_reference(getattr(previous, "last_frame_url", None))
+    if previous.id in pending_video_ids or (getattr(previous, "video_url", None) and not tail):
+        tail = f"pending://shot-{previous.shot_no}-last-frame"
+    extra = tail or _kepu_stored_image_ref(previous)
+    if extra:
+        refs.append(extra)
+    return refs
+
+
+def _kepu_image_refs(project, shot, predecessors, pending_image_ids: set[int]) -> dict:
+    """Reserve the fixed style board, user image and previous shot without uploading."""
+    from app.services.kepu_image_references import project_image_reference_inputs
+
+    subjects, styles = project_image_reference_inputs(project)
+    previous = next((item for item in reversed(predecessors)
+                     if item.id in pending_image_ids or _kepu_stored_image_ref(item)), None)
+    if previous is not None:
+        ref = (f"pending://shot-{previous.shot_no}-image" if previous.id in pending_image_ids
+               else _kepu_stored_image_ref(previous))
+        subjects = [ref, *subjects]
+    return {"reference_images": list(dict.fromkeys(subjects))[:2], "style_ref_urls": styles[:1]}
+
+
 async def canvas_video_reference_content(db, task, payload: dict) -> list[dict]:
     """Build the same reference slots as the worker without publishing or generating media."""
     from app.models_drama import DramaProject
@@ -80,22 +124,44 @@ async def plan_items(db, task) -> list[dict]:
         if not project:
             return []
         from app.services.kepu_stages import normalize_kepu_pipeline_phase, shot_image_ready, shot_video_ready
-        from app.services.pipeline import _image_size_for, _project_output_ratio
+        from app.services.pipeline import _image_size_for, _kepu_seedance_generate_audio, _project_output_ratio
+        from app.services import seedance_segments as segplan
         phase = normalize_kepu_pipeline_phase(str(p.get("phase") or "script"), project)
-        shots = project.shots
+        all_shots = sorted(project.shots, key=lambda shot: shot.shot_no)
+        shots = all_shots
         if kind != "project_pipeline":
             shots = [x for x in shots if x.id == task.shot_id]
             phase = "assets" if kind == "shot_regen_image" else "videos"
+        pending_video_ids = {
+            shot.id for shot in shots
+            if phase == "videos" and (kind != "project_pipeline" or not shot_video_ready(shot))
+        }
+        pending_image_ids = {
+            shot.id for shot in shots
+            if phase == "assets" and (kind != "project_pipeline" or not shot_image_ready(shot))
+        }
         for shot in shots:
             if phase == "assets" and (kind != "project_pipeline" or not shot_image_ready(shot)):
+                predecessors = [previous for previous in all_shots if previous.shot_no < shot.shot_no]
                 add("image", {"size": _image_size_for(project) or settings.ark_image_size,
-                              "aspect_ratio": _project_output_ratio(project) or "1:1"},
+                              "aspect_ratio": _project_output_ratio(project) or "1:1",
+                              **_kepu_image_refs(project, shot, predecessors, pending_image_ids)},
                     model=project.image_model, target=shot.id, shot_no=shot.shot_no)
             if phase == "videos" and (kind != "project_pipeline" or not shot_video_ready(shot)):
                 from app.services.seedance_resolutions import project_video_resolution
                 resolution = project_video_resolution(project, settings)
-                add("video", {"duration": int(shot.duration or 5), "resolution": resolution,
-                              "aspect_ratio": _project_output_ratio(project) or "9:16"},
+                script = (getattr(shot, "segment_script", "") or getattr(shot, "video_prompt", "") or "").strip()
+                duration = segplan.resolve_api_duration(script, fallback=shot.duration or 5,
+                    lo=settings.seedance_duration_min, hi=settings.seedance_duration_max)
+                predecessors = [previous for previous in all_shots if previous.shot_no < shot.shot_no]
+                if kind == "shot_regen_video":
+                    predecessors = [previous for previous in predecessors if _kepu_stored_image_ref(previous)
+                        or _kepu_stored_reference(getattr(previous, "last_frame_url", None))]
+                previous = predecessors[-1] if predecessors else None
+                add("video", {"duration": duration, "resolution": resolution,
+                              "aspect_ratio": _project_output_ratio(project) or settings.ark_video_ratio,
+                              "generate_audio": _kepu_seedance_generate_audio(project),
+                              "reference_images": _kepu_video_refs(shot, previous, pending_video_ids)},
                     model=project.video_model, target=shot.id, shot_no=shot.shot_no)
         return items
     if kind in {"asset_image", "tool_image"}:

@@ -213,7 +213,7 @@ export const KEPU_STEPS = [
   { key: 'topic', label: '选题' },
   { key: 'style', label: '风格' },
   { key: 'confirm', label: '确认分镜' },
-  { key: 'assets', label: '画面与配音' },
+  { key: 'assets', label: '参考图画面' },
   { key: 'videos', label: '镜头视频' },
   { key: 'compose', label: '合成预览' },
 ]
@@ -310,7 +310,7 @@ export function kepuPhaseHint(project: {
   }
   const phase = kepuBillingPhase(project)
   if (phase === 'script') return '先在风格页点「生成故事板」，本步只拆分镜脚本（预扣文字模型）。'
-  if (phase === 'assets') return '确认旁白与画面后开始生成：按镜头依次出图（后镜参考上一镜）+ 整片配音。'
-  if (phase === 'videos') return '画面与配音已齐。下一步按镜头依次出视频，后镜参考上一镜尾帧。'
-  return '素材已齐。拼接成片走后期合成（叠旁白字幕与配乐，扣费很少）。'
+  if (phase === 'assets') return '确认分镜后，使用画风参考图逐镜生成图片，并参考前镜画面保持角色与风格一致。'
+  if (phase === 'videos') return '图片已齐。使用每镜图片生成视频与声音，后镜参考上一镜尾帧延续画面。'
+  return '镜头视频已齐。检查各镜头画面与声音后，即可合成成片。'
 }

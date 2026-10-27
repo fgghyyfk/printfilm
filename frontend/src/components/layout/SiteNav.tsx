@@ -1,7 +1,7 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  ChevronRight, CircleHelp, Clapperboard, CreditCard, House,
+  ChevronRight, CircleHelp, Clapperboard, CodeXml, CreditCard, House,
   Menu, Plus, Store,
   Video, Workflow, X,
 } from 'lucide-react'
@@ -11,6 +11,7 @@ import BrandMark from '../BrandMark'
 import CreateChoiceModal from '../ui/CreateChoiceModal'
 import { USER_UPDATED_EVENT } from '../../lib/userEvents'
 import { loadSessionUser } from '../../lib/sessionUser'
+import { CODE_VIDEO_URL } from '../../lib/siteLinks'
 import { HOME_NAV, CREATION_NAV, RESOURCE_NAV, PERSONAL_NAV, resolveNavActive, type NavActive } from '../../lib/siteNavigation'
 import { useI18n } from '../../i18n'
 import LanguageSwitch from './LanguageSwitch'
@@ -187,6 +188,13 @@ export default function SiteNav({ active }: Props) {
     </Link>
   }
 
+  function renderCodeVideo(expanded = false) {
+    return <a href={CODE_VIDEO_URL} target="_blank" rel="noopener noreferrer" className={`pf-topbar-link${expanded ? ' pf-topbar-menu-link' : ''}`} onClick={() => setMenuOpen(false)}>
+      {expanded && <CodeXml size={18} strokeWidth={1.8} aria-hidden />}
+      <span>{t('nav.codeVideo')}</span>
+    </a>
+  }
+
   /** 市场入口遵从服务端能力开关，进入个人市场时清理团队请求范围。 */
   function renderMarketplace(expanded = false) {
     if (!marketplace?.enabled) return null
@@ -204,6 +212,7 @@ export default function SiteNav({ active }: Props) {
         {renderLink(HOME_NAV)}
         {CREATION_NAV.map((item) => renderLink(item))}
         {renderMarketplace()}
+        {renderCodeVideo()}
         {RESOURCE_NAV.map((item) => renderLink(item))}
       </nav>
       <div className="pf-topbar-actions">
@@ -221,7 +230,7 @@ export default function SiteNav({ active }: Props) {
         <nav aria-label={t('nav.main')}>
           <div className="pf-topbar-menu-home">{renderLink(HOME_NAV, true)}</div>
           <div className="pf-topbar-menu-group"><span>{t('nav.creation')}</span><div>{CREATION_NAV.map((item) => renderLink(item, true))}</div></div>
-          <div className="pf-topbar-menu-group"><div>{renderMarketplace(true)}{RESOURCE_NAV.map((item) => renderLink(item, true))}</div></div>
+          <div className="pf-topbar-menu-group"><div>{renderMarketplace(true)}{renderCodeVideo(true)}{RESOURCE_NAV.map((item) => renderLink(item, true))}</div></div>
         </nav>
         <div className="pf-topbar-menu-footer">
           <LanguageSwitch />

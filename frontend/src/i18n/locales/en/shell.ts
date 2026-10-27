@@ -67,6 +67,7 @@ export const enShell = {
     accountManagement: 'Account',
     balanceBilling: 'Balance & billing',
     assets: 'Assets',
+    codeVideo: 'Code to Video',
     pricing: 'Pricing',
     help: 'Help',
     helpCenter: 'Help center',

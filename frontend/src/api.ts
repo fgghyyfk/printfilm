@@ -370,6 +370,10 @@ export const api = {
     style_prompt?: string
     character_prompt?: string
     extra_prompt?: string
+    image_model?: string
+    video_model?: string
+    image_resolution?: string
+    video_resolution?: string
   }) {
     return request<Project>('/api/projects', { method: 'POST', body: JSON.stringify(body) })
   },

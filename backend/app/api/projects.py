@@ -53,10 +53,10 @@ from app.services.kepu_projects import list_project_page, project_runtime_view
 router = APIRouter(tags=["projects"])
 
 
-def _demote_after_edit(project: Project) -> None:
+def _demote_after_edit(project: Project, *, recheck_stage: bool = False) -> None:
     """改镜头/配乐后作废成片，并按素材把终态打回 script/assets/videos/compose。"""
     project.final_video_url = None
-    if project.status not in {
+    if not recheck_stage and project.status not in {
         ProjectStatus.DONE,
         ProjectStatus.AUDITING,
         ProjectStatus.COMPOSING,
@@ -470,7 +470,7 @@ async def get_project(
     "/projects/{project_id}",
     response_model=ProjectOut,
     summary="修改科普短片项目",
-    description="需要登录，按请求中提供的字段更新本人的项目。生成期间及对话创作管理的项目不允许在此修改；更改配乐或字幕预设会使现有成片失效。",
+    description="需要登录，按请求中提供的字段更新本人的项目。生成期间及对话创作管理的项目不允许在此修改；更改制作模式、配乐或字幕预设会使现有成片失效。制作模式变更后沿用已有素材，按新模式回到待生成或待合成阶段。",
     response_description="更新后的项目详情",
 )
 async def update_project(
@@ -526,10 +526,12 @@ async def update_project(
         data["bgm_lock"] = str(data["bgm_lock"] or "").strip()
     if "subtitle_preset" in data:
         data["subtitle_preset"] = str(data["subtitle_preset"] or "").strip()
-    if "bgm_lock" in data or "subtitle_preset" in data:
-        _demote_after_edit(project)
+    # 按新模式判定下一阶段；保留图片/视频/配音，只作废原模式的成片。
+    mode_changed = "pipeline_mode" in data and data["pipeline_mode"] != (project.pipeline_mode or "full")
     for k, v in data.items():
         setattr(project, k, v)
+    if mode_changed or "bgm_lock" in data or "subtitle_preset" in data:
+        _demote_after_edit(project, recheck_stage=mode_changed)
     await db.commit()
     return await _get_owned_project(db, project_id, user)
 

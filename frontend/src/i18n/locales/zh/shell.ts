@@ -66,6 +66,7 @@ export const zhShell = {
     accountManagement: '账户管理',
     balanceBilling: '余额与账单',
     assets: '资产',
+    codeVideo: '代码生视频',
     pricing: '定价',
     help: '帮助',
     helpCenter: '帮助中心',

@@ -35,6 +35,20 @@
 .sv-actions > span, .sv-saved-note { font-size: 12px; color: #929c87; line-height: 1.6; }
 .sv-settings { position: sticky; top: 20px; padding: 24px; }
 .sv-settings > p { margin-bottom: 24px; }
+.sv-output-modes { display: grid; gap: 8px; }
+.sv-output-modes button { position: relative; border: 1px solid #dfe5d9; border-radius: 10px; background: #fbfcf9; padding: 12px 30px 12px 12px; text-align: left; color: #293328; cursor: pointer; }
+.sv-output-modes button.is-selected { border-color: #93bf36; background: #f8fcee; box-shadow: 0 0 0 2px #c9ed844a; }
+.sv-output-modes strong, .sv-output-modes span { display: block; }
+.sv-output-modes strong { font-size: 13px; }
+.sv-output-modes span { color: #7a867c; font-size: 11px; margin-top: 5px; line-height: 1.6; }
+.sv-output-modes svg { position: absolute; right: 12px; top: 13px; color: #607e22; }
+.sv-model-settings { border-top: 1px solid #eaf0e0; margin-top: 22px; padding-top: 18px; }
+.sv-model-settings summary { font-size: 13px; font-weight: 600; cursor: pointer; margin-bottom: 18px; }
+.sv-model-settings .sv-field { margin-bottom: 16px; }
+.sv-model-settings .media-cost-notice { font-size: 11px; font-weight: 400; line-height: 1.7; color: #7a867c; }
+.sv-model-error { color: #a76232; font-size: 12px; line-height: 1.7; }
+.sv-output-modes button:focus-visible, .sv-model-settings summary:focus-visible { outline: 2px solid #a6c95e; outline-offset: 3px; }
+.sv-output-modes button:disabled { cursor: default; opacity: .6; }
 .sv-setting-summary, .sv-workflow-hint { border-top: 1px solid #eaf0e0; padding-top: 20px; display: flex; gap: 10px; color: #697956; margin-top: 24px; }
 .sv-setting-summary strong, .sv-setting-summary span { display: block; }
 .sv-setting-summary strong { font-size: 13px; }

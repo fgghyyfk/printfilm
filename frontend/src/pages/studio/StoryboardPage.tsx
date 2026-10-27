@@ -256,12 +256,12 @@ export default function StoryboardPage() {
     : shots.length === 0
       ? '去风格页生成分镜'
       : needsScriptConfirm
-        ? '确认分镜，逐镜出图与配音'
+        ? '确认分镜，生成参考图画面'
         : needsVideos
-          ? '逐镜出视频'
+          ? '使用图片，逐镜生成视频'
           : '继续生成'
 
-  // 工作台进度：完整模式要镜头视频 + 外部 TTS，静图模式只配音合成
+  // 完整模式的默认旁白由视频模型生成；仅实际存在外部配音时展示 TTS 进度。
   const progressItems = useMemo(() => {
     if (!project) return []
     const list = project.shots || []
@@ -275,13 +275,13 @@ export default function StoryboardPage() {
       { label: '主题解析', done: true },
       { label: '分镜脚本', done: list.length > 0 || !['DRAFT', 'SCRIPTING'].includes(project.status) },
       {
-        label: `画面生成 (${imgs}/${list.length || 0})`,
+        label: `参考图画面 (${imgs}/${list.length || 0})`,
         done: list.length > 0 && imgs === list.length,
       },
     ]
     if (full) {
       items.push({
-        label: `镜头视频 (${vids}/${list.length || 0})`,
+        label: `镜头视频与声音 (${vids}/${list.length || 0})`,
         done:
           list.length > 0 &&
           (vids === list.length ||
@@ -290,12 +290,14 @@ export default function StoryboardPage() {
         pct: stage === 'VIDEOING' ? project.progress : undefined,
       })
     }
-    items.push({
-      label: `配音合成 (${auds}/${list.length || 0})`,
-      done: list.length > 0 && auds === list.length,
-      run: stage === 'AUDIOING',
-      pct: stage === 'AUDIOING' ? project.progress : undefined,
-    })
+    if (!full || auds > 0 || stage === 'AUDIOING') {
+      items.push({
+        label: `配音合成 (${auds}/${list.length || 0})`,
+        done: list.length > 0 && auds === list.length,
+        run: stage === 'AUDIOING',
+        pct: stage === 'AUDIOING' ? project.progress : undefined,
+      })
+    }
     items.push({
       label: full ? '镜头拼接' : '成片渲染',
       done: Boolean(project.final_video_url) || project.status === 'DONE',
@@ -964,7 +966,7 @@ title="用当前镜头重新拼接"
           <div className="pf-prompt-panel">
             <h4>内置提示词</h4>
             <p className="pf-muted" style={{ fontSize: '0.72rem', margin: '0 0 0.45rem' }}>
-              画风来自模板。角色是否出镜由 AI 按模板与主题决定；只有这里改过才覆盖本项目。
+              生图使用模板画风参考图，并参考前镜画面延续角色、服装与色彩；每镜图片再用于生成视频。
             </p>
             {(
               [
@@ -1246,6 +1248,11 @@ title="用当前镜头重新拼接"
                                   {shot.video_url ? '重生视频' : '出视频'}
                                 </button>
                               ) : null}
+                              {shot.video_url ? (
+                                <button type="button" className="op" onClick={() => setPreview({ kind: 'shot', shotNo: shot.shot_no, imageUrl: shot.image_url, videoUrl: shot.video_url, audioUrl: shot.audio_url, caption: shotCaption(shot) })}>
+                                  预览视频
+                                </button>
+                              ) : null}
                               <button
                                 type="button"
                                 className="more"
@@ -1283,8 +1290,8 @@ title="用当前镜头重新拼接"
             )}
             <div className="pf-shot-footer">
               <span className="pf-muted" style={{ fontSize: '0.82rem' }}>
-                总时长: {formatMmSs(totalDuration)} | 画面: {project.shots.length} 个 | 音频:{' '}
-                {project.shots.filter((s) => s.audio_url).length} 段 | 分辨率: 预览
+                总时长: {formatMmSs(totalDuration)} | 画面: {project.shots.filter((s) => s.image_url).length}/{project.shots.length} 个 | 视频:{' '}
+                {project.shots.filter((s) => s.video_url).length}/{project.shots.length} 段 | 清晰度: {project.video_resolution || '默认'}
               </span>
               <div className="pf-toolbar">
                 <button

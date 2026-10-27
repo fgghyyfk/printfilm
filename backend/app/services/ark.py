@@ -2149,11 +2149,13 @@ class ArkGateway:
             # Seedance 2.0: 需要公网 https；本地 /static 先同步上 OSS
             local = storage.local_path_from_url(raw)
             if local and local.exists():
-                public = storage.republish_url(raw, sync=True)
+                from app.services.kepu_image_references import public_image_reference
+
+                public = await asyncio.to_thread(public_image_reference, raw)
                 if public and str(public).startswith("https://"):
                     return str(public)
                 raise RuntimeError(
-                    "Seedance 需要公网可访问的图片 URL（请启用 OSS 并确保参考图已上传），"
+                    "Seedance 需要公网可访问的图片 URL（请配置 HTTPS 公网访问地址或启用 OSS 并上传参考图），"
                     "本地 /static 图无法被方舟拉取"
                 )
             if raw.startswith("data:"):

@@ -7,7 +7,7 @@
 
 > **Turn stories into videos you can ship** — AI short drama and AI short video, from script to final cut.
 
-Step-by-step short-video creation: settings → copy and storyboard → images and narration → final preview. Defaults: 3D animation, 9:16 portrait and approximately 60 seconds. Review and edit each stage before continuing.
+Step-by-step short-video creation: settings → copy and storyboard → reference-guided images → image-to-video → final preview. New projects default to AI video, 3D animation, 9:16 portrait and approximately 60 seconds; still-image production is also available. Review and edit each stage before continuing.
 
 **Source:** [github.com/yi1108/printfilm](https://github.com/yi1108/printfilm) · **Version** 0.2.0
 
@@ -50,8 +50,9 @@ Manage short videos as project cards at `/history`, then start a new project at 
 
 - Four curated styles: 3D animation, 2D anime, picture-book illustration, and ink painting
 - Generate copy from an idea or paste an existing script; edit and save it as a draft
-- Confirm the copy to generate editable storyboard cards, then generate images and external TTS narration
-- Review images and audition narration before composing camera motion, captions and audio; preview and download the result
+- Confirm the copy to generate editable storyboards; use a fixed style image and previous-shot references to guide each image
+- AI video mode generates clips and sound from each shot image, with selectable models, resolution, individual previews and retries before final composition
+- Still-image mode retains external TTS, camera motion and captions; both modes support preview and download
 - Stop production or resume missing media after a failure; saved projects and tasks recover after leaving the page
 - Existing conversations transfer to the step editor after their producers stop and settle; historical versions retain their media
 
@@ -68,8 +69,9 @@ Users, orders, templates, task center, and model routing.
 ```
 Choose a style and enter an idea or existing copy
     → Edit and save copy → Confirm to generate storyboard cards
-    → Review storyboard → Generate images and external TTS
-    → Review images and audition narration → Compose motion and captions
+    → Review storyboard → Generate images using style references
+    → AI video: Generate clips and sound from images → Review and compose
+      Still images: Generate external TTS → Compose motion and captions
     → Preview and download the final video
 ```
 

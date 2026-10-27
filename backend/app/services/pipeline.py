@@ -30,7 +30,6 @@ from app.services import storage
 from app.services.style_lock import (
     build_locked_image_prompt,
     merge_negative,
-    seedream_ref_urls,
     strip_lock_blocks,
     template_allow_source_names,
     template_consistency_mode,
@@ -41,8 +40,10 @@ from app.services.kepu_continuity import (
     image_refs_for_shot,
     persist_last_frame_from_video,
     previous_usable_shot,
+    video_image_ref,
     video_extra_refs_for_shot,
 )
+from app.services.kepu_image_references import project_image_references
 from app.services.voices import resolve_speaker
 from app.services import seedance_segments as segplan
 from app.services.bgm import clip_shot_bgm, resolve_bgm_path
@@ -186,7 +187,7 @@ def clear_pipeline_cancellation(project_id: int) -> None:
 
 
 def _is_image_text(project: Project) -> bool:
-    return (project.pipeline_mode or "full") == "image_text"
+    return (getattr(project, "pipeline_mode", None) or "full") == "image_text"
 
 
 def _kepu_seedance_native_audio(project: Project | None = None) -> bool:
@@ -866,14 +867,6 @@ def _project_image_negative(project: Project) -> str:
     )
 
 
-def _project_base_refs(project: Project) -> list[str]:
-    tpl = project.template
-    refs = list((tpl.seedream_config or {}).get("ref_images") or []) if tpl else []
-    if project.ref_image_url:
-        refs = [project.ref_image_url, *refs]
-    return seedream_ref_urls(*refs)
-
-
 def _locked_shot_prompt(project: Project, img_prompt: str) -> str:
     consist = template_consistency_mode(project.template)
     return build_locked_image_prompt(
@@ -941,7 +934,6 @@ async def _parallel_image_and_audio(project_id: int) -> None:
         photoreal = template_is_photoreal(tpl)
         consist = template_consistency_mode(tpl)
         lock_character = consist == "character"
-        base_refs = _project_base_refs(project)
         image_size = _image_size_for(project)
         negative = _project_image_negative(project)
         voice = _project_voice(project)
@@ -951,11 +943,18 @@ async def _parallel_image_and_audio(project_id: int) -> None:
     if not shot_meta:
         return
 
+    # 同步发布参考图可能等待 OSS，必须释放数据库连接后执行。
+    base_refs, style_refs = (
+        await asyncio.to_thread(project_image_references, project)
+        if any(not meta["has_image"] for meta in shot_meta) else ([], [])
+    )
+
     img_sem = asyncio.Semaphore(max(1, cfg.pipeline_image_concurrency))
     done_img = 0
     progress_lock = asyncio.Lock()
     # 静图成片仍走外部 TTS；full + Seedance 内置口播则跳过
-    need_audio = (not _kepu_seedance_native_audio(project)) and (
+    native_audio = _kepu_seedance_native_audio(project)
+    need_audio = (not native_audio) and (
         not _continuous_audio_ok(project_id)
     )
 
@@ -975,7 +974,8 @@ async def _parallel_image_and_audio(project_id: int) -> None:
                         project.status = ProjectStatus.IMAGING
                         await db.commit()
             msg = f"出图 {done_img}/{total}" + (
-                " · 整片配音生成中…" if need_audio else " · 配音已就绪"
+                " · 整片配音生成中…" if need_audio else
+                " · 声音将在视频阶段生成" if native_audio else " · 配音已就绪"
             )
             await publish_progress(
                 project_id,
@@ -1036,12 +1036,13 @@ async def _parallel_image_and_audio(project_id: int) -> None:
                 size=image_size,
                 model=image_model,
                 aspect_ratio=output_ratio or None,
+                style_ref_urls=style_refs or None,
             )
         await persist_image(meta, img)
         from app.services.media_models.runtime import current_snapshot
         if (current_snapshot.get() or {}).get("mode") != "fixed_media":
             await _record_seedream_usage(project_id, image_result=img,
-                model=get_settings().model_image, shot_id=meta["id"])
+                model=image_model or get_settings().model_image, shot_id=meta["id"])
         return SimpleNamespace(image_ark_url=img.remote_url, image_url=img.local_url)
 
     async def run_images() -> None:
@@ -1055,7 +1056,7 @@ async def _parallel_image_and_audio(project_id: int) -> None:
                 )
                 await bump_images()
                 continue
-            refs = image_refs_for_shot(prev_proxy, base_refs)
+            refs = await asyncio.to_thread(image_refs_for_shot, prev_proxy, base_refs)
             proxy = await one_image(meta, refs)
             if proxy:
                 prev_proxy = proxy
@@ -1128,7 +1129,7 @@ async def _parallel_image_and_audio(project_id: int) -> None:
             "stage": "ASSETS_READY",
             "percent": 70 if image_text else 50,
             "message": (
-                "分镜图与整片配音已完成"
+                "分镜图已完成，下一步生成视频与声音" if native_audio else "分镜图与整片配音已完成"
             ),
         },
     )
@@ -1169,7 +1170,7 @@ async def _parallel_videos(project_id: int) -> None:
                 "video_prompt": s.video_prompt,
                 "segment_script": getattr(s, "segment_script", "") or s.video_prompt or "",
                 "camera": s.camera,
-                "image_ref": s.image_ark_url or s.image_url or "",
+                "image_ref": video_image_ref(s),
                 "image_ark_url": s.image_ark_url,
                 "image_url": s.image_url,
                 "last_frame_url": getattr(s, "last_frame_url", None),
@@ -1594,14 +1595,18 @@ async def regen_shot_image(project_id: int, shot_id: int) -> None:
         shot = next((s for s in project.shots if s.id == shot_id), None)
         if not shot:
             raise ValueError("shot not found")
-        # 生成前先备好参考，避免长等待占着同一条 DB 连接
+        # 先读齐元数据；参考图发布与模型请求都在数据库连接释放后进行。
         shot_no = shot.shot_no
-        ref_urls = image_refs_for_shot(previous_usable_shot(list(project.shots), shot_no), _project_base_refs(project))
+        shot_rows = list(project.shots)
         negative = _project_image_negative(project)
         prompt = _locked_shot_prompt(project, shot.img_prompt)
         image_size = _image_size_for(project)
         image_model = (getattr(project, "image_model", None) or "").strip()
         aspect_ratio = _project_output_ratio(project) or None
+    base_refs, style_refs = await asyncio.to_thread(project_image_references, project)
+    ref_urls = await asyncio.to_thread(
+        lambda: image_refs_for_shot(previous_usable_shot(shot_rows, shot_no), base_refs)
+    )
     img = await ark.gen_image(
         prompt,
         negative,
@@ -1611,6 +1616,7 @@ async def regen_shot_image(project_id: int, shot_id: int) -> None:
         size=image_size,
         model=image_model,
         aspect_ratio=aspect_ratio,
+        style_ref_urls=style_refs or None,
     )
     cancelled = False
     async with AsyncSessionLocal() as db:
@@ -1635,7 +1641,7 @@ async def regen_shot_image(project_id: int, shot_id: int) -> None:
     await _record_seedream_usage(
         project_id,
         image_result=img,
-        model=s.model_image,
+        model=image_model or s.model_image,
         shot_id=shot_id,
         delivered=not cancelled,
     )
@@ -1685,7 +1691,7 @@ async def regen_shot_video(project_id: int, shot_id: int) -> None:
             hi=cfg.seedance_duration_max,
         )
         shot_no = shot.shot_no
-        image_ref = shot.image_ark_url or shot.image_url or ""
+        image_ref = video_image_ref(shot)
         extra_refs = video_extra_refs_for_shot(previous_usable_shot(list(project.shots), shot_no))
         video_model = (getattr(project, "video_model", None) or "").strip()
         ratio = _project_output_ratio(project) or cfg.ark_video_ratio

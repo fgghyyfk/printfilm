@@ -10,7 +10,7 @@ import { useI18n } from '../i18n'
 import { getDramaImageStylePreviewUrl } from '../lib/dramaImageStylePreviews'
 import { FILM_SKILLS_URL, GITHUB_REPO_URL } from '../lib/siteLinks'
 import { api, type Template } from '../api'
-import { SHORT_VIDEO_LIST_PATH, shortVideoCreatePath } from '../lib/shortVideoRoutes'
+import { SHORT_VIDEO_LIST_PATH } from '../lib/shortVideoRoutes'
 
 export default function HomePage() {
   const nav = useNavigate()
@@ -18,14 +18,13 @@ export default function HomePage() {
   const loggedIn = Boolean(localStorage.getItem('token'))
   const [createOpen, setCreateOpen] = useState(false)
   const [templates, setTemplates] = useState<Template[]>([])
-  const [templatesError, setTemplatesError] = useState(false)
 
   useEffect(() => {
     let active = true
     api.templates().then((items) => {
       if (active) setTemplates(items)
     }).catch(() => {
-      if (active) setTemplatesError(true)
+      if (active) setTemplates([])
     })
     return () => { active = false }
   }, [])
@@ -144,31 +143,6 @@ export default function HomePage() {
             <ArrowRight size={16} strokeWidth={2} />
           </span>
         </button>
-      </section>
-
-      <section className="pf-land-caps" aria-labelledby="pf-land-templates-title">
-        <header className="pf-land-section-head">
-          <p className="pf-land-kicker">Styles</p>
-          <h2 id="pf-land-templates-title">{t('home.templatesTitle')}</h2>
-          <p className="pf-muted">{t('home.templatesHint')}</p>
-        </header>
-        <div className="pf-template-grid">
-          {templates.map((template) => (
-            <button
-              key={template.id}
-              type="button"
-              className="pf-template-card"
-              onClick={() => goAuthOr(shortVideoCreatePath(template.id))}
-            >
-              <img src={api.assetUrl(template.preview_cover)} alt="" loading="lazy" />
-              <div className="body">
-                <h3>{template.name}</h3>
-                <p>{template.description}</p>
-              </div>
-            </button>
-          ))}
-        </div>
-        {templatesError ? <p className="pf-muted">{t('home.templatesLoadFailed')}</p> : null}
       </section>
 
       <section className="pf-land-pipeline" aria-labelledby="pf-land-pipeline-title">
