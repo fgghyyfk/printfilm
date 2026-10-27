@@ -1,6 +1,7 @@
 /** 拉取并缓存前台 TokenFree 图/视频模型目录。 */
 import { useEffect, useState } from 'react'
 import { api, type MediaModelOption, type MediaModelsCatalog } from '../api'
+export { resolveCatalogModelSelection } from '../lib/mediaCatalogSelection'
 
 let cached: MediaModelsCatalog | null = null
 let inflight: Promise<MediaModelsCatalog> | null = null

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { api, defaultsFromTemplate, resolveVoiceId } from '../../api'
 import type { MediaModelOption, PipelineMode, Project, Template, VoicePreset } from '../../api'
-import { useMediaModelsCatalog } from '../../hooks/useMediaModelsCatalog'
+import { resolveCatalogModelSelection, useMediaModelsCatalog } from '../../hooks/useMediaModelsCatalog'
 import { MediaCostNotice } from '../../components/billing/MediaCostNotice'
 import AppShell from '../../components/layout/AppShell'
 import Stepper from '../../components/ui/Stepper'
@@ -68,9 +68,9 @@ export default function StyleConfigPage() {
 
   useEffect(() => {
     if (!mediaCatalog) return
-    setImageModel(previous => previous || mediaCatalog.defaults.image_model)
-    setVideoModel(previous => previous || mediaCatalog.defaults.video_model)
-  }, [mediaCatalog])
+    setImageModel(previous => resolveCatalogModelSelection(mediaCatalog, 'image', previous))
+    setVideoModel(previous => resolveCatalogModelSelection(mediaCatalog, 'video', previous))
+  }, [mediaCatalog, imageModel, videoModel])
 
   useEffect(() => {
     if (!localStorage.getItem('token')) {

@@ -25,6 +25,7 @@ import {
 import {
   catalogModelLabel,
   catalogVideoModels,
+  resolveCatalogModelSelection,
   useMediaModelsCatalog,
 } from '../../../../hooks/useMediaModelsCatalog'
 import './dramaImageGenOptions.css'
@@ -59,11 +60,13 @@ export function DramaVideoGenOptionsBar({
   useEffect(() => {
     // 目录到达后，把旧 Kie/方舟 id 换成后台默认视频模型
     if (!catalog || disabled) return
-    const ids = videoModels.map((m) => m.id)
-    if (!ids.length) return
-    if (value.model_id && ids.includes(value.model_id)) return
-    const next = catalog.defaults.video_model || ids[0]
-    if (next && next !== value.model_id) {
+    const next = resolveCatalogModelSelection(catalog, 'video', value.model_id)
+    if (next === value.model_id) return
+    if (!next) {
+      onChange({ ...value, model_id: '' })
+      return
+    }
+    if (next !== value.model_id) {
       onChange({
         ...value,
         model_id: next,
@@ -72,7 +75,7 @@ export function DramaVideoGenOptionsBar({
         duration_sec: clampVideoDuration(value.duration_sec, next, catalog, videoModels),
       })
     }
-  }, [catalog, disabled])
+  }, [catalog, disabled, value.model_id])
 
   useEffect(() => {
     // 换模型后：清晰度 / 比例 / 时长钳到允许范围（须已知目录行，避免 SAFE 误写）

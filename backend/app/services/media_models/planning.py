@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
 from app.models import Project
+from app.services.logical_model_router import resolve_logical_model_id, resolve_upstream_model
 from .prices import active_book, expected_price_version, resolve_strategy
 from .runtime import pin_route
 from . import MediaValidationError, get_strategy
@@ -57,7 +58,11 @@ async def plan_items(db, task) -> list[dict]:
     def add(capability, params=None, *, model=None, target=None, shot_no=None, optional=False):
         if model is not None and not isinstance(model, str):
             raise MediaValidationError("model", "必须是模型 ID 字符串")
-        model = model or (settings.model_image if capability == "image" else settings.model_video)
+        if not model:
+            resolve_upstream_model(capability, None)
+            model = resolve_logical_model_id(capability, None) or (
+                settings.model_image if capability == "image" else settings.model_video
+            )
         strategy = resolve_strategy(model)
         if strategy.capability != capability:
             raise MediaValidationError("model", "模型类型与生成任务不匹配")
@@ -85,13 +90,13 @@ async def plan_items(db, task) -> list[dict]:
             if phase == "assets" and (kind != "project_pipeline" or not shot_image_ready(shot)):
                 add("image", {"size": _image_size_for(project) or settings.ark_image_size,
                               "aspect_ratio": _project_output_ratio(project) or "1:1"},
-                    model=project.image_model or settings.model_image, target=shot.id, shot_no=shot.shot_no)
+                    model=project.image_model, target=shot.id, shot_no=shot.shot_no)
             if phase == "videos" and (kind != "project_pipeline" or not shot_video_ready(shot)):
                 from app.services.seedance_resolutions import project_video_resolution
                 resolution = project_video_resolution(project, settings)
                 add("video", {"duration": int(shot.duration or 5), "resolution": resolution,
                               "aspect_ratio": _project_output_ratio(project) or "9:16"},
-                    model=project.video_model or settings.model_video, target=shot.id, shot_no=shot.shot_no)
+                    model=project.video_model, target=shot.id, shot_no=shot.shot_no)
         return items
     if kind in {"asset_image", "tool_image"}:
         model = p.get("model_id") or p.get("model") or generation.get("model")

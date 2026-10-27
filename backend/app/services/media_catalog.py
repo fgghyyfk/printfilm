@@ -7,6 +7,7 @@ from typing import Any
 from app.config import get_settings
 from app.schemas_routing import DefaultModels, LogicalModel, LogicalModelCapability, SystemModelChannel
 from app.services.model_routing_config import infer_model_capability, normalize_model_name
+from app.services.model_availability import has_managed_models, is_model_enabled
 
 
 def _row(
@@ -94,6 +95,10 @@ def build_media_catalog(
 
     default_image = _canon((defaults.image_model or "").strip())
     default_video = _canon((defaults.video_model or "").strip())
+    if not is_model_enabled("image", default_image, logical_models):
+        default_image = ""
+    if not is_model_enabled("video", default_video, logical_models):
+        default_video = ""
 
     def _append(
         *,
@@ -102,7 +107,7 @@ def build_media_catalog(
         capability: LogicalModelCapability,
     ) -> None:
         mid = _canon(model_id)
-        if not mid:
+        if not mid or not is_model_enabled(capability, mid, logical_models):
             return
         key = normalize_model_name(mid)
         if capability == "image":
@@ -159,9 +164,9 @@ def build_media_catalog(
             if cap in {"image", "video"}:
                 _append(model_id=mid, label=mid, capability=cap)  # type: ignore[arg-type]
 
-    if not default_image:
+    if not default_image and not has_managed_models("image", logical_models):
         default_image = images[0]["id"] if images else _canon((fallback_image or "").strip())
-    if not default_video:
+    if not default_video and not has_managed_models("video", logical_models):
         default_video = videos[0]["id"] if videos else _canon((fallback_video or "").strip())
 
     def _ensure_default_in_list(
@@ -242,6 +247,9 @@ def is_valid_project_media_model(model_id: str | None, capability: LogicalModelC
     mid = (model_id or "").strip()
     if not mid:
         return True
+    from app.services.model_settings import get_routing_snapshot
+    if not is_model_enabled(capability, mid, get_routing_snapshot().logical_models):
+        return False
     from app.services.logical_model_router import resolve_logical_model_candidates
 
     cat = catalog_payload()

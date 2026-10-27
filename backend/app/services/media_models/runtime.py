@@ -7,8 +7,9 @@ from urllib.parse import urlsplit
 
 from app.config import get_settings
 from app.schemas_routing import ResolvedModelRoute
-from app.services.logical_model_router import resolve_logical_model
+from app.services.logical_model_router import resolve_logical_model, resolve_logical_model_id, resolve_upstream_model
 from app.services.model_settings import get_routing_snapshot
+from app.services.model_availability import is_managed_model, is_model_enabled
 from .prices import resolve_strategy
 from . import get_strategy
 
@@ -25,11 +26,12 @@ def _public_route(route: dict) -> dict:
 
 def pin_route(capability: str, model_id: str) -> dict:
     settings = get_settings()
-    strategy = resolve_strategy(model_id)
     snapshot = get_routing_snapshot()
-    logical = next((model for model in getattr(snapshot, "logical_models", []) if model.id.lower() == model_id.lower()), None)
-    if logical is not None and not logical.enabled:
+    models = getattr(snapshot, "logical_models", [])
+    if not is_model_enabled(capability, model_id, models):
         raise ValueError(f"model: {model_id} 已停用")
+    strategy = resolve_strategy(model_id)
+    logical = next((model for model in getattr(snapshot, "logical_models", []) if model.id.lower() == model_id.lower()), None)
     route = resolve_logical_model(capability, model_id)
     if route is None and logical is None and model_id != strategy.model_id:
         route = resolve_logical_model(capability, strategy.model_id)
@@ -37,6 +39,8 @@ def pin_route(capability: str, model_id: str) -> dict:
         if get_strategy(route.upstream_model).model_id != strategy.model_id:
             raise ValueError("route: 上游绑定与所选模型策略不匹配")
         return _public_route(route.model_dump(exclude={"api_key"}))
+    if is_managed_model(capability, model_id, models):
+        raise ValueError(f"route: {model_id} 没有启用的可用渠道绑定")
     if snapshot.channels and not (settings.ark_mock or settings.local_media_mock):
         raise ValueError(f"route: {model_id} 没有可用渠道，不会自动切换模型")
     return _public_route({"capability": capability, "logical_model_id": model_id,
@@ -90,7 +94,11 @@ def execution_params(capability: str, params: dict, *, target: int | None = None
         validated = strategy.normalize_and_validate(merged)
         current_operation.set(operation)
         return strategy, validated, restore_route(operation["route"])
-    strategy = resolve_strategy(model or (get_settings().model_image if capability == "image" else get_settings().model_video))
+    resolve_upstream_model(capability, model)
+    selected = model or resolve_logical_model_id(capability, None) or (
+        get_settings().model_image if capability == "image" else get_settings().model_video
+    )
+    strategy = resolve_strategy(selected)
     validated = strategy.normalize_and_validate(params)
     return strategy, validated, None
 

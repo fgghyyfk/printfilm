@@ -121,6 +121,7 @@ export type AdminLogicalModel = {
   id: string;
   name: string;
   capability: "text" | "image" | "video" | "audio";
+  strategy_id?: string | null;
   enabled: boolean;
   bindings: AdminLogicalModelBinding[];
 };

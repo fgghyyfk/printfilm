@@ -23,6 +23,7 @@ import {
 import {
   catalogImageModels,
   catalogModelLabel,
+  resolveCatalogModelSelection,
   useMediaModelsCatalog,
 } from '../../../../hooks/useMediaModelsCatalog'
 import './dramaImageGenOptions.css'
@@ -54,10 +55,12 @@ export function DramaImageGenOptionsBar({
     // 仅在模型为空/不在目录时补默认；用户已选合法模型时绝不覆盖。
     // 注意：不要依赖 disabled——发送后 busy 翻转会误触发，把选项打回 Seedream/3:4。
     if (!catalog) return
-    const ids = imageModels.map((m) => m.id)
-    if (!ids.length) return
-    if (value.model_id && ids.includes(value.model_id)) return
-    const nextModel = catalog.defaults.image_model || ids[0]
+    const nextModel = resolveCatalogModelSelection(catalog, 'image', value.model_id)
+    if (nextModel === value.model_id) return
+    if (!nextModel) {
+      onChange({ ...value, model_id: '' })
+      return
+    }
     const nextRatio = clampImageAspectRatioForModel(
       nextModel,
       value.aspect_ratio,

@@ -226,8 +226,8 @@ def _merge_friendly_alias_models(
 
 # TokenFree 价目真实 id（兼容旧前端别名 → 同名逻辑模型，不做换绑）
 _TOKENFREE_IMAGE_IDS: dict[str, str] = {
-    "seedream-5.0": "seedream-5-0-pro",
-    "seedream-5": "seedream-5-0-pro",
+    "seedream-5.0": "seedream-5.0",
+    "seedream-5": "seedream-5.0",
     "5.0": "seedream-5-0-pro",
     "seedream-4.5": "seedream-4-5",
     "seedream-4": "seedream-4-5",
@@ -828,15 +828,8 @@ async def patch_admin_routing_settings(
             update={"image_model": clamp_default_to_preset("image", image_default)}
         )
     defaults = normalize_default_models(defaults, logical_models, channels_after)
-    # normalize 可能清空不可解析项；再次钳回预设
-    defaults = defaults.model_copy(
-        update={
-            "text_model": clamp_default_to_preset("text", defaults.text_model),
-            "image_model": clamp_default_to_preset("image", defaults.image_model),
-            "video_model": clamp_default_to_preset("video", defaults.video_model),
-            "audio_model": clamp_default_to_preset("audio", defaults.audio_model),
-        }
-    )
+    # An empty default means this capability has no enabled route. Keep it empty
+    # instead of reintroducing a disabled preset when every model is switched off.
 
     errors = model_routing_validation_errors(logical_models, channels_after, defaults)
     if errors:

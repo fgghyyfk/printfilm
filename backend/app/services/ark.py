@@ -564,11 +564,15 @@ class ArkGateway:
     # 按逻辑路由解析 ARK 渠道凭证
     def _resolve_ark_route(self, capability: str, model_id: str | None) -> ResolvedModelRoute | None:
         operation = current_operation.get()
-        if current_snapshot.get():
+        snapshot = current_snapshot.get()
+        if snapshot and (capability in {"image", "video"} or any(
+            item["capability"] == capability for item in snapshot.get("items", [])
+        )):
             if not operation or operation["capability"] != capability:
                 operation = operation_for(capability, model=model_id)
             if operation:
                 return restore_route(operation["route"])
+        resolve_upstream_model(capability, model_id)
         logical_id = resolve_logical_model_id(capability, model_id)
         route = resolve_logical_model(capability, logical_id)
         if route is None:
@@ -701,6 +705,7 @@ class ArkGateway:
         allow_source_names: bool = False,
     ) -> StoryboardResult:
         if self.mock:
+            resolve_upstream_model("text", None)
             return await asyncio.to_thread(
                 self._mock_storyboard,
                 source_text,
@@ -931,6 +936,7 @@ class ArkGateway:
             ark_model = resolved
 
         if self.mock:
+            self._resolve_ark_route("image", ark_model)
             local = await asyncio.to_thread(self._write_mock_image, prompt, size)
             # _write_mock_image returns /static/...; publish to OSS when enabled
             path = storage.local_path_from_url(local)
@@ -1845,12 +1851,14 @@ class ArkGateway:
         model: str | None = None,
     ) -> bool:
         """TokenFree 上 Qwen-TTS 的 /audio/speech 未实现，改走 Omni/Gemini chat。"""
-        base = (self.settings.ark_base_url or "").rstrip("/")
-        key = (self.settings.ark_api_key or "").strip()
+        requested = (model or self._resolved_audio_model()).strip()
+        route = self._resolve_ark_route("audio", requested)
+        base = (route.base_url if route else self.settings.ark_base_url or "").rstrip("/")
+        key = (route.api_key if route else self.settings.ark_api_key or "").strip()
         if not base or (not key and not getattr(self.settings, "local_media_mock", False)):
             return False
         model_id = tokenfree_tts_chat_model(
-            resolve_tokenfree_tts_model((model or self._resolved_audio_model()).strip())
+            resolve_tokenfree_tts_model(route.upstream_model if route else requested)
         )
         voice = tokenfree_speech_voice(voice, model_id)
         if tokenfree_tts_uses_chat_audio(model_id):
@@ -1858,7 +1866,7 @@ class ArkGateway:
         async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await self._request_media(client, "POST",
                 f"{base}/audio/speech",
-                headers=self._headers(),
+                headers=self._route_headers(route),
                 json={
                     "model": model_id,
                     "input": text,
@@ -1887,7 +1895,9 @@ class ArkGateway:
         model: str,
     ) -> bool:
         """Gemini 非流式 chat 出音频；Qwen-Omni 必须 SSE 流式。"""
-        base = (self.settings.ark_base_url or "").rstrip("/")
+        route = self._resolve_ark_route("audio", model)
+        model = tokenfree_tts_chat_model(resolve_tokenfree_tts_model(route.upstream_model if route else model))
+        base = (route.base_url if route else self.settings.ark_base_url or "").rstrip("/")
         if not base:
             return False
         omni = tokenfree_tts_uses_omni_stream(model)
@@ -1902,7 +1912,7 @@ class ArkGateway:
             }
         )
         async with httpx.AsyncClient(timeout=120.0) as client:
-            resp = await self._request_media(client, "POST", f"{base}/chat/completions", headers=self._headers(), json=body)
+            resp = await self._request_media(client, "POST", f"{base}/chat/completions", headers=self._route_headers(route), json=body)
         if resp.status_code >= 400:
             logger.warning(
                 "OpenAI chat-audio HTTP %s model=%s: %s",
@@ -1944,6 +1954,7 @@ class ArkGateway:
         """整片/单镜配音：TokenFree 多 TTS → edge-tts；失败则抛错，不写静音。"""
         if result_metadata is not None:
             result_metadata.clear()
+        audio_model = self._resolved_audio_model()
         voice_map = {
             "narrator_calm": "zh_female_cancan_uranus_bigtts",
             "warm_storyteller": "zh_female_tianmeixiaoyuan_uranus_bigtts",
@@ -1976,10 +1987,12 @@ class ArkGateway:
                 return None
             return storage.publish_local(dest)
 
-        audio_model = self._resolved_audio_model()
-
         # TokenFree：默认模型 + Gemini / ElevenLabs / Qwen 其它 TTS 依次试
         for model_id in iter_tokenfree_tts_models(audio_model):
+            try:
+                resolve_upstream_model("audio", model_id)
+            except ValueError:
+                continue
             try:
                 ok = await self._tts_openai_speech(clean, speaker, dest, model=model_id)
                 if ok:
@@ -2349,6 +2362,7 @@ class ArkGateway:
         topic = (topic or "").strip() or "人工智能如何改变日常生活"
         mode = "script" if mode == "script" else "theme"
         if self.mock:
+            resolve_upstream_model("text", None)
             return self._mock_expand_content(topic, mode)
 
         if mode == "script":

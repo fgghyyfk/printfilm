@@ -54,7 +54,7 @@ import { FragmentPlanSkillModal } from '../../components/drama/FragmentPlanSkill
 import { DramaGenTaskDetail } from '../../components/drama/DramaGenTaskDetail'
 import { CircleAlert } from 'lucide-react'
 import { useDramaImageGenQueue } from '../../hooks/useDramaImageGenQueue'
-import { useMediaModelsCatalog } from '../../hooks/useMediaModelsCatalog'
+import { resolveCatalogModelSelection, useMediaModelsCatalog } from '../../hooks/useMediaModelsCatalog'
 import { enqueueDramaImageGen } from '../../lib/dramaImageGenQueue'
 import { defaultOptionsForAssetKind } from '../../lib/dramaGenerationOptions'
 import { dramaAssetImageGenButtonLabel } from '../../lib/dramaAssetImage'
@@ -199,9 +199,7 @@ function EpisodeEditInner() {
   useEffect(() => {
     // 目录到达后，把旧 Kie/方舟 id 换成后台默认视频模型
     if (!mediaCatalog) return
-    const ids = mediaCatalog.video_models.map((m) => m.id)
-    if (!ids.length) return
-    setModelId((prev) => (ids.includes(prev) ? prev : mediaCatalog.defaults.video_model || ids[0]))
+    setModelId(previous => resolveCatalogModelSelection(mediaCatalog, 'video', previous))
   }, [mediaCatalog])
 
   const selected = fragments[selectedIndex] || null

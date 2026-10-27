@@ -1,4 +1,5 @@
 import { Select } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { useCallback, useEffect, useState } from "react";
 import { Eye, EyeOff, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
@@ -14,12 +15,11 @@ import {
   allPresetChannelModels,
   CAPABILITY_LABELS,
   CAPABILITY_ORDER,
-  clampDefaultToPreset,
-  defaultPresetDefaults,
   detectDefaultRemaps,
   PRESET_MODELS,
   type ModelCapability,
 } from "@/lib/tokenfreeRecommendedModels";
+import { enabledPresetModels, normalizeRoutingDefaults, routingModelSettings, setRoutingModelEnabled } from "@/lib/routingModels";
 import { cn } from "@/lib/utils";
 
 const TOKENFREE_CHANNEL_ID = "tokenfree";
@@ -42,17 +42,7 @@ function buildReadiness(data: AdminRoutingSettings | null, hasKey: boolean) {
   ] as const;
 }
 
-function normalizeDefaults(raw: AdminRoutingSettings["default_models"] | undefined) {
-  const base = defaultPresetDefaults();
-  return {
-    text_model: clampDefaultToPreset("text", raw?.text_model || base.text_model),
-    image_model: clampDefaultToPreset("image", raw?.image_model || base.image_model),
-    video_model: clampDefaultToPreset("video", raw?.video_model || base.video_model),
-    audio_model: clampDefaultToPreset("audio", raw?.audio_model || base.audio_model),
-  };
-}
-
-// 开源版模型配置：固定 TokenFree + 四类预设下拉
+// 模型启停与站点默认值共同保存，保留上游绑定与策略。
 export function RoutingSettingsPanel() {
   const [data, setData] = useState<AdminRoutingSettings | null>(null);
   const [apiKeyInput, setApiKeyInput] = useState("");
@@ -72,10 +62,13 @@ export function RoutingSettingsPanel() {
     setLoading(true);
     try {
       const res = await api<AdminRoutingSettings>("/api/admin/settings/routing");
-      setDefaultRemaps(detectDefaultRemaps(res.default_models));
+      const defaults = normalizeRoutingDefaults(res.default_models, res.logical_models);
+      setDefaultRemaps(detectDefaultRemaps(res.default_models)
+        .map((item) => ({ ...item, to: defaults[`${item.capability}_model`] }))
+        .filter((item) => Boolean(item.to)));
       setData({
         ...res,
-        default_models: normalizeDefaults(res.default_models),
+        default_models: defaults,
         system_channels: res.system_channels.map((item) =>
           item.id === TOKENFREE_CHANNEL_ID
             ? { ...item, models: allPresetChannelModels() }
@@ -113,12 +106,11 @@ export function RoutingSettingsPanel() {
 
   function setDefaultModel(key: (typeof DEFAULT_KEYS)[number], value: string) {
     const cap = key.replace("_model", "") as ModelCapability;
-    const next = clampDefaultToPreset(cap, value);
     setData((prev) =>
       prev
         ? {
             ...prev,
-            default_models: { ...prev.default_models, [key]: next },
+            default_models: { ...prev.default_models, [key]: enabledPresetModels(cap, prev.logical_models).find((model) => model.id === value)?.id ?? "" },
           }
         : prev,
     );
@@ -128,7 +120,6 @@ export function RoutingSettingsPanel() {
     if (!data || saving || keyError || referenceErrorCount > 0) return;
     setSaving(true);
     try {
-      const defaults = normalizeDefaults(data.default_models);
       const res = await api<{ settings: AdminRoutingSettings }>("/api/admin/settings/routing", {
         method: "PATCH",
         body: JSON.stringify({
@@ -145,13 +136,12 @@ export function RoutingSettingsPanel() {
               sort_order: 0,
             },
           ],
-          default_models: defaults,
-          media_reference_limits: data.media_reference_limits,
+          ...routingModelSettings(data),
         }),
       });
       setData({
         ...res.settings,
-        default_models: normalizeDefaults(res.settings.default_models),
+        default_models: normalizeRoutingDefaults(res.settings.default_models, res.settings.logical_models),
       });
       setDefaultRemaps([]);
       setApiKeyInput("");
@@ -234,19 +224,41 @@ export function RoutingSettingsPanel() {
         </div>
       </SettingsPanel>
 
-      <SettingsPanel title="默认生成模型" description="为每类任务选择站点默认模型。用户创作时仍可切换到其它预设模型。">
+      <SettingsPanel title="模型使用与默认设置" description="开启允许用户使用的模型，再选择站点默认模型。保存后，停用模型不再用于新请求；已冻结路由的图、视频任务继续执行。">
         <div className="settings-field-grid settings-field-grid--2">
           {CAPABILITY_ORDER.map((cap) => {
             const key = `${cap}_model` as (typeof DEFAULT_KEYS)[number];
-            const options = PRESET_MODELS[cap];
+            const options = enabledPresetModels(cap, data.logical_models);
             const hints: Record<ModelCapability, string> = { text: "用于脚本、摘要与分镜规划。", image: "用于角色、场景、道具等参考图生成。", video: "用于分镜视频生成。", audio: "用于角色配音；当前提供一款预设模型。" };
             return (
-              <LabeledControl key={key} label={`${CAPABILITY_LABELS[cap]}模型`} hint={hints[cap]} required>
-                <Select className="settings-select" value={data.default_models[key] ?? options[0]?.id ?? ""} required
-                  aria-label={`${CAPABILITY_LABELS[cap]}默认模型`} onChange={(e) => setDefaultModel(key, e.target.value)}>
-                  {options.map((row) => <option key={row.id} value={row.id}>{row.label}</option>)}
-                </Select>
-              </LabeledControl>
+              <section key={cap} className="min-w-0 space-y-4 rounded-xl border border-[var(--admin-border)] p-4" aria-label={`${CAPABILITY_LABELS[cap]}模型使用设置`}>
+                <div className="flex items-center justify-between gap-3">
+                  <h4 className="text-sm font-semibold">{CAPABILITY_LABELS[cap]}模型</h4>
+                  <span className="text-xs text-[var(--admin-muted)]">已启用 {options.length} / {PRESET_MODELS[cap].length}</span>
+                </div>
+                <p className="text-xs text-[var(--admin-muted)]">{hints[cap]}</p>
+                <div className="space-y-2">
+                  {PRESET_MODELS[cap].map((row) => {
+                    const model = data.logical_models.find((item) => item.capability === cap && item.id === row.id);
+                    const enabled = Boolean(model?.enabled);
+                    return <div key={row.id} className="settings-toggle-row">
+                      <div className="min-w-0"><strong>{row.label}</strong><span className="block break-all">{row.id}</span></div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <span>{enabled ? "已启用" : "已停用"}</span>
+                        <Switch aria-label={`${row.label} 使用`} checked={enabled} disabled={!model}
+                          onCheckedChange={(value) => setData((prev) => prev ? setRoutingModelEnabled(prev, row.id, value) : prev)} />
+                      </div>
+                    </div>;
+                  })}
+                </div>
+                <LabeledControl label={`${CAPABILITY_LABELS[cap]}默认模型`} required={options.length > 0}
+                  hint={options.length === 0 ? "当前无可用模型，请开启模型后再使用该功能。" : "仅从已启用的模型中选择。"}>
+                  <Select className="settings-select" value={data.default_models[key]} required={options.length > 0} disabled={options.length === 0}
+                    aria-label={`${CAPABILITY_LABELS[cap]}默认模型`} onChange={(e) => setDefaultModel(key, e.target.value)}>
+                    {options.length === 0 ? <option value="">无可用模型</option> : options.map((row) => <option key={row.id} value={row.id}>{row.label}</option>)}
+                  </Select>
+                </LabeledControl>
+              </section>
             );
           })}
         </div>
