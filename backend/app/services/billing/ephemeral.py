@@ -17,6 +17,7 @@ from sqlalchemy import select
 from app.config import get_settings
 from app.services.billing.context import billing_scope
 from app.services.billing.settlement import freeze_for_task, settle_task
+from app.services.drama.voice_generation_policy import ensure_voice_generation_task_enabled
 from app.services.tasks.handlers import get_task_handler
 from app.services.tasks.inline import hold_inline_lease, start_inline_lease
 from app.services.tasks.queues import task_queue
@@ -41,6 +42,7 @@ async def create_ephemeral_task_row(
     episode_id: int | None = None,
 ) -> TaskRun:
     """创建并立即执行的轻量任务行（不经过调度器排队）。"""
+    ensure_voice_generation_task_enabled(domain, task_type)
     payload = {key: value for key, value in (payload or {}).items() if not key.startswith("_team_")}
     if drama_project_id is not None:
         from app.services.tasks.team_scope import prepare_background_task

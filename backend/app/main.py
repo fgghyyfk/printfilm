@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from app.api import auth, billing, creation, projects, tasks, templates, tools
+from app.api import auth, billing, capabilities, creation, projects, tasks, templates, tools
 from app.api import teams, team_billing, team_content, team_edit_locks
 from app.api.admin import router as admin_router
 from app.api.drama import router as drama_router
@@ -107,6 +107,7 @@ static_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 app.include_router(auth.router, prefix="/api")
+app.include_router(capabilities.router, prefix="/api")
 app.include_router(templates.router, prefix="/api")
 app.include_router(projects.router, prefix="/api")
 app.include_router(creation.router, prefix="/api")

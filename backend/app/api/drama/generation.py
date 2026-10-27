@@ -24,6 +24,7 @@ from app.services.billing import record_llm_chat_line, run_billed_ephemeral
 from app.services.billing.http import http_exception_for_value_error
 from app.services.drama.jobs import dispatch_asset_image_job, dispatch_asset_video_job
 from app.services.drama.voice_prompt import suggest_voice_prompt_for_character
+from app.services.drama.voice_generation_policy import ensure_voice_generation_enabled
 
 router = APIRouter()
 logger = logging.getLogger("app.drama.generation")
@@ -175,6 +176,7 @@ async def suggest_voice_prompt(
     user: User = Depends(get_current_user),
 ) -> dict:
     """根据角色设定 AI 生成音色描述提示词。"""
+    ensure_voice_generation_enabled()
     project = await get_owned_drama_project(db, body.project_id, user, with_script=True)
     asset = await db.get(DramaAsset, body.asset_id)
     if not asset or asset.project_id != project.id:
@@ -236,6 +238,7 @@ async def generate_voice(
     user: User = Depends(get_current_user),
 ) -> dict:
     """按提示词合成 voice 资产参考音频（漫剧独立音色库，非科普 /api/voices）。"""
+    ensure_voice_generation_enabled()
     project = await get_owned_drama_project(db, body.project_id, user, with_script=True)
     prompt = (body.voice_prompt or "").strip()
     if not prompt:

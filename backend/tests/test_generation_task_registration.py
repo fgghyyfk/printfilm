@@ -12,6 +12,13 @@ from app.models_tasks import TaskRun
 from app.services.billing import ephemeral
 
 
+@pytest.fixture
+def voice_generation_enabled(monkeypatch):
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "drama_voice_generation_enabled", True)
+
+
 def inline_runtime(monkeypatch):
     task = TaskRun(id=42, status="pending", payload={})
     db = SimpleNamespace(flush=AsyncMock(), commit=AsyncMock(), refresh=AsyncMock())
@@ -52,7 +59,7 @@ async def test_inline_failure_remains_after_callers_rollback(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_unbilled_generation_tracks_output_without_new_charges(monkeypatch):
+async def test_unbilled_generation_tracks_output_without_new_charges(monkeypatch, voice_generation_enabled):
     db, task = inline_runtime(monkeypatch)
     _, result = await ephemeral.run_billed_ephemeral(
         db, SimpleNamespace(id=1), domain="drama", task_type="voice_synthesis",
@@ -94,7 +101,9 @@ async def test_generated_text_is_saved_in_task_result(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("fail", [False, True])
-async def test_personal_voice_generation_has_one_durable_task_without_charging(db_session, monkeypatch, fail):
+async def test_personal_voice_generation_has_one_durable_task_without_charging(
+    db_session, monkeypatch, fail, voice_generation_enabled,
+):
     from app.api.drama import generation
     from app.models_drama import DramaAsset, DramaProject
     from app.schemas_drama import DramaVoiceGenerateRequest

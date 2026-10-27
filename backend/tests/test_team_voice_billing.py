@@ -9,6 +9,13 @@ from app.schemas_drama import DramaVoiceGenerateRequest
 from app.api.drama import generation
 
 
+@pytest.fixture(autouse=True)
+def enable_voice_generation(monkeypatch):
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "drama_voice_generation_enabled", True)
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("team_id", [None, 91])
 async def test_voice_endpoint_registers_all_tasks_and_bills_only_team(monkeypatch, team_id):
