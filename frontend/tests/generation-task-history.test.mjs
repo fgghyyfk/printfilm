@@ -1,11 +1,36 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { generationRecordKey, generationDetailPath, generationBillingState } from '../src/lib/generationTaskHistory.ts'
+import { generationRecordKey, generationDetailPath, generationBillingState, generationTaskKinds, generationTaskKind, generationTaskListPath } from '../src/lib/generationTaskHistory.ts'
 import { toolRunDetailAsset } from '../src/lib/toolRunDetails.ts'
 import { assetDetailInfo } from '../src/lib/assetDetails.ts'
 import { scopedRequestInit, setWorkspaceTeam } from '../src/features/teams/workspaceScope.ts'
 
 const record = { id: 42, tool_id: 'image', kind: 'image', status: 'succeeded', prompt: 'A portrait', urls: [], created_at: '2026-10-26T10:00:00Z' }
+
+test('我的任务只提供全部、视频、图片和音频筛选', () => {
+  assert.deepEqual(generationTaskKinds, ['all', 'video', 'image', 'audio'])
+  for (const kind of generationTaskKinds) assert.equal(generationTaskKind(kind), kind)
+})
+
+test('旧文字任务链接和未知类型回到全部媒体任务', () => {
+  for (const kind of ['text', 'unknown', '', null, undefined]) assert.equal(generationTaskKind(kind), 'all')
+})
+
+test('旧文字筛选不再传给列表 API，并保留其他筛选和分页', () => {
+  const path = generationTaskListPath(2, 16, { kind: 'text', status: 'succeeded', task_id: 'task-42', created_from: '2026-10-26T00:00:00Z' })
+  const url = new URL(path, 'https://printfilm.example')
+  assert.equal(url.pathname, '/api/tasks/generations')
+  assert.equal(url.searchParams.has('kind'), false)
+  assert.equal(url.searchParams.get('page'), '2')
+  assert.equal(url.searchParams.get('page_size'), '16')
+  assert.equal(url.searchParams.get('status'), 'succeeded')
+  assert.equal(url.searchParams.get('task_id'), 'task-42')
+  assert.equal(url.searchParams.get('created_from'), '2026-10-26T00:00:00Z')
+  for (const kind of ['video', 'image', 'audio']) {
+    assert.equal(new URL(generationTaskListPath(1, 8, { kind }), url).searchParams.get('kind'), kind)
+  }
+  assert.equal(new URL(generationTaskListPath(1, 8, { kind: 'all' }), url).searchParams.has('kind'), false)
+})
 
 test('同数字 ID 的任务和旧工具记录使用独立标识及详情地址', () => {
   const task = { ...record, source: 'task' }

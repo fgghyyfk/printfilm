@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.database import Base, get_db
 from app.deps import get_current_user
-from app.models import Project, Shot, Template, ToolRun, User
+from app.models import Project, Shot, Template, ToolRun, UsageEvent, User
 from app.models_drama import DramaAsset, DramaEpisode, DramaEpisodeFragment, DramaProject
 from app.models_tasks import TaskEvent, TaskRun
 from app.models_teams import Team, TeamMember
@@ -74,13 +74,13 @@ async def test_history_merges_all_domains_and_legacy_without_duplicates(history)
         response = await client.get("/api/tasks/generations?page_size=2")
         assert response.status_code == 200
         result = response.json()
-        assert result["total"] == 5
-        assert result["counts"] == {"all": 5, "processing": 1, "succeeded": 3, "failed": 1, "cancelled": 0}
+        assert result["total"] == 4
+        assert result["counts"] == {"all": 4, "processing": 1, "succeeded": 2, "failed": 1, "cancelled": 0}
         assert len(result["items"]) == 2
         all_rows = (await client.get("/api/tasks/generations?page_size=50")).json()["items"]
         linked = next(row for row in all_rows if row["record_key"] == f"task:{rows[0].id}")
         assert linked["prompt"] == "linked prompt"
-        assert {row["kind"] for row in all_rows} == {"image", "video", "audio", "text"}
+        assert {row["kind"] for row in all_rows} == {"image", "video", "audio"}
         assert len([row for row in all_rows if row["source"] == "tool"]) == 1
         filtered = (await client.get("/api/tasks/generations?kind=video&status=processing")).json()
         assert filtered["total"] == 1 and filtered["counts"]["all"] == 2
@@ -101,8 +101,46 @@ async def test_pipeline_phase_kind_matches_sql_filter_and_projection(history):
     async with await client_for(sessions, user) as client:
         for kind in {"image", "audio", "text", "video"}:
             result = (await client.get(f"/api/tasks/generations?kind={kind}")).json()
-            assert result["total"] == sum(value == kind for value in expected.values())
+            assert result["total"] == (sum(value == kind for value in expected.values()) if kind != "text" else 0)
             assert all(row["kind"] == kind and expected[row["params"]["phase"]] == kind for row in result["items"])
+
+
+@pytest.mark.asyncio
+async def test_text_tasks_are_excluded_before_counting_search_and_pagination(history):
+    sessions, (user, _, _), _team = history
+    async with sessions() as db:
+        image = task(user)
+        text = task(user, "episode_script")
+        text.status = "failed"
+        db.add_all([image, text, ToolRun(user_id=user.id, tool_id="text", kind="text", status="queued")])
+        await db.commit()
+    async with await client_for(sessions, user) as client:
+        result = (await client.get("/api/tasks/generations?page_size=1")).json()
+        assert result["total"] == result["counts"]["all"] == 1
+        assert result["counts"]["failed"] == result["counts"]["processing"] == 0
+        assert result["items"][0]["id"] == image.id
+        assert (await client.get(f"/api/tasks/generations?task_id={text.id}")).json()["total"] == 0
+        assert (await client.get("/api/tasks/generations?kind=text")).json()["total"] == 0
+        # Hiding list entries must not remove durable task/detail compatibility.
+        assert (await client.get(f"/api/tasks/generations/{text.id}")).json()["kind"] == "text"
+    async with sessions() as db:
+        assert (await db.get(TaskRun, text.id)).status == "failed"
+
+
+@pytest.mark.asyncio
+async def test_legacy_auto_script_is_hidden_despite_incorrect_empty_video_snapshot(history):
+    sessions, (user, _, _), _team = history
+    async with sessions() as db:
+        row = TaskRun(domain="kepu", task_type="project_pipeline", queue_type="video", requested_by=user.id,
+                      status="succeeded", payload={"phase": "produce"}, result_payload={"kind": "video", "urls": []})
+        db.add(row)
+        await db.flush()
+        db.add(UsageEvent(user_id=user.id, task_run_id=row.id, billing_key="llm_chat", capability="llm", domain="kepu"))
+        await db.commit()
+    async with await client_for(sessions, user) as client:
+        listing = (await client.get("/api/tasks/generations")).json()
+        assert listing["total"] == listing["counts"]["all"] == 0
+        assert (await client.get(f"/api/tasks/generations/{row.id}")).json()["kind"] == "text"
 
 
 @pytest.mark.asyncio

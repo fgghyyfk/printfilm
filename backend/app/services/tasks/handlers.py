@@ -210,18 +210,36 @@ async def _run_kepu_project_pipeline(task: TaskRun) -> dict[str, Any] | None:
     from app.services.pipeline import clear_pipeline_cancellation, run_pipeline
 
     payload = task.payload if isinstance(task.payload, dict) else {}
-    phase = payload.get("phase")
     if task.cancel_requested:
         return {"cancelled": True, "project_id": task.project_id}
+    project_id = _require_int(task.project_id, "project_id")
+    raw_phase = payload.get("phase")
+    phase = str(raw_phase).strip().lower() if raw_phase is not None else None
+    if phase not in {"script", "assets", "videos", "compose"}:
+        from sqlalchemy import select
+        from sqlalchemy.orm import selectinload
+        from app.database import AsyncSessionLocal
+        from app.models import Project
+        from app.services.kepu_stages import normalize_kepu_pipeline_phase
+
+        async with AsyncSessionLocal() as db:
+            project = (await db.execute(
+                select(Project).where(Project.id == project_id).options(selectinload(Project.shots))
+            )).scalar_one_or_none()
+            if project is not None:
+                # Resolve legacy auto/produce before generation changes readiness.
+                # Use the pipeline's shared rules for both execution and its saved output.
+                phase = normalize_kepu_pipeline_phase(phase, project)
+        # The read transaction is closed before awaiting external generation.
     # The previous task can have been cancelled before its pipeline ever ran,
     # leaving a process-local marker. Clear it in the executing worker only for
     # this fresh task; persistent CANCELLED checks still catch a new cancellation.
-    clear_pipeline_cancellation(_require_int(task.project_id, "project_id"))
+    clear_pipeline_cancellation(project_id)
     return await _await_kepu(
         task,
         run_pipeline(
-            _require_int(task.project_id, "project_id"),
-            phase=str(phase) if phase is not None else None,
+            project_id,
+            phase=phase,
         ),
         phase=phase,
     )

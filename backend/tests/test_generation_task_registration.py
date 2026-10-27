@@ -223,3 +223,92 @@ async def test_kepu_output_snapshot_freezes_only_matching_media(db_session, monk
     assert result == {"kind": kind, "urls": [url]}
     shot.image_url = "/static/replaced.png"
     assert result["urls"] == [url]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("phase,ready,mode,expected_phase,kind,url", [
+    (None, "empty", "full", "script", "text", None),
+    ("produce", "empty", "full", "script", "text", None),
+    (None, "script", "full", "assets", "image", "/static/generated.png"),
+    ("produce", "script", "full", "assets", "image", "/static/generated.png"),
+    (None, "assets", "full", "videos", "video", "/static/generated.mp4"),
+    ("produce", "assets", "full", "videos", "video", "/static/generated.mp4"),
+    (None, "videos", "full", "compose", "video", "/static/generated-final.mp4"),
+    ("produce", "videos", "full", "compose", "video", "/static/generated-final.mp4"),
+    (None, "assets", "image_text", "compose", "video", "/static/generated-final.mp4"),
+    ("script", "assets", "full", "script", "text", None),
+    ("assets", "script", "full", "assets", "image", "/static/generated.png"),
+    ("videos", "assets", "full", "videos", "video", "/static/generated.mp4"),
+    ("compose", "videos", "full", "compose", "video", "/static/generated-final.mp4"),
+])
+async def test_pipeline_legacy_phase_runs_and_snapshots_the_same_resolved_stage(
+    monkeypatch, phase, ready, mode, expected_phase, kind, url,
+):
+    from app.services import pipeline
+    from app.services.tasks import handlers
+
+    shots = [] if ready == "empty" else [SimpleNamespace(
+        image_url="/static/image.png" if ready in {"assets", "videos"} else None,
+        video_url="/static/video.mp4" if ready == "videos" else None,
+        narration="完整脚本", segment_script=None,
+    )]
+    project = SimpleNamespace(id=3, shots=shots, pipeline_mode=mode, cover_url=None, final_video_url=None)
+    monkeypatch.setattr("app.services.kepu_stages.project_audio_ready", lambda _project: True)
+    result_rows = SimpleNamespace(scalar_one_or_none=lambda: project, scalars=lambda: SimpleNamespace(all=lambda: shots))
+    db = SimpleNamespace(get=AsyncMock(return_value=project), execute=AsyncMock(return_value=result_rows))
+    opened = 0
+
+    @asynccontextmanager
+    async def session_factory():
+        nonlocal opened
+        opened += 1
+        try:
+            yield db
+        finally:
+            opened -= 1
+
+    monkeypatch.setattr("app.database.AsyncSessionLocal", session_factory)
+
+    async def run(project_id, *, phase):
+        # Stage selection must return its read connection before any provider wait.
+        assert opened == 0
+        assert project_id == project.id and phase == expected_phase
+        if phase == "script" and not shots:
+            shots.append(SimpleNamespace(narration="完整脚本", segment_script=None))
+        elif phase == "assets":
+            shots[0].image_url = url
+        elif phase == "videos":
+            shots[0].video_url = url
+        elif phase == "compose":
+            project.final_video_url = url
+
+    stage = AsyncMock(side_effect=run)
+    monkeypatch.setattr(pipeline, "run_pipeline", stage)
+    task = TaskRun(task_type="project_pipeline", project_id=project.id, cancel_requested=False,
+                   payload={} if phase is None else {"phase": phase})
+    original_payload = dict(task.payload)
+    result = await handlers._run_kepu_project_pipeline(task)
+    stage.assert_awaited_once()
+    assert result["phase"] == expected_phase
+    assert result["kind"] == kind
+    if kind == "text":
+        assert result["text_content"] == "完整脚本"
+    else:
+        assert result["urls"] == [url]
+    assert task.payload == original_payload  # No new task or billing dimensions are introduced.
+    assert opened == 0
+
+
+@pytest.mark.asyncio
+async def test_cancelled_legacy_pipeline_does_not_resolve_or_run_another_stage(monkeypatch):
+    from app.services import pipeline
+    from app.services.tasks import handlers
+
+    session_factory = AsyncMock(side_effect=AssertionError("cancelled tasks must not query their next stage"))
+    monkeypatch.setattr("app.database.AsyncSessionLocal", session_factory)
+    stage = AsyncMock()
+    monkeypatch.setattr(pipeline, "run_pipeline", stage)
+    task = TaskRun(task_type="project_pipeline", project_id=3, cancel_requested=True, payload={"phase": "produce"})
+    assert await handlers._run_kepu_project_pipeline(task) == {"cancelled": True, "project_id": 3}
+    session_factory.assert_not_called()
+    stage.assert_not_awaited()

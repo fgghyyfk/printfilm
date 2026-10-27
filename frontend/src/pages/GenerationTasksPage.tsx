@@ -9,13 +9,11 @@ import GenerationSelect from '../components/tools/GenerationSelect'
 import { AssetDetailDialog } from '../components/assets/AssetDetailDialog'
 import { useToolRunDetail } from '../hooks/useToolRunDetail'
 import { mediaIcons, useGenerationText } from '../lib/generationMedia'
-import { generationBillingState, generationRecordKey } from '../lib/generationTaskHistory'
+import { generationBillingState, generationRecordKey, generationTaskKind, generationTaskKinds as taskKinds, type GenerationTaskKind as TaskKind } from '../lib/generationTaskHistory'
 import { subscribeWorkspace, workspaceScope } from '../features/teams/workspaceScope'
 import Pagination from '../components/ui/Pagination'
 import { fetchMediaBlob, triggerBlobDownload } from '../lib/clientDownload'
 
-const taskKinds = ['all', 'video', 'image', 'audio', 'text'] as const
-type TaskKind = typeof taskKinds[number]
 const taskIcons = { ...mediaIcons, all: ListChecks, text: FileText }
 const workspaceSnapshot = () => workspaceScope.epoch
 
@@ -32,7 +30,7 @@ function TaskHistory() {
 function TaskHistoryContent() {
   const text = useGenerationText()
   const [params, setParams] = useSearchParams()
-  const kind = taskKinds.includes(params.get('kind') as TaskKind) ? params.get('kind') as TaskKind : 'all'
+  const kind = generationTaskKind(params.get('kind'))
   const status = ['processing', 'succeeded', 'failed', 'cancelled'].includes(params.get('status') || '') ? params.get('status')! : ''
   const taskId = params.get('task_id') || ''
   const [query, setQuery] = useState(taskId)
@@ -49,14 +47,14 @@ function TaskHistoryContent() {
   const { detail, asset: detailAsset, error: detailError, resultIndex, selectResult, openDetail, closeDetail } = useToolRunDetail()
   const [downloading, setDownloading] = useState<string | null>(null)
   const Icon = taskIcons[kind]
-  const createPath = kind === 'all' ? '/' : kind === 'text' ? '/studio/new' : `/tools/${kind}`
+  const createPath = kind === 'all' ? '/' : `/tools/${kind}`
   const labels: Record<string, string> = {
     all: text('全部', 'All'), processing: text('处理中', 'Processing'), succeeded: text('已完成', 'Completed'),
     failed: text('失败', 'Failed'), cancelled: text('已取消', 'Cancelled'), queued: text('排队中', 'Queued'), running: text('处理中', 'Processing'),
   }
   const kindLabels: Record<TaskKind, string> = {
     all: text('全部任务', 'All tasks'), video: text('视频任务', 'Video tasks'), image: text('图片任务', 'Image tasks'),
-    audio: text('音频任务', 'Audio tasks'), text: text('文字任务', 'Text tasks'),
+    audio: text('音频任务', 'Audio tasks'),
   }
   const billingLabels = {
     hidden: text('费用不可见', 'Cost hidden'), pending: text('待结算', 'Pending charge'), settled: text('已结算', 'Charged'),
@@ -67,6 +65,13 @@ function TaskHistoryContent() {
     if (value) next.set(key, value); else next.delete(key)
     setParams(next); setPage(1)
   }
+  useEffect(() => {
+    const requestedKind = params.get('kind')
+    if (!requestedKind || requestedKind === kind) return
+    const next = new URLSearchParams(params)
+    next.delete('kind')
+    setParams(next, { replace: true })
+  }, [params, setParams, kind])
   useEffect(() => { setQuery(taskId) }, [taskId])
   useEffect(() => {
     let disposed = false
@@ -157,13 +162,15 @@ function TaskHistoryContent() {
         const recordKey = generationRecordKey(item)
         const billingState = generationBillingState(item)
         const ratio = typeof (item.params?.aspect_ratio ?? item.params?.ratio) === 'string' ? String(item.params?.aspect_ratio ?? item.params?.ratio) : ''
+        const shortVideoImage = item.domain === 'kepu' && item.kind === 'image'
+        const title = item.prompt || (shortVideoImage ? text('AI短视频生图', 'AI short video images') : text('生成任务', 'Generation task'))
         const formatLabel = item.kind === 'video' ? 'MP4' : item.kind === 'audio' ? 'MP3' : item.kind === 'text' ? text('文字', 'Text') : text('图片', 'Image')
         return <article className={`gen-task-row ${item.status === 'failed' ? 'has-error' : ''}`} key={recordKey}>
         <button className="gen-task-cover" type="button" onClick={() => openDetail(item)} aria-label={text('查看生成结果', 'View result')}>
           {item.kind === 'image' && (item.preview_url || item.urls[0]) ? <img src={resolveToolMediaUrl(item.preview_url || item.urls[0])} alt="" /> : item.kind === 'video' && item.preview_url ? <img src={resolveToolMediaUrl(item.preview_url)} alt="" /> : item.kind === 'video' && item.urls[0] ? <video src={resolveToolMediaUrl(item.urls[0])} preload="metadata" muted /> : <RowIcon size={28} />}
           <span className="gen-cover-overlay"><Eye size={18} /></span>
         </button>
-        <div className="gen-task-description"><button type="button" className="gen-task-title" onClick={() => openDetail(item)} title={item.prompt}>{item.prompt || text('生成任务', 'Generation task')}</button><div className="gen-task-metadata"><span className="gen-task-tag">{kindLabels[item.kind as TaskKind] || 'AI'}</span>{ratio && <span className="gen-task-tag">{ratio}</span>}</div>{item.error && <button type="button" className="gen-task-error" onClick={() => openDetail(item)} title={item.error}><AlertCircle size={12} /><span>{errorSummary(item.error)}</span><ArrowUpRight size={12} /></button>}</div>
+        <div className="gen-task-description"><button type="button" className="gen-task-title" onClick={() => openDetail(item)} title={title}>{title}</button><div className="gen-task-metadata"><span className="gen-task-tag">{kindLabels[item.kind as TaskKind] || 'AI'}</span>{shortVideoImage && <span className="gen-task-tag">{text('AI短视频', 'AI short video')}</span>}{item.kind === 'image' && item.urls.length > 1 && <span className="gen-task-tag">{text(`${item.urls.length} 张图片`, `${item.urls.length} images`)}</span>}{ratio && <span className="gen-task-tag">{ratio}</span>}</div>{item.error && <button type="button" className="gen-task-error" onClick={() => openDetail(item)} title={item.error}><AlertCircle size={12} /><span>{errorSummary(item.error)}</span><ArrowUpRight size={12} /></button>}</div>
         <div className="gen-task-state"><span className={`gen-state is-${item.status}`}><RowStatusIcon size={13} />{labels[item.status] || item.status}</span><small>{formatLabel}</small></div>
         <div className="gen-task-cost"><strong>{billingState === 'hidden' ? '—' : `¥${((item.billing_charged_fen || 0) / 100).toFixed(2)}`}</strong><small>{billingLabels[billingState]}</small></div>
         <div className="gen-task-time"><span>{when(item.created_at)}</span><small>{text('耗时', 'Duration')} {elapsed(item)}</small></div>

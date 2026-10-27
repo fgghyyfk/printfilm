@@ -15,7 +15,7 @@ from sqlalchemy import String, and_, case, cast, exists, func, literal, or_, sel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models import Project, Shot, ToolRun, User
+from app.models import Project, Shot, ToolRun, UsageEvent, User
 from app.models_drama import DramaAsset, DramaEpisode, DramaEpisodeFragment, DramaProject
 from app.models_tasks import TaskEvent, TaskRun
 from app.schemas_generation_history import GenerationListOut, GenerationRecordOut
@@ -41,14 +41,43 @@ def _public_status(status: str) -> str:
     return "queued" if status in {"pending", "leased", "queued"} else "running"
 
 
-def _kind_expression():
+def _image_usage_clause():
+    return or_(UsageEvent.capability == "image",
+               and_(UsageEvent.capability.is_(None), UsageEvent.billing_key == "seedream"))
+
+
+def _kepu_usage_matches_task():
+    return and_(TaskRun.domain == "kepu", UsageEvent.task_run_id == TaskRun.id,
+                UsageEvent.user_id == TaskRun.requested_by,
+                UsageEvent.team_id.is_not_distinct_from(TaskRun.team_id),
+                UsageEvent.project_id.is_not_distinct_from(TaskRun.project_id),
+                or_(UsageEvent.domain == "kepu", UsageEvent.domain.is_(None)),
+                or_(TaskRun.shot_id.is_(None), UsageEvent.shot_id == TaskRun.shot_id))
+
+
+def _kind_expression(*, resolve_legacy: bool = True):
     phase = TaskRun.payload["phase"].as_string()
+    legacy_pipeline = and_(TaskRun.task_type == "project_pipeline", or_(phase.is_(None), phase == "produce"))
+    # Older resume tasks used "produce" for any stage. Use actual calls instead
+    # of treating an image-only batch (often with an empty video snapshot) as video.
+    used_video = exists(select(UsageEvent.id).where(_kepu_usage_matches_task(), UsageEvent.capability == "video"))
+    used_image = exists(select(UsageEvent.id).where(_kepu_usage_matches_task(), _image_usage_clause()))
+    used_audio = exists(select(UsageEvent.id).where(_kepu_usage_matches_task(), UsageEvent.billing_key == "tts"))
+    used_text = exists(select(UsageEvent.id).where(_kepu_usage_matches_task(), UsageEvent.billing_key == "llm_chat"))
+    saved_kind = TaskRun.result_payload["kind"].as_string()
+    saved_output = or_(TaskRun.result_payload["urls"][0].as_string().is_not(None),
+                       TaskRun.result_payload["url"].as_string().is_not(None))
     return case(
         (TaskRun.task_type.in_(_AUDIO_TYPES), "audio"),
         (TaskRun.task_type.in_(_TEXT_TYPES), "text"),
         (and_(TaskRun.task_type == "project_pipeline", phase == "assets"), "image"),
         (and_(TaskRun.task_type == "project_pipeline", phase == "audio"), "audio"),
         (and_(TaskRun.task_type == "project_pipeline", phase.in_(("script", "text", "plan", "storyboard"))), "text"),
+        (legacy_pipeline, case((and_(saved_kind.in_(("image", "video", "audio")), saved_output), saved_kind),
+                               (used_video, "video"), (used_image, "image"),
+                               (used_audio, "audio"), (used_text, "text"),
+                               (saved_kind.in_(("image", "video", "audio", "text")), saved_kind), else_="video")
+                          if resolve_legacy else "video"),
         (TaskRun.task_type.in_(("project_pipeline", "episode_compose", "project_compose_only")), "video"),
         (TaskRun.task_type.contains("video"), "video"),
         (TaskRun.task_type.contains("image"), "image"),
@@ -69,6 +98,9 @@ def _generation_kind(task) -> str:
             return "image"
         if phase == "audio":
             return "audio"
+        result = task.result_payload if isinstance(task.result_payload, dict) else {}
+        if phase in {None, "produce"} and result.get("kind") in ("image", "video", "audio", "text"):
+            return result["kind"]
         return "text" if phase in {"script", "text", "plan", "storyboard"} else "video"
     if name in {"episode_compose", "project_compose_only"} or "video" in name:
         return "video"
@@ -84,7 +116,8 @@ def _tool_link():
         task_id == reference,
         ToolRun.task_id == literal("task-") + task_id,
         and_(TaskRun.provider_task_id.is_not(None), TaskRun.domain.in_(("studio", "tools")),
-             ToolRun.kind == _kind_expression(), ToolRun.task_id == TaskRun.provider_task_id),
+             # This provider link cannot match kepu; omit its legacy usage lookups.
+             ToolRun.kind == _kind_expression(resolve_legacy=False), ToolRun.task_id == TaskRun.provider_task_id),
     ))
 
 
@@ -108,6 +141,8 @@ def _safe_params(data) -> dict:
 
 def _result_urls(result, kind: str) -> list[str]:
     if not isinstance(result, dict) or kind == "text":
+        return []
+    if result.get("kind") in ("image", "video", "audio", "text") and result["kind"] != kind:
         return []
     values = []
     for field in ("urls", f"{kind}_urls"):
@@ -139,16 +174,16 @@ def _text_output(result) -> str:
 
 def project_generation(task, *, viewer_id: int, owner_user_id: int | None = None,
                        linked_tool: ToolRun | None = None, fallback: dict | None = None,
-                       submitted_params: dict | None = None) -> GenerationRecordOut:
+                       submitted_params: dict | None = None, kind_override: str | None = None) -> GenerationRecordOut:
     """Project only safe public fields from already persisted task data."""
-    kind = _generation_kind(task)
+    kind = kind_override or _generation_kind(task)
     result = task.result_payload if isinstance(task.result_payload, dict) else {}
     outputs = [result, *(step.output_payload for step in getattr(task, "steps", [])
                          if isinstance(step.output_payload, dict))]
     urls = next((values for output in outputs if (values := _result_urls(output, kind))), [])
     if not urls and linked_tool is not None:
         urls = [url for value in (linked_tool.urls or []) if (url := _safe_url(value))]
-    if not urls and fallback and task.status == "succeeded":
+    if not urls and fallback and (task.status == "succeeded" or fallback.get("delivered")):
         urls = _result_urls(fallback, kind)
     preview = next((url for output in outputs if (url := _safe_url(output.get("preview_url")))), None)
     if linked_tool is not None and not preview:
@@ -238,15 +273,19 @@ async def _latest_target_tasks(db, tasks, target_name: str) -> set[int]:
                                 .group_by(target, kind))).all())
 
 
-async def _legacy_entity_outputs(db, tasks) -> dict[int, dict]:
+async def _legacy_entity_outputs(db, tasks, kinds) -> dict[int, dict]:
     """Recover legacy artifacts only from the latest matching owned entity.
 
     New work stores immutable URLs on the task itself. Older tasks did not, so
     only the latest successful generation may use an entity's current value;
     previous attempts stay visible without being assigned a later result.
     """
-    candidates = [task for task in tasks if task.status == "succeeded" and _generation_kind(task) != "text"
-                  and not any(_result_urls(value, _generation_kind(task)) for value in [task.result_payload,
+    def kind(task):
+        return kinds.get(task.id) or _generation_kind(task)
+
+    candidates = [task for task in tasks if task.status == "succeeded" and kind(task) != "text"
+                  and not (task.domain == "kepu" and kind(task) == "image")
+                  and not any(_result_urls(value, kind(task)) for value in [task.result_payload,
                               *(step.output_payload for step in task.steps)])]
     outputs = {}
     asset_tasks = [task for task in candidates if task.asset_id and task.task_type in {"asset_image", "asset_video"}]
@@ -257,7 +296,7 @@ async def _legacy_entity_outputs(db, tasks) -> dict[int, dict]:
         entities = {asset.id: (asset, project) for asset, project in rows}
         for task in asset_tasks:
             asset, project = entities.get(task.asset_id, (None, None))
-            if (asset is not None and task.id in latest and asset.asset_type == _generation_kind(task)
+            if (asset is not None and task.id in latest and asset.asset_type == kind(task)
                     and _entity_matches_task(task, project, drama=True) and _entity_is_current(asset, task)):
                 outputs[task.id] = {"urls": [asset.url]}
     fragment_tasks = [task for task in candidates if task.fragment_id and task.task_type == "fragment_video"]
@@ -282,7 +321,7 @@ async def _legacy_entity_outputs(db, tasks) -> dict[int, dict]:
         for task in shot_tasks:
             shot, project = entities.get(task.shot_id, (None, None))
             if shot is not None and task.id in latest and _entity_matches_task(task, project, drama=False):
-                outputs[task.id] = {"urls": [getattr(shot, f"{_generation_kind(task)}_url", None)]}
+                outputs[task.id] = {"urls": [getattr(shot, f"{kind(task)}_url", None)]}
     project_tasks = [task for task in candidates if task.project_id and task.task_type in {
         "project_pipeline", "project_compose_only", "project_regen_audio"}]
     if project_tasks:
@@ -296,12 +335,58 @@ async def _legacy_entity_outputs(db, tasks) -> dict[int, dict]:
                     or not _entity_is_current(project, task)):
                 continue
             phase = (task.payload or {}).get("phase")
-            kind = _generation_kind(task)
-            if kind == "video" and (task.task_type == "project_compose_only" or phase in {None, "compose", "produce"}):
+            media_kind = kind(task)
+            if media_kind == "video" and (task.task_type == "project_compose_only" or phase in {None, "compose", "produce"}):
                 outputs[task.id] = {"urls": [project.final_video_url]}
             else:
-                outputs[task.id] = {"urls": [getattr(shot, f"{kind}_url", None) for shot in shots if shot.project_id == project.id]}
+                outputs[task.id] = {"urls": [getattr(shot, f"{media_kind}_url", None) for shot in shots if shot.project_id == project.id]}
     return outputs
+
+
+async def _kepu_image_outputs(db, tasks, kinds) -> dict[int, dict]:
+    """Recover recorded deliveries, or the current image of an unchanged legacy shot.
+
+    Project timestamps also change during video/compose, so they cannot establish
+    whether an old image is still current. Legacy recovery requires the last image
+    usage for that shot, an owned project and the AI remote marker (uploads clear it).
+    """
+    candidates = {task.id: task for task in tasks if task.domain == "kepu"
+                  and kinds.get(task.id, _generation_kind(task)) == "image"
+                  and not any(_result_urls(value, "image") for value in [task.result_payload,
+                              *(step.output_payload for step in task.steps)])}
+    if not candidates:
+        return {}
+    events = list((await db.scalars(select(UsageEvent).join(TaskRun, _kepu_usage_matches_task())
+        .where(TaskRun.id.in_(candidates), _image_usage_clause()).order_by(UsageEvent.id))).all())
+    shot_ids = {event.shot_id for event in events if event.shot_id is not None}
+    entities = {shot.id: (shot, project) for shot, project in (await db.execute(
+        select(Shot, Project).join(Project, Shot.project_id == Project.id).where(Shot.id.in_(shot_ids)))).all()} if shot_ids else {}
+    # Include later tasks outside this page, and other members redrawing a team shot.
+    project_ids = {event.project_id for event in events if event.project_id is not None}
+    latest = dict((await db.execute(select(UsageEvent.shot_id, func.max(UsageEvent.id))
+        .where(UsageEvent.project_id.in_(project_ids), UsageEvent.shot_id.in_(shot_ids), _image_usage_clause())
+        .group_by(UsageEvent.shot_id))).all()) if shot_ids and project_ids else {}
+    urls = {}
+    for event in events:
+        try:
+            raw = json.loads(event.raw_usage_json or "{}")
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(raw, dict):
+            continue
+        detail = event.billing_detail or {}
+        if detail.get("mode") == "fixed_media" and detail.get("delivered") is not True:
+            continue
+        url = _safe_url(raw.get("delivery_id"))
+        if "delivery_id" not in raw:
+            shot, project = entities.get(event.shot_id, (None, None))
+            task = candidates[event.task_run_id]
+            if (task.status == "succeeded" and shot is not None and latest.get(shot.id) == event.id and shot.image_ark_url
+                    and shot.project_id == task.project_id and _entity_matches_task(task, project, drama=False)):
+                url = _safe_url(shot.image_url)
+        if url:
+            urls.setdefault(event.task_run_id, []).append(url)
+    return {task_id: {"urls": list(dict.fromkeys(values)), "delivered": True} for task_id, values in urls.items()}
 
 
 async def _submitted_parameters(db, tasks) -> dict[int, dict]:
@@ -352,11 +437,13 @@ async def _load_records(db, user, references, owner_user_id):
     linked_by_task = {}
     for task_id, tool in linked:
         linked_by_task.setdefault(task_id, tool)
-    fallback = await _legacy_entity_outputs(db, tasks)
+    kinds = {row.id: row.kind for row in references if row.source == "task"}
+    fallback = await _legacy_entity_outputs(db, tasks, kinds)
+    fallback.update(await _kepu_image_outputs(db, tasks, kinds))
     submitted = await _submitted_parameters(db, tasks)
     records = {f"task:{task.id}": project_generation(task, viewer_id=user.id, owner_user_id=owner_user_id,
         linked_tool=linked_by_task.get(task.id), fallback=fallback.get(task.id),
-        submitted_params=submitted.get(task.id)) for task in tasks}
+        submitted_params=submitted.get(task.id), kind_override=kinds.get(task.id)) for task in tasks}
     records.update({f"tool:{tool.id}": _legacy_projection(tool) for tool in tools})
     return [records[f"{row.source}:{row.id}"] for row in references]
 
@@ -383,7 +470,8 @@ async def list_generations(db: AsyncSession, user: User, *, page: int = 1, page_
                                          ToolRun.params["provider_task_id"].as_string() == value))
     history = union_all(task_query, tool_query).subquery()
     bucket = case((history.c.status.in_(_TERMINAL_STATUSES), history.c.status), else_="processing")
-    filters = []
+    # Exclude internal writing work before counts and pagination, including legacy tools.
+    filters = [history.c.kind.in_(("image", "video", "audio"))]
     if kind:
         filters.append(history.c.kind == kind)
     if created_from:
@@ -397,7 +485,7 @@ async def list_generations(db: AsyncSession, user: User, *, page: int = 1, page_
     total = counts[status] if status else counts["all"]
     if status:
         filters.append(bucket == status)
-    rows = (await db.execute(select(history.c.source, history.c.id).where(*filters)
+    rows = (await db.execute(select(history.c.source, history.c.id, history.c.kind).where(*filters)
                             .order_by(history.c.created_at.desc(), history.c.id.desc(), history.c.source.desc())
                             .offset((page - 1) * page_size).limit(page_size))).all()
     return GenerationListOut(items=await _load_records(db, user, rows, owner_user_id),
@@ -406,7 +494,7 @@ async def list_generations(db: AsyncSession, user: User, *, page: int = 1, page_
 
 async def get_generation(db: AsyncSession, user: User, task_id: int, *, team_id: int | None = None) -> GenerationRecordOut:
     scope, owner_user_id = await _workspace(db, user, team_id, {})
-    row = (await db.execute(select(literal("task").label("source"), TaskRun.id.label("id"))
+    row = (await db.execute(select(literal("task").label("source"), TaskRun.id.label("id"), _kind_expression().label("kind"))
                             .where(*scope, TaskRun.id == task_id, TaskRun.task_type != "mock_delay"))).first()
     if row is None:
         raise LookupError("任务不存在")
