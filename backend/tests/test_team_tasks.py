@@ -33,6 +33,42 @@ async def test_task_derives_team_from_asset_and_rejects_mixed_scope(db_session):
 
 
 @pytest.mark.asyncio
+async def test_task_rejects_stale_cached_personal_owner(db_session):
+    """The locked database owner must override a stale personal-project identity."""
+    from sqlalchemy import update
+    from app.services.tasks.service import create_task
+    from conftest import make_user
+
+    owner = await make_user(db_session)
+    new_owner = await make_user(db_session)
+    stale_project = DramaProject(user_id=owner.id, team_id=None, title="Changed owner")
+    db_session.add(stale_project)
+    await db_session.flush()
+    await db_session.execute(
+        update(DramaProject)
+        .where(DramaProject.id == stale_project.id)
+        .values(user_id=new_owner.id)
+        .execution_options(synchronize_session=False)
+    )
+    assert stale_project.user_id == owner.id
+    assert stale_project.team_id is None
+    assert await db_session.scalar(
+        select(DramaProject.user_id).where(DramaProject.id == stale_project.id)
+    ) == new_owner.id
+
+    with pytest.raises(ValueError, match="漫剧项目不存在或无权限"):
+        await create_task(
+            db_session, owner,
+            TaskCreateRequest(task_type="script_summary", drama_project_id=stale_project.id),
+            commit=False,
+        )
+
+    assert await db_session.scalar(
+        select(TaskRun.id).where(TaskRun.drama_project_id == stale_project.id)
+    ) is None
+
+
+@pytest.mark.asyncio
 async def test_team_task_read_and_cancel_roles_and_personal_list(db_session, monkeypatch):
     team, owner, member = await seed_team(db_session)
     task = await enqueue(db_session, member, team, monkeypatch)

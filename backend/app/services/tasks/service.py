@@ -978,10 +978,15 @@ async def _validate_task_scope(db: AsyncSession, user: User, body: TaskCreateReq
             raise ValueError("漫剧项目不存在或无权限")
         # Hold project ownership through task insertion. A concurrent personal transfer
         # must either observe this active task or finish before our scope is accepted.
-        project = (await db.execute(select(DramaProject).where(DramaProject.id == pid).with_for_update().execution_options(populate_existing=True))).scalar_one_or_none()
-        if project is None or project.team_id != actual_team_id:
+        # 只读取最新归属字段，避免刷新 ORM 对象使调用方已加载的剧本关系失效。
+        locked_project = (await db.execute(
+            select(DramaProject.id, DramaProject.user_id, DramaProject.team_id)
+            .where(DramaProject.id == pid)
+            .with_for_update()
+        )).one_or_none()
+        if locked_project is None or locked_project.team_id != actual_team_id:
             raise ValueError("项目归属已变化，请刷新页面后重试")
-        if actual_team_id is None and int(project.user_id) != int(user.id):
+        if actual_team_id is None and int(locked_project.user_id) != int(user.id):
             raise ValueError("漫剧项目不存在或无权限")
         body.drama_project_id = pid
     if body.team_id is not None and body.team_id != actual_team_id:
