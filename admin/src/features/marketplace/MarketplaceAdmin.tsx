@@ -2,6 +2,7 @@ import CategoryForm from './CategoryForm'
 import { useEffect, useState, type FormEvent } from 'react'
 import { request, assetUrl, letterFile, useMarketplaceEnabled, type Item, type Listing } from './api'
 import { PaginationBar } from '@/components/PaginationBar'
+import { AdminModal } from '@/components/admin/AdminModal'
 import { RefreshCw, Film, ShieldCheck, Users, Flag, CircleAlert, MessageCircle, Inbox } from 'lucide-react'
 import './marketplace-admin.css'
 
@@ -34,19 +35,20 @@ function WorkPreviewLink({ id }: { id: number }) {
 function AuthorizationLink({ details }: { details: unknown }) {
   const id = details && typeof details === 'object' && 'authorization_id' in details ? Number(details.authorization_id) : 0
   const [preview, setPreview] = useState<{ url: string; image: boolean } | null>(null)
+  const [open, setOpen] = useState(false)
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  useEffect(() => {
-    if (!id) return
-    let active = true
-    let objectUrl = ''
-    letterFile(id).then(blob => {
-      if (!active) return
-      objectUrl = URL.createObjectURL(blob)
-      setPreview({ url: objectUrl, image: blob.type.startsWith('image/') })
-    }).catch(e => { if (active) setError((e as Error).message) })
-    return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl) }
-  }, [id])
+  useEffect(() => () => { if (preview?.url) URL.revokeObjectURL(preview.url) }, [preview?.url])
   if (!id) return null
+  async function openLetter() {
+    setLoading(true); setError('')
+    try {
+      const blob = await letterFile(id)
+      const url = URL.createObjectURL(blob)
+      setPreview(current => { if (current?.url) URL.revokeObjectURL(current.url); return { url, image: blob.type.startsWith('image/') } })
+      setOpen(true)
+    } catch (e) { setError((e as Error).message) } finally { setLoading(false) }
+  }
   function downloadLetter() {
     if (!preview) return
     const link = document.createElement('a')
@@ -54,7 +56,20 @@ function AuthorizationLink({ details }: { details: unknown }) {
     link.download = preview.image ? '授权函.png' : '授权函.pdf'
     link.click()
   }
-  return <div className="market-ops-file"><button type="button" onClick={downloadLetter} disabled={!preview}>下载授权函</button>{preview && (preview.image ? <img src={preview.url} alt="已签署授权函" /> : <iframe className="market-ops-letter-frame" src={preview.url} title="授权函预览" />)}{error && <p role="alert">{error}</p>}</div>
+  return <div className="market-ops-file">
+    <button type="button" onClick={() => void openLetter()} disabled={loading}>{loading ? '加载授权函…' : '预览授权函'}</button>
+    {preview && <button type="button" onClick={downloadLetter}>下载授权函</button>}
+    {error && <p role="alert">{error}</p>}
+    <AdminModal open={open} onOpenChange={setOpen} title="授权函预览" subtitle="仅用于后台审核查看，不会自动下载文件。" size="xl" className="market-ops-letter-modal" bodyClassName="market-ops-letter-modal-body">
+      <div className="market-ops-letter-preview">
+        <div className="market-ops-letter-preview-head"><strong>PrintFilm 作品授权函</strong><span>{preview?.image ? '图片文件' : 'PDF 文件'} · 在线查看</span></div>
+        <div className="market-ops-letter-preview-canvas">
+          {preview ? (preview.image ? <img className="market-ops-letter-image" src={preview.url} alt="已签署授权函" /> : <iframe className="market-ops-letter-frame" src={preview.url} title="授权函预览" />) : <p>授权函尚未加载。</p>}
+        </div>
+      </div>
+      {preview && <div className="market-ops-letter-modal-actions"><button type="button" onClick={downloadLetter}>下载授权函</button></div>}
+    </AdminModal>
+  </div>
 }
 
 function CoverImage({ id }: { id?: number }) {

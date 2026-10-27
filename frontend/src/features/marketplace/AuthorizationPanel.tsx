@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent } from 'react'
+import { Download, Eye, FileCheck2, ShieldCheck } from 'lucide-react'
 import { date, letterFile, request } from './api'
+import Modal from '../../components/ui/Modal'
 
 type Signed = { id: number; signer_name: string; created_at: string; template_version: string }
 type Status = { template: { version: string; title: string; notices: string[]; body: string }; current: Signed | null }
@@ -12,6 +14,8 @@ export default function AuthorizationPanel({ onSigned }: { onSigned?: () => void
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [preview, setPreview] = useState<Preview | null>(null)
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const [previewBusy, setPreviewBusy] = useState(false)
   const [name, setName] = useState('')
   const [adult, setAdult] = useState(false)
   const [readAll, setReadAll] = useState(false)
@@ -21,17 +25,18 @@ export default function AuthorizationPanel({ onSigned }: { onSigned?: () => void
   const drawing = useRef<number | null>(null)
   const ready = adult && readAll && acceptKey && name.trim().length >= 2
   useEffect(() => { let active = true; request<Status>('/authorization').then(value => { if (active) setStatus(value) }).catch(e => { if (active) setError(e.message) }); return () => { active = false } }, [])
+  const previewUrl = useRef('')
   useEffect(() => {
-    const id = status?.current?.id
-    if (!id) return
-    let active = true
-    let objectUrl = ''
-    letterFile(id).then(blob => {
-      if (!active) return
-      objectUrl = URL.createObjectURL(blob)
-      setPreview({ url: objectUrl, image: blob.type.startsWith('image/') })
-    }).catch(e => { if (active) setError((e as Error).message) })
-    return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl) }
+    setPreview(null)
+    setPreviewOpen(false)
+    if (previewUrl.current) {
+      URL.revokeObjectURL(previewUrl.current)
+      previewUrl.current = ''
+    }
+    return () => {
+      if (previewUrl.current) URL.revokeObjectURL(previewUrl.current)
+      previewUrl.current = ''
+    }
   }, [status?.current?.id])
   function point(e: PointerEvent<HTMLCanvasElement>): Point {
     const rect = e.currentTarget.getBoundingClientRect()
@@ -46,12 +51,38 @@ export default function AuthorizationPanel({ onSigned }: { onSigned?: () => void
     if (ctx) { ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(...previous); ctx.lineTo(...next); ctx.stroke() }
     stroke.push(next)
   }
-  function downloadLetter() {
-    if (!preview) return
+  async function loadPreview() {
+    if (preview) return preview
+    const id = status?.current?.id
+    if (!id) return null
+    setPreviewBusy(true)
+    setError('')
+    try {
+      const blob = await letterFile(id)
+      const url = URL.createObjectURL(blob)
+      previewUrl.current = url
+      const value = { url, image: blob.type.startsWith('image/') }
+      setPreview(value)
+      return value
+    } catch (e) {
+      setError((e as Error).message)
+      return null
+    } finally {
+      setPreviewBusy(false)
+    }
+  }
+  async function openPreview() {
+    const value = await loadPreview()
+    if (value) setPreviewOpen(true)
+  }
+  async function downloadLetter() {
+    const value = await loadPreview()
+    if (!value) return
     const link = document.createElement('a')
-    link.href = preview.url
-    link.download = preview.image ? '授权函.png' : '授权函.pdf'
+    link.href = value.url
+    link.download = value.image ? '授权函.png' : '授权函.pdf'
     link.click()
+    link.remove()
   }
   async function sign() {
     if (!status || !ready) return
@@ -72,8 +103,23 @@ export default function AuthorizationPanel({ onSigned }: { onSigned?: () => void
       <div className="pf-market-letter">{status.template.body}</div>
       {status.current ? <>
         <p className="pf-market-notice">已签署：{status.current.signer_name} · {date(status.current.created_at)}。下面是存档预览，不会自动下载。</p>
-        <div className="pf-market-letter-actions"><button type="button" onClick={downloadLetter} disabled={!preview}>下载授权函</button></div>
-        {preview && (preview.image ? <img className="pf-market-letter-image" src={preview.url} alt="已签署授权函" /> : <iframe className="pf-market-letter-frame" src={preview.url} title="授权函预览" />)}
+        <div className="pf-market-letter-actions"><button type="button" onClick={() => { void openPreview() }} disabled={previewBusy}>{previewBusy ? '正在打开…' : '预览授权函'}</button><button type="button" onClick={() => { void downloadLetter() }} disabled={previewBusy}>{previewBusy ? '处理中…' : '下载授权函'}</button></div>
+        <Modal open={previewOpen} onClose={() => setPreviewOpen(false)} title="授权函预览" size="xl" className="pf-market-letter-modal">
+          <div className="pf-market-letter-modal-summary">
+            <div className="pf-market-letter-modal-summary-top">
+              <span className="pf-market-letter-modal-eyebrow"><ShieldCheck size={14} /> PRINTFILM · 数字资产市场</span>
+              <span className="pf-market-letter-modal-status"><FileCheck2 size={13} /> 已签署</span>
+            </div>
+            <strong>账号授权函</strong>
+            <span className="pf-market-letter-modal-meta">签署人：{status.current.signer_name} · {date(status.current.created_at)} · 条款 {status.current.template_version}</span>
+            <p>授权函仅用于核验作品发布权属，在线预览不会自动下载文件。</p>
+          </div>
+          <div className="pf-market-letter-preview-surface">
+            <div className="pf-market-letter-preview-label"><Eye size={14} /> 文档预览</div>
+            {preview && (preview.image ? <img className="pf-market-letter-image" src={preview.url} alt="已签署授权函" /> : <iframe className="pf-market-letter-frame" src={preview.url} title="授权函预览" />)}
+          </div>
+          <div className="pf-market-letter-modal-actions"><button type="button" className="pf-market-letter-modal-secondary" onClick={() => setPreviewOpen(false)}>关闭</button><button type="button" className="pf-market-letter-modal-primary" onClick={() => { void downloadLetter() }} disabled={previewBusy}><Download size={14} /> {previewBusy ? '处理中…' : '下载授权函'}</button></div>
+        </Modal>
       </> : <div className="pf-market-fields">
         <label>签署人真实姓名<input value={name} minLength={2} maxLength={80} onChange={e => setName(e.target.value)} disabled={busy} /></label>
         <p>在下方手写签名（支持鼠标或触屏）</p>
