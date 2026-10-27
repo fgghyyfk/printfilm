@@ -444,7 +444,7 @@ async def test_printfilm_signed_letter_review_and_public_flow(ctx, monkeypatch):
     assert signed.status_code == 200, signed.text
     authorization_id = signed.json()["id"]
     terms = (await ctx.client.get("/api/marketplace/authorization")).json()["template"]
-    assert terms["version"].endswith("v2") and "第七条" in terms["body"] and len(terms["notices"]) == 4
+    assert terms["version"].endswith("v3") and "第七条" in terms["body"] and len(terms["notices"]) == 4
     assert len(uploaded) == 1
     assert (await ctx.client.post("/api/marketplace/authorization", json=signing_body())).json()["id"] == authorization_id
     assert len(uploaded) == 1
@@ -489,6 +489,103 @@ async def test_signature_requires_oss_current_terms_and_real_strokes(ctx, monkey
     for changes in ({"accepted_terms": False}, {"strokes": []}, {"strokes": [[[1, 1], [1, 1]]]}, {"strokes": [[[900, 1], [950, 2]]]}):
         assert (await ctx.client.post("/api/marketplace/authorization", json={**signing_body(), **changes})).status_code == 422
     assert (await ctx.client.post("/api/marketplace/authorization", json={**signing_body(), "template_version": "obsolete"})).status_code == 409
+
+
+async def test_new_terms_preserve_signed_legacy_archive(ctx, monkeypatch):
+    """新模板另建签署记录，旧协议正文、哈希和已签文件均保持原样。"""
+    import hashlib
+    from app.marketplace.authorization import VERSION
+    from app.marketplace.models import Authorization
+
+    fake_oss(monkeypatch)
+    legacy_body = "已签署的 v2 历史协议正文"
+    legacy_pdf = b"%PDF-legacy-v2-signed"
+    legacy = Authorization(owner_id=ctx.owner.id, template_version="printfilm-marketplace-2026-10-v2",
+                           signer_name="历史签署人", body=legacy_body,
+                           body_hash=hashlib.sha256(legacy_body.encode()).hexdigest(),
+                           letter_key="marketplace/authorizations/legacy.pdf", signature_key="legacy-signature",
+                           client_ip="127.0.0.1", user_agent="legacy-test")
+    ctx.db.add(legacy)
+    await ctx.db.flush()
+    old_hash = legacy.body_hash
+    monkeypatch.setattr("app.marketplace.authorization.render_and_store", lambda *_args: "marketplace/authorizations/new-v3.pdf")
+    monkeypatch.setattr(storage, "read", lambda key: legacy_pdf if key == legacy.letter_key else b"%PDF-new-v3-signed")
+    before = (await ctx.client.get("/api/marketplace/authorization")).json()
+    assert before["current"] is None and before["template"]["version"] == VERSION
+    obsolete = await ctx.client.post("/api/marketplace/authorization", json={**signing_body(), "template_version": legacy.template_version})
+    assert obsolete.status_code == 409
+    signed = await ctx.client.post("/api/marketplace/authorization", json=signing_body())
+    assert signed.status_code == 200, signed.text
+    assert signed.json()["id"] != legacy.id and signed.json()["template_version"] == VERSION
+    await ctx.db.refresh(legacy)
+    assert legacy.body == legacy_body and legacy.body_hash == old_hash
+    assert legacy.letter_key == "marketplace/authorizations/legacy.pdf"
+    preview = await ctx.client.get(f"/api/marketplace/authorizations/{legacy.id}/file")
+    assert preview.status_code == 200 and preview.content == legacy_pdf
+
+
+@pytest.mark.parametrize("authorization_version, visible", [
+    ("printfilm-marketplace-2026-10-v2", True),
+    ("printfilm-marketplace-2026-10-v3", True),
+    ("unrecognized-template", False),
+])
+async def test_published_printfilm_content_accepts_only_known_signed_templates(ctx, monkeypatch, authorization_version, visible):
+    """模板升级不撤下历史作品/短剧；来源、封禁和期限限制仍逐次检查。"""
+    from app.marketplace.models import Authorization, Series, SeriesEpisode
+    from app.marketplace.service import rights_valid
+
+    fake_oss(monkeypatch)
+    video = await asset(ctx)
+    cover = await asset(ctx, kind="image")
+    legacy = Authorization(owner_id=ctx.owner.id, template_version=authorization_version, signer_name="历史作者",
+                           body="历史已签协议", body_hash="a" * 64, letter_key="marketplace/authorizations/legacy.pdf",
+                           signature_key="legacy", client_ip="127.0.0.1", user_agent="test")
+    ctx.db.add(legacy)
+    await ctx.db.flush()
+    proof = Rights(owner_id=ctx.owner.id, asset_id=video.id, basic_status="approved", full_status="approved",
+                   details={"source": "printfilm", "authorization_id": str(legacy.id), "authorization_version": authorization_version})
+    work = Work(owner_id=ctx.owner.id, title="历史免费作品", source="printfilm", sale_type="free", price_fen=0, asset_id=video.id,
+                cover_asset_id=cover.id, audit_status="approved", listed=True, license_scope="市场展示")
+    series = Series(owner_id=ctx.owner.id, title="历史免费短剧", sale_type="free", cover_asset_id=cover.id,
+                    audit_status="approved", listed=True)
+    ctx.db.add_all([proof, work, series])
+    await ctx.db.flush()
+    episode = SeriesEpisode(owner_id=ctx.owner.id, series_id=series.id, episode_no=1, title="第一集", source="printfilm",
+                            asset_id=video.id, cover_asset_id=cover.id, audit_status="approved", listed=True)
+    ctx.db.add(episode)
+    await ctx.db.flush()
+    ctx.user = None
+    listing = (await ctx.client.get("/api/marketplace/works")).json()
+    assert listing["meta"]["total"] == (2 if visible else 0)
+    expected = 200 if visible else 404
+    assert (await ctx.client.get(f"/api/marketplace/works/{work.id}")).status_code == expected
+    assert (await ctx.client.get(f"/api/marketplace/series/{series.id}")).status_code == expected
+    assert (await ctx.client.get(f"/api/marketplace/media/work/{work.id}/preview")).status_code == expected
+    assert rights_valid(proof, full=True) is visible
+    proof.blocked = True
+    await ctx.db.flush()
+    assert (await ctx.client.get("/api/marketplace/works")).json()["meta"]["total"] == 0
+    assert not rights_valid(proof, full=True)
+    proof.blocked, proof.valid_until = False, now() - timedelta(seconds=1)
+    await ctx.db.flush()
+    assert (await ctx.client.get("/api/marketplace/works")).json()["meta"]["total"] == 0
+    assert not rights_valid(proof, full=True)
+
+
+async def test_legacy_authorization_cannot_submit_new_work_version(ctx):
+    """历史授权只维持既有展示；新版本提交仍要求签署当前模板。"""
+    video = await asset(ctx)
+    cover = await asset(ctx, kind="image")
+    ctx.db.add(Rights(owner_id=ctx.owner.id, asset_id=video.id, basic_status="approved", full_status="approved",
+                      details={"source": "printfilm", "authorization_id": "1",
+                               "authorization_version": "printfilm-marketplace-2026-10-v2"}))
+    await ctx.db.flush()
+    work = (await ctx.client.post("/api/marketplace/works", json={**work_body(video), "source": "printfilm",
+            "sale_type": "free", "cover_asset_id": cover.id})).json()
+    response = await ctx.client.post(f"/api/marketplace/works/{work['id']}/submit", json={"version": work["version"]})
+    assert response.status_code == 400 and "现行 PrintFilm 授权函" in response.json()["detail"]
+    unchanged = await ctx.db.get(Work, work["id"])
+    assert unchanged.audit_status == "draft" and not unchanged.listed
 
 
 async def test_external_proof_and_assistance_are_separate(ctx):

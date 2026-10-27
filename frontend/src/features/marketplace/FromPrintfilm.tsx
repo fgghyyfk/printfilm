@@ -78,7 +78,7 @@ export default function FromPrintfilm() {
 
   if (loading) return <p role="status">正在读取已生成的成片…</p>
   return <>
-    <PageHeading title="发布到数字资产市场" description="选择 PrintFilm 已经生成的成片。文件由服务器复制到市场，草稿仍要补充授权并提交审核。" back="/marketplace/works/new" />
+    <PageHeading title="发布到数字资产市场" description="选择 PrintFilm 已生成的成片，同步到市场后补充资料并提交审核。已签署有效授权函的账号会自动关联，未签署的请在提交前完成一次签署。" back="/marketplace/works/new" />
     {error && <p role="alert">{error}</p>}
     <section className="pf-market-form">
       <h2>科普成片</h2>
@@ -95,7 +95,7 @@ export default function FromPrintfilm() {
     </section>
     <section className="pf-market-form">
       <h2>漫剧分集</h2>
-      <p className="pf-market-notice">只导入勾选的分集。同步完成后，在短剧编辑页补充封面、价格和授权函，再提交审核。</p>
+      <p className="pf-market-notice">只同步勾选的完整分集。完成后，在短剧编辑页补充封面、价格和作品介绍，再提交审核；有效账号授权函会自动关联。</p>
       {dramas.length === 0 ? <p>还没有可导入的漫剧分集。</p> : <>
         <label>漫剧项目<select value={dramaId} onChange={event => setDramaId(event.target.value)}>{dramas.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
         <button type="button" disabled={busy || !drama} onClick={() => setDramaPublishOpen(true)}>选择完整分集并发布</button>

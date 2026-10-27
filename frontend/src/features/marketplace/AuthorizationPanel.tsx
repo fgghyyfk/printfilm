@@ -102,7 +102,7 @@ export default function AuthorizationPanel({ onSigned }: { onSigned?: () => void
       <ol className="pf-market-letter-notices">{status.template.notices.map(item => <li key={item}>{item}</li>)}</ol>
       <div className="pf-market-letter">{status.template.body}</div>
       {status.current ? <>
-        <p className="pf-market-notice">已签署：{status.current.signer_name} · {date(status.current.created_at)}。下面是存档预览，不会自动下载。</p>
+        <p className="pf-market-notice">已签署：{status.current.signer_name} · {date(status.current.created_at)}。可点击预览或下载已签署授权函。</p>
         <div className="pf-market-letter-actions"><button type="button" onClick={() => { void openPreview() }} disabled={previewBusy}>{previewBusy ? '正在打开…' : '预览授权函'}</button><button type="button" onClick={() => { void downloadLetter() }} disabled={previewBusy}>{previewBusy ? '处理中…' : '下载授权函'}</button></div>
         <Modal open={previewOpen} onClose={() => setPreviewOpen(false)} title="授权函预览" size="xl" className="pf-market-letter-modal">
           <div className="pf-market-letter-modal-summary">
@@ -112,7 +112,7 @@ export default function AuthorizationPanel({ onSigned }: { onSigned?: () => void
             </div>
             <strong>账号授权函</strong>
             <span className="pf-market-letter-modal-meta">签署人：{status.current.signer_name} · {date(status.current.created_at)} · 条款 {status.current.template_version}</span>
-            <p>授权函仅用于核验作品发布权属，在线预览不会自动下载文件。</p>
+            <p>此处展示已签署的授权协议，具体授权范围以协议正文为准。在线预览不会自动下载文件。</p>
           </div>
           <div className="pf-market-letter-preview-surface">
             <div className="pf-market-letter-preview-label"><Eye size={14} /> 文档预览</div>

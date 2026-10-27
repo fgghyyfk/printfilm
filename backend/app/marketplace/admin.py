@@ -11,6 +11,17 @@ from .service import (asset_owned, check_version, data, event, fail, now, notify
 router = APIRouter()
 
 
+def _notification_note(message: str, note: str) -> str:
+    """省略空说明，避免向用户展示内部枚举或空分隔符。"""
+    return f"{message}说明：{note.strip()}" if note.strip() else message
+
+
+def _review_notification(kind: str, title: str, decision: str, reason: str, approved_next: str) -> str:
+    result = (f"{kind}《{title}》审核通过，{approved_next}。" if decision == "approved"
+              else f"{kind}《{title}》审核未通过，请根据审核说明修改后重新提交。")
+    return _notification_note(result, reason)
+
+
 @router.get(
     "/categories", response_model=dict,
     summary='获取市场分类管理配置',
@@ -189,7 +200,8 @@ async def review_work(work_id: int, body: ReviewInput, db: DB, user: Admin):
     if body.decision == "rejected" and rights:
         rights.basic_status = rights.full_status = "rejected"
     event(db, user.id, "work", item.id, f"review_{body.decision}", body.reason, item.version)
-    notify(db, item.owner_id, f"作品《{item.title}》审核结果：{body.decision}；{body.reason}")
+    notify(db, item.owner_id, _review_notification("作品", item.title, body.decision, body.reason,
+                                                  "可前往作品管理页查看播放准备状态并上架"))
     await db.commit()
     return {"ok": True}
 
@@ -330,7 +342,8 @@ async def review_series(series_id: int, body: ReviewInput, db: DB, user: Admin):
             if rights:
                 rights.basic_status = rights.full_status = "rejected"
     event(db, user.id, "series", series.id, f"review_{body.decision}", body.reason, series.version)
-    notify(db, series.owner_id, f"系列《{series.title}》审核结果：{body.decision}；{body.reason}")
+    notify(db, series.owner_id, _review_notification("短剧", series.title, body.decision, body.reason,
+                                                    "可前往短剧编辑页查看各集播放准备状态并上架"))
     await db.commit()
     return {"ok": True}
 
@@ -379,7 +392,8 @@ async def review_rights(rights_id: int, body: ReviewInput, db: DB, user: Admin, 
     item.basic_status = item.full_status = body.decision
     item.reason = body.reason
     event(db, user.id, "rights", item.id, f"{'full' if full else 'basic'}_{body.decision}", body.reason + "；核验项：" + ",".join(body.checks), item.version)
-    notify(db, item.owner_id, f"视频 #{item.asset_id} 权属核验结果：{body.decision}；{body.reason}")
+    result = "版权材料已核验" if body.decision == "approved" else "版权材料未通过核验，请补充材料后重新提交"
+    notify(db, item.owner_id, _notification_note(f"视频 #{item.asset_id} {result}。", body.reason))
     await db.commit()
     return {"ok": True}
 
@@ -403,7 +417,8 @@ async def review_recruit(post_id: int, body: ReviewInput, db: DB, user: Admin):
     item.audit_status, item.reason = body.decision, body.reason
     item.state = "open" if body.decision == "approved" else "draft"
     event(db, user.id, "recruit", item.id, f"content_{body.decision}", body.reason, item.version)
-    notify(db, item.owner_id, f"需求《{item.title}》审核结果：{body.decision}；{body.reason}")
+    notify(db, item.owner_id, _review_notification("招募需求", item.title, body.decision, body.reason,
+                                                  "已进入招募广场，创作者将通过客服表达接单意向"))
     await db.commit()
     return {"ok": True}
 
@@ -427,7 +442,9 @@ async def case_status(case_id: int, body: CaseReview, db: DB, user: Admin):
     item.status, item.note = body.status, body.note
     item.version += 1
     event(db, user.id, "case", item.id, body.status, body.note, item.version)
-    notify(db, item.owner_id, f"登记案件 #{item.id} 更新：{body.status}；{body.note}")
+    case_status_names = {"pending_materials": "待补充材料", "reviewing": "材料核验中", "supplement": "待补正", "rejected": "已驳回",
+                         "applying": "办理中", "certificated": "已取得证书", "cancelled": "已取消"}
+    notify(db, item.owner_id, _notification_note(f"历史版权登记记录 #{item.id} 已更新为{case_status_names[body.status]}。", body.note))
     await db.commit()
     return {"ok": True}
 
@@ -453,7 +470,15 @@ async def block(kind: str, record_id: int, body: BlockInput, db: DB, user: Admin
     if isinstance(item, (Work, Recruit, Rights)):
         item.reason = body.reason
     event(db, user.id, kind, item.id, "blocked" if body.blocked else "unblocked", body.reason)
-    notify(db, item.owner_id, f"{kind} #{item.id} {'被限制' if body.blocked else '已解除限制'}：{body.reason}")
+    kind_name = {"work": "作品", "rights": "版权材料", "recruit": "招募需求", "submission": "历史投稿"}[kind]
+    title = f"《{item.title}》" if getattr(item, "title", None) else f" #{item.id}"
+    if body.blocked:
+        message = f"{kind_name}{title}已被限制，请查看处理说明并联系客服。"
+    elif isinstance(item, Work):
+        message = f"{kind_name}{title}已解除限制，请前往作品管理页查看审核与上架状态。"
+    else:
+        message = f"{kind_name}{title}已解除限制，请前往我的发布查看当前状态。"
+    notify(db, item.owner_id, _notification_note(message, body.reason))
     await db.commit()
     return {"ok": True}
 

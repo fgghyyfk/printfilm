@@ -53,7 +53,7 @@ export default function SeriesDetail() {
   const next = item.episodes[index + 1]
   const ranges = Math.ceil(item.episodes.length / pageSize)
   const visible = item.episodes.filter(entry => Math.floor((entry.episode_no - 1) / pageSize) === range)
-  const price = item.sale_type === 'platform_unlock' ? '按集解锁' : `版权参考价 ${money(item.copyright_price_fen)}`
+  const price = item.sale_type === 'platform_unlock' ? '按集解锁' : `版权合作参考价 ${money(item.copyright_price_fen)}`
   return <>
     <PageHeading title={item.title} description={`${item.category || '其他'} · 短剧 · ${item.episodes.length} 集`} back="/marketplace" />
     <div className="pf-series-layout">
@@ -62,12 +62,12 @@ export default function SeriesDetail() {
       </section>
       <aside className="pf-series-side">
         <section className="pf-series-meta">
-          <p>{item.sale_type === 'free' || (item.free_episode_count || 0) >= item.episodes.length ? '全部免费，播放原片' : (item.free_episode_count || 0) > 0 ? `前 ${item.free_episode_count} 集免费播放原片，之后 ${price}` : `收费观看 · ${price}`}</p>
+          <p>{item.sale_type === 'free' || (item.free_episode_count || 0) >= item.episodes.length ? '全部免费，播放原片' : (item.free_episode_count || 0) > 0 ? `前 ${item.free_episode_count} 集免费播放原片，之后 ${price}` : `${item.sale_type === 'platform_unlock' ? '平台投放收益' : '版权出售收益'} · ${price}`}</p>
           <p className="pf-market-text">{item.description || '暂无系列简介'}</p>
-          <p>{free ? '本集免费观看，直接播放原片。使用仍须遵守作者授权范围。' : item.sale_type === 'platform_unlock' ? '未购买时可看短试看，购买后永久在线播放。' : '当前提供短试看，联系客服确认版权价格与完整成片交付。'}</p>
+          <p>{free ? '本集免费观看，直接播放原片。使用仍须遵守作者授权范围。' : item.sale_type === 'platform_unlock' ? '未购买时可看短试看，购买后可永久在线播放所购版本，不包含版权转让。' : '当前提供短试看。版权合作请联系客服，确认价格、授权或转让范围及完整成片交付。'}</p>
           {!free && <small>短试看不加水印，最长15秒且不超过原片时长的30%。</small>}
           {!free && item.sale_type === 'copyright_contact' && <NeedLogin><Contact kind="series_episode" id={episode.id} /></NeedLogin>}
-          {!free && item.sale_type === 'platform_unlock' && <small>平台解锁购买和永久播放由 App 接入，当前网页只播放短试看。</small>}
+          {!free && item.sale_type === 'platform_unlock' && <small>当前网页仅提供短试看，暂不支持购买和完整播放。</small>}
         </section>
         <div className="pf-series-transport">
           <button type="button" disabled={!previous} onClick={() => previous && select(previous.episode_no)}>上一集</button>

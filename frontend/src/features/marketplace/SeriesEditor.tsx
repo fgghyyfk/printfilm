@@ -11,6 +11,7 @@ import AuthorizationPanel from './AuthorizationPanel'
 import DramaPublishModal from './DramaPublishModal'
 import { handoffLabel, isHandoffActive, latestEpisodeHandoffs, mergeSyncedEpisodes } from './dramaPublishing'
 import { isFreeEpisode, previewStatusLabel } from './playbackPolicy'
+import { explainMarketplaceError } from './messages'
 
 type EpisodeDraft = { id?: number; version?: number; episode_no: number; title: string; description?: string; asset_id: number | null; cover_asset_id: number | null; copyright_price_fen: number; unlock_price_fen: number; share_bps?: number | null; source?: 'printfilm' | 'external' | 'original' | 'ai' | 'authorized'; preview_status?: string; preview_error?: string }
 type SeriesDraft = { id: number; version: number; title: string; description: string; category: string; tags: string[]; cover_asset_id?: number | null; sale_type: 'free' | 'copyright_contact' | 'platform_unlock'; copyright_price_fen: number; free_episode_count?: number; audit_status?: string; listed?: boolean; episodes: EpisodeDraft[]; authorization_ready?: boolean; sync_in_progress?: boolean; pending_handoffs?: Handoff[] }
@@ -27,15 +28,15 @@ function EpisodePanel({ episode, count, free, open, saleType, seriesId, busy, vi
     </button>
     {open && <div className="pf-episode-fold-body">
       <p role="status">试看：{previewStatusLabel(episode.preview_status, free)}</p>
-      {!free && episode.preview_error && <p role="alert">{episode.preview_error}</p>}
+      {!free && episode.preview_error && <p role="alert">{explainMarketplaceError(episode.preview_error)}</p>}
       <label>集标题<span className="pf-req-mark">必填</span><input required value={episode.title} onChange={event => update({ title: event.target.value })} /></label>
       <label>分集简介<textarea value={episode.description || ''} maxLength={5000} onChange={event => update({ description: event.target.value })} placeholder="介绍这一集的内容" /></label>
       <label>内容来源<select disabled={videoLocked} value={episode.source || 'external'} onChange={event => update({ source: event.target.value as EpisodeDraft['source'] })}><option value="printfilm">PrintFilm 生成</option><option value="external">其他平台生成</option></select></label>
       <AssetPicker kind="video" value={episode.asset_id} onChange={asset_id => update({ asset_id })} title="分集视频" required locked={videoLocked} lockUntilPreview={lockVideoUntilPreview} />
       <AssetPicker kind="image" required value={episode.cover_asset_id} onChange={cover_asset_id => update({ cover_asset_id })} title="分集封面（可使用系列封面）" />
-      {saleType !== 'free' && <label>本集版权参考价（元）<input type="number" min="0" step="0.01" value={(episode.copyright_price_fen / 100) || ''} onChange={event => update({ copyright_price_fen: Math.round(Number(event.target.value || 0) * 100) })} /></label>}
+      {saleType !== 'free' && <label>本集参考价（元）<input type="number" min="0" step="0.01" value={(episode.copyright_price_fen / 100) || ''} onChange={event => update({ copyright_price_fen: Math.round(Number(event.target.value || 0) * 100) })} /></label>}
       {episode.source === 'printfilm' ? <p className="pf-market-notice">PrintFilm 生成：本系列统一引用账号授权函，无需逐集签署或上传证书。</p> : episode.asset_id && (seriesId ? <button type="button" disabled={busy} onClick={goRights}>填写第 {episode.episode_no} 集权属材料</button> : <p>请先保存草稿，再填写这一集的权属材料。保存后会回到这个页面。</p>)}
-      {saleType === 'platform_unlock' && <><label>解锁价（元）<input type="number" min="0.01" step="0.01" value={(episode.unlock_price_fen / 100) || ''} onChange={event => update({ unlock_price_fen: Math.round(Number(event.target.value || 0) * 100) })} /></label><label>本集平台分成（万分比，可留空使用后台默认）<input type="number" min="0" max="10000" step="1" value={episode.share_bps ?? ''} onChange={event => update({ share_bps: event.target.value === '' ? null : Number(event.target.value) })} placeholder="例如 2000" /></label></>}
+      {saleType === 'platform_unlock' && <><label>本集观众解锁价（元）<input type="number" min="0.01" step="0.01" value={(episode.unlock_price_fen / 100) || ''} onChange={event => update({ unlock_price_fen: Math.round(Number(event.target.value || 0) * 100) })} /></label><label>本集平台抽成比例（万分比，可留空使用平台默认）<input type="number" min="0" max="10000" step="1" value={episode.share_bps ?? ''} onChange={event => update({ share_bps: event.target.value === '' ? null : Number(event.target.value) })} placeholder="例如 2000，表示平台20%、创作者80%" /><small>10000 表示 100%；本集未设置时使用平台默认比例。</small></label></>}
       {count > 1 && <button type="button" disabled={busy} onClick={remove}>删除本集</button>}
     </div>}
   </article>
@@ -178,7 +179,7 @@ export default function SeriesEditor() {
     if (!id || !series) return
     if (syncBlocked || dirty || episodeHandoffs.some(item => item.status === 'failed')) { setError('请等待同步完成、处理失败任务并保存修改后，再提交审核'); return }
     setBusy(true); setError('')
-    try { const updated = await request<SeriesDraft>(`/series/${id}/submit`, 'POST', { version: series.version }); acceptSaved(updated); setMessage('系列已提交，等待管理员在同一次内容审核中核验版权和内容。') }
+    try { const updated = await request<SeriesDraft>(`/series/${id}/submit`, 'POST', { version: series.version }); acceptSaved(updated); setMessage(updated.audit_status === 'processing' ? '正在准备短试看，完成后自动进入待审核。' : '短剧与版权材料已提交，等待管理员统一审核。') }
     catch (err) { setError((err as Error).message) } finally { setBusy(false) }
   }
   async function removeSeries() {
@@ -208,7 +209,7 @@ export default function SeriesEditor() {
   if (id && !series && !error) return <p role="status">正在加载系列…</p>
   return <><PageHeading title={id ? '编辑短剧' : '发布短剧'} description="短剧和单条视频一样出现在作品广场。在这一页添加分集，版权规则与单视频相同。" back="/marketplace" /><div className="pf-market-editor-layout"><form className="pf-market-editor-main pf-market-form" onSubmit={save} onChangeCapture={event => { if (!(event.target as HTMLElement).closest('.pf-market-authorization, [data-market-transient]')) setDirty(true) }}>
     <FormSection step="01" title="系列信息" description="先建立系列，再逐集上传或导入成片。"><label>系列标题<span className="pf-req-mark">必填</span><input name="title" required maxLength={200} placeholder="例如：城市里的光" defaultValue={current?.title} /></label><label>简介<textarea name="description" maxLength={5000} defaultValue={current?.description} placeholder="介绍整部短剧的主题和内容" /></label><div className="pf-market-field-row"><label>分类<span className="pf-req-mark">必填</span><select name="category" required value={category || current?.category || ''} onChange={event => setCategory(event.target.value)} disabled={!categories.length}><option value="" disabled>请选择系列分类</option>{current?.category && !categories.includes(current.category) && <option value={current.category}>{current.category}（历史分类）</option>}{categories.map(name => <option key={name} value={name}>{name}</option>)}</select>{categoryError && <span role="alert">{categoryError}</span>}</label><label>标签<input name="tags" defaultValue={current?.tags?.join('，')} placeholder="都市，短剧" /></label></div><AssetPicker kind="image" value={coverId} onChange={value => { setCoverId(value); setDirty(true) }} title="系列封面（与分集封面至少上传一处）" /></FormSection>
-    <FormSection step="02" title="收益方式" description="平台投放收益需要管理员先配置默认分成比例。"><select value={saleType} onChange={event => setSaleType(event.target.value as typeof saleType)}><option value="free">免费公开</option><option value="copyright_contact">联系客服购买版权</option><option value="platform_unlock">平台投放收益（每集独立解锁）</option></select><label>版权参考价（元）<input name="copyright_price" type="number" min="0" step="0.01" defaultValue={current?.copyright_price_fen ? current.copyright_price_fen / 100 : ''} /></label><label>免费集数<span className="pf-req-mark">前几集免费</span><input type="number" min="0" max="10000" step="1" value={freeEpisodeCount} onChange={event => setFreeEpisodeCount(Math.max(0, Number(event.target.value) || 0))} /></label><p className="pf-market-notice">选择“免费公开”时全部分集播放原片，无需试看；其他收费类型可将前几集设为免费，其余分集提供最长15秒且不超过原片30%的无水印短试看。修改收费方式或免费集数后，将重新检查对应播放文件是否就绪。</p></FormSection>
+    <FormSection step="02" title="收益方式" description="免费公开供完整观看；版权出售通过客服洽谈；平台投放按集解锁并分成。"><select value={saleType} onChange={event => setSaleType(event.target.value as typeof saleType)}><option value="free">免费公开</option><option value="copyright_contact">版权出售收益</option><option value="platform_unlock">平台投放收益</option></select><label>参考价（元）<input name="copyright_price" type="number" min="0" step="0.01" defaultValue={current?.copyright_price_fen ? current.copyright_price_fen / 100 : ''} /></label><label>免费集数<span className="pf-req-mark">前几集免费</span><input type="number" min="0" max="10000" step="1" value={freeEpisodeCount} onChange={event => setFreeEpisodeCount(Math.max(0, Number(event.target.value) || 0))} /></label><p className="pf-market-notice">选择“免费公开”时全部分集播放原片，无需试看；其他收益方式可将前几集设为免费，其余分集提供最长15秒且不超过原片30%的无水印短试看。版权合作参考价不代表已包含版权转让手续等额外费用，具体事项请与客服确认。平台投放按集定价，观众解锁仅获得永久在线播放权益，不包含版权转让；需在平台启用分成后才能提交审核。修改收益方式或免费集数后，将重新检查播放准备状态。</p></FormSection>
     <FormSection step="03" title="分集内容" description="每集一个完整视频和封面。同步期间可以填写信息，完成后再保存。">
       <div className="pf-episode-tools"><button type="button" onClick={() => setExpanded(new Set(episodes.map((_, index) => index)))}>展开全部</button><button type="button" onClick={() => setExpanded(new Set())}>收起全部</button><span>共 {episodes.length} 集</span></div>
       {syncBlocked && <p className="pf-market-notice" role="status">{syncing ? '成片正在后台同步，可先填写标题与价格。同步完成后即可保存和提交；关闭页面不影响任务。' : '正在确认同步状态…'}</p>}
@@ -225,8 +226,8 @@ export default function SeriesEditor() {
             update={patch => update(index, patch)}
             remove={() => { setDirty(true); if (episode.id) setRemovedEpisodeIds(value => [...value, episode.id as number]); setEpisodes(value => value.filter((_, itemIndex) => itemIndex !== index).map((item, itemIndex) => ({ ...item, episode_no: itemIndex + 1 }))); setExpanded(new Set([Math.max(0, index - 1)])) }}
             goRights={() => { if (dirty) { setError('请先保存草稿，再填写外部作品的权属材料'); return } navigate(`/marketplace/assets/${episode.asset_id}/rights?source=${episode.source || 'external'}&return=${encodeURIComponent(`/marketplace/series/${id}/edit`)}`) }} />
-          {handoff && handoff.status !== 'ready' && <p className="pf-market-notice" role={handoff.status === 'failed' ? 'alert' : 'status'}>第 {episode.episode_no} 集 · {handoffLabel(handoff)}{handoff.error ? `：${handoff.error}` : ''}
-            {handoff.status === 'failed' && handoff.retryable !== false && <button type="button" disabled={busy} onClick={() => void retryHandoff(handoff)}>重试同步</button>}
+          {handoff && handoff.status !== 'ready' && <p className="pf-market-notice" role={handoff.status === 'failed' ? 'alert' : 'status'}>第 {episode.episode_no} 集 · {handoffLabel(handoff)}{handoff.error ? `：${explainMarketplaceError(handoff.error)}` : ''}
+            {handoff.status === 'failed' && handoff.retryable !== false && <button type="button" disabled={busy} onClick={() => void retryHandoff(handoff)}>重新同步</button>}
             {handoff.status === 'failed' && handoff.retryable === false && <span>请在下方重新选择漫剧分集，确认最新源版本后同步。</span>}
           </p>}
         </div>
@@ -252,7 +253,7 @@ export default function SeriesEditor() {
       {id && series?.audit_status === 'approved' && (previewFailed || previewActive) && <button type="button" disabled={busy || syncBlocked || dirty || previewActive} onClick={() => void retryPreviews()}>{previewActive ? '正在生成短试看…' : '重试生成短试看'}</button>}
       {id && <button type="button" disabled={busy || syncBlocked} onClick={() => void removeSeries()}>删除短剧</button>}
     </div>
-  </form><PublishGuide /></div>
+  </form><PublishGuide saleType={saleType} /></div>
   {importOpen && id && sourceId && <DramaPublishModal projectId={Number(sourceId)} targetSeriesId={Number(id)} onClose={() => setImportOpen(false)} onPublished={() => {
     setBusy(true)
     request<SeriesDraft>(`/series/${id}`).then(fresh => {
