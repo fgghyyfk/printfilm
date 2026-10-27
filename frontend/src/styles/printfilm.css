@@ -11,12 +11,12 @@
 
 .pf-shell-main {
   flex: 1 0 auto;
+  min-width: 0;
   width: 100%;
   max-width: 1280px;
   margin: 0 auto;
   padding: 1.25rem 1.5rem 3.5rem;
   box-sizing: border-box;
-  overflow-x: clip;
 }
 
 .pf-shell-main.wide {
@@ -413,9 +413,9 @@
 .pf-land-hero::before {
   content: '';
   position: absolute;
-  right: -6%;
+  right: 0;
   top: -18%;
-  width: 460px;
+  width: min(460px, 100%);
   height: 340px;
   background: radial-gradient(circle, rgba(182, 255, 0, 0.38) 0%, rgba(182, 255, 0, 0) 68%);
   pointer-events: none;
@@ -1476,12 +1476,15 @@
 
 .pf-settings-fields label {
   display: flex;
+  min-width: 0;
   flex-direction: column;
   gap: 0.35rem;
   font-size: 0.9rem;
 }
 
 .pf-settings-fields input {
+  width: 100%;
+  min-width: 0;
   border: 1px solid var(--pf-line);
   border-radius: 12px;
   padding: 0.65rem 0.8rem;
@@ -4443,6 +4446,8 @@ button.pf-shot-editable:disabled {
 
 .pf-pagination {
   display: flex;
+  flex-wrap: wrap;
+  max-width: 100%;
   justify-content: center;
   align-items: center;
   gap: 0.35rem;
@@ -4809,336 +4814,7 @@ button.pf-shot-editable:disabled {
   color: var(--pf-muted);
 }
 
-/* ?? Pricing / top-up page ?? */
-.pf-pricing-page {
-  width: 100%;
-  margin: 0 auto;
-  padding: 0 0 2rem;
-}
-
-.pf-pricing-hero-band {
-  margin: 0 calc(-1 * var(--pf-shell-pad, 1.5rem)) 0;
-  padding: 2.5rem var(--pf-shell-pad, 1.5rem) 3.25rem;
-  background:
-    radial-gradient(ellipse 70% 80% at 0% 0%, rgba(186, 230, 253, 0.55), transparent 58%),
-    radial-gradient(ellipse 60% 70% at 100% 20%, rgba(190, 242, 100, 0.35), transparent 55%),
-    linear-gradient(180deg, #f3f8fc 0%, #fafcfb 100%);
-}
-
-.pf-pricing-hero-inner {
-  display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(300px, 380px);
-  gap: 1.5rem;
-  align-items: center;
-  max-width: 1180px;
-  margin: 0 auto;
-}
-
-.pf-pricing-hero-copy {
-  text-align: left;
-  padding-top: 0.35rem;
-}
-
-.pf-pricing-hero-copy h1 {
-  margin: 0 0 0.55rem;
-  font-size: clamp(2rem, 3.5vw, 2.65rem);
-  line-height: 1.15;
-  letter-spacing: -0.03em;
-  font-weight: 800;
-}
-
-.pf-pricing-hero-copy > p {
-  margin: 0;
-  max-width: 32rem;
-  color: var(--pf-muted);
-  font-size: 0.98rem;
-  line-height: 1.65;
-}
-
-.pf-pricing-hero-features {
-  list-style: none;
-  margin: 1.35rem 0 0;
-  padding: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.65rem 1.25rem;
-}
-
-.pf-pricing-hero-features li {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.86rem;
-  font-weight: 600;
-  color: #3d4654;
-}
-
-.pf-pricing-hero-feature-icon {
-  display: inline-grid;
-  place-items: center;
-  width: 1.65rem;
-  height: 1.65rem;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--pf-lime) 38%, #fff);
-  color: #3d4a12;
-}
-
-.pf-pricing-guest-tip {
-  margin: 1.1rem 0 0;
-  font-size: 0.9rem;
-  color: var(--pf-muted);
-}
-
-.pf-pricing-guest-tip a {
-  color: var(--pf-ink);
-  font-weight: 700;
-}
-
-/* ?????? */
-.pf-pricing-wallet-dark {
-  background: linear-gradient(155deg, #243041 0%, #151c26 52%, #111820 100%);
-  color: #f3f5f8;
-  border-radius: 20px;
-  padding: 1.25rem 1.2rem 1rem;
-  box-shadow: 0 22px 48px rgba(17, 24, 39, 0.28);
-  transform: translateY(0.35rem);
-}
-
-.pf-pricing-wallet-dark-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  margin-bottom: 0.45rem;
-}
-
-.pf-pricing-wallet-dark-label {
-  font-size: 0.78rem;
-  color: rgba(243, 245, 248, 0.72);
-}
-
-.pf-pricing-wallet-dark-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-}
-
-.pf-pricing-wallet-eye,
-.pf-pricing-wallet-history {
-  appearance: none;
-  border: none;
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(243, 245, 248, 0.88);
-  border-radius: 999px;
-  cursor: pointer;
-  transition: background 0.15s ease;
-}
-
-.pf-pricing-wallet-eye {
-  display: inline-grid;
-  place-items: center;
-  width: 1.75rem;
-  height: 1.75rem;
-  padding: 0;
-}
-
-.pf-pricing-wallet-history {
-  padding: 0.32rem 0.7rem;
-  font-size: 0.74rem;
-  font-weight: 600;
-}
-
-.pf-pricing-wallet-eye:hover,
-.pf-pricing-wallet-history:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.14);
-}
-
-.pf-pricing-wallet-history:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.pf-pricing-wallet-dark-balance {
-  display: block;
-  font-size: clamp(2rem, 4.5vw, 2.35rem);
-  font-weight: 800;
-  letter-spacing: -0.03em;
-  line-height: 1.05;
-  margin-bottom: 1rem;
-}
-
-.pf-pricing-wallet-dark-meta {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.75rem;
-  margin: 0;
-  padding-top: 0.85rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.pf-pricing-wallet-dark-meta dt {
-  margin: 0 0 0.15rem;
-  font-size: 0.72rem;
-  color: rgba(243, 245, 248, 0.58);
-  font-weight: 500;
-}
-
-.pf-pricing-wallet-dark-meta dd {
-  margin: 0;
-  font-size: 0.98rem;
-  font-weight: 700;
-}
-
-.pf-pricing-wallet-dark-frozen {
-  margin: 0.65rem 0 0;
-  font-size: 0.76rem;
-  color: rgba(243, 245, 248, 0.55);
-}
-
-.pf-pricing-wallet-dark-updated {
-  margin: 0.75rem 0 0;
-  font-size: 0.72rem;
-  color: rgba(243, 245, 248, 0.42);
-}
-
-.pf-pricing-body {
-  max-width: 1180px;
-  margin: 0 auto;
-  padding: 1.75rem var(--pf-shell-pad, 1.5rem) 0;
-}
-
-.pf-pricing-hint,
-.pf-pricing-error {
-  text-align: left;
-  margin: 0 0 1.25rem;
-}
-
-.pf-pricing-section-head {
-  text-align: left;
-  margin-bottom: 1rem;
-}
-
-.pf-pricing-section-head.is-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  flex-wrap: wrap;
-}
-
-.pf-pricing-section-head h2 {
-  margin: 0;
-  font-size: 1.2rem;
-  font-weight: 800;
-}
-
-.pf-pricing-section-head p {
-  margin: 0;
-  color: var(--pf-muted);
-  font-size: 0.9rem;
-}
-
-.pf-pricing-pay-section {
-  margin-bottom: 2rem;
-}
-
-.pf-pricing-pay-tip {
-  margin: -0.35rem 0 0.85rem;
-  font-size: 0.84rem;
-  color: #b45309;
-}
-
-.pf-pricing-pay-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.75rem;
-}
-
-.pf-pricing-pay-tile {
-  position: relative;
-  appearance: none;
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
-  min-height: 58px;
-  padding: 0.75rem 0.9rem;
-  border: 1.5px solid var(--pf-line);
-  border-radius: 14px;
-  background: #fff;
-  color: var(--pf-ink);
-  cursor: pointer;
-  text-align: left;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
-
-.pf-pricing-pay-tile:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--pf-ink) 22%, var(--pf-line));
-}
-
-.pf-pricing-pay-tile.is-active {
-  border-color: var(--pf-lime);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--pf-lime) 65%, transparent);
-}
-
-.pf-pricing-pay-tile.is-disabled {
-  opacity: 0.72;
-  cursor: not-allowed;
-  background: #fafbfc;
-}
-
-.pf-pricing-pay-tile-label {
-  font-size: 0.92rem;
-  font-weight: 700;
-}
-
-.pf-pricing-pay-tile-badge {
-  font-size: 0.65rem;
-  font-weight: 800;
-  color: #3d4a12;
-  background: color-mix(in srgb, var(--pf-lime) 55%, #fff);
-  padding: 0.12rem 0.38rem;
-  border-radius: 999px;
-}
-
-.pf-pricing-pay-tile-soon,
-.pf-pricing-pay-tile-sub {
-  margin-left: auto;
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: var(--pf-muted);
-}
-
-.pf-pricing-pay-tile-check {
-  margin-left: auto;
-  display: inline-grid;
-  place-items: center;
-  width: 1.35rem;
-  height: 1.35rem;
-  border-radius: 50%;
-  background: var(--pf-lime);
-  color: var(--pf-ink);
-}
-
-.pf-pricing-pay-tile-icon {
-  display: inline-grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  background: #eef0f3;
-  color: #4b5563;
-  flex-shrink: 0;
-}
-
-.pf-pricing-pay-trust {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  color: var(--pf-muted);
-  font-size: 0.84rem;
-  font-weight: 600;
-}
-
+/* Shared payment brand icons. */
 .pf-pay-brand-icon {
   display: block;
   flex-shrink: 0;
@@ -5155,315 +4831,6 @@ button.pf-shot-editable:disabled {
   height: 28px;
 }
 
-.pf-pricing-skus {
-  margin-bottom: 2rem;
-}
-
-.pf-pricing-sku-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.9rem;
-}
-
-.pf-pricing-sku-card {
-  position: relative;
-  text-align: left;
-  background: #fff;
-  border: 1px solid var(--pf-line);
-  border-radius: 18px;
-  padding: 1.2rem 1.05rem 1.1rem;
-  box-shadow: 0 8px 24px rgba(17, 19, 24, 0.04);
-  display: flex;
-  flex-direction: column;
-  min-height: 260px;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-}
-
-.pf-pricing-sku-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 12px 28px rgba(17, 19, 24, 0.07);
-}
-
-.pf-pricing-sku-card.is-recommended {
-  border-color: var(--pf-lime);
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--pf-lime) 55%, transparent),
-    0 14px 32px color-mix(in srgb, var(--pf-lime) 20%, transparent);
-}
-
-.pf-pricing-rec-badge {
-  position: absolute;
-  top: 0.75rem;
-  right: 0.75rem;
-  background: var(--pf-lime);
-  color: var(--pf-ink);
-  font-size: 0.72rem;
-  font-weight: 800;
-  padding: 0.18rem 0.45rem;
-  border-radius: 999px;
-}
-
-.pf-pricing-sku-tier {
-  margin: 0 0 0.15rem;
-  font-size: 0.92rem;
-  font-weight: 700;
-  color: var(--pf-ink);
-}
-
-.pf-pricing-sku-hint {
-  margin: 0 0 0.85rem;
-  font-size: 0.78rem;
-  font-weight: 500;
-  color: var(--pf-muted);
-}
-
-.pf-pricing-sku-price {
-  display: flex;
-  align-items: baseline;
-  gap: 0.1rem;
-  margin-bottom: 0.35rem;
-}
-
-.pf-pricing-sku-price .yen {
-  font-size: 1.1rem;
-  font-weight: 700;
-}
-
-.pf-pricing-sku-price strong {
-  font-size: 2.45rem;
-  font-weight: 800;
-  letter-spacing: -0.04em;
-  line-height: 1;
-}
-
-.pf-pricing-sku-credit {
-  margin: 0;
-  color: var(--pf-muted);
-  font-size: 0.88rem;
-}
-
-.pf-pricing-sku-credit em {
-  font-style: normal;
-  color: var(--pf-ink);
-  font-weight: 700;
-}
-
-.pf-pricing-sku-bonus {
-  margin: 0.35rem 0 0;
-  color: #5f7a12;
-  font-size: 0.82rem;
-  font-weight: 600;
-  min-height: 1.2em;
-}
-
-.pf-pricing-sku-bonus.is-empty {
-  visibility: hidden;
-}
-
-.pf-pricing-sku-cta {
-  margin-top: auto;
-  width: 100%;
-  appearance: none;
-  border: 1.5px solid var(--pf-ink);
-  background: #fff;
-  color: var(--pf-ink);
-  border-radius: 999px;
-  padding: 0.65rem 1rem;
-  font-size: 0.92rem;
-  font-weight: 700;
-  cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease;
-}
-
-.pf-pricing-sku-cta:hover:not(:disabled) {
-  background: #f4f5f7;
-}
-
-.pf-pricing-sku-cta.is-primary {
-  background: var(--pf-lime);
-  border-color: var(--pf-lime);
-}
-
-.pf-pricing-sku-cta.is-primary:hover:not(:disabled) {
-  filter: brightness(0.97);
-}
-
-.pf-pricing-sku-cta:disabled {
-  opacity: 0.65;
-  cursor: wait;
-}
-
-.pf-pricing-info {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1rem;
-  margin-bottom: 2.5rem;
-}
-
-.pf-pricing-info-card {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 1rem;
-  align-items: start;
-  background: #f6f8fa;
-  border: 1px solid color-mix(in srgb, var(--pf-line) 70%, transparent);
-  border-radius: 16px;
-  padding: 1.25rem 1.35rem;
-  text-align: left;
-}
-
-.pf-pricing-info-visual {
-  display: grid;
-  place-items: center;
-  width: 3.5rem;
-  height: 3.5rem;
-  border-radius: 14px;
-  flex-shrink: 0;
-}
-
-.pf-pricing-info-visual.is-billing {
-  background: linear-gradient(145deg, #dbeafe, #eff6ff);
-  color: #2563eb;
-}
-
-.pf-pricing-info-visual.is-value {
-  background: linear-gradient(145deg, color-mix(in srgb, var(--pf-lime) 45%, #fff), #f7fee7);
-  color: #4d7c0f;
-}
-
-.pf-pricing-info-card h3 {
-  margin: 0 0 0.7rem;
-  font-size: 1rem;
-  font-weight: 800;
-}
-
-.pf-pricing-info-card ul {
-  margin: 0;
-  padding-left: 1.1rem;
-  color: var(--pf-muted);
-  line-height: 1.85;
-  font-size: 0.9rem;
-}
-
-.pf-pricing-checks {
-  list-style: none;
-  padding-left: 0 !important;
-}
-
-.pf-pricing-checks li {
-  position: relative;
-  padding-left: 1.35rem;
-}
-
-.pf-pricing-checks li::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0.45rem;
-  width: 0.85rem;
-  height: 0.85rem;
-  border-radius: 50%;
-  background: var(--pf-lime)
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%23111318' d='M6.4 11.2 3.2 8l1.1-1.1 2.1 2.1 5-5L12.5 5z'/%3E%3C/svg%3E")
-    center / 0.7rem no-repeat;
-}
-
-.pf-pricing-site-foot {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  gap: 1rem;
-  padding: 1.5rem 0 0.5rem;
-  border-top: 1px solid var(--pf-line);
-  color: var(--pf-muted);
-  font-size: 0.82rem;
-}
-
-.pf-pricing-site-brand {
-  margin: 0;
-  justify-self: start;
-}
-
-.pf-pricing-site-brand a {
-  color: inherit;
-  text-decoration: none;
-  font-weight: 700;
-}
-
-.pf-pricing-site-links {
-  display: inline-flex;
-  gap: 1.25rem;
-  flex-wrap: wrap;
-  justify-content: center;
-}
-
-.pf-pricing-site-links a {
-  color: inherit;
-  text-decoration: none;
-}
-
-.pf-pricing-site-links a:hover {
-  color: var(--pf-ink);
-}
-
-.pf-pricing-site-copy {
-  margin: 0;
-  justify-self: end;
-  text-align: right;
-}
-
-@media (max-width: 1024px) {
-  .pf-pricing-hero-inner {
-    grid-template-columns: 1fr;
-  }
-
-  .pf-pricing-wallet-dark {
-    transform: none;
-    max-width: 420px;
-  }
-
-  .pf-pricing-pay-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .pf-pricing-sku-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 640px) {
-  .pf-pricing-hero-band {
-    padding-top: 1.75rem;
-    padding-bottom: 2rem;
-  }
-
-  .pf-pricing-hero-features {
-    flex-direction: column;
-    gap: 0.55rem;
-  }
-
-  .pf-pricing-pay-grid,
-  .pf-pricing-sku-grid,
-  .pf-pricing-info {
-    grid-template-columns: 1fr;
-  }
-
-  .pf-pricing-info-card {
-    grid-template-columns: 1fr;
-  }
-
-  .pf-pricing-site-foot {
-    grid-template-columns: 1fr;
-    text-align: center;
-  }
-
-  .pf-pricing-site-brand,
-  .pf-pricing-site-copy {
-    justify-self: center;
-    text-align: center;
-  }
-}
-
 /* ?? Payment QR modal ?? */
 .pf-modal-panel.pf-pay-modal {
   width: min(400px, 94vw);
@@ -5474,7 +4841,7 @@ button.pf-shot-editable:disabled {
 
 .pf-pay-modal .pf-modal-body {
   padding: 0;
-  overflow: visible;
+  overflow: auto;
 }
 
 .pf-pay-sheet {
@@ -5517,6 +4884,8 @@ button.pf-shot-editable:disabled {
 
 .pf-pay-sku-box {
   display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
   gap: 0.75rem;
@@ -5528,14 +4897,17 @@ button.pf-shot-editable:disabled {
 }
 
 .pf-pay-sku-box strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: 0.95rem;
   font-weight: 700;
 }
 
 .pf-pay-sku-box span {
+  min-width: 0;
   color: var(--pf-muted);
   font-size: 0.88rem;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .pf-pay-amount {
@@ -5550,6 +4922,8 @@ button.pf-shot-editable:disabled {
 }
 
 .pf-pay-amount em {
+  display: block;
+  overflow-wrap: anywhere;
   font-style: normal;
   font-size: 2rem;
   font-weight: 800;
@@ -5747,12 +5121,13 @@ button.pf-shot-editable:disabled {
 
 /* ?? Global dialog / modal system ?? */
 .pf-dialog-root {
+  --pf-dialog-gutter: clamp(12px, 2.5vw, 20px);
   position: fixed;
   inset: 0;
   z-index: 1000;
   display: grid;
   place-items: center;
-  padding: 1.25rem;
+  padding: max(var(--pf-dialog-gutter), env(safe-area-inset-top)) max(var(--pf-dialog-gutter), env(safe-area-inset-right)) max(var(--pf-dialog-gutter), env(safe-area-inset-bottom)) max(var(--pf-dialog-gutter), env(safe-area-inset-left));
   animation: pf-dialog-root-in 0.22s ease-out;
 }
 
@@ -5985,8 +5360,11 @@ button.pf-shot-editable:disabled {
 
 .pf-modal-panel {
   position: relative;
+  min-width: 0;
+  min-height: 0;
+  max-width: 100%;
   width: min(560px, 100%);
-  max-height: min(90vh, 860px);
+  max-height: min(860px, calc(100dvh - max(var(--pf-dialog-gutter), env(safe-area-inset-top)) - max(var(--pf-dialog-gutter), env(safe-area-inset-bottom))));
   display: flex;
   flex-direction: column;
   background: linear-gradient(180deg, #ffffff 0%, #fbfcfa 100%);
@@ -6000,11 +5378,11 @@ button.pf-shot-editable:disabled {
 }
 
 .pf-modal-panel--lg {
-  width: min(720px, 96vw);
+  width: min(720px, 100%);
 }
 
 .pf-modal-panel--xl {
-  width: min(960px, 96vw);
+  width: min(960px, 100%);
 }
 
 /* Right-side drawer (help / secondary panels) */
@@ -6056,6 +5434,7 @@ button.pf-shot-editable:disabled {
 
 .pf-modal-head {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
@@ -6064,6 +5443,8 @@ button.pf-shot-editable:disabled {
 }
 
 .pf-modal-head h3 {
+  min-width: 0;
+  overflow-wrap: anywhere;
   margin: 0;
   font-family: 'Noto Serif SC', Georgia, serif;
   font-size: 1.2rem;
@@ -6071,6 +5452,7 @@ button.pf-shot-editable:disabled {
 }
 
 .pf-modal-close {
+  flex-shrink: 0;
   width: 32px;
   height: 32px;
   border: 0;
@@ -6087,17 +5469,22 @@ button.pf-shot-editable:disabled {
 }
 
 .pf-modal-body {
+  min-width: 0;
+  min-height: 0;
   padding: 1rem 1.15rem;
   overflow: auto;
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
 }
 
 .pf-modal-foot {
+  flex-shrink: 0;
   padding: 0.85rem 1.15rem 1.1rem;
   border-top: 1px solid var(--pf-line);
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 0.55rem;
 }

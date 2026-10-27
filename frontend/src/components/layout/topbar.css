@@ -126,6 +126,8 @@
   .pf-topbar-brand .brand-logo { width: 29px; height: 29px; }
   .pf-topbar-language, .pf-topbar-help { display: none; }
   .pf-topbar-actions { gap: 9px; }
+  .pf-topbar-account, .pf-topbar-menu-toggle, .pf-topbar-menu-close { width: 44px; height: 44px; }
+  .pf-topbar-create { min-height: 44px; }
   .pf-topbar-account-panel { position: fixed; top: calc(var(--pf-nav-h, 64px) + 8px); right: 12px; }
   .pf-shell--topbar .pf-shell-main:not(.flush) { padding: 24px 18px 36px; }
   .pf-shell--topbar .pf-settings { grid-template-columns: minmax(0, 1fr); }
@@ -140,15 +142,23 @@
   .pf-shell--topbar .pf-land-frames { width: 100%; max-width: 300px; margin-inline: auto; }
 }
 
+@media (max-width: 480px) {
+  .pf-topbar-create { width: 44px; height: 44px; padding: 0; }
+  .pf-topbar-create > span { display: none; }
+}
+
 @media (max-width: 400px) {
   .pf-app-topbar { padding-inline: 12px; }
   .pf-topbar-brand .brand-mark { gap: 8px; }
   .pf-topbar-brand .brand-word { font-size: 14px; }
   .pf-topbar-actions { gap: 7px; }
-  .pf-topbar-create { width: 34px; height: 34px; padding: 0; }
-  .pf-topbar-create > span { display: none; }
   .pf-topbar-menu { padding: 18px; }
   .pf-topbar-menu .pf-topbar-menu-link { gap: 7px; padding: 9px 7px; font-size: 12px; }
+}
+
+/* 触屏输入保持可读字号，避免 iOS 聚焦时自动放大并打乱页面。 */
+@media (hover: none) and (pointer: coarse) {
+  :is(.pf-shell.pf-shell--topbar, .pf-dialog-root, .modal-backdrop) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]):not([type="button"]):not([type="submit"]), textarea, select) { font-size: max(1em, 16px); }
 }
 
 @media (max-width: 560px) {
