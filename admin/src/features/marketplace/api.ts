@@ -12,6 +12,21 @@ export async function request<T>(path: string, method = 'GET', body?: unknown): 
   return value as T
 }
 
+/** 管理端在线打开授权函，不把 OSS 地址交给浏览器直接下载。 */
+export async function letterFile(id: number): Promise<Blob> {
+  let response: Response
+  try {
+    response = await fetch(`/api/marketplace/authorizations/${id}/file`, { headers: { Authorization: `Bearer ${getToken() ?? ''}` } })
+  } catch {
+    throw new Error('授权函暂时无法打开')
+  }
+  if (!response.ok) {
+    const value = await response.json().catch(() => ({}))
+    throw new Error(typeof value.detail === 'string' ? value.detail : '授权函暂时无法打开')
+  }
+  return response.blob()
+}
+
 // 管理端菜单也由服务端能力发现控制，不另造前端开关。
 export function useMarketplaceEnabled() {
   const [enabled, setEnabled] = useState(false)

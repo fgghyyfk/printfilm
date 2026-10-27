@@ -1,6 +1,6 @@
 import CategoryForm from './CategoryForm'
 import { useEffect, useState, type FormEvent } from 'react'
-import { request, assetUrl, useMarketplaceEnabled, type Item, type Listing } from './api'
+import { request, assetUrl, letterFile, useMarketplaceEnabled, type Item, type Listing } from './api'
 import { PaginationBar } from '@/components/PaginationBar'
 import { RefreshCw, Film, ShieldCheck, Users, Flag, CircleAlert, MessageCircle, Inbox } from 'lucide-react'
 import './marketplace-admin.css'
@@ -32,10 +32,29 @@ function WorkPreviewLink({ id }: { id: number }) {
   return <div className="market-ops-file"><button type="button" onClick={async () => { try { setUrl((await request<{ url: string }>(`/api/marketplace/media/work/${id}/preview`)).url); setError('') } catch (e) { setError((e as Error).message) } }}>查看短试看</button>{url && <video src={url} controls className="my-3 max-h-[500px] w-full" />}{error && <p role="alert">{error}</p>}</div>
 }
 function AuthorizationLink({ details }: { details: unknown }) {
-  const [url, setUrl] = useState(''); const [filename, setFilename] = useState('授权函.pdf'); const [error, setError] = useState('')
   const id = details && typeof details === 'object' && 'authorization_id' in details ? Number(details.authorization_id) : 0
+  const [preview, setPreview] = useState<{ url: string; image: boolean } | null>(null)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    if (!id) return
+    let active = true
+    let objectUrl = ''
+    letterFile(id).then(blob => {
+      if (!active) return
+      objectUrl = URL.createObjectURL(blob)
+      setPreview({ url: objectUrl, image: blob.type.startsWith('image/') })
+    }).catch(e => { if (active) setError((e as Error).message) })
+    return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl) }
+  }, [id])
   if (!id) return null
-  return <div className="market-ops-file"><button type="button" onClick={async () => { try { const value = await request<{ url: string; filename?: string }>(`/api/marketplace/authorizations/${id}/letter`); setUrl(value.url); setFilename(value.filename || '授权函.pdf'); setError('') } catch (e) { setError((e as Error).message) } }}>查看授权函</button>{url && (filename.endsWith('.pdf') ? <a href={url} target="_blank" rel="noreferrer">下载授权函 PDF</a> : <a href={url} target="_blank" rel="noreferrer"><img src={url} alt="已签署授权函" className="my-3 max-h-[600px] max-w-full object-contain" /></a>)}{error && <p role="alert">{error}</p>}</div>
+  function downloadLetter() {
+    if (!preview) return
+    const link = document.createElement('a')
+    link.href = preview.url
+    link.download = preview.image ? '授权函.png' : '授权函.pdf'
+    link.click()
+  }
+  return <div className="market-ops-file"><button type="button" onClick={downloadLetter} disabled={!preview}>下载授权函</button>{preview && (preview.image ? <img src={preview.url} alt="已签署授权函" /> : <iframe className="market-ops-letter-frame" src={preview.url} title="授权函预览" />)}{error && <p role="alert">{error}</p>}</div>
 }
 
 function CoverImage({ id }: { id?: number }) {

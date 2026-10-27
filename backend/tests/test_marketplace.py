@@ -375,6 +375,7 @@ def test_signed_media_url_preserves_oss_object_headers(monkeypatch):
 def signing_body():
     from app.marketplace.authorization import VERSION
     return {"template_version": VERSION, "signer_name": "测试签署人", "accepted_terms": True,
+            "adult": True, "read_all": True, "accept_key": True,
             "strokes": [[[20 + i * 12, 60 + (i % 3) * 20] for i in range(25)]]}
 
 
@@ -427,11 +428,14 @@ async def test_printfilm_signed_letter_review_and_public_flow(ctx, monkeypatch):
     from app.marketplace.models import Authorization
     fake_oss(monkeypatch)
     uploaded = []
+    stored = {}
     def capture(key, path, content_type):
-        assert path.read_bytes().startswith(b"%PDF")
+        stored["bytes"] = path.read_bytes()
+        assert stored["bytes"].startswith(b"%PDF")
         assert key.endswith("/letter.pdf") and content_type == "application/pdf"
         uploaded.append(key)
     monkeypatch.setattr(storage, "upload", capture)
+    monkeypatch.setattr(storage, "read", lambda key: stored["bytes"])
     video = await asset(ctx)
     path = f"/api/marketplace/assets/{video.id}/rights"
     payload = {"version": 0, "details": source_details("printfilm")}
@@ -439,6 +443,8 @@ async def test_printfilm_signed_letter_review_and_public_flow(ctx, monkeypatch):
     signed = await ctx.client.post("/api/marketplace/authorization", json=signing_body())
     assert signed.status_code == 200, signed.text
     authorization_id = signed.json()["id"]
+    terms = (await ctx.client.get("/api/marketplace/authorization")).json()["template"]
+    assert terms["version"].endswith("v2") and "第七条" in terms["body"] and len(terms["notices"]) == 4
     assert len(uploaded) == 1
     assert (await ctx.client.post("/api/marketplace/authorization", json=signing_body())).json()["id"] == authorization_id
     assert len(uploaded) == 1
@@ -465,8 +471,15 @@ async def test_printfilm_signed_letter_review_and_public_flow(ctx, monkeypatch):
     assert (await ctx.client.get("/api/marketplace/works")).json()["meta"]["total"] == 1
     ctx.user = ctx.stranger
     assert (await ctx.client.get(f"/api/marketplace/authorizations/{authorization_id}/letter")).status_code == 404
+    assert (await ctx.client.get(f"/api/marketplace/authorizations/{authorization_id}/file")).status_code == 404
     ctx.user = ctx.admin
     assert (await ctx.client.get(f"/api/marketplace/authorizations/{authorization_id}/letter")).status_code == 200
+    preview = await ctx.client.get(f"/api/marketplace/authorizations/{authorization_id}/file")
+    assert preview.status_code == 200 and preview.content.startswith(b"%PDF")
+    assert preview.headers["content-type"].startswith("application/pdf")
+    assert preview.headers["content-disposition"].startswith("inline")
+    download = await ctx.client.get(f"/api/marketplace/authorizations/{authorization_id}/file", params={"download": True})
+    assert download.headers["content-disposition"].startswith("attachment")
 
 
 async def test_signature_requires_oss_current_terms_and_real_strokes(ctx, monkeypatch):
