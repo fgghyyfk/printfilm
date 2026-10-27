@@ -25,9 +25,9 @@ class Settings(BaseSettings):
     database_url_sync: str = "postgresql+psycopg2://printfilm:change-me-strong-db-password@127.0.0.1:15432/printfilm"
     # 连接已初始化的共享库时可关闭建表/补列/种子数据；仍加载数据库中的模型配置。
     database_bootstrap_enabled: bool = True
-    # Postgres 连接池（统一任务平台 / API 共用）
-    db_pool_size: int = 5
-    db_max_overflow: int = 5
+    # 每个 API 进程与任务平台共用；默认最多 70，PG 上限 100 时保留 30 给其他连接。
+    db_pool_size: int = 50
+    db_max_overflow: int = 20
     db_pool_recycle_sec: int = 1800
     db_pool_timeout_sec: int = 30
     redis_url: str = "redis://127.0.0.1:6379/0"

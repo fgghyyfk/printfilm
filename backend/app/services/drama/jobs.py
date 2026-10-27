@@ -1827,6 +1827,9 @@ async def run_asset_image_job(
                     asset_id,
                     len(resolved_prompt),
                 )
+            # refresh/查询会开启读事务；等待上游生图和并发槽位前归还连接。
+            # expire_on_commit=False 保留已加载数据，生成结果随后另开事务写回。
+            await db.commit()
             asset = await generate_asset_image(
                 db,
                 user,

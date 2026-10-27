@@ -37,7 +37,11 @@ DATABASE_URL_SYNC=postgresql+psycopg2://printfilm:<密码>@127.0.0.1:5432/printf
 REDIS_URL=redis://127.0.0.1:6379/0
 TASK_RUNTIME_MAX_CONCURRENCY=4
 TASK_USER_MAX_CONCURRENCY=4
+DB_POOL_SIZE=50
+DB_MAX_OVERFLOW=20
 ```
+
+连接池按需建立连接，每个 API 进程最多使用 `50 + 20 = 70` 条；PostgreSQL `max_connections=100` 时保留 30 条给其他应用、迁移、调试和管理连接。增加进程或实例时，各自有独立连接池，须按所有进程的最大连接数之和重新核对数据库预算。修改连接池环境变量后，宿主服务重启 API；Docker 部署重建 API 容器以重新加载环境变量。连接池扩容仍需配合长任务在等待上游前释放数据库事务。
 
 需本机已安装：Python 3.12、FFmpeg（PATH）、Node.js。
 
@@ -106,7 +110,7 @@ docker compose -f deploy/docker-compose.yml --env-file deploy/.env.prod down -v
 
 任务并发：通过 `backend/.env` 中的 `TASK_RUNTIME_MAX_CONCURRENCY`、`TASK_USER_MAX_CONCURRENCY` 调整统一任务平台并发。
 
-测试环境由 Jenkins 轮询 **GitHub 仓库 `yi1108/printfilm` 的 `dev` 分支**自动发布；日常测试发版提交并推送代码即可，不需要手动上传补丁或更新服务器容器。本仓库的 `origin` 指向 GitCC，单独 `git push origin dev` 不会触发测试发版；提交后还需 `git push github dev`，再核对 Jenkins 构建版本与运行中的镜像标签一致。
+测试环境由 Jenkins 轮询 **GitHub 仓库 `yi1108/printfilm` 的 `dev` 分支**自动发布；日常测试发版提交并推送代码即可，不需要手动上传补丁或更新服务器容器。推送前用 `git remote -v` 确认目标；`origin` 指向该 GitHub 仓库时执行 `git push origin dev`，若 `origin` 指向 GitCC，则还需推送到对应 GitHub remote（例如 `git push github dev`）。推送后核对 Jenkins 构建版本与运行中的镜像标签一致。
 
 本地 API 联调连接共享测试数据库时，设置 `TASK_RUNTIME_ENABLED=false`，只保留测试服务器执行调度、轮询和孤儿恢复。已由服务器初始化的共享数据库还可设 `DATABASE_BOOTSTRAP_ENABLED=false`，本机只读取模型缓存，不再重复建表、补列、seed 或提升管理员。本地仍能创建和查询任务，执行与产物存储由测试服务器负责；本地页面应能访问服务器返回的媒体地址。独立本地数据库或实际执行节点保持两个开关为 `true`（默认）。不要让多个调试实例同时恢复同一队列。
 

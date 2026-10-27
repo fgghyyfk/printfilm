@@ -100,8 +100,12 @@ async def execute_task_run(task_id: int) -> None:
                 if not task:
                     return
                 handler = get_task_handler(task.domain, task.task_type)
-                result = await handler.executor(task) if handler else {"ok": False, "error": "missing_handler"}
-                # 重新加载（含 selectinload steps）；勿 refresh，会卸掉关系再触发懒加载。
+            # Handlers read the loaded task snapshot and own their database sessions.
+            # Release this read transaction before waiting on a provider or its semaphore.
+            result = await handler.executor(task) if handler else {"ok": False, "error": "missing_handler"}
+            async with AsyncSessionLocal() as db:
+                # A new session also observes cancellation/provider state committed by handlers.
+                # Reload steps with selectinload; refresh would unload the relationship.
                 task = await get_task_for_runtime(db, task_id)
                 if not task:
                     return
