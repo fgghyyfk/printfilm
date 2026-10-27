@@ -75,7 +75,7 @@ Choose a style and enter an idea or existing copy
 
 Each stage pauses for review until the user starts the next one. Projects, storyboards and media use cards. Drama and standalone tools retain their existing workflows.
 
-Upgrades require `creation_sessions`, `creation_messages`, `creation_runs`, and the project conversation/duration fields. Startup handles this by default. For an existing database with `DATABASE_BOOTSTRAP_ENABLED=false`, run the scoped, repeatable migration below from `backend`, then restart the backend to load the new routes. It creates only those three tables, two project fields and indexes; it does not seed data, change other business structures or rewrite existing rows.
+New short videos use the project APIs directly. The old conversation creation, messaging and query APIs have been removed; only `open-editor` remains for transferring historical projects into the current workspace. Historical task recovery and project handoff still require `creation_sessions`, `creation_messages`, `creation_runs` and the project conversation field; the duration field also serves the current workflow. Startup handles the schema by default. For an existing database with `DATABASE_BOOTSTRAP_ENABLED=false`, run the scoped, repeatable migration below from `backend`, then restart the backend. It creates only those three tables, two project fields and indexes; it does not seed data, change other business structures or rewrite existing rows.
 
 ```bash
 python scripts/prepare_creation_schema.py

@@ -6,7 +6,12 @@ from .config import is_marketplace_enabled
 
 def install(app: FastAPI) -> None:
     """始终挂上路由。关闭时业务接口返回未启用，能力接口仍可给菜单判断。"""
-    @app.get("/api/marketplace/capabilities", tags=["下游能力"], response_model=dict)
+    @app.get(
+        "/api/marketplace/capabilities", tags=["下游能力"], response_model=dict,
+        summary='获取数字资产市场能力状态',
+        description='无需登录，始终可读取。报告市场是否启用以及存储、支付是否具备配置；这些标记仅反映配置存在，不代表外部服务连通性或真实交易已验证。',
+        response_description='市场开关 enabled、存储配置 storage_configured 与支付配置 payments。',
+    )
     async def capabilities():
         """仅报告配置状态，不将配置完整误报为 OSS 联调通过。"""
         from .storage import configured

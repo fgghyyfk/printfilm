@@ -4,13 +4,17 @@ export const enPages = {
   home: {
     headlineBefore: 'Turn stories into',
     headlineEm: 'films you can play',
-    lede: 'Self-hosted Drama takes scripts to episodic films. For short videos, start with an idea, refine the copy and storyboard, create images and narration, then compose your film.',
+    lede: 'Make episodic dramas with your own compute or online APIs. Turn an idea into an AI short video, from copy and storyboards to images and narration.',
     startCreate: 'Start creating',
     githubCta: 'Open source · View on GitHub',
     products: 'Products',
-    dramaTitle: 'Self-hosted Drama',
-    dramaFor: 'Built for large-scale self-hosted compute, with one-click short-drama production',
-    dramaDesc: 'Generate a script from one line, lock characters and scenes, then board each episode.',
+    dramaTitle: 'Drama',
+    dramaSelfHostedTitle: 'Drama · Self-hosted',
+    dramaFor: 'For your own compute and batch production',
+    dramaDesc: 'Designed for a Pro 6000 all-in-one deployment and large-scale production on your own compute. Manage scripts, characters, and scenes together, then create short dramas from episode storyboards with one click.',
+    dramaApiTitle: 'Drama · Online API',
+    dramaApiFor: 'Start online without your own hardware',
+    dramaApiDesc: 'Create short dramas from RMB 1,000. Use online image and video models to create scripts, characters, scenes, and episode boards. Generate on demand, preview, and export your film.',
     kepuTitle: 'AI Short Video',
     kepuTag: 'Step-by-step creation',
     kepuFor: 'Start with one idea',
@@ -25,12 +29,13 @@ export const enPages = {
     whoKicker: 'For',
     whoTitle: 'Who it’s for',
     closeTitle: 'Start from one idea',
-    closeLead: 'Sign in, pick Self-hosted Drama or AI Short Video, and enter the matching workspace.',
+    closeLead: 'Choose self-hosted Drama, online APIs, or AI Short Video and start your next film.',
     viewPricing: 'View pricing',
     methodLink: 'Lead-gen method',
-    footBrand: 'Self-hosted Drama and AI Short Video studio',
+    footBrand: 'Drama and AI Short Video studio',
     footNav: 'Footer',
-    dramaSteps: ['AI script', 'Cast & scenes', 'Episode boards', 'Export'],
+    dramaSteps: ['Pro 6000 system', 'Your own compute', 'Episode production', 'Export'],
+    dramaApiSteps: ['Online API', 'On demand', 'Cast & scenes', 'Episode films'],
     kepuSteps: ['Share an idea', 'Copy & storyboard', 'Images & voice', 'Compose your film'],
     pipeline: [
       { step: '01', title: 'Write the idea', desc: 'A one-line story, a knowledge point, or a full script — any of these can start a project.' },
@@ -74,7 +79,7 @@ export const enPages = {
     noFaq: 'No matching questions',
     cats: [
       { id: 'start', title: 'Quick start', desc: 'Pick a product on Home', href: '/' },
-      { id: 'drama', title: 'Self-hosted Drama', desc: 'Script · episodes · film', href: '/drama' },
+      { id: 'drama', title: 'Drama', desc: 'Script · episodes · film', href: '/drama' },
       { id: 'kepu', title: 'AI Short Video', desc: 'Storyboard pipeline', href: '/history' },
       { id: 'tools', title: 'Tools', desc: 'Text-to-image / video', href: '/tools/image' },
       { id: 'tasks', title: 'My tasks', desc: 'Progress · results · downloads', href: '/tasks' },
@@ -84,7 +89,7 @@ export const enPages = {
       {
         n: '01',
         title: 'Choose an entry',
-        body: 'Open Self-hosted Drama or AI Short Video from Home. Open My tasks from your avatar to track generation progress and results.',
+        body: 'Open Drama or AI Short Video from Home. Open My tasks from your avatar to track generation progress and results.',
       },
       {
         n: '02',
@@ -105,7 +110,7 @@ export const enPages = {
     faq: [
       {
         q: 'Where should I start?',
-        a: 'Open Home and pick Self-hosted Drama or AI Short Video. Drama is for episodic stories and character consistency; AI Short Video is positioned for lead-gen storyboards. Open your avatar menu → My tasks to check generation progress and results.',
+        a: 'Open Home and pick Drama or AI Short Video. Drama is for episodic stories and character consistency; AI Short Video is positioned for lead-gen storyboards. Open your avatar menu → My tasks to check generation progress and results.',
       },
       {
         q: 'What’s the difference between AI video and stills-to-film?',
@@ -129,11 +134,11 @@ export const enPages = {
       },
       {
         q: 'Where do I download finished films or assets?',
-        a: 'AI Short Video: History in the top nav. Drama: the project workspace. Global assets: My assets in your avatar menu.',
+        a: 'AI Short Video: History in the top nav. Drama: the project workspace. Global assets: Digital Asset Library in your avatar menu.',
       },
       {
         q: 'What’s in Account?',
-        a: 'Account contains your profile, team and collaboration settings, notification preferences, and security. Open My tasks, My assets, or Balance & billing from your avatar menu for generation records, assets, or usage. Notification preferences are still in progress.',
+        a: 'Account contains your profile, team and collaboration settings, notification preferences, and security. Open My tasks, Digital Asset Library, or Balance & billing from your avatar menu for generation records, assets, or usage. Notification preferences are still in progress.',
       },
       {
         q: 'How do top-ups and charges work?',
@@ -291,7 +296,7 @@ export const enPages = {
     selectProject: 'Select {title} for download',
     progress: 'Production progress',
     newKepu: 'New short',
-    goDrama: 'Open Self-hosted Drama',
+    goDrama: 'Open Drama',
     statTotal: 'Projects',
     statRunning: 'In progress',
     runningNow: 'Generating now',
@@ -328,11 +333,11 @@ export const enPages = {
     pagination: 'AI Short Video pages',
   },
   dramaList: {
-    title: 'Self-hosted Drama',
+    title: 'Drama',
     description: 'Built for large-scale self-hosted compute, from story ideas to multi-episode dramas.',
     emptyTitle: 'No drama projects yet',
     emptyDescription: 'Write a story idea to create your first drama.',
-    assets: 'Asset library',
+    assets: 'Digital Asset Library',
     canvas: 'Free canvas',
     creating: 'Creating…',
     newProject: 'New project',

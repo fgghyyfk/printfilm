@@ -10,7 +10,9 @@ from sqlalchemy.orm import selectinload
 from app.models_drama import DramaAsset, DramaEpisode, DramaEpisodeFragment, DramaProject, DramaScript
 from app.models_tasks import TaskRun
 from app.models_team_locks import TeamEditLock
+from app.services.drama.asset_reference_views import clean_asset_reference_params
 from app.services.drama.project_cover import resolve_drama_project_cover
+from app.services.tasks.generation_references import public_references
 from app.services.teams.access import get_team
 from app.services.teams.activity import record_activity
 from app.services.teams.content_media import copier_for
@@ -94,7 +96,16 @@ async def list_assets(db, team_id: int, user_id: int, page: int, page_size: int,
     stmt = select(DramaAsset).join(DramaProject, DramaProject.id == DramaAsset.project_id).where(*filters)
     total = int(await db.scalar(select(func.count()).select_from(DramaAsset).join(DramaProject, DramaProject.id == DramaAsset.project_id).where(*filters)) or 0)
     rows = (await db.execute(stmt.order_by(DramaAsset.updated_at.desc(), DramaAsset.id.desc()).offset((page - 1) * page_size).limit(page_size))).scalars().all()
-    return dict(items=[asset_card(row) for row in rows], meta=dict(page=page, page_size=page_size, total=total))
+    items = []
+    for row in rows:
+        item = asset_card(row)
+        item["params"] = await clean_asset_reference_params(
+            db, item["params"], user_id=user_id, team_id=team_id, project_id=row.project_id,
+        )
+        metadata = (item["params"] or {}).get("media_metadata", {})
+        item["references"] = public_references(metadata.get("references")) if isinstance(metadata, dict) else []
+        items.append(item)
+    return dict(items=items, meta=dict(page=page, page_size=page_size, total=total))
 
 
 async def busy_reasons(db, project_ids: list[int]) -> dict[int, str]:

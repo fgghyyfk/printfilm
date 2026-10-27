@@ -19,10 +19,13 @@ from app.models import Project, Shot, ToolRun, UsageEvent, User
 from app.models_drama import DramaAsset, DramaEpisode, DramaEpisodeFragment, DramaProject
 from app.models_tasks import TaskEvent, TaskRun
 from app.schemas_generation_history import GenerationListOut, GenerationRecordOut
+from app.schemas_media_references import MediaReferenceOut
 from app.services.tasks.generation_metadata import (
     merge_generation_params, planned_generation_params, prepared_generation_params,
     public_generation_params, request_matches_generation, submitted_generation_params,
+    saved_generation_references,
 )
+from app.services.tasks.generation_references import enrich_references, public_references
 from app.services.tasks.service import TaskAccessContext, _task_team_access
 
 _AUDIO_TYPES = ("voice_synthesis", "voice_preview", "tool_audio", "shot_regen_audio", "project_regen_audio")
@@ -174,7 +177,8 @@ def _text_output(result) -> str:
 
 def project_generation(task, *, viewer_id: int, owner_user_id: int | None = None,
                        linked_tool: ToolRun | None = None, fallback: dict | None = None,
-                       submitted_params: dict | None = None, kind_override: str | None = None) -> GenerationRecordOut:
+                       submitted_params: dict | None = None, submitted_refs: list[dict] | None = None,
+                       kind_override: str | None = None) -> GenerationRecordOut:
     """Project only safe public fields from already persisted task data."""
     kind = kind_override or _generation_kind(task)
     result = task.result_payload if isinstance(task.result_payload, dict) else {}
@@ -191,6 +195,14 @@ def project_generation(task, *, viewer_id: int, owner_user_id: int | None = None
     if not preview and kind == "image" and urls:
         preview = urls[0]
     payload = task.payload if isinstance(task.payload, dict) else {}
+    saved_references = saved_generation_references(task, kind)
+    references = submitted_refs if submitted_refs is not None else saved_references
+    if submitted_refs is not None and saved_references:
+        identities = {(ref["kind"], ref["url"], ref["role"]): ref for ref in saved_references}
+        references = [{**identities.get((ref["kind"], ref["url"], ref["role"]), {}), **ref}
+                      for ref in public_references(submitted_refs)]
+    if references is None and linked_tool is not None:
+        references = public_references(linked_tool.params)
     params = merge_generation_params(
         linked_tool.params if linked_tool is not None else {}, payload,
         planned_generation_params(task, kind), prepared_generation_params(payload.get("prepared")),
@@ -214,7 +226,8 @@ def project_generation(task, *, viewer_id: int, owner_user_id: int | None = None
         kind=kind, status=_public_status(task.status),
         domain=task.domain, task_type=task.task_type, prompt=prompt[:7000], urls=urls, preview_url=preview,
         text_content=next((text for output in outputs if (text := _text_output(output))), "") if kind == "text" else "",
-        task_id=f"task-{task.id}", params=params, error=getattr(task, "error_message", None),
+        task_id=f"task-{task.id}", params=params, references=public_references(references),
+        error=getattr(task, "error_message", None),
         created_at=created_at.isoformat() if created_at else "", platform_task_id=task.id,
         provider_task_id=getattr(task, "provider_task_id", None), provider_name=getattr(task, "provider_name", None),
         provider_status=getattr(task, "provider_status", None), queue_type=task.queue_type,
@@ -231,6 +244,7 @@ def _legacy_projection(row: ToolRun) -> GenerationRecordOut:
         kind=row.kind if row.kind in {"video", "image", "audio"} else "text", status=_public_status(row.status),
         domain="studio", prompt=row.prompt or "", urls=[url for value in (row.urls or []) if (url := _safe_url(value))],
         preview_url=_safe_url(row.preview_url), params=params, task_id=row.task_id,
+        references=public_references(row.params),
         provider_task_id=str((row.params or {}).get("provider_task_id") or row.task_id or "") or None,
         error=row.error, created_at=row.created_at.isoformat() if row.created_at else "",
     )
@@ -389,7 +403,7 @@ async def _kepu_image_outputs(db, tasks, kinds) -> dict[int, dict]:
     return {task_id: {"urls": list(dict.fromkeys(values)), "delivered": True} for task_id, values in urls.items()}
 
 
-async def _submitted_parameters(db, tasks) -> dict[int, dict]:
+async def _submitted_evidence(db, tasks) -> dict[int, dict]:
     """Recover only accepted matching requests, never current editable project/fragment fields."""
     candidates = {task.id: task for task in tasks
                   if _generation_kind(task) in {"image", "video"} and task.task_type != "project_pipeline"}
@@ -422,8 +436,12 @@ async def _submitted_parameters(db, tasks) -> dict[int, dict]:
             continue
         if _generation_kind(task) == "video" and task.provider_task_id and provider_id != task.provider_task_id:
             continue
-        recovered[task_id] = submitted_generation_params(body)
+        recovered[task_id] = {"params": submitted_generation_params(body), "references": public_references(body)}
     return recovered
+
+
+async def _submitted_parameters(db, tasks) -> dict[int, dict]:
+    return {task_id: value["params"] for task_id, value in (await _submitted_evidence(db, tasks)).items()}
 
 
 async def _load_records(db, user, references, owner_user_id):
@@ -440,11 +458,21 @@ async def _load_records(db, user, references, owner_user_id):
     kinds = {row.id: row.kind for row in references if row.source == "task"}
     fallback = await _legacy_entity_outputs(db, tasks, kinds)
     fallback.update(await _kepu_image_outputs(db, tasks, kinds))
-    submitted = await _submitted_parameters(db, tasks)
+    submitted = await _submitted_evidence(db, tasks)
     records = {f"task:{task.id}": project_generation(task, viewer_id=user.id, owner_user_id=owner_user_id,
         linked_tool=linked_by_task.get(task.id), fallback=fallback.get(task.id),
-        submitted_params=submitted.get(task.id), kind_override=kinds.get(task.id)) for task in tasks}
+        submitted_params=submitted.get(task.id, {}).get("params"),
+        submitted_refs=submitted.get(task.id, {}).get("references"), kind_override=kinds.get(task.id)) for task in tasks}
     records.update({f"tool:{tool.id}": _legacy_projection(tool) for tool in tools})
+    task_by_id = {task.id: task for task in tasks}
+    for record in records.values():
+        if not record.references:
+            continue
+        task = task_by_id.get(record.id) if record.source == "task" else None
+        cleaned = await enrich_references(db, [ref.model_dump(exclude_none=True) for ref in record.references],
+            user_id=user.id, team_id=task.team_id if task is not None else None,
+            project_id=task.drama_project_id if task is not None else None)
+        record.references = [MediaReferenceOut(**ref) for ref in cleaned]
     return [records[f"{row.source}:{row.id}"] for row in references]
 
 

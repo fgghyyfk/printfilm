@@ -197,6 +197,6 @@ export function EditableAssetDetailDialog({
         </li>)}</ul>
       </details>}
     </AssetDetailDialog>
-    {lightboxSrc && <AssetDetailDialog asset={{ ...asset, name: `${asset.name || '资产'} · 历史版本`, cover: lightboxSrc, url: lightboxSrc, params: { media_metadata: history?.mediaMetadata || { source: 'unknown' } } }} onClose={() => setLightboxSrc(null)} />}
+    {lightboxSrc && <AssetDetailDialog asset={{ ...asset, name: `${asset.name || '资产'} · 历史版本`, cover: lightboxSrc, url: lightboxSrc, references: undefined, params: { media_metadata: history?.mediaMetadata || { source: 'unknown' } } }} onClose={() => setLightboxSrc(null)} />}
   </>
 }

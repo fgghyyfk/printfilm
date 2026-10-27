@@ -14,7 +14,11 @@ from app.schemas import AdminLedgerListOut, AdminLedgerOut, PageMeta
 router = APIRouter()
 
 
-@router.get("/ledger", response_model=AdminLedgerListOut)
+@router.get("/ledger", response_model=AdminLedgerListOut,
+    summary="分页查询钱包流水",
+    description="管理员按用户、流水类型、关联对象类型和创建时间范围查询个人钱包流水；后台调账记录同时返回操作者邮箱。",
+    response_description="操作成功，返回结果详见响应结构",
+)
 async def list_ledger(
     user_id: int | None = None,
     kind: str | None = None,

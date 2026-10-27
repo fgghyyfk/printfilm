@@ -153,7 +153,12 @@ def public_series_filters():
     return (Series.listed.is_(True), Series.blocked.is_(False), Series.deleted_at.is_(None), Series.audit_status == "approved", has_episode, not_(missing))
 
 
-@router.get("/series", response_model=dict)
+@router.get(
+    "/series", response_model=dict,
+    summary='分页查询公开短剧系列',
+    description='允许访客访问。按标题 q、分类 category 筛选已公开系列，按 ID 倒序分页；仅返回满足系列及分集公开条件的内容。',
+    response_description='系列详情 items 与分页信息 meta。',
+)
 async def list_series(db: DB, q: str = Query("", max_length=100), category: str = Query("", max_length=60), page_number: int = Query(1, alias="page", ge=1), page_size: int = Query(20, ge=1, le=100)):
     query = select(Series).where(*public_series_filters())
     if q:
@@ -164,7 +169,12 @@ async def list_series(db: DB, q: str = Query("", max_length=100), category: str 
     return {"items": [await _series_data(db, row) for row in records], "meta": meta}
 
 
-@router.get("/series/import-sources", response_model=dict)
+@router.get(
+    "/series/import-sources", response_model=dict,
+    summary='获取可导入的漫剧项目与分集',
+    description='登录后列出本人有权导入的漫剧项目及分集发布上下文，供明确选择导入内容。',
+    response_description='items 列表，包含项目 ID、标题及分集信息。',
+)
 async def import_sources(db: DB, user: Actor):
     """列出当前用户可明确选择导入的漫剧项目和已生成分集。"""
     from .drama_publish import publish_context
@@ -182,7 +192,12 @@ async def import_sources(db: DB, user: Actor):
     return {"items": result}
 
 
-@router.get("/series/{series_id}", response_model=dict)
+@router.get(
+    "/series/{series_id}", response_model=dict,
+    summary='获取短剧系列详情',
+    description='访客仅可读取公开系列；作者和管理员可查看未删除的草稿及审核信息。不存在或无权访问时返回 404。',
+    response_description='系列详情及按权限返回的分集信息。',
+)
 async def get_series(series_id: int, db: DB, user: Visitor):
     item = await db.get(Series, series_id)
     private = bool(item and user and not item.deleted_at and (item.owner_id == user.id or user.role == "admin"))
@@ -195,7 +210,12 @@ async def get_series(series_id: int, db: DB, user: Visitor):
     return await _series_data(db, item, private=private)
 
 
-@router.post("/series", response_model=dict)
+@router.post(
+    "/series", response_model=dict,
+    summary='创建短剧系列草稿',
+    description='登录后创建自己的短剧系列。分类须有效，绑定封面须为本人已就绪的图片资产。',
+    response_description='新建系列的草稿详情。',
+)
 async def create_series(body: SeriesInput, db: DB, user: Actor):
     from .categories import validate_category
     await validate_category(db, body.category)
@@ -209,7 +229,12 @@ async def create_series(body: SeriesInput, db: DB, user: Actor):
     return await _series_data(db, item, private=True)
 
 
-@router.patch("/series/{series_id}", response_model=dict)
+@router.patch(
+    "/series/{series_id}", response_model=dict,
+    summary='更新短剧系列草稿',
+    description='系列作者或管理员可操作，须提交当前 version。保存后递增系列版本、重置草稿并暂停系列销售；同步重置当前分集发布状态，进行中的同步任务或版本冲突返回 409。',
+    response_description='更新后的系列草稿详情。',
+)
 async def update_series(series_id: int, body: SeriesUpdate, db: DB, user: Actor):
     item = await _series(db, series_id, user, lock=True)
     from .service import ensure_kept
@@ -231,7 +256,12 @@ async def update_series(series_id: int, body: SeriesUpdate, db: DB, user: Actor)
     return await _series_data(db, item, private=True)
 
 
-@router.post("/series/{series_id}/episodes", response_model=dict)
+@router.post(
+    "/series/{series_id}/episodes", response_model=dict,
+    summary='添加短剧分集草稿',
+    description='系列作者或管理员可操作。分集编号在系列内须唯一，媒体和封面须为当前操作者本人的资产；平台解锁系列的非免费集须设置正数解锁价。新增后系列回到草稿并暂停销售。',
+    response_description='新建分集草稿详情。',
+)
 async def create_episode(series_id: int, body: EpisodeInput, db: DB, user: Actor):
     series = await _series(db, series_id, user, lock=True)
     from .service import ensure_kept
@@ -255,7 +285,12 @@ async def create_episode(series_id: int, body: EpisodeInput, db: DB, user: Actor
     return await _episode_data(db, item, private=True)
 
 
-@router.patch("/series/{series_id}/episodes/{episode_id}", response_model=dict)
+@router.patch(
+    "/series/{series_id}/episodes/{episode_id}", response_model=dict,
+    summary='更新短剧分集草稿',
+    description='系列作者或管理员可操作，须匹配分集当前 version，并确认分集属于路径中的系列。保存后系列和分集回到草稿并暂停销售；手动替换媒体会解除原导入来源映射。',
+    response_description='更新后的分集草稿详情。',
+)
 async def update_episode(series_id: int, episode_id: int, body: EpisodeUpdate, db: DB, user: Actor):
     series = await _series(db, series_id, user, lock=True)
     from .service import ensure_kept
@@ -289,7 +324,12 @@ async def update_episode(series_id: int, episode_id: int, body: EpisodeUpdate, d
     return await _episode_data(db, item, private=True)
 
 
-@router.delete("/series/{series_id}/episodes/{episode_id}", response_model=dict)
+@router.delete(
+    "/series/{series_id}/episodes/{episode_id}", response_model=dict,
+    summary='删除短剧分集草稿',
+    description='系列作者或管理员可操作。已有订单或购买权益的分集不可删除，返回 409；删除后系列递增版本、回到草稿并暂停销售。',
+    response_description='操作成功时返回 ok=true。',
+)
 async def delete_episode(series_id: int, episode_id: int, db: DB, user: Actor):
     series = await _series(db, series_id, user, lock=True)
     from .service import ensure_kept
@@ -310,7 +350,12 @@ async def delete_episode(series_id: int, episode_id: int, db: DB, user: Actor):
     return {"ok": True}
 
 
-@router.post("/series/{series_id}/episodes/import", response_model=dict)
+@router.post(
+    "/series/{series_id}/episodes/import", response_model=dict,
+    summary='导入选中的漫剧分集',
+    description='仅系列作者可操作。将明确选中的漫剧分集登记为系列分集草稿，冻结来源版本并排队异步转存；请求返回后通过 handoffs 查询进度。',
+    response_description='目标系列、分集草稿 items 与异步转存记录 handoffs。',
+)
 async def import_episodes(series_id: int, body: ImportEpisodesInput, db: DB, user: Actor):
     """只导入用户明确选择的漫剧分集。复制交给市场 Worker，请求本身不等待长视频。"""
     from .handoff import enqueue_series_import
@@ -320,7 +365,12 @@ async def import_episodes(series_id: int, body: ImportEpisodesInput, db: DB, use
     return await enqueue_series_import(series_id, payload, db, user)
 
 
-@router.delete("/series/{series_id}", response_model=dict)
+@router.delete(
+    "/series/{series_id}", response_model=dict,
+    summary='删除自己的短剧系列',
+    description='仅作者可操作。软删除系列，使其退出公开目录与个人作品列表；保留分集、媒体和历史发布记录。',
+    response_description='操作成功时返回 ok=true。',
+)
 async def delete_series(series_id: int, db: DB, user: Actor):
     """作者软删整部短剧。分集记录保留，但不再出现在广场和我的作品。"""
     item = await _series(db, series_id, user, lock=True)
@@ -330,7 +380,12 @@ async def delete_series(series_id: int, db: DB, user: Actor):
     return {"ok": True}
 
 
-@router.post("/series/{series_id}/submit", response_model=dict)
+@router.post(
+    "/series/{series_id}/submit", response_model=dict,
+    summary='提交短剧系列与各集版权审核',
+    description='仅作者可操作，须提交当前系列 version。至少包含一集且从第 1 集连续编号；逐集检查媒体、封面和完整版权，收费分集先准备短试看。未完成试看时进入 processing，就绪后进入 pending。',
+    response_description='提交后的系列详情及分集处理状态。',
+)
 async def submit_series(series_id: int, body: Version, db: DB, user: Actor):
     series = await _series(db, series_id, user, lock=True)
     from .service import ensure_kept
@@ -431,7 +486,12 @@ async def submit_series(series_id: int, body: Version, db: DB, user: Actor):
     return await _series_data(db, series, private=True)
 
 
-@router.post("/series/{series_id}/preview/retry", response_model=dict)
+@router.post(
+    "/series/{series_id}/preview/retry", response_model=dict,
+    summary='重试短剧收费分集的短试看',
+    description='仅系列作者可操作，须提交当前 version，且系列已提交审核、媒体与版权仍有效。重试当前收费分集的衍生短片；免费集跳过，已审核发布版本与已购 HLS 播放文件保持原样。',
+    response_description='系列详情及最新分集试看状态。',
+)
 async def retry_series_preview(series_id: int, body: Version, db: DB, user: Actor):
     """仅重试当前分集的衍生短片，不更改已审核版本、权益或 HLS。"""
     series = await _series(db, series_id, user, lock=True)
@@ -465,7 +525,12 @@ async def retry_series_preview(series_id: int, body: Version, db: DB, user: Acto
     return await _series_data(db, series, private=True)
 
 
-@router.post("/series/{series_id}/listing", response_model=dict)
+@router.post(
+    "/series/{series_id}/listing", response_model=dict,
+    summary='设置短剧系列上下架状态',
+    description='系列作者或管理员可操作，须提交当前 version；listed 默认为 true，false 表示下架。上架要求系列与各集通过审核、版权材料及必要试看有效，平台收费集还须完成播放打包。仅当前发布版本参与本次上下架。',
+    response_description='更新上下架状态后的系列详情。',
+)
 async def listing_series(series_id: int, body: Version, db: DB, user: Actor, listed: bool = True):
     series = await _series(db, series_id, user, lock=True)
     from .service import ensure_kept

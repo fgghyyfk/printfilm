@@ -197,7 +197,12 @@ def _handoff(owner_id: int, key: str, source_kind: str, source_id: int, version:
                    source_snapshot={"locator": locator, "cover_locator": cover, "title": title})
 
 
-@router.get("/printfilm/sources", response_model=dict)
+@router.get(
+    "/printfilm/sources", response_model=dict,
+    summary='获取我的 PrintFilm 可转存来源',
+    description='登录后列出本人已有成片的科普项目及可选择的漫剧分集上下文；科普项目最多返回最近更新的 50 项，不返回源视频地址。',
+    response_description='科普项目 projects 与漫剧项目 dramas 列表。',
+)
 async def printfilm_sources(db: DB, user: Actor):
     """只列出当前用户已经生成成片的科普项目和漫剧分集，不返回视频地址。"""
     from .series import import_sources
@@ -207,7 +212,12 @@ async def printfilm_sources(db: DB, user: Actor):
     return {"projects": [{"id": item.id, "title": item.title, "updated_at": item.updated_at, "has_cover": bool(item.cover_url), "status": item.status} for item in projects], "dramas": dramas["items"]}
 
 
-@router.post("/works/from-printfilm", response_model=dict)
+@router.post(
+    "/works/from-printfilm", response_model=dict,
+    summary='将科普成片转为市场作品草稿',
+    description='仅源项目所有者可操作。校验私有存储后登记市场草稿和异步转存任务；相同幂等键及来源成片版本的重复请求复用原记录，文件复制由市场 Worker 执行。',
+    response_description='目标作品信息与转存任务状态。',
+)
 async def work_from_printfilm(body: PrintfilmWorkInput, db: DB, user: Actor):
     """把一部科普成片登记为市场草稿。同一成片版本重复点击返回原来的草稿。"""
     await storage_ready()
@@ -294,19 +304,34 @@ async def enqueue_series_import(series_id: int, body: PrintfilmEpisodeInput, db,
     return {"items": [await _episode_data(db, item, private=True) for item in created], "handoffs": [await _view(db, item) for item in records]}
 
 
-@router.post("/series/{series_id}/episodes/import-printfilm", response_model=dict)
+@router.post(
+    "/series/{series_id}/episodes/import-printfilm", response_model=dict,
+    summary='将 PrintFilm 内容导入系列分集',
+    description='仅目标系列作者可操作。将选定漫剧分集或一部科普成片登记为分集草稿，实际复制异步执行；重复的同版本导入请求复用已有记录。',
+    response_description='目标分集草稿 items 与转存记录 handoffs。',
+)
 async def import_printfilm(series_id: int, body: PrintfilmEpisodeInput, db: DB, user: Actor):
     """明确选中的漫剧分集，或一部科普成片，转成短剧分集草稿。"""
     return await enqueue_series_import(series_id, body, db, user)
 
 
-@router.get("/handoffs/{handoff_id}", response_model=dict)
+@router.get(
+    "/handoffs/{handoff_id}", response_model=dict,
+    summary='查询自己的媒体转存任务',
+    description='仅任务所属用户可查看。读取指定转存任务的来源、目标、处理进度和错误信息。',
+    response_description='转存任务详情。',
+)
 async def get_handoff(handoff_id: int, db: DB, user: Actor):
     """查看自己的转存进度。"""
     return await _view(db, await _owned_handoff(db, handoff_id, user))
 
 
-@router.get("/handoffs", response_model=dict)
+@router.get(
+    "/handoffs", response_model=dict,
+    summary='查询我的最近媒体转存任务',
+    description='登录后查询本人最近 50 条转存记录。target_kind 与 target_id 同时提供时按目标筛选，series_id 非零时按系列筛选。',
+    response_description='按任务 ID 倒序排列的转存记录 items。',
+)
 async def list_handoffs(db: DB, user: Actor, target_kind: str = "", target_id: int = 0, series_id: int = 0):
     """按作品、分集或系列查看当前用户的转存进度。"""
     query = select(Handoff).where(Handoff.owner_id == user.id)
@@ -318,7 +343,12 @@ async def list_handoffs(db: DB, user: Actor, target_kind: str = "", target_id: i
     return {"items": [await _view(db, item) for item in rows]}
 
 
-@router.post("/handoffs/{handoff_id}/retry", response_model=dict)
+@router.post(
+    "/handoffs/{handoff_id}/retry", response_model=dict,
+    summary='重试失败的媒体转存任务',
+    description='仅任务所属用户可操作。校验存储以及适用的漫剧来源和目标版本后，将 failed 任务重置为 pending；其他状态直接返回现有记录。',
+    response_description='转存任务最新详情与状态。',
+)
 async def retry_handoff(handoff_id: int, db: DB, user: Actor):
     """失败后重新排队。已复制完成的记录保持不变。"""
     await storage_ready()

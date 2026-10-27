@@ -31,27 +31,51 @@ class LockToken(BaseModel):
     session_id: str = Field(min_length=1, max_length=80)
 
 
-@router.post("/acquire")
+@router.post(
+    "/acquire",
+    summary="获取团队资源编辑租约",
+    description=(
+        "需要登录且为团队成员，为当前标签页获取指定项目资源的编辑租约，返回凭证、版本及过期时间。"
+        "force=true 仅所有者或管理员可接管人工占用；"
+        "冲突时由服务端拒绝。"
+    ),
+    response_description="编辑租约及持有凭证",
+)
 async def acquire(team_id: int, body: LockAcquire, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)) -> dict:
-    """获取资源租约或由负责人接管人工占用。"""
+    """需要登录且为团队成员，为当前标签页获取指定项目资源的编辑租约，返回凭证、版本及过期时间。force=true 仅所有者或管理员可接管人工占用；冲突时由服务端拒绝。"""
     return await acquire_lock(db, team_id, user.id, body.project_id, body.resource_type, body.resource_id, body.session_id, force=body.force)
 
 
-@router.post("/renew")
+@router.post(
+    "/renew",
+    summary="续租团队资源编辑权限",
+    description="需要登录，使用当前用户及标签页持有的 token 和 session_id 续租。保留原凭证和版本，过期租约需重新获取。",
+    response_description="续租后的编辑租约",
+)
 async def renew(team_id: int, body: LockToken, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)) -> dict:
-    """续租保持原 token/版本，过期后需重新获取。"""
+    """需要登录，使用当前用户及标签页持有的 token 和 session_id 续租。保留原凭证和版本，过期租约需重新获取。"""
     return await renew_lock(db, team_id, user.id, body.token, body.session_id)
 
 
-@router.post("/release")
+@router.post(
+    "/release",
+    summary="释放团队资源编辑租约",
+    description="需要登录，使用当前用户及标签页持有的 token 和 session_id 释放人工编辑占用。",
+    response_description="释放后的租约状态",
+)
 async def release(team_id: int, body: LockToken, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)) -> dict:
-    """释放当前标签页持有的人工资源占用。"""
+    """需要登录，使用当前用户及标签页持有的 token 和 session_id 释放人工编辑占用。"""
     return await renew_lock(db, team_id, user.id, body.token, body.session_id, release=True)
 
 
-@router.get("")
-async def list_locks(team_id: int, project_id: int = Query(gt=0), db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)) -> dict:
-    """查看团队项目当前人工占用，不暴露其他会话凭证。"""
+@router.get(
+    "",
+    summary="查询团队项目编辑占用",
+    description="需要登录且为团队有效成员，返回指定项目当前未过期的人工编辑占用，包括资源、持有人和过期时间，不返回其他会话的租约凭证。",
+    response_description="当前有效编辑占用列表",
+)
+async def list_locks(team_id: int, project_id: int = Query(gt=0, description="需要查看编辑占用的团队漫剧项目编号"), db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)) -> dict:
+    """需要登录且为团队有效成员，返回指定项目当前未过期的人工编辑占用，包括资源、持有人和过期时间，不返回其他会话的租约凭证。"""
     from datetime import UTC, datetime
 
     await get_team(db, team_id, user.id)

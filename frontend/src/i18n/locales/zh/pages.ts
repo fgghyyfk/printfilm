@@ -4,13 +4,17 @@ export const zhPages = {
   home: {
     headlineBefore: '把故事做成',
     headlineEm: '能播的片子',
-    lede: '漫剧自建算力模式从剧本到分集成片。AI短视频从想法开始，分步完善文案、分镜、画面与配音，再合成短片。',
+    lede: '漫剧支持自建算力与在线 API 两种模式，从剧本到分集成片。AI短视频从想法开始，分步完成文案、画面与配音。',
     startCreate: '开始创作',
     githubCta: '开源仓库 · 在 GitHub 查看',
     products: '主产品',
-    dramaTitle: '漫剧自建算力模式',
-    dramaFor: '适合大规模自有算力，可一键出短剧',
-    dramaDesc: '从一句话生成剧本，沉淀角色与场景，再按集分镜成片。',
+    dramaTitle: '漫剧',
+    dramaSelfHostedTitle: '漫剧 · 自建算力模式',
+    dramaFor: '面向自有算力与批量制作',
+    dramaDesc: '适合大规模自有算力，可一键出短剧。面向 Pro 6000 一体机部署，集中管理剧本、角色与场景，按集完成分镜与短剧制作。',
+    dramaApiTitle: '漫剧 · 在线 API 模式',
+    dramaApiFor: '无需自备算力，在线开始创作',
+    dramaApiDesc: '最低千元，即可生成短剧。在线调用图像与视频模型，从剧本、角色场景到分集分镜，按需生成、预览和导出成片。',
     kepuTitle: 'AI短视频',
     kepuTag: '分步创作',
     kepuFor: '从一个想法开始',
@@ -25,12 +29,13 @@ export const zhPages = {
     whoKicker: 'For',
     whoTitle: '适合谁用',
     closeTitle: '从一条创意开始',
-    closeLead: '登录后选择漫剧自建算力模式或 AI短视频，进入对应工作台。',
+    closeLead: '选择漫剧自建算力、在线 API 或 AI短视频，开始你的下一部作品。',
     viewPricing: '查看定价',
     methodLink: '获客短视频方法论',
-    footBrand: '漫剧自建算力模式与 AI短视频创作平台',
+    footBrand: '漫剧与 AI短视频创作平台',
     footNav: '页脚导航',
-    dramaSteps: ['AI 生剧本', '角色与场景', '分集分镜', '成片导出'],
+    dramaSteps: ['Pro 6000 一体机', '自有算力', '分集制作', '成片导出'],
+    dramaApiSteps: ['在线 API', '按需生成', '角色与场景', '分集成片'],
     kepuSteps: ['输入想法', '文案与分镜', '画面与配音', '合成成片'],
     pipeline: [
       { step: '01', title: '写下创意', desc: '一句话故事、知识点或完整剧本，都能作为起点。' },
@@ -74,7 +79,7 @@ export const zhPages = {
     noFaq: '没有匹配的问题',
     cats: [
       { id: 'start', title: '快速开始', desc: '首页选择创作入口', href: '/' },
-      { id: 'drama', title: '漫剧自建算力模式', desc: '剧本 · 分集 · 成片', href: '/drama' },
+      { id: 'drama', title: '漫剧', desc: '剧本 · 分集 · 成片', href: '/drama' },
       { id: 'kepu', title: 'AI短视频', desc: '分镜流水线与成片', href: '/history' },
       { id: 'tools', title: '创作工具', desc: '文生图 / 图生图 / 视频', href: '/tools/image' },
       { id: 'tasks', title: '我的任务', desc: '进度 · 结果 · 下载', href: '/tasks' },
@@ -84,7 +89,7 @@ export const zhPages = {
       {
         n: '01',
         title: '选创作入口',
-        body: '从首页进入「漫剧自建算力模式」或「AI短视频」。从头像菜单进入「我的任务」，统一查看生成进度与结果。',
+        body: '从首页进入「漫剧」或「AI短视频」。从头像菜单进入「我的任务」，统一查看生成进度与结果。',
       },
       {
         n: '02',
@@ -105,7 +110,7 @@ export const zhPages = {
     faq: [
       {
         q: '第一次使用从哪开始？',
-        a: '打开首页，选择「漫剧自建算力模式」或「AI短视频」。漫剧适合分集叙事与角色一致性；AI短视频定位获客，适合卖点讲解与分镜流水线。生成进度与结果可从头像菜单进入「我的任务」查看。',
+        a: '打开首页，选择「漫剧」或「AI短视频」。漫剧适合分集叙事与角色一致性；AI短视频定位获客，适合卖点讲解与分镜流水线。生成进度与结果可从头像菜单进入「我的任务」查看。',
       },
       {
         q: '「AI 视频」和「静图成片」有什么区别？',
@@ -129,11 +134,11 @@ export const zhPages = {
       },
       {
         q: '成片或素材在哪里下载？',
-        a: 'AI短视频：顶栏「AI短视频」历史页，已完成项目可下载或打包。漫剧：进入对应项目工作台查看分镜与成片。全局资产：头像菜单「我的资产」管理角色、场景、道具与音色。',
+        a: 'AI短视频：顶栏「AI短视频」历史页，已完成项目可下载或打包。漫剧：进入对应项目工作台查看分镜与成片。全局资产：头像菜单「数字资产库」管理角色、场景、道具与音色。',
       },
       {
         q: '个人中心有哪些内容？',
-        a: '个人中心保留账号信息、团队与协作、通知偏好和账号安全。生成记录与资产分别从头像菜单「我的任务」「我的资产」进入，余额及用量从「余额与账单」查看。通知偏好仍在建设中。',
+        a: '个人中心保留账号信息、团队与协作、通知偏好和账号安全。生成记录与资产分别从头像菜单「我的任务」「数字资产库」进入，余额及用量从「余额与账单」查看。通知偏好仍在建设中。',
       },
       {
         q: '如何充值？余额怎么扣？',
@@ -284,7 +289,7 @@ export const zhPages = {
     selectProject: '选择下载 {title}',
     progress: '制作进度',
     newKepu: '新建短视频',
-    goDrama: '进入漫剧自建算力模式',
+    goDrama: '进入漫剧',
     statTotal: '总作品数',
     statRunning: '生成中',
     runningNow: '正在生成中',
@@ -321,11 +326,11 @@ export const zhPages = {
     pagination: 'AI短视频分页',
   },
   dramaList: {
-    title: '漫剧自建算力模式',
+    title: '漫剧',
     description: '适合大规模自有算力，从故事创意到多集短剧。',
     emptyTitle: '还没有漫剧项目',
     emptyDescription: '写下故事创意，创建你的第一部漫剧。',
-    assets: '资产库',
+    assets: '数字资产库',
     canvas: '自由画布',
     creating: '创建中…',
     newProject: '新建项目',

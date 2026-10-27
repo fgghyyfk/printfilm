@@ -1,7 +1,7 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  ChevronRight, CircleHelp, Clapperboard, CreditCard,
+  ChevronRight, CircleHelp, Clapperboard, CreditCard, House,
   Menu, Plus, Store,
   Video, Workflow, X,
 } from 'lucide-react'
@@ -21,9 +21,10 @@ import { useMarketplace } from '../../features/marketplace/hooks'
 export type { NavActive } from '../../lib/siteNavigation'
 
 type Props = { active?: NavActive }
-type NavItem = (typeof CREATION_NAV)[number] | (typeof RESOURCE_NAV)[number]
+type NavItem = typeof HOME_NAV | (typeof CREATION_NAV)[number] | (typeof RESOURCE_NAV)[number]
 
 const NAV_ICONS = {
+  home: House,
   drama: Clapperboard,
   canvas: Workflow,
   kepu: Video,
@@ -200,8 +201,9 @@ export default function SiteNav({ active }: Props) {
     <header className={`pf-app-topbar${accountOpen ? ' pf-app-topbar--account-open' : ''}`} data-locale={locale}>
       <div className="pf-topbar-brand" onClick={() => selectTeam(null)}><BrandMark /></div>
       <nav className="pf-topbar-links" aria-label={t('nav.main')}>
-        {renderMarketplace()}
+        {renderLink(HOME_NAV)}
         {CREATION_NAV.map((item) => renderLink(item))}
+        {renderMarketplace()}
         {RESOURCE_NAV.map((item) => renderLink(item))}
       </nav>
       <div className="pf-topbar-actions">
@@ -217,9 +219,9 @@ export default function SiteNav({ active }: Props) {
       <section ref={menuRef} id="pf-topbar-menu" className="pf-topbar-menu" role="dialog" aria-modal="true" aria-label={t('nav.mobileNav')}>
         <div className="pf-topbar-menu-heading"><div><span>{t('nav.main')}</span><strong>{currentLabel}</strong></div><button ref={closeButtonRef} type="button" className="pf-topbar-menu-close" aria-label={t('nav.closeMenu')} onClick={() => setMenuOpen(false)}><X size={20} aria-hidden /></button></div>
         <nav aria-label={t('nav.main')}>
-          <div className="pf-topbar-menu-home">{renderMarketplace(true)}</div>
+          <div className="pf-topbar-menu-home">{renderLink(HOME_NAV, true)}</div>
           <div className="pf-topbar-menu-group"><span>{t('nav.creation')}</span><div>{CREATION_NAV.map((item) => renderLink(item, true))}</div></div>
-          <div className="pf-topbar-menu-group"><div>{RESOURCE_NAV.map((item) => renderLink(item, true))}</div></div>
+          <div className="pf-topbar-menu-group"><div>{renderMarketplace(true)}{RESOURCE_NAV.map((item) => renderLink(item, true))}</div></div>
         </nav>
         <div className="pf-topbar-menu-footer">
           <LanguageSwitch />

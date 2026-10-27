@@ -24,7 +24,7 @@ export const PERSONAL_NAV = [
 /** 路由段精确匹配，避免 /canvas-unknown 等非业务地址误高亮。 */
 export function resolveNavActive(pathname: string, active?: NavActive): NavActive | undefined {
   if (active === 'studio' || active === 'templates' || active === 'history') return 'kepu'
-  if (active) return active
+  if (active && active !== 'home') return active
   const within = (base: string) => pathname === base || pathname.startsWith(`${base}/`)
   if (within('/canvas')) return 'canvas'
   if (within('/teams') || within('/team-invitations')) return 'team'

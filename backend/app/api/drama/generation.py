@@ -12,7 +12,6 @@ from app.deps import get_current_user
 from app.models import User
 from app.models_drama import DramaAsset
 from app.schemas_drama import (
-    DramaAssetOut,
     DramaImageGenerateRequest,
     DramaVideoGenerateRequest,
     DramaVoiceGenerateRequest,
@@ -25,12 +24,18 @@ from app.services.billing.http import http_exception_for_value_error
 from app.services.drama.jobs import dispatch_asset_image_job, dispatch_asset_video_job
 from app.services.drama.voice_prompt import suggest_voice_prompt_for_character
 from app.services.drama.voice_generation_policy import ensure_voice_generation_enabled
+from app.services.drama.asset_reference_views import asset_reference_view
 
 router = APIRouter()
 logger = logging.getLogger("app.drama.generation")
 
 
-@router.post("/generation/image")
+@router.post(
+    "/generation/image",
+    summary="提交资产图片生成任务",
+    description="校验项目与可选资产归属，将非空 prompt 提交到生图任务队列后立即返回。指定 asset_id 时更新该资产，否则由任务创建资产；图片风格优先使用请求值，其次使用项目配置。可轮询资产 params.generation 或任务接口查看结果，团队项目需持有对应资产编辑租约。",
+    response_description="queued 状态、任务编号及已有资产快照；未指定资产时 asset_id 和 asset 为 null",
+)
 async def generate_image(
     body: DramaImageGenerateRequest,
     db: AsyncSession = Depends(get_db),
@@ -101,11 +106,16 @@ async def generate_image(
         "status": "queued",
         "task_id": task_id,
         "asset_id": asset.id if asset else None,
-        "asset": DramaAssetOut.model_validate(asset).model_dump() if asset else None,
+        "asset": (await asset_reference_view(db, asset, user_id=user.id, project=project)).model_dump() if asset else None,
     }
 
 
-@router.post("/generation/video")
+@router.post(
+    "/generation/video",
+    summary="提交画布资产视频生成任务",
+    description="为项目中的指定资产异步生成视频，prompt 不得为空，支持模型、画幅、分辨率、时长及参考资产配置。图片风格优先使用请求值，其次使用项目配置；立即返回任务编号，可轮询资产 params.generation。团队项目需持有对应资产编辑租约。",
+    response_description="任务入队标记、generating 状态、任务编号及更新后的资产快照",
+)
 async def generate_video(
     body: DramaVideoGenerateRequest,
     db: AsyncSession = Depends(get_db),
@@ -165,11 +175,16 @@ async def generate_video(
         "status": "generating",
         "task_id": task_id,
         "asset_id": asset.id,
-        "asset": DramaAssetOut.model_validate(asset).model_dump(),
+        "asset": (await asset_reference_view(db, asset, user_id=user.id, project=project)).model_dump(),
     }
 
 
-@router.post("/generation/voice_prompt")
+@router.post(
+    "/generation/voice_prompt",
+    summary="为角色生成音色描述提示词",
+    description="根据同项目角色资产的设定，同步生成音色提示词、建议说话人和试听文本。仅支持 character 资产，需启用音色生成功能；记录模型调用用量并返回任务编号，团队项目需持有对应资产编辑租约。",
+    response_description="音色提示词 voice_prompt、speaker、sample_text、角色资产编号及任务编号",
+)
 async def suggest_voice_prompt(
     body: DramaVoicePromptRequest,
     db: AsyncSession = Depends(get_db),
@@ -231,7 +246,12 @@ async def suggest_voice_prompt(
     }
 
 
-@router.post("/generation/voice")
+@router.post(
+    "/generation/voice",
+    summary="合成漫剧音色参考音频",
+    description="根据非空 voice_prompt 同步合成音色参考音频，等待完成后返回资产。可更新已有同项目资产，未指定 asset_id 时创建 voice 类型的音频资产；可指定同项目角色资产关联音色。需启用音色生成功能，团队项目需持有结构资源的编辑租约。",
+    response_description="合成成功标记及包含音频地址和生成状态的资产快照",
+)
 async def generate_voice(
     body: DramaVoiceGenerateRequest,
     db: AsyncSession = Depends(get_db),
@@ -340,5 +360,5 @@ async def generate_voice(
     )
     return {
         "ok": True,
-        "asset": DramaAssetOut.model_validate(updated).model_dump(),
+        "asset": (await asset_reference_view(db, updated, user_id=user.id, project=project)).model_dump(),
     }

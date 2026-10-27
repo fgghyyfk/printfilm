@@ -11,9 +11,9 @@
 .pf-library-filter-stack { display: grid; gap: 14px; min-width: 0; }
 .pf-library-media-tabs { display: flex; flex-wrap: wrap; gap: 8px; }
 .pf-library-media-tabs .pf-library-pill { gap: 7px; min-height: 42px; padding: 10px 18px; font-size: 13px; font-weight: 600; }
-.pf-library-image-categories { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-.pf-library-image-categories > span { color: #949e89; font-size: 11px; }
-.pf-library-image-categories .pf-library-pill { min-height: 30px; padding: 6px 10px; font-size: 11px; }
+.pf-library-image-categories, .pf-library-generation-status { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.pf-library-image-categories > span, .pf-library-generation-status > span { color: #949e89; font-size: 11px; }
+.pf-library-image-categories .pf-library-pill, .pf-library-generation-status .pf-library-pill { min-height: 30px; padding: 6px 10px; font-size: 11px; }
 .pf-library-pill { display: inline-flex; align-items: center; justify-content: center; min-height: 35px; padding: 8px 12px; border: 1px solid #e7e9e2; border-radius: 7px; background: #fff; color: #89917f; font: inherit; font-size: 12px; cursor: pointer; transition: background .18s, border-color .18s; }
 .pf-library-pill:hover { border-color: #afc67d; color: #465139; }
 .pf-library-pill:disabled { opacity: .55; cursor: not-allowed; }

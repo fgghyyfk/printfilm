@@ -31,7 +31,12 @@ async def _ensure_work_idle(db, work_id: int) -> None:
         fail("MARKETPLACE_SYNC_IN_PROGRESS", 409)
 
 
-@router.get("/categories", response_model=dict)
+@router.get(
+    "/categories", response_model=dict,
+    summary='获取市场分类',
+    description='返回市场当前可使用的分类名称及配置版本，允许访客访问。',
+    response_description='分类名称列表 names 与配置版本 version。',
+)
 async def get_categories(db: DB):
     from .categories import category_config
     return await category_config(db)
@@ -54,7 +59,12 @@ async def catalog_item(db, kind: str, item_id: int) -> dict:
             "cover_asset_id": series.cover_asset_id, "created_at": series.created_at}
 
 
-@router.get("/works", response_model=dict)
+@router.get(
+    "/works", response_model=dict,
+    summary='分页查询作品广场',
+    description='合并单视频与短剧系列后筛选、排序并分页；仅展示满足公开条件的内容。q 搜索标题，category 按分类筛选，价格单位为人民币分；sort 支持 latest、price_asc、price_desc。',
+    response_description='作品卡片 items 与分页信息 meta，kind 区分 work 和 series。',
+)
 async def works(db: DB, q: str = Query("", max_length=100), category: str = Query("", max_length=60),
                 min_price: int | None = Query(None, ge=0), max_price: int | None = Query(None, ge=0),
                 sort: str = "latest", page_number: int = Query(1, alias="page", ge=1), page_size: int = Query(20, ge=1, le=100)):
@@ -87,7 +97,12 @@ async def works(db: DB, q: str = Query("", max_length=100), category: str = Quer
             "meta": {"page": page_number, "page_size": page_size, "total": total}}
 
 
-@router.get("/works/{work_id}", response_model=dict)
+@router.get(
+    "/works/{work_id}", response_model=dict,
+    summary='获取单视频作品详情',
+    description='访客仅可读取已公开作品；作者和管理员可读取未删除的草稿及审核状态。不存在、已删除或无权查看时返回 404。',
+    response_description='作品详情；有管理权限时包含草稿和审核信息。',
+)
 async def work_detail(work_id: int, db: DB, user: Visitor):
     """作者和管理员可看草稿，公众仅可看满足全部条件的作品。"""
     item = await db.get(Work, work_id)
@@ -97,7 +112,12 @@ async def work_detail(work_id: int, db: DB, user: Visitor):
     return await work_data(db, item, private)
 
 
-@router.post("/works", response_model=dict)
+@router.post(
+    "/works", response_model=dict,
+    summary='创建单视频作品草稿',
+    description='登录后创建自己的作品草稿。纯文字草稿可不绑定媒体；绑定的视频与封面须为本人可用的资产，分类须有效。',
+    response_description='新建作品的完整草稿信息。',
+)
 async def create_work(body: WorkInput, db: DB, user: Actor):
     """文字草稿无需 OSS，绑定媒体时只能选择本人的 ready 资产。"""
     from .categories import validate_category
@@ -113,7 +133,12 @@ async def create_work(body: WorkInput, db: DB, user: Actor):
     return await work_data(db, item, True)
 
 
-@router.put("/works/{work_id}", response_model=dict)
+@router.put(
+    "/works/{work_id}", response_model=dict,
+    summary='更新单视频作品草稿',
+    description='仅作者可操作，须提交当前 version。保存后递增版本、重置为草稿并下架；授权用途或来源变化还会重置相应权属核验。存在进行中的同步任务或版本冲突时返回 409。',
+    response_description='更新后的作品草稿及版本信息。',
+)
 async def update_work(work_id: int, body: WorkUpdate, db: DB, user: Actor):
     """更新即撤下旧公开内容；权利范围变化重置完整核验。"""
     item = await owned(db, Work, work_id, user)
@@ -143,7 +168,12 @@ async def update_work(work_id: int, body: WorkUpdate, db: DB, user: Actor):
     return await work_data(db, item, True)
 
 
-@router.post("/works/{work_id}/submit", response_model=dict)
+@router.post(
+    "/works/{work_id}/submit", response_model=dict,
+    summary='提交单视频作品与版权审核',
+    description='仅作者可操作，须提交当前 version。校验媒体、授权用途和完整版权材料后统一送审；收费作品的短试看未就绪时先进入 processing，完成后进入待审核。平台解锁作品还须配置分成与解锁价格。',
+    response_description='提交后的作品详情及审核、试看处理状态。',
+)
 async def submit_work(work_id: int, body: Version, db: DB, user: Actor):
     """作品资料和版权信息一次提交，进入统一管理员审核。"""
     item = await owned(db, Work, work_id, user)
@@ -240,7 +270,12 @@ async def submit_work(work_id: int, body: Version, db: DB, user: Actor):
     return await work_data(db, item, True)
 
 
-@router.post("/works/{work_id}/listing", response_model=dict)
+@router.post(
+    "/works/{work_id}/listing", response_model=dict,
+    summary='设置单视频作品上下架状态',
+    description='仅作者可操作，须提交当前 version；listed 默认为 true，传 false 下架。上架要求内容与完整权属审核通过、媒体和必要试看就绪；平台解锁作品还须完成播放打包，封禁内容不能上架。',
+    response_description='更新上下架状态后的作品详情。',
+)
 async def listing(work_id: int, body: Version, db: DB, user: Actor, listed: bool = True):
     """作者主动上下架，不允许自行解除管理员封禁。"""
     item = await owned(db, Work, work_id, user)
@@ -267,7 +302,12 @@ async def listing(work_id: int, body: Version, db: DB, user: Actor, listed: bool
     return await work_data(db, item, True)
 
 
-@router.post("/works/{work_id}/preview/retry", response_model=dict)
+@router.post(
+    "/works/{work_id}/preview/retry", response_model=dict,
+    summary='重试单视频作品短试看',
+    description='仅作者可操作，须提交当前 version，且作品已提交过审核、媒体与版权材料仍有效。为需要试看的当前作品重新准备衍生短片任务；已审核发布版本及已购播放文件保持原样。',
+    response_description='当前作品详情与最新试看处理状态。',
+)
 async def retry_work_preview(work_id: int, body: Version, db: DB, user: Actor):
     """仅重试当前作品的衍生短片，已审核版本和购买播放文件保持原样。"""
     item = await owned(db, Work, work_id, user)
@@ -293,7 +333,12 @@ async def retry_work_preview(work_id: int, body: Version, db: DB, user: Actor):
     return await work_data(db, item, True)
 
 
-@router.delete("/works/{work_id}", response_model=dict)
+@router.delete(
+    "/works/{work_id}", response_model=dict,
+    summary='删除自己的单视频作品',
+    description='仅作者可操作。软删除作品并退出公开展示与个人作品列表，保留原始媒体和审核记录。',
+    response_description='操作成功时返回 ok=true。',
+)
 async def delete_work(work_id: int, db: DB, user: Actor):
     """作者软删单视频。广场和我的作品不再展示，原片与审核记录保留。"""
     item = await owned(db, Work, work_id, user)
@@ -303,7 +348,12 @@ async def delete_work(work_id: int, db: DB, user: Actor):
     return {"ok": True}
 
 
-@router.get("/assets/{asset_id}/rights", response_model=dict)
+@router.get(
+    "/assets/{asset_id}/rights", response_model=dict,
+    summary='获取视频资产权属档案',
+    description='仅资产所有者或管理员可查看，读取已有档案时记录访问事件。尚未建立档案时返回 version=0 与初始来源信息。',
+    response_description='权属材料、审核状态和版本；无档案时返回初始信息。',
+)
 async def get_rights(asset_id: int, db: DB, user: Actor):
     """权属材料只允许本人或管理员读取，并保留访问记录。"""
     await owned(db, Asset, asset_id, user, admin=True)
@@ -316,7 +366,12 @@ async def get_rights(asset_id: int, db: DB, user: Actor):
     return data(rights, "id", "asset_id", "version", "details", "certificate_asset_id", "evidence_ids", "basic_status", "full_status", "valid_until", "blocked", "reason")
 
 
-@router.put("/assets/{asset_id}/rights", response_model=dict)
+@router.put(
+    "/assets/{asset_id}/rights", response_model=dict,
+    summary='保存视频资产权属档案',
+    description='仅资产所有者可操作。首次保存 version 为 0，修改须匹配当前版本；证明材料须属于本人且已就绪。PrintFilm 来源须先签署授权函。保存后重置权属核验，并将关联作品、分集与系列撤回草稿和下架。',
+    response_description='权属档案 ID 与保存后的 version。',
+)
 async def save_rights(asset_id: int, body: RightsInput, db: DB, user: Actor):
     """任何材料变动都重置核验结论，绑定不可变视频文件。"""
     # 与提交、Worker 一致：先锁父内容，再锁分集和权属，避免 Rights→Series 反向等待。
@@ -384,7 +439,12 @@ async def save_rights(asset_id: int, body: RightsInput, db: DB, user: Actor):
     return {"id": item.id, "version": item.version}
 
 
-@router.post("/rights/{rights_id}/submit", response_model=dict)
+@router.post(
+    "/rights/{rights_id}/submit", response_model=dict,
+    summary='提交独立权属档案审核',
+    description='仅档案所有者可操作，须提交当前 version。校验材料后统一进入待核验状态；full 参数用于兼容旧客户端并决定材料完整性检查。关联单视频作品的档案须通过作品统一审核入口提交。',
+    response_description='操作成功时返回 ok=true。',
+)
 async def submit_rights(rights_id: int, body: Version, db: DB, user: Actor, full: bool = False):
     """用户只提交一次版权审核；保留 full 参数兼容旧客户端。"""
     item = await owned(db, Rights, rights_id, user)
@@ -404,7 +464,12 @@ async def submit_rights(rights_id: int, body: Version, db: DB, user: Actor, full
     return {"ok": True}
 
 
-@router.put("/rights/{rights_id}/case", response_model=dict)
+@router.put(
+    "/rights/{rights_id}/case", response_model=dict,
+    summary='保存版权登记案件',
+    description='仅权属档案所有者可操作。首次创建案件 version 为 0，修改须匹配案件当前版本；保存后案件进入待补材料状态，登记进度不会自动改变权属审核结果。',
+    response_description='案件 ID、版本、办理方式、状态和参考编号。',
+)
 async def save_case(rights_id: int, body: CaseInput, db: DB, user: Actor):
     """申请回执和案件办结从不修改权属核验结论。"""
     await owned(db, Rights, rights_id, user)
@@ -423,7 +488,12 @@ async def save_case(rights_id: int, body: CaseInput, db: DB, user: Actor):
     return data(item, "id", "rights_id", "version", "route", "status", "official_reference", "note")
 
 
-@router.post("/assets/{asset_id}/assistance", response_model=dict)
+@router.post(
+    "/assets/{asset_id}/assistance", response_model=dict,
+    summary='申请版权材料客服协办',
+    description='仅视频资产所有者可操作。可在尚无证明材料时建立外部来源权属档案及客服协办案件；已有协办案件直接复用。PrintFilm 来源须先走授权函流程。',
+    response_description='当前客服协办案件信息。',
+)
 async def start_assistance(asset_id: int, db: DB, user: Actor):
     """无证明即可建协办案；不生成虚假权属信息或审核结论。"""
     await asset_owned(db, asset_id, user)
@@ -447,7 +517,12 @@ async def start_assistance(asset_id: int, db: DB, user: Actor):
     return data(item, "id", "rights_id", "version", "route", "status", "official_reference", "note")
 
 
-@router.get("/rights/{rights_id}/case", response_model=dict)
+@router.get(
+    "/rights/{rights_id}/case", response_model=dict,
+    summary='获取权属档案对应的登记案件',
+    description='仅权属档案所有者可查看。按档案读取当前登记案件，尚未创建案件时返回 item=null。',
+    response_description='item 为案件详情或 null。',
+)
 async def get_case(rights_id: int, db: DB, user: Actor):
     """按当前档案读取案件，避免个人案件分页截断导致重复创建。"""
     await owned(db, Rights, rights_id, user)
@@ -455,7 +530,12 @@ async def get_case(rights_id: int, db: DB, user: Actor):
     return {"item": data(item, "id", "rights_id", "version", "route", "status", "official_reference", "note") if item else None}
 
 
-@router.get("/recruits", response_model=dict)
+@router.get(
+    "/recruits", response_model=dict,
+    summary='分页查询公开招募需求',
+    description='仅展示审核通过且仍开放的需求。支持标题、分类和预算范围筛选，预算单位为人民币分；sort 支持 latest 和 deadline。',
+    response_description='招募需求 items 与分页信息 meta。',
+)
 async def recruits(db: DB, q: str = Query("", max_length=100), category: str = Query("", max_length=60),
                    min_budget: int | None = Query(None, ge=0), max_budget: int | None = Query(None, ge=0),
                    sort: str = "latest", page_number: int = Query(1, alias="page", ge=1), page_size: int = Query(20, ge=1, le=100)):
@@ -475,7 +555,12 @@ async def recruits(db: DB, q: str = Query("", max_length=100), category: str = Q
     return {"items": [await recruit_data(db, item) for item in records], "meta": meta}
 
 
-@router.get("/recruits/{post_id}", response_model=dict)
+@router.get(
+    "/recruits/{post_id}", response_model=dict,
+    summary='获取招募需求详情',
+    description='访客可读取公开需求；需求发布者、管理员及历史投稿人可按权限读取相关非公开需求。返回是否为发布者、是否开放及可联系状态；当前投稿入口已停用。',
+    response_description='需求详情与 is_owner、is_open、can_submit、can_contact 状态。',
+)
 async def recruit_detail(post_id: int, db: DB, user: Visitor):
     """相关投稿人可看已关闭需求，但不能借此看他人的投稿。"""
     item = await db.get(Recruit, post_id)
@@ -490,7 +575,12 @@ async def recruit_detail(post_id: int, db: DB, user: Visitor):
     return result
 
 
-@router.post("/recruits", response_model=dict)
+@router.post(
+    "/recruits", response_model=dict,
+    summary='创建招募需求草稿',
+    description='登录后创建自己的招募需求。截止时间须晚于当前时间；参考图片须属于本人且已就绪，纯文字需求无需上传图片。',
+    response_description='新建招募需求的草稿详情。',
+)
 async def create_recruit(body: RecruitInput, db: DB, user: Actor):
     """没有参考图的文字需求不依赖 OSS。"""
     if body.deadline_at <= now():
@@ -503,7 +593,12 @@ async def create_recruit(body: RecruitInput, db: DB, user: Actor):
     return await recruit_data(db, item, True)
 
 
-@router.put("/recruits/{post_id}", response_model=dict)
+@router.put(
+    "/recruits/{post_id}", response_model=dict,
+    summary='更新招募需求草稿',
+    description='仅需求发布者可操作，须提交当前 version。已关闭或过期的需求不可编辑；有历史投稿后预算、用途、交付和截止时间等实质条款锁定。保存后回到草稿并重新审核。',
+    response_description='更新后的招募需求详情与版本。',
+)
 async def update_recruit(post_id: int, body: RecruitUpdate, db: DB, user: Actor):
     """曾有投稿后锁定实质条款；其他修改撤下并重新审核。"""
     item = await owned(db, Recruit, post_id, user)
@@ -526,7 +621,12 @@ async def update_recruit(post_id: int, body: RecruitUpdate, db: DB, user: Actor)
     return await recruit_data(db, item, True)
 
 
-@router.post("/recruits/{post_id}/submit", response_model=dict)
+@router.post(
+    "/recruits/{post_id}/submit", response_model=dict,
+    summary='提交招募需求审核',
+    description='仅需求发布者可操作，须提交当前 version；需求须未关闭、未过期且未封禁。提交后进入待审核状态。',
+    response_description='操作成功时返回 ok=true。',
+)
 async def submit_recruit(post_id: int, body: Version, db: DB, user: Actor):
     """需求审核独立于原项目发布流程。"""
     item = await owned(db, Recruit, post_id, user)
@@ -539,7 +639,12 @@ async def submit_recruit(post_id: int, body: Version, db: DB, user: Actor):
     return {"ok": True}
 
 
-@router.post("/recruits/{post_id}/close", response_model=dict)
+@router.post(
+    "/recruits/{post_id}/close", response_model=dict,
+    summary='关闭招募需求',
+    description='仅需求发布者可操作。关闭后退出公开需求列表并停止新的接单咨询，保留历史记录并递增版本。',
+    response_description='操作成功时返回 ok=true。',
+)
 async def close_recruit(post_id: int, db: DB, user: Actor):
     """关闭后退出广场并停止创作者的新接单咨询，历史记录保留。"""
     item = await owned(db, Recruit, post_id, user)
@@ -550,14 +655,24 @@ async def close_recruit(post_id: int, db: DB, user: Actor):
     return {"ok": True}
 
 
-@router.post("/recruits/{post_id}/submissions", response_model=dict, include_in_schema=False)
+@router.post(
+    "/recruits/{post_id}/submissions", response_model=dict, include_in_schema=False,
+    summary='旧版投稿入口（已停用）',
+    description='兼容旧客户端，固定返回 410，提示改为客服撮合；此接口不在公开 OpenAPI 文档中展示。',
+    response_description='固定返回已停用错误 MARKETPLACE_SUBMISSIONS_DISABLED。',
+)
 async def create_submission(post_id: int, user: Actor):
     """兼容旧客户端并明确拒绝投稿；不创建媒体任务或修改资产。"""
     raise HTTPException(410, detail={"code": "MARKETPLACE_SUBMISSIONS_DISABLED",
                                      "message": "招募已改为客服撮合，请在招募详情中联系客服接单"})
 
 
-@router.get("/recruits/{post_id}/submissions", response_model=dict)
+@router.get(
+    "/recruits/{post_id}/submissions", response_model=dict,
+    summary='分页查看需求收到的历史投稿',
+    description='仅需求发布者或管理员可查看对应需求的历史投稿，按投稿 ID 倒序分页。',
+    response_description='历史投稿 items 与分页信息 meta。',
+)
 async def received_submissions(post_id: int, db: DB, user: Actor, page_number: int = Query(1, alias="page", ge=1), page_size: int = Query(20, ge=1, le=100)):
     """收到的投稿只有需求方和管理员可列出。"""
     await owned(db, Recruit, post_id, user, admin=True)
@@ -565,7 +680,12 @@ async def received_submissions(post_id: int, db: DB, user: Actor, page_number: i
     return {"items": [await submission_data(db, item, user) for item in records], "meta": meta}
 
 
-@router.post("/submissions/{submission_id}/withdraw", response_model=dict)
+@router.post(
+    "/submissions/{submission_id}/withdraw", response_model=dict,
+    summary='撤回自己的历史投稿',
+    description='仅投稿者可操作。标记投稿已撤回并停止为新访问签发链接，保留历史记录。',
+    response_description='操作成功时返回 ok=true。',
+)
 async def withdraw(submission_id: int, db: DB, user: Actor):
     """撤回即停止新签名，历史留痕不删除。"""
     item = await owned(db, Submission, submission_id, user)
@@ -575,7 +695,12 @@ async def withdraw(submission_id: int, db: DB, user: Actor):
     return {"ok": True}
 
 
-@router.post("/submissions/{submission_id}/selection", response_model=dict, include_in_schema=False)
+@router.post(
+    "/submissions/{submission_id}/selection", response_model=dict, include_in_schema=False,
+    summary='旧版选稿入口（已停用）',
+    description='兼容旧客户端，固定返回 410，提示联系客服确认合作；此接口不在公开 OpenAPI 文档中展示。',
+    response_description='固定返回已停用错误 MARKETPLACE_SUBMISSIONS_DISABLED。',
+)
 async def select_submission(submission_id: int, user: Actor):
     """停止线上选稿；历史标记只读保留。"""
     raise HTTPException(410, detail={"code": "MARKETPLACE_SUBMISSIONS_DISABLED",

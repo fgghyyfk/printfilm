@@ -79,7 +79,16 @@ def public_task(task, *, viewer: User | None = None, owner_user_id: int | None =
 
 
 # 创建一个延时完成的模拟任务，便于联调任务平台。
-@router.post("/mock-delay", response_model=TaskRunOut)
+@router.post(
+    "/mock-delay",
+    response_model=TaskRunOut,
+    summary="创建模拟延时任务",
+    description=(
+        "需要登录，仅在模拟模式或管理员身份下可用，否则返回 404。"
+        "创建由后台延时完成的测试任务，每个用户最多同时存在 3 个活动模拟任务，超出返回 429。"
+    ),
+    response_description="新建模拟任务的当前状态",
+)
 async def create_mock_delay_task(
     body: MockDelayTaskRequest,
     db: AsyncSession = Depends(get_db),
@@ -124,15 +133,25 @@ def _generation_workspace(team_id: int | None, workspace_team_id: int | None) ->
     return team_id if team_id is not None else workspace_team_id
 
 
-@router.get("/generations", response_model=GenerationListOut)
+@router.get(
+    "/generations",
+    response_model=GenerationListOut,
+    summary="分页查询生成记录",
+    description=(
+        "需要登录，按媒体类型、状态、任务标识和创建时间查询生成历史。"
+        "可通过 team_id 或 X-Team-Id 选择团队空间，两者同时传入必须一致；"
+        "团队数据按访问权限返回。"
+    ),
+    response_description="生成记录与分页统计",
+)
 async def list_generation_history(
-    page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
-    kind: str | None = Query(None, pattern="^(video|image|audio|text)$"),
-    status: str | None = Query(None, pattern="^(processing|succeeded|failed|cancelled)$"),
-    task_id: str | None = Query(None, max_length=128),
+    page: int = Query(1, ge=1, description="页码，从 1 开始"), page_size: int = Query(20, ge=1, le=100, description="每页返回的记录数"),
+    kind: str | None = Query(None, pattern="^(video|image|audio|text)$", description="生成内容类型：video 视频、image 图片、audio 音频、text 文本"),
+    status: str | None = Query(None, pattern="^(processing|succeeded|failed|cancelled)$", description="记录状态：processing 处理中、succeeded 成功、failed 失败、cancelled 已取消"),
+    task_id: str | None = Query(None, max_length=128, description="任务标识，可匹配工具、平台或供应商任务编号"),
     created_from: datetime | None = None, created_to: datetime | None = None,
-    team_id: int | None = Query(None, ge=1),
-    workspace_team_id: int | None = Header(None, alias="X-Team-Id", ge=1),
+    team_id: int | None = Query(None, ge=1, description="团队空间编号；不传时使用个人空间"),
+    workspace_team_id: int | None = Header(None, alias="X-Team-Id", ge=1, description="团队空间编号；与查询参数 team_id 同时传入时必须一致"),
     db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user),
 ) -> GenerationListOut:
     if created_from and created_to:
@@ -146,10 +165,19 @@ async def list_generation_history(
         team_id=_generation_workspace(team_id, workspace_team_id))
 
 
-@router.get("/generations/{task_id}", response_model=GenerationRecordOut)
+@router.get(
+    "/generations/{task_id}",
+    response_model=GenerationRecordOut,
+    summary="获取生成记录详情",
+    description=(
+        "需要登录，按平台任务编号获取可访问的生成记录。可通过 team_id 或 X-Team-Id 选择团队空间，两者同时传入必须一致；"
+        "不存在或无权访问时返回 404。"
+    ),
+    response_description="生成记录详情",
+)
 async def get_generation_history(
-    task_id: int, team_id: int | None = Query(None, ge=1),
-    workspace_team_id: int | None = Header(None, alias="X-Team-Id", ge=1),
+    task_id: int, team_id: int | None = Query(None, ge=1, description="团队空间编号；不传时使用个人空间"),
+    workspace_team_id: int | None = Header(None, alias="X-Team-Id", ge=1, description="团队空间编号；与查询参数 team_id 同时传入时必须一致"),
     db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user),
 ) -> GenerationRecordOut:
     try:
@@ -159,7 +187,17 @@ async def get_generation_history(
 
 
 # 查询单个任务详情（含 steps/targets/events）
-@router.get("/{task_id}", response_model=TaskRunOut)
+@router.get(
+    "/{task_id}",
+    response_model=TaskRunOut,
+    summary="获取统一任务详情",
+    description=(
+        "需要登录，返回可访问任务的状态、步骤、目标和事件。"
+        "团队任务会隐藏上游内部事件及租约凭证，费用信息仅对任务发起人或团队所有者可见；"
+        "不可访问任务返回 404。"
+    ),
+    response_description="按访问权限裁剪后的任务详情",
+)
 async def get_task_run(
     task_id: int,
     db: AsyncSession = Depends(get_db),
@@ -174,20 +212,30 @@ async def get_task_run(
 
 
 # 当前用户的统一任务列表，支持 domain/target/project 维度筛选
-@router.get("", response_model=TaskListOut)
+@router.get(
+    "",
+    response_model=TaskListOut,
+    summary="分页查询统一任务",
+    description=(
+        "需要登录，支持业务域、任务状态、任务类型、队列、目标及项目筛选。"
+        "可通过 team_id 或 X-Team-Id 选择团队空间，两者同时传入必须一致；"
+        "团队任务按权限隐藏内部和财务信息。"
+    ),
+    response_description="任务列表与分页信息",
+)
 async def list_task_runs(
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
-    domain: str | None = Query(default=None),
-    status: str | None = Query(default=None),
-    task_type: str | None = Query(default=None),
-    queue_type: str | None = Query(default=None, pattern="^(text|image|video)$"),
-    target_type: str | None = Query(default=None),
-    target_id: int | None = Query(default=None, ge=1),
-    project_id: int | None = Query(default=None, ge=1),
-    drama_project_id: int | None = Query(default=None, ge=1),
-    team_id: int | None = Query(default=None, ge=1),
-    workspace_team_id: int | None = Header(default=None, alias="X-Team-Id", ge=1),
+    page: int = Query(1, ge=1, description="页码，从 1 开始"),
+    page_size: int = Query(20, ge=1, le=100, description="每页返回的记录数"),
+    domain: str | None = Query(default=None, description="任务所属业务域，例如 kepu、drama 或 studio"),
+    status: str | None = Query(default=None, description="平台任务状态，例如 pending、running、succeeded、failed、cancelled"),
+    task_type: str | None = Query(default=None, description="任务类型标识"),
+    queue_type: str | None = Query(default=None, pattern="^(text|image|video)$", description="任务队列类型：text 文本、image 图片、video 视频"),
+    target_type: str | None = Query(default=None, description="任务关联的目标资源类型"),
+    target_id: int | None = Query(default=None, ge=1, description="任务关联的目标资源编号"),
+    project_id: int | None = Query(default=None, ge=1, description="项目编号"),
+    drama_project_id: int | None = Query(default=None, ge=1, description="漫剧项目编号"),
+    team_id: int | None = Query(default=None, ge=1, description="团队空间编号；不传时使用个人空间"),
+    workspace_team_id: int | None = Header(default=None, alias="X-Team-Id", ge=1, description="团队空间编号；与查询参数 team_id 同时传入时必须一致"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> TaskListOut:
@@ -220,7 +268,16 @@ async def list_task_runs(
 
 
 # 统一取消入口：标记 cancel_requested 并等待运行时协作收敛
-@router.post("/{task_id}/cancel", response_model=TaskRunOut)
+@router.post(
+    "/{task_id}/cancel",
+    response_model=TaskRunOut,
+    summary="请求取消统一任务",
+    description=(
+        "需要登录，对有权限操作的任务标记取消请求，后台运行时协作终止；"
+        "返回任务当前状态，不能视为任务已经结束。任务不存在或不可访问返回 404。"
+    ),
+    response_description="取消请求后的任务详情",
+)
 async def cancel_task_run(
     task_id: int,
     db: AsyncSession = Depends(get_db),

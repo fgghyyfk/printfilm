@@ -43,7 +43,12 @@ class MediaQuoteBody(BaseModel):
     price_version: int | None = Field(default=None, ge=1)
 
 
-@router.post("/media/quote")
+@router.post(
+    "/media/quote",
+    summary="估算媒体生成价格",
+    description="需要登录，按当前已发布的媒体固定价格对请求项报价。未发布价格或传入的价格版本与当前版本不一致时返回 409；本接口仅报价。",
+    response_description="媒体生成报价",
+)
 async def quote_media(body: MediaQuoteBody, _user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     from app.services.media_models.prices import active_book, quote_items
     book = await active_book(db)
@@ -59,7 +64,12 @@ class CreateOrderBody(BaseModel):
     pay_type: Literal["alipay", "wxpay"]
 
 
-@router.get("/wallet")
+@router.get(
+    "/wallet",
+    summary="获取个人钱包余额",
+    description="需要登录，返回个人可用余额、冻结金额、套餐和计费开关。金额同时提供分和元两种单位。",
+    response_description="个人钱包与计费配置",
+)
 async def wallet(user: User = Depends(get_current_user)) -> dict:
     return {
         "balance_fen": int(user.balance_fen or 0),
@@ -72,7 +82,12 @@ async def wallet(user: User = Depends(get_current_user)) -> dict:
     }
 
 
-@router.get("/skus")
+@router.get(
+    "/skus",
+    summary="获取充值套餐",
+    description="无需登录，返回可购买的充值套餐、支持的支付方式及计费倍率。",
+    response_description="充值套餐与支付方式",
+)
 async def list_skus() -> dict:
     return {
         "skus": billing.SKUS,
@@ -81,16 +96,25 @@ async def list_skus() -> dict:
     }
 
 
-@router.get("/preflight")
+@router.get(
+    "/preflight",
+    summary="预检任务批次余额",
+    description=(
+        "需要登录，在任务入队前计算单项估算、在途承诺金额和本批次总需求。"
+        "指定团队时校验成员资格，并按团队计费规则检查；非所有者不返回付款账户余额。"
+        "本接口不会创建生成任务。"
+    ),
+    response_description="余额预检及费用估算结果",
+)
 async def billing_preflight(
-    domain: str = Query(..., min_length=1),
-    task_type: str = Query(..., min_length=1),
-    count: int = Query(1, ge=1, le=500),
-    team_id: int | None = Query(None, ge=1),
+    domain: str = Query(..., min_length=1, description="任务所属业务域，例如 kepu、drama 或 studio"),
+    task_type: str = Query(..., min_length=1, description="任务类型标识"),
+    count: int = Query(1, ge=1, le=500, description="本次计划提交的任务数量"),
+    team_id: int | None = Query(None, ge=1, description="团队空间编号；不传时使用个人空间"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
-    """入队前余额预检：返回单项估算与批量总需求。"""
+    """需要登录，在任务入队前计算单项估算、在途承诺金额和本批次总需求。指定团队时校验成员资格，并按团队计费规则检查；非所有者不返回付款账户余额。本接口不会创建生成任务。"""
     member = None
     team = None
     if team_id is not None:
@@ -159,7 +183,15 @@ def _client_ip(request: Request) -> str:
     return "127.0.0.1"
 
 
-@router.post("/orders")
+@router.post(
+    "/orders",
+    summary="创建个人充值订单",
+    description=(
+        "需要登录，选择充值套餐及支付宝或微信支付方式创建待支付订单，返回二维码、支付链接和订单有效期。"
+        "创建订单不会立即增加余额，实际到账由支付回调确认。"
+    ),
+    response_description="充值订单与支付信息",
+)
 async def create_order(
     body: CreateOrderBody,
     request: Request,
@@ -219,12 +251,20 @@ async def create_order(
     }
 
 
-@router.get("/usage/summary")
+@router.get(
+    "/usage/summary",
+    summary="获取本月个人用量汇总",
+    description=(
+        "需要登录，按 UTC 月初汇总个人空间消费及由本人付款的消费，返回调用次数、Token 数量、扣费金额和当前余额。"
+        "金额提供分和元两种单位。"
+    ),
+    response_description="本月用量与钱包汇总",
+)
 async def usage_summary(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
-    """本月 token / 扣费汇总，供历史页侧栏展示。"""
+    """需要登录，按 UTC 月初汇总个人空间消费及由本人付款的消费，返回调用次数、Token 数量、扣费金额和当前余额。金额提供分和元两种单位。"""
     now = datetime.now(timezone.utc)
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     result = await db.execute(
@@ -251,12 +291,17 @@ async def usage_summary(
     }
 
 
-@router.get("/alerts/pending")
+@router.get(
+    "/alerts/pending",
+    summary="获取待确认额度告警",
+    description="需要登录，返回当前用户尚待展示或确认的额度告警，包含标题、内容、额度阈值和创建时间。",
+    response_description="待确认的额度告警列表",
+)
 async def billing_alerts_pending(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
-    """待展示的用户额度告警（弹窗）。"""
+    """需要登录，返回当前用户尚待展示或确认的额度告警，包含标题、内容、额度阈值和创建时间。"""
     from app.services.billing.alerts import list_pending_user_alerts
 
     rows = await list_pending_user_alerts(db, user.id)
@@ -277,7 +322,12 @@ async def billing_alerts_pending(
     }
 
 
-@router.post("/alerts/{alert_id}/ack")
+@router.post(
+    "/alerts/{alert_id}/ack",
+    summary="确认额度告警",
+    description="需要登录，确认当前用户的指定额度告警；告警不存在或不属于当前用户时返回 404。",
+    response_description="告警确认结果",
+)
 async def billing_alert_ack(
     alert_id: int,
     db: AsyncSession = Depends(get_db),
@@ -292,14 +342,19 @@ async def billing_alert_ack(
     return {"ok": True}
 
 
-@router.get("/usage/events")
+@router.get(
+    "/usage/events",
+    summary="分页查询个人扣费记录",
+    description="需要登录，按记录编号倒序查询个人空间消费及由本人付款的消费明细，包含项目、计费项、模型、Token 和扣费金额。",
+    response_description="扣费明细及分页信息",
+)
 async def usage_events(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page: int = Query(1, ge=1, description="页码，从 1 开始"),
+    page_size: int = Query(20, ge=1, le=100, description="每页返回的记录数"),
 ) -> dict:
-    """分页返回当前用户的按次扣费记录（新→旧）。"""
+    """需要登录，按记录编号倒序查询个人空间消费及由本人付款的消费明细，包含项目、计费项、模型、Token 和扣费金额。"""
     from app.models_drama import DramaProject
 
     count_stmt = select(func.count()).select_from(UsageEvent).where(or_((UsageEvent.user_id == user.id) & UsageEvent.team_id.is_(None), UsageEvent.billing_payer_user_id == user.id))
@@ -349,13 +404,18 @@ async def usage_events(
     }
 
 
-@router.get("/orders")
+@router.get(
+    "/orders",
+    summary="查询个人充值订单",
+    description="需要登录，按创建时间倒序返回当前用户的个人充值订单，并自动关闭已过期待支付订单；不包含历史团队订单。",
+    response_description="个人充值订单列表",
+)
 async def list_orders(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
-    limit: int = Query(50, ge=1, le=100),
+    limit: int = Query(50, ge=1, le=100, description="最多返回的记录数"),
 ) -> dict:
-    """充值订单列表（新→旧）；返回前自动关闭过期待支付单。"""
+    """需要登录，按创建时间倒序返回当前用户的个人充值订单，并自动关闭已过期待支付订单；不包含历史团队订单。"""
     await billing.close_expired_pending_orders(db, user_id=user.id)
     result = await db.execute(
         select(Order)
@@ -384,7 +444,12 @@ async def list_orders(
     return {"orders": items}
 
 
-@router.get("/orders/{out_trade_no}")
+@router.get(
+    "/orders/{out_trade_no}",
+    summary="获取个人充值订单状态",
+    description="需要登录，仅可读取本人个人充值订单；查询前关闭该订单的过期待支付状态，返回支付状态、金额和到账时间。",
+    response_description="个人充值订单状态",
+)
 async def get_order(
     out_trade_no: str,
     db: AsyncSession = Depends(get_db),
@@ -405,13 +470,18 @@ async def get_order(
     }
 
 
-@router.post("/orders/{out_trade_no}/close")
+@router.post(
+    "/orders/{out_trade_no}/close",
+    summary="关闭个人充值订单",
+    description="需要登录，仅可关闭本人的待支付个人订单。已关闭订单可重复请求，已支付订单不能关闭。",
+    response_description="关闭后的订单状态",
+)
 async def close_order(
     out_trade_no: str,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
-    """用户主动取消支付时关闭待支付订单（过期订单由系统自动关闭）。"""
+    """需要登录，仅可关闭本人的待支付个人订单。已关闭订单可重复请求，已支付订单不能关闭。"""
     result = await db.execute(select(Order).where(Order.out_trade_no == out_trade_no))
     order = result.scalar_one_or_none()
     if not order or order.user_id != user.id or order.team_id is not None:
@@ -433,7 +503,26 @@ def _notify_success(params: dict) -> bool:
     return status in {"TRADE_SUCCESS", "SUCCESS", "1"}
 
 
-@router.api_route("/epay/notify", methods=["GET", "POST"])
+@router.get(
+    "/epay/notify",
+    summary="接收易支付支付通知",
+    description=(
+        "支付网关通过 GET 查询参数或 POST 表单提交通知，无需登录令牌，但必须通过签名及金额校验。"
+        "成功支付后幂等入账；历史团队订单回款到原下单人的个人账户。"
+    ),
+    response_description="纯文本 success 或 fail",
+    response_class=PlainTextResponse,
+)
+@router.post(
+    "/epay/notify",
+    summary="接收易支付支付通知",
+    description=(
+        "支付网关通过 GET 查询参数或 POST 表单提交通知，无需登录令牌，但必须通过签名及金额校验。"
+        "成功支付后幂等入账；历史团队订单回款到原下单人的个人账户。"
+    ),
+    response_description="纯文本 success 或 fail",
+    response_class=PlainTextResponse,
+)
 async def epay_notify(request: Request, db: AsyncSession = Depends(get_db)) -> PlainTextResponse:
     if request.method == "POST":
         form = await request.form()

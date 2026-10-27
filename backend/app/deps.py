@@ -6,7 +6,11 @@ from app.database import get_db
 from app.models import User
 from app.services.auth import decode_token, get_user_by_id
 
-security = HTTPBearer(auto_error=False)
+security = HTTPBearer(
+    auto_error=False,
+    bearerFormat="JWT",
+    description="站内登录令牌：通过 POST /api/auth/login 获取 access_token，请求时发送 Authorization: Bearer <access_token>。",
+)
 
 
 async def _user_from_bearer(db: AsyncSession, token: str) -> User | None:

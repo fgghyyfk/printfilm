@@ -4,6 +4,7 @@ import { throwApiError } from '../lib/apiError'
 import { API_BASE, createJsonRequester } from './client'
 import { apiErrorMessage } from './http'
 import type { DramaAsset } from './drama'
+import type { AssetDetailReference } from '../lib/assetDetailReferences'
 
 /** 工具请求统一处理登录失效；仅生成入口沿用全局计费提示。 */
 function requestToolJson<T>(
@@ -51,6 +52,7 @@ export type ToolRunRecord = {
   urls: string[]
   task_id?: string | null
   params?: Record<string, unknown> | null
+  references?: AssetDetailReference[]
   error?: string | null
   created_at: string
   platform_task_id?: number | null

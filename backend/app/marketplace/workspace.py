@@ -35,7 +35,12 @@ async def owner_works(db, user, page_number: int, page_size: int) -> dict:
     return {"items": items, "meta": {"page": page_number, "page_size": page_size, "total": total}}
 
 
-@router.get("/mine/{kind}", response_model=dict)
+@router.get(
+    "/mine/{kind}", response_model=dict,
+    summary='分页查询我的市场记录',
+    description='仅查询当前登录账号自己的记录。kind 支持 works、series、recruits、submissions、cases、assets、rights、notifications；works 合并单视频与短剧系列，已删除作品不再展示。',
+    response_description='个人记录 items 与分页信息 meta。',
+)
 async def mine(kind: str, db: DB, user: Actor, page_number: int = Query(1, alias="page", ge=1), page_size: int = Query(20, ge=1, le=100)):
     """个人数据分页，不能通过请求 owner_id 读取别人数据。"""
     if kind == "works":
@@ -67,7 +72,12 @@ async def mine(kind: str, db: DB, user: Actor, page_number: int = Query(1, alias
     return {"items": items, "meta": meta}
 
 
-@router.post("/notifications/{notification_id}/read", response_model=dict)
+@router.post(
+    "/notifications/{notification_id}/read", response_model=dict,
+    summary='将我的站内通知标记已读',
+    description='仅通知接收者可操作，将指定通知的 read 状态设置为 true。',
+    response_description='操作成功时返回 ok=true。',
+)
 async def read_notification(notification_id: int, db: DB, user: Actor):
     """标记当前账号的站内通知。"""
     item = await owned(db, Notification, notification_id, user)
@@ -76,7 +86,12 @@ async def read_notification(notification_id: int, db: DB, user: Actor):
     return {"ok": True}
 
 
-@router.get("/support", response_model=dict)
+@router.get(
+    "/support", response_model=dict,
+    summary='获取公开客服说明',
+    description='允许访客访问。返回已启用客服的名称、微信和服务时间；二维码需登录后通过媒体签名接口单独获取。',
+    response_description='客服可用状态 available 及说明；不可用时包含 message。',
+)
 async def support(db: DB):
     """公开客服说明；二维码使用独立短时签名接口。"""
     item = await db.get(Support, 1)
@@ -85,7 +100,12 @@ async def support(db: DB):
     return {"available": True, **data(item, "name", "wechat", "hours")}
 
 
-@router.post("/consultations", response_model=dict)
+@router.post(
+    "/consultations", response_model=dict,
+    summary='发起市场内容客服咨询',
+    description='登录后按目标权限记录咨询。作品与分集须满足可咨询条件，需求咨询用于客服撮合；客服不可用时返回 503。咨询只记录沟通意向，不创建成交、授权或购买权益。',
+    response_description='咨询参考编号、标题、人民币分价格及客服联系方式与提示。',
+)
 async def consult(body: Target, db: DB, user: Actor):
     """记录咨询而非成交；购买类咨询必须满足完整权属核验。"""
     item = await get_target(db, body.target_type, body.target_id, user)
@@ -128,7 +148,12 @@ async def consult(body: Target, db: DB, user: Actor):
             "notice": notice}
 
 
-@router.post("/reports", response_model=dict)
+@router.post(
+    "/reports", response_model=dict,
+    summary='提交市场内容举报',
+    description='登录后对有权访问的目标提交举报，证据须为本人已就绪的文档或图片资产；登记案件问题需联系客服处理。举报材料按私有权限保存。',
+    response_description='新建举报记录 ID。',
+)
 async def report(body: ReportInput, db: DB, user: Actor):
     """举报证据私有存储，不把投诉人联系方式公开给被举报者。"""
     await get_target(db, body.target_type, body.target_id, user)

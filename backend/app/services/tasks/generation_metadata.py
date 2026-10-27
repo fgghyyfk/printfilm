@@ -81,6 +81,25 @@ def planned_generation_params(task, kind: str) -> dict:
     return merge_generation_params(operation.get("params"), {"model_id": operation.get("model_id")})
 
 
+def saved_generation_references(task, kind: str) -> list[dict] | None:
+    """Read one immutable generation's inputs, without resolving current asset URLs."""
+    from app.services.tasks.generation_references import public_references
+
+    result = task.result_payload if isinstance(task.result_payload, dict) else {}
+    payload = task.payload if isinstance(task.payload, dict) else {}
+    for value in (result.get("references"), payload.get("generation_references")):
+        if isinstance(value, list):
+            return public_references(value)
+    prepared = payload.get("prepared")
+    if isinstance(prepared, dict):
+        return public_references(prepared)
+    snapshot = getattr(task, "billing_snapshot", None)
+    items = snapshot.get("items", []) if isinstance(snapshot, dict) else []
+    operations = [item for item in (items if isinstance(items, list) else [])
+                  if isinstance(item, dict) and item.get("capability") == kind]
+    return public_references(operations[0].get("params")) if len(operations) == 1 else None
+
+
 def request_matches_generation(kind: str, endpoint, *, is_video_submit=False) -> bool:
     """Ignore helper images and text calls when recovering a media task's submitted parameters."""
     if kind == "video":

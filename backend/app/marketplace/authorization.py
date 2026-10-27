@@ -144,12 +144,22 @@ def _write_letter(path: Path, font_name: str, body: SignInput, signed_at: str, o
     document.save()
 
 
-@router.get("/authorization", response_model=dict)
+@router.get(
+    "/authorization", response_model=dict,
+    summary='获取授权函模板与我的签署状态',
+    description='登录后读取当前授权函模板、版本与注意事项，并返回当前账号的有效签署记录；未签署时 current 为 null。',
+    response_description='授权函模板 template 与当前签署记录 current。',
+)
 async def status(db: DB, user: Actor):
     return {"template": {"version": VERSION, "title": TITLE, "notices": list(NOTICES), "body": BODY}, "current": summary(await current(db, user.id))}
 
 
-@router.post("/authorization", response_model=dict, dependencies=[Depends(storage_ready)])
+@router.post(
+    "/authorization", response_model=dict, dependencies=[Depends(storage_ready)],
+    summary='签署当前版本的授权函',
+    description='登录后提交姓名、确认项及签名轨迹，须匹配当前 template_version；版本过期返回 409。生成签署 PDF 并存入私有 OSS，已存在当前有效签署记录时直接返回该记录。',
+    response_description='已签署授权函的摘要信息。',
+)
 async def sign(body: SignInput, request: Request, db: DB, user: Actor):
     if body.template_version != VERSION:
         fail("授权条款已更新，请刷新后重新阅读并签署", 409)
@@ -177,7 +187,12 @@ async def sign(body: SignInput, request: Request, db: DB, user: Actor):
     return summary(item)
 
 
-@router.get("/authorizations/{record_id}/letter", response_model=dict, dependencies=[Depends(storage_ready)])
+@router.get(
+    "/authorizations/{record_id}/letter", response_model=dict, dependencies=[Depends(storage_ready)],
+    summary='获取已签署授权函的临时链接',
+    description='仅签署本人或管理员可查看。为授权函生成短期访问签名，并记录读取事件；无权访问或不存在时返回 404。',
+    response_description='访问链接 url、有效秒数 expires_in 与建议文件名 filename。',
+)
 async def letter(record_id: int, db: DB, user: Actor):
     item = await db.get(Authorization, record_id)
     if not item or (item.owner_id != user.id and user.role != "admin"):
@@ -197,7 +212,21 @@ def _disposition(filename: str, download: bool) -> str:
     return f"{kind}; filename=\"{ascii_name}\"; filename*=UTF-8''{encoded}"
 
 
-@router.get("/authorizations/{record_id}/file", dependencies=[Depends(storage_ready)])
+@router.get(
+    "/authorizations/{record_id}/file", dependencies=[Depends(storage_ready)],
+    response_class=Response,
+    responses={
+        200: {
+            "content": {
+                "application/pdf": {"schema": {"type": "string", "format": "binary"}},
+                "image/png": {"schema": {"type": "string", "format": "binary"}},
+            },
+        },
+    },
+    summary='预览或下载已签署授权函',
+    description='仅签署本人或管理员可访问。直接返回 PDF 或兼容历史图片的文件内容；默认在线打开，download=true 时作为附件下载，并记录访问事件。',
+    response_description='授权函二进制文件，响应包含 Content-Disposition 和禁止缓存标记。',
+)
 async def letter_file(record_id: int, db: DB, user: Actor, download: bool = False):
     """把已签署授权函以文件流返回。默认在线打开，download=true 时才作为附件下载。"""
     item = await db.get(Authorization, record_id)

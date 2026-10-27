@@ -21,7 +21,12 @@ VIDEO_TYPES = {".mp4": "video/mp4", ".mov": "video/quicktime", ".webm": "video/w
 IMAGE_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}
 
 
-@router.post("/uploads", response_model=dict, dependencies=[Depends(storage_ready)])
+@router.post(
+    "/uploads", response_model=dict, dependencies=[Depends(storage_ready)],
+    summary='创建私有媒体分片上传会话',
+    description='登录后创建有效期 24 小时的上传会话。视频支持 mp4、mov、webm，图片支持 png、jpg、jpeg、webp，document 额外支持 pdf；qr 仅管理员可上传。同一用户最多保有 10 个未过期的上传中会话。',
+    response_description='上传会话 ID、asset_id、part_size、expires_at 与 uploaded_parts。',
+)
 async def initiate_upload(body: UploadInput, db: DB, user: Actor):
     """上传会话使用共用 Bucket 的市场目录和随机对象名。"""
     settings = get_marketplace_settings()
@@ -55,14 +60,24 @@ async def initiate_upload(body: UploadInput, db: DB, user: Actor):
     return {**data(upload, "id", "asset_id", "state", "part_size", "expires_at"), "uploaded_parts": []}
 
 
-@router.get("/uploads/{upload_id}", response_model=dict)
+@router.get(
+    "/uploads/{upload_id}", response_model=dict,
+    summary='查询分片上传进度',
+    description='仅上传者可查看。返回会话状态、分片大小与已完成的分片编号，供相同文件断点续传；不返回 OSS 凭证。',
+    response_description='会话信息与按编号升序排列的 uploaded_parts。',
+)
 async def upload_status(upload_id: int, db: DB, user: Actor):
     """客户端恢复相同文件时查询已完成分片，不返回 OSS 凭证。"""
     item = await owned(db, Upload, upload_id, user)
     return {**data(item, "id", "asset_id", "state", "part_size", "expires_at"), "uploaded_parts": sorted(int(n) for n in item.parts)}
 
 
-@router.put("/uploads/{upload_id}/parts/{number}", response_model=dict, dependencies=[Depends(storage_ready)])
+@router.put(
+    "/uploads/{upload_id}/parts/{number}", response_model=dict, dependencies=[Depends(storage_ready)],
+    summary='上传指定编号的文件分片',
+    description='仅上传者可操作，原始文件字节直接作为请求体。分片编号从 1 开始，字节数须与会话约定完全匹配；相同编号与相同内容重复上传会复用已完成记录。上传结束或过期返回 409。',
+    response_description='成功时返回 ok=true 及分片编号 number。',
+)
 async def put_part(upload_id: int, number: int, request: Request, db: DB, user: Actor):
     """流式读取且最多缓存一个分片；持锁避免 JSON 分片记录丢失。"""
     item = await owned(db, Upload, upload_id, user)
@@ -91,7 +106,12 @@ async def put_part(upload_id: int, number: int, request: Request, db: DB, user: 
     return {"ok": True, "number": number}
 
 
-@router.post("/uploads/{upload_id}/complete", response_model=dict, dependencies=[Depends(storage_ready)])
+@router.post(
+    "/uploads/{upload_id}/complete", response_model=dict, dependencies=[Depends(storage_ready)],
+    summary='完成分片上传并校验文件大小',
+    description='仅上传者可操作。要求全部分片齐全，合并 OSS 对象并验证真实大小；成功后会话变为 completed，资产变为 ready。已完成的会话可重复调用。',
+    response_description='asset_id 与上传完成状态 state=completed。',
+)
 async def finish_upload(upload_id: int, db: DB, user: Actor):
     """OSS 完成和真实大小校验后创建唯一持久化媒体任务。"""
     item = await owned(db, Upload, upload_id, user)
@@ -113,7 +133,12 @@ async def finish_upload(upload_id: int, db: DB, user: Actor):
     return {"asset_id": asset.id, "state": "completed"}
 
 
-@router.delete("/uploads/{upload_id}", response_model=dict, dependencies=[Depends(storage_ready)])
+@router.delete(
+    "/uploads/{upload_id}", response_model=dict, dependencies=[Depends(storage_ready)],
+    summary='取消尚未完成的分片上传',
+    description='仅上传者可操作。中止未完成的 multipart 上传，并将会话与资产标记为 cancelled；已完成上传不可取消。',
+    response_description='操作成功时返回 ok=true。',
+)
 async def cancel_upload(upload_id: int, db: DB, user: Actor):
     """取消只中止未完成 multipart，不删除已提交的证据或媒体。"""
     item = await owned(db, Upload, upload_id, user)
@@ -126,14 +151,24 @@ async def cancel_upload(upload_id: int, db: DB, user: Actor):
     return {"ok": True}
 
 
-@router.get("/assets/{asset_id}", response_model=dict)
+@router.get(
+    "/assets/{asset_id}", response_model=dict,
+    summary='查询私有资产处理状态',
+    description='仅资产所有者或管理员可查看。返回资产种类、文件名、处理状态、视频时长、指纹与错误信息。',
+    response_description='资产基本信息与当前处理状态。',
+)
 async def asset_status(asset_id: int, db: DB, user: Actor):
     """文件检测未成功前不允许用于业务，失败不伪装上传完成。"""
     asset = await owned(db, Asset, asset_id, user, admin=True)
     return data(asset, "id", "kind", "filename", "status", "duration_seconds", "fingerprint", "error", "created_at")
 
 
-@router.post("/assets/{asset_id}/retry", response_model=dict, dependencies=[Depends(storage_ready)])
+@router.post(
+    "/assets/{asset_id}/retry", response_model=dict, dependencies=[Depends(storage_ready)],
+    summary='重试失败的媒体处理任务',
+    description='仅资产所有者或管理员可操作。只允许重试已有的 failed 媒体任务，重置尝试次数并重新排队，不创建重复资产。',
+    response_description='操作成功时返回 ok=true。',
+)
 async def retry_asset(asset_id: int, db: DB, user: Actor):
     """显式重试失败任务，不重复创建媒体记录。"""
     asset = await owned(db, Asset, asset_id, user, admin=True)

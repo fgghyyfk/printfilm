@@ -12,7 +12,11 @@ from app.schemas import AdminWorkListOut, AdminWorkOut, AdminWorkPatch, PageMeta
 router = APIRouter()
 
 
-@router.get("/works", response_model=AdminWorkListOut)
+@router.get("/works", response_model=AdminWorkListOut,
+    summary="分页查询已发布作品",
+    description="管理员按审核状态、可见性、标题关键词和所属用户查询已发布作品，按作品编号倒序返回。",
+    response_description="操作成功，返回结果详见响应结构",
+)
 async def list_works(
     audit_status: str | None = None,
     visibility: str | None = None,
@@ -59,7 +63,11 @@ async def list_works(
     return AdminWorkListOut(items=items, meta=PageMeta(page=page, page_size=page_size, total=total))
 
 
-@router.patch("/works/{work_id}", response_model=AdminWorkOut)
+@router.patch("/works/{work_id}", response_model=AdminWorkOut,
+    summary="更新作品审核状态与可见性",
+    description="管理员局部更新已发布作品。visibility 支持 public（公开）、private（私有）、unlisted（不列出）；audit_status 支持 pending（待审核）、passed（通过）、rejected（拒绝）。",
+    response_description="操作成功，返回结果详见响应结构",
+)
 async def patch_work(
     work_id: int,
     body: AdminWorkPatch,

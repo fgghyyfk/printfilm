@@ -130,7 +130,12 @@ async def _signed_hls_manifest(publication: Publication) -> str:
     return "\n".join(rewritten) + "\n"
 
 
-@router.get("/platform/feed", response_model=dict)
+@router.get(
+    "/platform/feed", response_model=dict,
+    summary='分页获取平台解锁内容列表',
+    description='允许访客访问。按发布版本 ID 倒序分页，列出已审核通过、已上架且播放文件已打包的平台解锁发布记录。',
+    response_description='发布版本 items 与分页信息 meta，价格金额单位为人民币分。',
+)
 async def platform_feed(db: DB, page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100)):
     filters = (
         Publication.audit_status == "approved",
@@ -145,7 +150,12 @@ async def platform_feed(db: DB, page: int = Query(1, ge=1), page_size: int = Que
     return {"items": [data(row, "id", "content_type", "content_id", "version", "sale_type", "copyright_price_fen", "unlock_price_fen", "share_bps", "created_at") for row in rows], "meta": {"page": page, "page_size": page_size, "total": total}}
 
 
-@router.get("/platform/episodes/{episode_id}", response_model=dict)
+@router.get(
+    "/platform/episodes/{episode_id}", response_model=dict,
+    summary='获取平台收费分集购买详情',
+    description='允许访客访问。读取分集当前可售发布版本；登录时同时判断当前用户是否已拥有该版本权益。未公开或不满足可售条件时返回 404。',
+    response_description='发布版本详情、entitled 购买权益状态及 playback_ready 播放就绪状态。',
+)
 async def platform_episode(episode_id: int, db: DB, user: Visitor):
     episode = await db.get(SeriesEpisode, episode_id)
     if not episode:
@@ -161,7 +171,12 @@ async def platform_episode(episode_id: int, db: DB, user: Visitor):
     return {**data(publication, "id", "content_type", "content_id", "version", "sale_type", "copyright_price_fen", "unlock_price_fen", "created_at"), "entitled": entitled, "playback_ready": bool(publication.playback_manifest_key)}
 
 
-@router.get("/platform/works/{work_id}", response_model=dict)
+@router.get(
+    "/platform/works/{work_id}", response_model=dict,
+    summary='获取平台收费单视频购买详情',
+    description='允许访客访问。读取单视频当前可售发布版本；登录时同时判断当前用户是否已拥有该版本权益。未公开或不满足可售条件时返回 404。',
+    response_description='发布版本详情、entitled 购买权益状态及 playback_ready 播放就绪状态。',
+)
 async def platform_work(work_id: int, db: DB, user: Visitor):
     """单视频平台投放详情；与剧集分集使用相同的发布版本和永久权益模型。"""
     work = await db.get(Work, work_id)
@@ -179,7 +194,12 @@ async def platform_work(work_id: int, db: DB, user: Visitor):
     return {**data(publication, "id", "content_type", "content_id", "version", "sale_type", "copyright_price_fen", "unlock_price_fen", "created_at"), "entitled": entitled, "playback_ready": bool(publication.playback_manifest_key)}
 
 
-@router.post("/content-orders", response_model=dict)
+@router.post(
+    "/content-orders", response_model=dict,
+    summary='创建平台内容解锁订单',
+    description='登录后按 publication_id 购买当前可售内容，金额冻结为该发布版本的解锁价格。idempotency_key 重复使用须与原用户、版本和支付方式一致，否则返回 409；已拥有权益时直接返回已购状态。支付不可用时返回 503。',
+    response_description='新订单的支付信息，或重复请求的已有订单摘要；金额 amount_fen 单位为人民币分。',
+)
 async def create_content_order(body: ContentOrderInput, request: Request, db: DB, user: Actor):
     if not _payment_ready():
         fail("MARKETPLACE_PAYMENT_UNAVAILABLE", 503)
@@ -223,7 +243,12 @@ async def create_content_order(body: ContentOrderInput, request: Request, db: DB
     return {"out_trade_no": order.out_trade_no, "status": order.status, "amount_fen": order.amount_fen, "pay_type": order.pay_type, "trade_no": mapi.get("trade_no") or "", "qrcode": mapi.get("qrcode") or "", "payurl": mapi.get("payurl") or "", "qr_payload": mapi.get("qr_payload") or "", "pay_mode": mapi.get("pay_mode") or "redirect", "submit_url": epay.submit_url(fields)}
 
 
-@router.get("/content-orders/{out_trade_no}", response_model=dict)
+@router.get(
+    "/content-orders/{out_trade_no}", response_model=dict,
+    summary='查询我的内容解锁订单',
+    description='仅订单所属用户可按 out_trade_no 查询；不存在或属于他人的订单返回 404。',
+    response_description='订单金额、发布版本、支付方式、状态、交易号与支付时间。',
+)
 async def get_content_order(out_trade_no: str, db: DB, user: Actor):
     order = (await db.execute(select(ContentOrder).where(ContentOrder.out_trade_no == out_trade_no, ContentOrder.user_id == user.id))).scalar_one_or_none()
     if not order:
@@ -231,13 +256,23 @@ async def get_content_order(out_trade_no: str, db: DB, user: Actor):
     return data(order, "out_trade_no", "publication_id", "episode_id", "amount_fen", "pay_type", "status", "trade_no", "paid_at", "created_at")
 
 
-@router.get("/entitlements", response_model=dict)
+@router.get(
+    "/entitlements", response_model=dict,
+    summary='获取我的有效内容购买权益',
+    description='登录后列出本人 active=true 的购买权益及对应发布版本，按权益 ID 倒序返回。权益绑定购买时的发布版本。',
+    response_description='有效权益 items，包含内容类型、内容 ID 与发布版本号。',
+)
 async def list_entitlements(db: DB, user: Actor):
     rows = list((await db.execute(select(Entitlement, Publication).join(Publication, Publication.id == Entitlement.publication_id).where(Entitlement.user_id == user.id, Entitlement.active.is_(True)).order_by(Entitlement.id.desc()))).all())
     return {"items": [{**data(entitlement, "id", "publication_id", "episode_id", "created_at"), **data(publication, "content_type", "content_id", "version", "unlock_price_fen")} for entitlement, publication in rows]}
 
 
-@router.get("/platform/episodes/{episode_id}/playback", response_model=dict, dependencies=[])
+@router.get(
+    "/platform/episodes/{episode_id}/playback", response_model=dict, dependencies=[],
+    summary='获取已购分集当前版本播放清单',
+    description='仅已登录且拥有该分集当前公开发布版本有效权益的用户可访问。校验实时封禁、权属与播放就绪状态后，生成含短期签名分片链接的 HLS 清单。',
+    response_description='publication_id、HLS 文本 manifest、kind=hls 与有效秒数 expires_in。',
+)
 async def episode_playback(episode_id: int, db: DB, user: Actor):
     episode = await db.get(SeriesEpisode, episode_id)
     if not episode:
@@ -252,7 +287,12 @@ async def episode_playback(episode_id: int, db: DB, user: Actor):
     return await _publication_playback(db, user, publication)
 
 
-@router.get("/platform/works/{work_id}/playback", response_model=dict, dependencies=[])
+@router.get(
+    "/platform/works/{work_id}/playback", response_model=dict, dependencies=[],
+    summary='获取已购单视频当前版本播放清单',
+    description='仅已登录且拥有该作品当前公开发布版本有效权益的用户可访问。校验实时封禁、权属与播放就绪状态后，生成含短期签名分片链接的 HLS 清单。',
+    response_description='publication_id、HLS 文本 manifest、kind=hls 与有效秒数 expires_in。',
+)
 async def work_playback(work_id: int, db: DB, user: Actor):
     work = await db.get(Work, work_id)
     if not work:
@@ -266,7 +306,12 @@ async def work_playback(work_id: int, db: DB, user: Actor):
     return await _publication_playback(db, user, publication)
 
 
-@router.get("/platform/publications/{publication_id}/playback", response_model=dict)
+@router.get(
+    "/platform/publications/{publication_id}/playback", response_model=dict,
+    summary='按已购发布版本获取播放清单',
+    description='登录后从购买权益打开对应发布版本。作者后续编辑或主动下架不撤销已购版本播放；仍实时检查有效权益、内容封禁、该版本权属与媒体就绪状态。无权益或受限制返回 403，文件未就绪返回 409。',
+    response_description='publication_id、HLS 文本 manifest、kind=hls 与有效秒数 expires_in。',
+)
 async def publication_playback(publication_id: int, db: DB, user: Actor):
     """从永久权益打开购买时版本；作者编辑、主动下架不撤销已购在线播放。"""
     publication = await db.get(Publication, publication_id)
@@ -279,7 +324,20 @@ def _notify_success(params: dict[str, str]) -> bool:
     return str(params.get("trade_status") or params.get("status") or "").upper() in {"TRADE_SUCCESS", "SUCCESS", "1"}
 
 
-@router.api_route("/payments/epay/notify", methods=["GET", "POST"])
+@router.get(
+    "/payments/epay/notify",
+    response_class=PlainTextResponse,
+    summary='接收易支付内容订单异步通知',
+    description='供支付服务回调，支持 GET 查询参数与 POST 表单。校验签名、支付结果、订单和人民币金额后确认付款，幂等建立对应发布版本权益并记录分成；同一版本重复购买不重复创建权益或收益记录。',
+    response_description='纯文本 success 或 fail；签名、金额、订单或支付配置异常时使用相应错误状态码。',
+)
+@router.post(
+    "/payments/epay/notify",
+    response_class=PlainTextResponse,
+    summary='接收易支付内容订单异步通知',
+    description='供支付服务回调，支持 GET 查询参数与 POST 表单。校验签名、支付结果、订单和人民币金额后确认付款，幂等建立对应发布版本权益并记录分成；同一版本重复购买不重复创建权益或收益记录。',
+    response_description='纯文本 success 或 fail；签名、金额、订单或支付配置异常时使用相应错误状态码。',
+)
 async def epay_notify(request: Request, db: DB) -> PlainTextResponse:
     if not _payment_ready():
         return PlainTextResponse("fail", status_code=503)

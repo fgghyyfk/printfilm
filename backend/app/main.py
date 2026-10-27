@@ -16,6 +16,7 @@ from app.config import get_settings
 from app.database import AsyncSessionLocal, engine, init_db
 from app.logging_setup import configure_logging
 from app.models import Template, User
+from app.openapi_docs import API_DESCRIPTION, OPENAPI_TAGS, build_openapi
 from app.startup_database_retry import run_database_startup_steps
 from app.services.tasks.runtime import runtime_summary, start_task_runtime, stop_task_runtime
 from app.services.templates_seed import TEMPLATES
@@ -25,7 +26,22 @@ settings = get_settings()
 configure_logging(level="INFO", sql_echo=settings.sql_echo)
 logger = logging.getLogger("app.http")
 
-app = FastAPI(title=settings.app_name, version="0.2.0")
+app = FastAPI(
+    title=settings.app_name,
+    version="0.2.0",
+    summary="AI 视频创作平台接口",
+    description=API_DESCRIPTION,
+    openapi_tags=OPENAPI_TAGS,
+    swagger_ui_parameters={"docExpansion": "none", "filter": True, "displayRequestDuration": True},
+)
+
+
+def chinese_openapi() -> dict:
+    """为 Swagger、ReDoc 和 OpenAPI JSON 提供统一的中文元数据。"""
+    return build_openapi(app)
+
+
+app.openapi = chinese_openapi
 
 
 @app.middleware("http")
@@ -454,7 +470,13 @@ async def seed_templates() -> None:
         await db.commit()
 
 
-@app.get("/api/health")
+@app.get(
+    "/api/health",
+    tags=["系统状态"],
+    summary="查看服务健康摘要",
+    description="无需登录。返回应用名称、模型配置摘要、数据库连接池和任务运行时状态；ok 表示任务运行时是否健康。此接口不会执行数据库业务读写或模型调用，不能代替业务接口验收。",
+    response_description="应用配置与任务运行时健康摘要，即使 ok 为 false 仍返回 HTTP 200。",
+)
 async def health() -> dict:
     from app.config import reload_settings
 

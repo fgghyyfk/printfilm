@@ -721,7 +721,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
             从资产库选择
           </button>
           <Link className="pf-btn" to="/drama/assets">
-            浏览全部资产
+            浏览数字资产库
           </Link>
           <button
             type="button"

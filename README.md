@@ -75,7 +75,7 @@
 
 每个阶段完成后停下来等待检查，下一步由用户明确启动。项目列表、分镜和素材均采用卡片展示。漫剧和工具中心沿用原有流程。
 
-更新版本时需创建 `creation_sessions`、`creation_messages`、`creation_runs`，并添加项目会话和目标时长字段。默认启动会自动处理；已有数据库设置 `DATABASE_BOOTSTRAP_ENABLED=false` 时，先在 `backend` 目录执行以下专用增量迁移，再重启后端以加载新接口。该命令只创建上述三张表、两个项目字段及索引，不执行种子数据，也不修改其他业务结构或已有数据；可重复运行。
+当前新建短片直接使用项目接口，旧对话会话的创建、消息及查询接口已移除，仅保留历史项目转入工作台的 `open-editor` 接口。历史任务恢复与项目交接仍依赖 `creation_sessions`、`creation_messages`、`creation_runs` 及项目会话字段；目标时长字段同时供当前流程使用。默认启动会自动处理结构；已有数据库设置 `DATABASE_BOOTSTRAP_ENABLED=false` 时，先在 `backend` 目录执行以下专用增量迁移，再重启后端。该命令只创建上述三张表、两个项目字段及索引，不执行种子数据，也不修改其他业务结构或已有数据；可重复运行。
 
 ```bash
 python scripts/prepare_creation_schema.py
@@ -257,6 +257,7 @@ docker-compose.full.yml   从源码构建
 | 文档 | 内容 |
 |------|------|
 | [docs/STANDARDS.md](docs/STANDARDS.md) | 工程规范 |
+| [docs/API.md](docs/API.md) | 中文 API 文档、认证与接口接入约定 |
 | [docs/BILLING.md](docs/BILLING.md) | 计费与易支付 |
 | [docs/EPISODE_RULES.md](docs/EPISODE_RULES.md) | 漫剧分集 |
 | [docs/SEEDANCE_2_5.md](docs/SEEDANCE_2_5.md) | Seedance 参数 |

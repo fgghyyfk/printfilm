@@ -1,7 +1,7 @@
 /** PRINTFILM 官网首页：产品主张、漫剧/科普入口、成片流程与创作入口 */
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowRight, ArrowUpRight, Clapperboard as DramaIcon, Video as KepuIcon } from 'lucide-react'
+import { ArrowRight, ArrowUpRight, Cloud, Cpu, Video as KepuIcon } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import Button from '../components/ui/Button'
 import { IconGithub } from '../components/ui/Icons'
@@ -91,16 +91,32 @@ export default function HomePage() {
       <section className="pf-land-products" id="products" aria-label={t('home.products')}>
         <button type="button" className="pf-land-product is-drama" onClick={() => goAuthOr('/drama')}>
           <span className="pf-land-product-icon" aria-hidden>
-            <DramaIcon size={26} strokeWidth={1.6} />
+            <Cpu size={26} strokeWidth={1.6} />
           </span>
           <span className="pf-land-product-body">
-            <strong>{t('home.dramaTitle')}</strong>
+            <strong>{t('home.dramaSelfHostedTitle')}</strong>
             <em>{t('home.dramaFor')}</em>
             <span>{t('home.dramaDesc')}</span>
             <span className="pf-land-chips">
               {m.home.dramaSteps.map((label) => (
                 <span key={label}>{label}</span>
               ))}
+            </span>
+          </span>
+          <span className="pf-land-product-go" aria-hidden>
+            <ArrowRight size={16} strokeWidth={2} />
+          </span>
+        </button>
+        <button type="button" className="pf-land-product is-api" onClick={() => goAuthOr('/drama')}>
+          <span className="pf-land-product-icon" aria-hidden>
+            <Cloud size={26} strokeWidth={1.6} />
+          </span>
+          <span className="pf-land-product-body">
+            <strong>{t('home.dramaApiTitle')}</strong>
+            <em>{t('home.dramaApiFor')}</em>
+            <span>{t('home.dramaApiDesc')}</span>
+            <span className="pf-land-chips">
+              {m.home.dramaApiSteps.map((label) => <span key={label}>{label}</span>)}
             </span>
           </span>
           <span className="pf-land-product-go" aria-hidden>

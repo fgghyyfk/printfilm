@@ -1,4 +1,6 @@
 import { getImageStyleLabel } from './dramaImageStyles.ts'
+import { normalizeAssetDetailReferences, splitAssetDetailPrompt, type AssetDetailReference } from './assetDetailReferences.ts'
+export { normalizeAssetDetailReferences, splitAssetDetailPrompt, type AssetDetailReference, type AssetDetailPromptPart } from './assetDetailReferences.ts'
 
 /** 统一资产详情数据：成功媒体快照优先，上传素材不混入旧生成参数。 */
 export type AssetDetailRecord = {
@@ -9,6 +11,7 @@ export type AssetDetailRecord = {
   cover?: string | null
   url?: string | null
   params?: Record<string, unknown> | null
+  references?: AssetDetailReference[]
   project_id?: number | null
   updated_at?: string | null
 }
@@ -41,6 +44,10 @@ export function assetDetailInfo(asset: AssetDetailRecord) {
   const model = uploaded ? '' : display(hasSnapshot ? snapshot.model_id : options.model_id)
   const source = uploaded ? '上传' : (hasSnapshot ? snapshot.source === 'generated' : Boolean(model)) ? 'AI 生成' : '未记录'
   const prompt = display(hasSnapshot ? snapshot.prompt : params.visualPrompt || params.visualImage || params.voicePrompt || params.prompt || params.description)
+  // An explicit empty frozen list is authoritative; never borrow a later form's references.
+  const references = uploaded ? [] : normalizeAssetDetailReferences(
+    Object.hasOwn(snapshot, 'references') ? snapshot.references : asset.references,
+  )
   const labels: Record<string, string> = {
     aspect_ratio: snapshot.parameter_source === 'request' ? '设定画幅' : '比例',
     resolution: snapshot.parameter_source === 'request' ? '设定分辨率' : '分辨率',
@@ -61,7 +68,8 @@ export function assetDetailInfo(asset: AssetDetailRecord) {
     return value ? [{ key, label, value: key.includes('duration') ? duration : value }].filter((item) => item.value) : []
   })
   return {
-    source, model, prompt, parameters, mediaDuration: formatMediaDuration(options.media_duration_sec),
+    source, model, prompt, references, promptParts: splitAssetDetailPrompt(prompt, references),
+    parameters, mediaDuration: formatMediaDuration(options.media_duration_sec),
     filename: display(snapshot.filename), fileSize: typeof snapshot.file_size === 'number' ? snapshot.file_size : null,
     createdAt: display(snapshot.created_at || gen.finished_at || asset.updated_at),
   }

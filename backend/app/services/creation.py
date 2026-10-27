@@ -1,7 +1,7 @@
-"""Conversation planning and durable, billed production-stage orchestration.
+"""Drain persisted legacy creation tasks and transfer projects to the editor.
 
-Every user turn and media stage is a TaskRun. Database row locks serialize
-advancement, and the scheduler reconciles committed state after restarts.
+No new conversations are accepted. Database row locks serialize historical
+task advancement, and the scheduler reconciles committed state after restarts.
 """
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ import json
 import logging
 import re
 from datetime import UTC, datetime
-from uuid import uuid4
 
 from fastapi import HTTPException
 from sqlalchemy import func, select
@@ -22,10 +21,7 @@ from app.models import Project, ProjectStatus, Template, User
 from app.models_creation import CreationMessage, CreationRun, CreationSession
 from app.models_tasks import TaskRun
 from app.schemas import ProjectOut
-from app.schemas_creation import (
-    CreationDecision, CreationMessageCreate, CreationMessageOut,
-    CreationRunOut, CreationSessionCreate, CreationSessionListItem, CreationSessionListOut, CreationSessionOut,
-)
+from app.schemas_creation import CreationDecision
 from app.schemas_tasks import TaskCreateRequest, TaskTargetBind
 from app.services.creation_templates import CREATION_TEMPLATE_IDS, DEFAULT_CREATION_TEMPLATE_ID
 from app.services.tasks.service import ACTIVE_TASK_STATUSES, TERMINAL_TASK_STATUSES, append_task_event, create_task
@@ -55,86 +51,6 @@ async def _template(db: AsyncSession, template_id: str | None) -> str:
     return tid
 
 
-async def session_snapshot(db: AsyncSession, session_id: int, user_id: int) -> CreationSessionOut:
-    session = await _session(db, session_id, user_id)
-    messages = list((await db.execute(select(CreationMessage).where(
-        CreationMessage.session_id == session.id,
-    ).order_by(CreationMessage.id))).scalars())
-    runs = list((await db.execute(select(CreationRun).where(
-        CreationRun.session_id == session.id,
-    ).order_by(CreationRun.version))).scalars())
-    project_ids = [run.project_id for run in runs if run.project_id is not None]
-    projects = {}
-    if project_ids:
-        rows = (await db.execute(select(Project).where(
-            Project.id.in_(project_ids), Project.user_id == user_id,
-        ).options(selectinload(Project.shots)).execution_options(populate_existing=True))).scalars()
-        for project in rows:
-            projects[project.id] = ProjectOut.model_validate(project)
-    return CreationSessionOut(
-        id=session.id, title=session.title, status=session.status, template_id=session.template_id,
-        brief=session.brief or {}, active_run_id=session.active_run_id,
-        messages=[CreationMessageOut.model_validate(message) for message in messages],
-        runs=[CreationRunOut.model_validate(run).model_copy(update={"project": projects.get(run.project_id)}) for run in runs],
-    )
-
-
-async def list_sessions(db: AsyncSession, user_id: int, limit: int = 5) -> CreationSessionListOut:
-    rows = (await db.execute(select(CreationSession).where(CreationSession.user_id == user_id)
-                             .order_by(CreationSession.updated_at.desc(), CreationSession.id.desc()).limit(limit))).scalars()
-    return CreationSessionListOut(items=[CreationSessionListItem.model_validate(row) for row in rows])
-
-
-async def create_session(db: AsyncSession, user: User, body: CreationSessionCreate) -> CreationSessionOut:
-    # The owner row also serializes duplicate first-message requests before a session exists.
-    await db.execute(select(User.id).where(User.id == user.id).with_for_update())
-    if body.client_message_id:
-        existing = (await db.execute(select(CreationSession).where(
-            CreationSession.user_id == user.id, CreationSession.client_request_id == body.client_message_id,
-        ))).scalar_one_or_none()
-        if existing is not None:
-            if body.message and body.message.strip():
-                first = (await db.execute(select(CreationMessage).where(
-                    CreationMessage.session_id == existing.id,
-                    CreationMessage.client_message_id == body.client_message_id,
-                ))).scalar_one_or_none()
-                if first is not None and first.content != body.message.strip():
-                    raise HTTPException(status_code=409, detail="消息编号已使用，请重新发送")
-            return await session_snapshot(db, existing.id, user.id)
-    session = CreationSession(
-        user_id=user.id, client_request_id=body.client_message_id,
-        template_id=await _template(db, body.template_id), brief=_brief({}),
-    )
-    db.add(session)
-    await db.flush()
-    if body.message and body.message.strip():
-        await _submit_message(db, user, session, CreationMessageCreate(
-            content=body.message, client_message_id=body.client_message_id or uuid4().hex,
-            template_id=body.template_id,
-        ))
-    else:
-        db.add(CreationMessage(session_id=session.id, role="assistant", content="想做什么视频？告诉我主题、受众或故事，我会帮你完成文案并制作成片。"))
-    await db.commit()
-    await reconcile_creation_sessions(db, session_id=session.id)
-    return await session_snapshot(db, session.id, user.id)
-
-
-async def add_message(db: AsyncSession, user: User, session_id: int, body: CreationMessageCreate) -> CreationSessionOut:
-    session = await _session(db, session_id, user.id, lock=True)
-    _ensure_conversation_writable(session)
-    duplicate = (await db.execute(select(CreationMessage).where(
-        CreationMessage.session_id == session.id, CreationMessage.client_message_id == body.client_message_id,
-    ))).scalar_one_or_none()
-    if duplicate is not None:
-        if duplicate.content != body.content:
-            raise HTTPException(status_code=409, detail="消息编号已使用，请重新发送")
-        return await session_snapshot(db, session.id, user.id)
-    await _submit_message(db, user, session, body)
-    await db.commit()
-    await reconcile_creation_sessions(db, session_id=session.id)
-    return await session_snapshot(db, session.id, user.id)
-
-
 def _session_task_filter(session_id: int):
     return TaskRun.payload["creation_session_id"].as_integer() == session_id
 
@@ -150,7 +66,7 @@ async def _cancel_session_tasks(db: AsyncSession, session: CreationSession) -> N
         task.cancel_requested = True
         task.status = "cancel_requested"
         task.next_action_at = datetime.now(UTC)
-        await append_task_event(db, task.id, event_type="task.cancel_requested", status=task.status, message="创作会话取消或已有新需求")
+        await append_task_event(db, task.id, event_type="task.cancel_requested", status=task.status, message="旧创作会话转入分步编辑，停止历史任务")
     if session.active_run_id:
         run = await db.get(CreationRun, session.active_run_id)
         if run and run.status == "generating":
@@ -162,91 +78,12 @@ async def _cancel_session_tasks(db: AsyncSession, session: CreationSession) -> N
                     project.error_msg = "创作已取消"
 
 
-async def _new_turn_task(db: AsyncSession, user: User, session: CreationSession, message: CreationMessage,
-                         *, requested_template_id: str | None = None) -> TaskRun:
-    if requested_template_id is None and message.task_id:
-        previous_task = await db.get(TaskRun, message.task_id)
-        requested_template_id = (previous_task.payload or {}).get("requested_template_id") if previous_task else None
-    task = await create_task(db, user, TaskCreateRequest(
-        domain="kepu", task_type="creation_turn", defer_activation=True,
-        client_request_id=f"creation:{session.id}:message:{message.id}",
-        payload={"creation_session_id": session.id, "message_id": message.id,
-                 "requested_template_id": requested_template_id},
-    ), commit=False)
-    message.task_id = task.id
-    session.active_turn_task_id = task.id
-    return task
-
-
-async def _submit_message(db: AsyncSession, user: User, session: CreationSession, body: CreationMessageCreate) -> None:
-    if body.template_id:
-        session.template_id = await _template(db, body.template_id)
-    await _cancel_session_tasks(db, session)
-    message = CreationMessage(session_id=session.id, role="user", content=body.content,
-                              client_message_id=body.client_message_id)
-    db.add(message)
-    await db.flush()
-    session.latest_message_id = message.id
-    session.status = "thinking"
-    if session.title == "新的创作":
-        session.title = body.content[:40]
-    await _new_turn_task(db, user, session, message, requested_template_id=body.template_id)
-
-
-async def cancel_session(db: AsyncSession, user: User, session_id: int) -> CreationSessionOut:
-    session = await _session(db, session_id, user.id, lock=True)
-    _ensure_conversation_writable(session)
-    if session.status != "cancelled":
-        await _cancel_session_tasks(db, session)
-        session.status = "cancelled"
-        db.add(CreationMessage(session_id=session.id, role="system", content="已停止本次创作。已有素材已保存，可重试或继续提出新需求。"))
-    await db.commit()
-    return await session_snapshot(db, session.id, user.id)
-
-
-async def retry_session(db: AsyncSession, user: User, session_id: int) -> CreationSessionOut:
-    session = await _session(db, session_id, user.id, lock=True)
-    _ensure_conversation_writable(session)
-    if session.status not in {"failed", "cancelled"}:
-        # Idempotent retry clicks cannot enqueue another stage.
-        return await session_snapshot(db, session.id, user.id)
-    run = await db.get(CreationRun, session.active_run_id) if session.active_run_id else None
-    if run and run.source_message_id == session.latest_message_id and run.project_id:
-        run.status = "generating"
-        run.error_message = None
-        run.current_task_id = None
-        project = await db.get(Project, run.project_id)
-        if project is None:
-            raise HTTPException(status_code=409, detail="制作项目已删除，请发送新的需求")
-        project.error_msg = None
-        session.status = "generating"
-    else:
-        message = await db.get(CreationMessage, session.latest_message_id) if session.latest_message_id else None
-        if message is None:
-            session.status = "drafting"
-        elif message.response_payload and message.response_payload.get("action") == "ask":
-            # A cancelled clarification already has a durable answer; restore it
-            # without paying for the same question or leaving a completed turn pending.
-            session.status = "drafting"
-        else:
-            await _new_turn_task(db, user, session, message)
-            session.status = "thinking"
-    await db.commit()
-    await reconcile_creation_sessions(db, session_id=session.id)
-    return await session_snapshot(db, session.id, user.id)
-
-
-def _ensure_conversation_writable(session: CreationSession) -> None:
-    if session.status in {"editor_pending", "editor"}:
-        raise HTTPException(status_code=409, detail="该作品已转入分步创作，请在作品编辑页继续")
-
-
 async def open_editor(db: AsyncSession, user: User, session_id: int, *, project_id: int | None = None) -> ProjectOut:
     """Transfer a conversation to the wizard only after all producers settle.
 
     The session lock serializes this handoff with planning and reconciliation.
-    Persisting editor_pending before returning 409 prevents restart/callbacks or
-    an old conversation tab from enqueuing another producer during the wait.
+    Persisting editor_pending before returning 409 prevents restart/callbacks
+    from enqueuing another historical producer during the wait.
     """
     session = await _session(db, session_id, user.id, lock=True)
     editor_project_id = (session.brief or {}).get("editor_project_id")
@@ -578,7 +415,7 @@ async def _advance_session(db: AsyncSession, session: CreationSession) -> bool:
         _fail_session(db, session, run, "当前制作模式不正确")
         return True
     user = await db.get(User, session.user_id)
-    # Explicit retry reaches here only after old producers have become terminal.
+    # A previously persisted resume reaches here after old producers terminate.
     # Restore the stage status now, before the newly queued handler reads it.
     from app.services import pipeline
     pipeline.clear_pipeline_cancellation(project.id)

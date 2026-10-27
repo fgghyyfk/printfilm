@@ -54,7 +54,12 @@ def _summary_generating_is_stale(params: dict) -> bool:
     return datetime.now(timezone.utc) - started > timedelta(minutes=SUMMARY_GENERATING_STALE_MINUTES)
 
 
-@router.post("/agents/script_summary")
+@router.post(
+    "/agents/script_summary",
+    summary="提交剧本摘要生成任务",
+    description="保存创意及可选集数、风格配置后，将摘要生成任务加入队列并立即返回。创意优先使用请求值，否则使用已有创意，至少 20 字。25 分钟内仍在生成的重复请求不再入队，task_id 返回 null；客户端可轮询剧本 params.summary_status。团队项目需持有相应编辑租约。",
+    response_description="入队标记、generating 状态、任务编号及当前剧本快照",
+)
 async def script_summary(
     body: DramaScriptSummaryRequest,
     db: AsyncSession = Depends(get_db),
@@ -130,7 +135,12 @@ async def script_summary(
     }
 
 
-@router.post("/agents/episode_script")
+@router.post(
+    "/agents/episode_script",
+    summary="提交分集剧本生成或单集优化任务",
+    description="需先有剧本摘要。未指定 episode_number 时提交全集生成，force 为 true 会清空已有正文并保留集名；指定集序号时执行 optimize、summary、body、full 或 brief 单集模式，并可保存本集创意、标题。任务异步执行，重复生成请求可能返回 task_id=null；客户端轮询剧本的 episode_content_status、episode_optimize_status 或团队 episode_jobs。全集生成期间禁止单集优化，团队项目需持有对应资源的编辑租约。",
+    response_description="任务受理状态、任务编号、当前生成进度及剧本快照；不直接返回新生成正文",
+)
 async def episode_script(
     body: DramaEpisodeScriptRequest,
     db: AsyncSession = Depends(get_db),
@@ -403,7 +413,12 @@ def _apply_episode_count(project, script, total: int) -> None:
     project.params = pparams
 
 
-@router.post("/agents/add_episode")
+@router.post(
+    "/agents/add_episode",
+    summary="手动追加空白分集剧本",
+    description="在已有剧本摘要的项目中同步追加一集空剧本，并更新项目、剧本和摘要中的目标集数，最多 120 集。全集生成期间返回 409；团队项目需持有结构资源的编辑租约。",
+    response_description="新增集序号及保存后的完整剧本",
+)
 async def add_episode(
     body: DramaAddEpisodeRequest,
     db: AsyncSession = Depends(get_db),
@@ -451,7 +466,12 @@ async def add_episode(
     }
 
 
-@router.post("/agents/route")
+@router.post(
+    "/agents/route",
+    summary="识别创作意图并推荐入口",
+    description="根据消息中的剧本、分集、大纲或画布等关键词选择创作助手和建议动作。需登录，仅返回路由建议，不创建项目或执行生成。",
+    response_description="建议使用的 agent 及 action 标识",
+)
 async def route_agent(body: DramaRouteRequest, user: User = Depends(get_current_user)) -> dict:
     _ = user
     msg = (body.message or "").strip().lower()
@@ -462,7 +482,12 @@ async def route_agent(body: DramaRouteRequest, user: User = Depends(get_current_
     return {"agent": "chat", "action": "chat"}
 
 
-@router.post("/ai/chat")
+@router.post(
+    "/ai/chat",
+    summary="与漫剧创作助手对话",
+    description="同步调用漫剧创作助手，帮助构思创意、人物与分集结构；等待回复后返回并记录计费用量和任务。模型服务不可用时返回 503，计费受理失败时返回 402。",
+    response_description="助手中文回复及已记录的任务编号",
+)
 async def ai_chat(
     body: DramaChatRequest,
     db: AsyncSession = Depends(get_db),

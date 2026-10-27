@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Path
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -35,9 +37,14 @@ def _team_nodes(nodes: list, assets: list[DramaAsset]) -> list:
     return out
 
 
-@router.get("/canvas/{project_id}")
+@router.get(
+    "/canvas/{project_id}",
+    summary="获取项目画布",
+    description="按项目编号 project_id 读取画布节点与连线，尚未保存时返回空数组。团队项目节点中的资产名称和媒体地址按当前资产记录刷新。",
+    response_description="项目编号及画布 nodes、edges 数组",
+)
 async def get_canvas(
-    project_id: int,
+    project_id: Annotated[int, Path(description="项目编号，需有该项目的个人或团队访问权限")],
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
@@ -50,7 +57,12 @@ async def get_canvas(
     }
 
 
-@router.post("/canvas")
+@router.post(
+    "/canvas",
+    summary="保存项目画布布局",
+    description="整体替换指定项目的画布节点与连线，并保留其他项目内容。个人项目会按节点关联更新或创建资产；团队项目需持有画布编辑租约，只保存布局，节点中的资产快照以服务器记录为准，资产修改应使用独立资产接口。",
+    response_description="保存成功标记及本次提交的节点、连线数量",
+)
 async def save_canvas(
     body: DramaCanvasSaveRequest,
     db: AsyncSession = Depends(get_db),

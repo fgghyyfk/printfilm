@@ -76,27 +76,43 @@ def _demote_after_edit(project: Project) -> None:
         project.status = ProjectStatus.VIDEO_READY
 
 
-@router.get("/voices")
+@router.get(
+    "/voices",
+    summary="获取可选配音音色",
+    description="无需登录，返回科普短片可使用的配音音色目录。",
+    response_description="可选音色列表",
+)
 async def get_voices() -> list[dict]:
     return list_voices()
 
 
-@router.get("/media-models")
+@router.get(
+    "/media-models",
+    summary="获取可选图像和视频模型",
+    description="无需登录，返回前台可用的图像、视频模型及对应价格目录，供项目选择生成模型。",
+    response_description="媒体模型与价格目录",
+)
 async def get_media_models(db: AsyncSession = Depends(get_db)) -> dict:
-    """科普前台可选图/视频模型目录（TokenFree 已勾选模型）。"""
+    """无需登录，返回前台可用的图像、视频模型及对应价格目录，供项目选择生成模型。"""
     from app.services.media_catalog import catalog_payload
 
     from app.services.media_models.catalog import priced_catalog
     return await priced_catalog(db, catalog_payload())
 
 
-@router.post("/voices/preview", response_model=VoicePreviewOut)
+@router.post(
+    "/voices/preview",
+    response_model=VoicePreviewOut,
+    summary="试听配音音色",
+    description="需要登录，同步生成或复用缓存的简短音色试听，返回可播放的音频地址。本次试听记录为非计费任务。",
+    response_description="试听音频地址与音色标识",
+)
 async def preview_voice(
     body: VoicePreviewRequest,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> VoicePreviewOut:
-    """Generate a short cached TTS sample for audition."""
+    """需要登录，同步生成或复用缓存的简短音色试听，返回可播放的音频地址。本次试听记录为非计费任务。"""
     try:
         _, url = await run_billed_ephemeral(
             db, user, domain="kepu", task_type="voice_preview",
@@ -109,13 +125,22 @@ async def preview_voice(
     return VoicePreviewOut(url=url, voice_id=body.voice_id)
 
 
-@router.post("/content/expand", response_model=ContentExpandOut)
+@router.post(
+    "/content/expand",
+    response_model=ContentExpandOut,
+    summary="扩写科普选题",
+    description=(
+        "需要登录，根据短选题同步调用 AI 生成标题及主题说明或完整文案，并按启用的计费规则记录调用。"
+        "返回扩写结果及关联任务编号；选题为空返回 400。"
+    ),
+    response_description="扩写标题、文案与任务编号",
+)
 async def expand_content(
     body: ContentExpandRequest,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> ContentExpandOut:
-    """AI-expand a short topic into a project title + theme brief or full script."""
+    """需要登录，根据短选题同步调用 AI 生成标题及主题说明或完整文案，并按启用的计费规则记录调用。返回扩写结果及关联任务编号；选题为空返回 400。"""
     topic = (body.topic or "").strip()
     if not topic:
         raise HTTPException(status_code=400, detail="请输入选题")
@@ -257,7 +282,13 @@ async def _create_kepu_task(
     return int(task.id)
 
 
-@router.post("/projects", response_model=ProjectOut)
+@router.post(
+    "/projects",
+    response_model=ProjectOut,
+    summary="创建科普短片项目",
+    description="需要登录，使用启用的动画模板创建属于当前用户的草稿项目，保存文案和生成配置；创建项目后需另行发起生成。",
+    response_description="新建的草稿项目",
+)
 async def create_project(
     body: ProjectCreate,
     db: AsyncSession = Depends(get_db),
@@ -302,23 +333,29 @@ async def create_project(
     return result.scalar_one()
 
 
-@router.get("/projects", response_model=ProjectListOut)
+@router.get(
+    "/projects",
+    response_model=ProjectListOut,
+    summary="分页查询科普短片项目",
+    description="需要登录，仅返回本人的项目，支持按状态、标题和制作模式筛选，并返回分页及统计信息。",
+    response_description="项目列表、分页与统计信息",
+)
 async def list_projects(
-    page: int = Query(1, ge=1),
-    page_size: int = Query(8, ge=1, le=50),
+    page: int = Query(1, ge=1, description="页码，从 1 开始"),
+    page_size: int = Query(8, ge=1, le=50, description="每页返回的记录数"),
     status: str | None = Query(
         None,
-        description="all|draft|running|done|published",
+        description="项目状态：all 全部、draft 草稿、running 生成中、done 已完成、published 已发布",
     ),
-    q: str | None = Query(None, description="title search"),
+    q: str | None = Query(None, description="项目标题搜索关键词"),
     pipeline_mode: str | None = Query(
         None,
-        description="full|image_text；空=全部类型",
+        description="制作模式：full 完整视频、image_text 图文；不传时查询全部",
     ),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> ProjectListOut:
-    """校验分页参数并返回当前用户的项目列表及统计。"""
+    """需要登录，仅返回本人的项目，支持按状态、标题和制作模式筛选，并返回分页及统计信息。"""
     return await list_project_page(
         db, user.id, page=page, page_size=page_size,
         status=status, q=q, pipeline_mode=pipeline_mode,
@@ -332,13 +369,24 @@ def _safe_zip_name(title: str, project_id: int) -> str:
     return f"p{project_id}_{cleaned}.mp4"
 
 
-@router.post("/projects/download-zip")
+@router.post(
+    "/projects/download-zip",
+    summary="批量下载科普成片",
+    description=(
+        "需要登录，将所选本人项目的可用成片打包为 ZIP，一次最多 50 个项目。"
+        "仅打包已完成且成片文件可读取的项目，跳过项写入 skipped.txt；"
+        "全部不可下载时返回 400。"
+    ),
+    response_description="application/zip 成片压缩包",
+    response_class=StreamingResponse,
+    responses={200: {"content": {"application/zip": {"schema": {'type': 'string', 'format': 'binary'}}}}},
+)
 async def download_projects_zip(
     body: ProjectDownloadRequest,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> StreamingResponse:
-    """Zip final videos for selected owned projects (DONE with final_video_url)."""
+    """需要登录，将所选本人项目的可用成片打包为 ZIP，一次最多 50 个项目。仅打包已完成且成片文件可读取的项目，跳过项写入 skipped.txt；全部不可下载时返回 400。"""
     ids = list(dict.fromkeys(int(i) for i in body.ids if int(i) > 0))
     if not ids:
         raise HTTPException(status_code=400, detail="请选择要下载的作品")
@@ -403,7 +451,13 @@ async def download_projects_zip(
     return StreamingResponse(buf, media_type="application/zip", headers=headers)
 
 
-@router.get("/projects/{project_id}", response_model=ProjectOut)
+@router.get(
+    "/projects/{project_id}",
+    response_model=ProjectOut,
+    summary="获取科普短片项目详情",
+    description="需要登录，仅可读取本人的项目，返回分镜、活动任务以及计算后的运行状态和进度；项目不存在返回 404。",
+    response_description="项目详情及活动任务",
+)
 async def get_project(
     project_id: int,
     db: AsyncSession = Depends(get_db),
@@ -412,7 +466,13 @@ async def get_project(
     return await _get_owned_project(db, project_id, user)
 
 
-@router.patch("/projects/{project_id}", response_model=ProjectOut)
+@router.patch(
+    "/projects/{project_id}",
+    response_model=ProjectOut,
+    summary="修改科普短片项目",
+    description="需要登录，按请求中提供的字段更新本人的项目。生成期间及对话创作管理的项目不允许在此修改；更改配乐或字幕预设会使现有成片失效。",
+    response_description="更新后的项目详情",
+)
 async def update_project(
     project_id: int,
     body: ProjectUpdate,
@@ -474,14 +534,20 @@ async def update_project(
     return await _get_owned_project(db, project_id, user)
 
 
-@router.post("/projects/{project_id}/cover", response_model=ProjectOut)
+@router.post(
+    "/projects/{project_id}/cover",
+    response_model=ProjectOut,
+    summary="上传科普项目封面",
+    description="需要登录，为本人项目上传 JPG、PNG、WebP 或 GIF 封面，文件不能为空且最大 8 MB。项目生成期间不允许更换封面。",
+    response_description="包含新封面的项目详情",
+)
 async def upload_project_cover(
     project_id: int,
-    file: UploadFile = File(...),
+    file: UploadFile = File(..., description="项目封面，支持 JPG、PNG、WebP、GIF，最大 8 MB"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> Project:
-    """Upload a custom cover image for the project."""
+    """需要登录，为本人项目上传 JPG、PNG、WebP 或 GIF 封面，文件不能为空且最大 8 MB。项目生成期间不允许更换封面。"""
     project = await _get_owned_project(db, project_id, user)
     if project.status in {
         ProjectStatus.SCRIPTING,
@@ -523,19 +589,24 @@ async def upload_project_cover(
     return await _get_owned_project(db, project_id, user)
 
 
-@router.post("/projects/{project_id}/generate", response_model=ProjectOut)
+@router.post(
+    "/projects/{project_id}/generate",
+    response_model=ProjectOut,
+    summary="提交科普项目生成任务",
+    description=(
+        "需要登录，为本人分步创作项目提交后台任务。首次生成或 restart=true 时仅生成分镜脚本，之后按当前素材状态逐阶段生成素材或视频；"
+        "素材齐备时需调用合成接口。restart=true 会删除原分镜和素材。"
+        "返回当前项目，不等待生成完成。"
+    ),
+    response_description="任务提交后的项目详情",
+)
 async def generate_project(
     project_id: int,
     restart: bool = False,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> Project:
-    """Start or resume the pipeline.
-
-    - First run / restart: script stage only, then pauses at SCRIPT_READY for review.
-    - Continue: one billing stage per click — assets → videos → compose（各自预扣）。
-    - restart=true: wipe shots/media and regenerate storyboard from scratch.
-    """
+    """需要登录，为本人分步创作项目提交后台任务。首次生成或 restart=true 时仅生成分镜脚本，之后按当前素材状态逐阶段生成素材或视频；素材齐备时需调用合成接口。restart=true 会删除原分镜和素材。返回当前项目，不等待生成完成。"""
     project = await _get_owned_project(db, project_id, user)
     _ensure_wizard_project(project)
     if project.status in {
@@ -599,7 +670,13 @@ async def generate_project(
     return await _get_owned_project(db, project_id, user)
 
 
-@router.post("/projects/{project_id}/cancel", response_model=ProjectOut)
+@router.post(
+    "/projects/{project_id}/cancel",
+    response_model=ProjectOut,
+    summary="取消科普项目生成",
+    description="需要登录，仅对本人的生成中项目请求取消关联任务并标记取消状态。对话创作项目需在会话内停止；后台任务仍需完成协作取消。",
+    response_description="取消请求后的项目详情",
+)
 async def cancel_project(
     project_id: int,
     db: AsyncSession = Depends(get_db),
@@ -626,13 +703,18 @@ async def cancel_project(
     return await _get_owned_project(db, project_id, user)
 
 
-@router.delete("/projects/{project_id}")
+@router.delete(
+    "/projects/{project_id}",
+    summary="删除科普短片项目",
+    description="需要登录，删除本人项目及其素材和已发布作品，生成中的项目会先请求取消。保留历史任务及消费记录，但解除其项目关联。",
+    response_description="删除结果与项目编号",
+)
 async def delete_project(
     project_id: int,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
-    """Delete a kepu project after detaching billing/task FK rows that block CASCADE."""
+    """需要登录，删除本人项目及其素材和已发布作品，生成中的项目会先请求取消。保留历史任务及消费记录，但解除其项目关联。"""
     project = await _get_owned_project(db, project_id, user)
     running = {
         ProjectStatus.SCRIPTING,
@@ -666,7 +748,18 @@ async def delete_project(
     return {"ok": True, "id": project_id}
 
 
-@router.get("/projects/{project_id}/events")
+@router.get(
+    "/projects/{project_id}/events",
+    summary="订阅科普项目进度",
+    description=(
+        "需要登录，通过 SSE 订阅本人项目的生成进度。"
+        "message 事件的 data 为进度 JSON；"
+        "约 15 秒无新进度时发送 ping，接收到 done 或 failed 后结束流。"
+    ),
+    response_description="text/event-stream 项目进度事件流",
+    response_class=EventSourceResponse,
+    responses={200: {"content": {"text/event-stream": {"schema": {'type': 'string'}}}}},
+)
 async def project_events(
     project_id: int,
     db: AsyncSession = Depends(get_db),
@@ -693,13 +786,19 @@ async def project_events(
     return EventSourceResponse(event_generator())
 
 
-@router.post("/projects/{project_id}/shots", response_model=ShotOut)
+@router.post(
+    "/projects/{project_id}/shots",
+    response_model=ShotOut,
+    summary="追加科普分镜",
+    description="需要登录，在本人项目片尾追加时长为 4 秒的空白分镜，更新项目素材阶段并使现有成片失效；整片任务执行中不能追加。",
+    response_description="新增的分镜详情",
+)
 async def create_shot(
     project_id: int,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> Shot:
-    """在片尾追加一镜空白分镜。"""
+    """需要登录，在本人项目片尾追加时长为 4 秒的空白分镜，更新项目素材阶段并使现有成片失效；整片任务执行中不能追加。"""
     project = await _get_owned_project(db, project_id, user)
     _ensure_side_task_allowed(project)
     shots = sorted(project.shots, key=lambda s: s.shot_no)
@@ -735,14 +834,20 @@ async def create_shot(
     return shot
 
 
-@router.post("/projects/{project_id}/shots/reorder", response_model=ProjectOut)
+@router.post(
+    "/projects/{project_id}/shots/reorder",
+    response_model=ProjectOut,
+    summary="调整科普分镜顺序",
+    description="需要登录，按 shot_ids 的完整列表重新编号本人的项目分镜，并使现有成片失效；遗漏或包含其他分镜时返回 400。",
+    response_description="重新排序后的项目详情",
+)
 async def reorder_shots(
     project_id: int,
     body: ShotReorderIn,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> Project:
-    """按 shot_ids 重排镜号。"""
+    """需要登录，按 shot_ids 的完整列表重新编号本人的项目分镜，并使现有成片失效；遗漏或包含其他分镜时返回 400。"""
     project = await _get_owned_project(db, project_id, user)
     _ensure_side_task_allowed(project)
     existing = {s.id: s for s in project.shots}
@@ -755,15 +860,24 @@ async def reorder_shots(
     return await _get_owned_project(db, project_id, user)
 
 
-@router.post("/projects/{project_id}/shots/{shot_id}/image", response_model=ProjectOut)
+@router.post(
+    "/projects/{project_id}/shots/{shot_id}/image",
+    response_model=ProjectOut,
+    summary="上传替换分镜画面",
+    description=(
+        "需要登录，为本人项目的指定分镜上传 JPG、PNG、WebP 或 GIF，文件最大 8 MB，校验图片文件头。"
+        "成功后替换画面、清除该镜头视频并使成片失效。"
+    ),
+    response_description="替换画面后的项目详情",
+)
 async def upload_shot_image(
     project_id: int,
     shot_id: int,
-    file: UploadFile = File(...),
+    file: UploadFile = File(..., description="分镜画面，支持 JPG、PNG、WebP、GIF，最大 8 MB"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> Project:
-    """上传替换本镜画面。"""
+    """需要登录，为本人项目的指定分镜上传 JPG、PNG、WebP 或 GIF，文件最大 8 MB，校验图片文件头。成功后替换画面、清除该镜头视频并使成片失效。"""
     project = await _get_owned_project(db, project_id, user)
     _ensure_side_task_allowed(project)
     shot = next((s for s in project.shots if s.id == shot_id), None)
@@ -805,7 +919,16 @@ async def upload_shot_image(
     return await _get_owned_project(db, project_id, user)
 
 
-@router.patch("/projects/{project_id}/shots/{shot_id}", response_model=ShotOut)
+@router.patch(
+    "/projects/{project_id}/shots/{shot_id}",
+    response_model=ShotOut,
+    summary="修改科普分镜",
+    description=(
+        "需要登录，修改本人项目的分镜文案、提示词、时长等字段，规范化段落脚本并限制时长。"
+        "画面或视频参数变更会清除对应下游素材，旁白变更会作废项目配音，更新后需重新生成相关素材或合成。"
+    ),
+    response_description="更新后的分镜详情",
+)
 async def update_shot(
     project_id: int,
     shot_id: int,
@@ -892,7 +1015,13 @@ async def update_shot(
     return shot
 
 
-@router.post("/projects/{project_id}/shots/{shot_id}/regen-image", response_model=ProjectOut)
+@router.post(
+    "/projects/{project_id}/shots/{shot_id}/regen-image",
+    response_model=ProjectOut,
+    summary="提交分镜画面重绘任务",
+    description="需要登录，为本人项目的指定分镜提交后台图片重绘任务。整片任务执行中不能提交；返回项目当前状态，不等待生成完成。",
+    response_description="任务提交后的项目详情",
+)
 async def regen_image(
     project_id: int,
     shot_id: int,
@@ -917,7 +1046,13 @@ async def regen_image(
     return await _get_owned_project(db, project_id, user)
 
 
-@router.post("/projects/{project_id}/shots/{shot_id}/regen-video", response_model=ProjectOut)
+@router.post(
+    "/projects/{project_id}/shots/{shot_id}/regen-video",
+    response_model=ProjectOut,
+    summary="提交分镜视频重生成任务",
+    description="需要登录，为已有画面的分镜提交后台视频生成任务；图文模式不支持此操作，整片任务执行中不能提交。返回项目当前状态，不等待视频完成。",
+    response_description="任务提交后的项目详情",
+)
 async def regen_video(
     project_id: int,
     shot_id: int,
@@ -944,7 +1079,13 @@ async def regen_video(
     return await _get_owned_project(db, project_id, user)
 
 
-@router.post("/projects/{project_id}/shots/{shot_id}/regen-audio", response_model=ProjectOut)
+@router.post(
+    "/projects/{project_id}/shots/{shot_id}/regen-audio",
+    response_model=ProjectOut,
+    summary="提交分镜配音重生成任务",
+    description="需要登录，为本人项目的指定分镜提交后台配音任务。整片任务执行中不能提交；返回项目当前状态，不等待配音完成。",
+    response_description="任务提交后的项目详情",
+)
 async def regen_audio(
     project_id: int,
     shot_id: int,
@@ -969,13 +1110,19 @@ async def regen_audio(
     return await _get_owned_project(db, project_id, user)
 
 
-@router.post("/projects/{project_id}/regen-audio", response_model=ProjectOut)
+@router.post(
+    "/projects/{project_id}/regen-audio",
+    response_model=ProjectOut,
+    summary="提交整片配音重生成任务",
+    description="需要登录，为已有分镜且未在生成中的本人项目提交后台任务，按当前音色重新生成全部配音并重新合成成片。返回项目当前状态。",
+    response_description="任务提交后的项目详情",
+)
 async def regen_all_audio(
     project_id: int,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> Project:
-    """Re-TTS all shots with current voice_id, then recompose final video."""
+    """需要登录，为已有分镜且未在生成中的本人项目提交后台任务，按当前音色重新生成全部配音并重新合成成片。返回项目当前状态。"""
     project = await _get_owned_project(db, project_id, user)
     _ensure_wizard_project(project)
     if project.status in {
@@ -1003,13 +1150,23 @@ async def regen_all_audio(
     return await _get_owned_project(db, project_id, user)
 
 
-@router.post("/projects/{project_id}/compose", response_model=ProjectOut)
+@router.post(
+    "/projects/{project_id}/compose",
+    response_model=ProjectOut,
+    summary="提交科普成片合成任务",
+    description=(
+        "需要登录，根据本人项目已有的图片、音频和视频素材提交后台合成任务；"
+        "至少存在分镜图片或镜头视频，且没有活动生成任务。"
+        "返回项目当前状态，不等待成片完成。"
+    ),
+    response_description="任务提交后的项目详情",
+)
 async def compose_only(
     project_id: int,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> Project:
-    """Recompose final video from existing images/audio/(videos)."""
+    """需要登录，根据本人项目已有的图片、音频和视频素材提交后台合成任务；至少存在分镜图片或镜头视频，且没有活动生成任务。返回项目当前状态，不等待成片完成。"""
     project = await _get_owned_project(db, project_id, user)
     await _ensure_compose_allowed(db, user, project)
     if not project.shots or not (
@@ -1029,7 +1186,13 @@ async def compose_only(
     return await _get_owned_project(db, project_id, user)
 
 
-@router.post("/projects/{project_id}/publish", response_model=WorkOut)
+@router.post(
+    "/projects/{project_id}/publish",
+    response_model=WorkOut,
+    summary="发布科普成片",
+    description="需要登录，将本人已完成且具有成片地址的项目发布为作品；已发布时更新同一作品的标题、封面与视频地址。",
+    response_description="发布或更新后的作品",
+)
 async def publish_work(
     project_id: int,
     db: AsyncSession = Depends(get_db),
@@ -1058,7 +1221,13 @@ async def publish_work(
     return work
 
 
-@router.get("/works", response_model=list[WorkOut])
+@router.get(
+    "/works",
+    response_model=list[WorkOut],
+    summary="获取公开作品列表",
+    description="无需登录，按作品编号倒序返回最近 50 个公开作品。",
+    response_description="公开作品列表",
+)
 async def list_works(db: AsyncSession = Depends(get_db)) -> list[Work]:
     result = await db.execute(
         select(Work).where(Work.visibility == "public").order_by(Work.id.desc()).limit(50)
@@ -1066,7 +1235,12 @@ async def list_works(db: AsyncSession = Depends(get_db)) -> list[Work]:
     return list(result.scalars().all())
 
 
-@router.get("/quota")
+@router.get(
+    "/quota",
+    summary="获取当前用户额度",
+    description="需要登录，返回剩余额度、额度及计费开关、余额、冻结金额和计费倍率。金额提供分和元两种单位。",
+    response_description="当前额度与钱包状态",
+)
 async def quota(user: User = Depends(get_current_user)) -> dict:
     from app.config import get_settings
 

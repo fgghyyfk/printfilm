@@ -35,7 +35,11 @@ def _normalize_top_metric(raw: str) -> str:
     return metric
 
 
-@router.get("/stats", response_model=AdminStatsOut)
+@router.get("/stats", response_model=AdminStatsOut,
+    summary="查看运营总览",
+    description="管理员查看用户与充值统计、AI 调用量和费用，以及指定时间窗口内的趋势、能力分布与用户排行。今日、本月与累计指标使用各自固定的统计范围。",
+    response_description="操作成功，返回结果详见响应结构",
+)
 async def admin_stats(
     days: int = Query(default=7, description="趋势与分布时间窗口（天），仅支持 1/7/14/30"),
     domain: str = Query(default="all", max_length=32, description="领域筛选，all 为全部"),

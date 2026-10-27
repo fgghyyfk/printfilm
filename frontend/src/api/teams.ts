@@ -17,7 +17,7 @@ function member(row: Row): TeamMember { return { id: String(row.id), name: row.n
 /** 转换真实项目卡片。 */
 function project(row: Row): TeamProject { return { id: String(row.id), title: row.title, description: row.description || '', genre: row.genre || '漫剧', cover: row.cover || '', status: row.status || 'draft', episodes: row.episodes || 0, completedEpisodes: row.completed_episodes || 0, updatedAt: row.updated_at, collaborators: (row.collaborators || []).map(String), editingBy: row.editing_by ? String(row.editing_by) : undefined } }
 /** 转换真实资产。 */
-function asset(row: Row): TeamAsset { return { id: String(row.id), name: row.name || '未命名资产', type: row.type, cover: row.cover || '', url: row.url || '', projectId: String(row.project_id), description: row.description || '', updatedAt: row.updated_at, assetType: row.asset_type, params: row.params } }
+function asset(row: Row): TeamAsset { return { id: String(row.id), name: row.name || '未命名资产', type: row.type, cover: row.cover || '', url: row.url || '', projectId: String(row.project_id), description: row.description || '', updatedAt: row.updated_at, assetType: row.asset_type, params: row.params, references: row.references } }
 /** 邀请列表不包含可重用令牌。 */
 function invitation(row: Row): TeamInvitation { return { id: String(row.id), email: row.email, status: row.status, createdAt: row.created_at, expiresAt: row.expires_at } }
 /** 转换真实消费记录。 */

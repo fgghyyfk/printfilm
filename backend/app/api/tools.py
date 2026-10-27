@@ -28,7 +28,12 @@ from app.services.studio_references import (
 router = APIRouter(prefix="/tools", tags=["tools"])
 
 
-@router.get("/config")
+@router.get(
+    "/config",
+    summary="获取独立生成工具模型配置",
+    description="需要登录，返回视频、图像和音频工具当前配置的默认模型。",
+    response_description="工具默认模型配置",
+)
 async def generation_config(user: User = Depends(get_current_user)) -> dict:
     from app.config import get_settings
     settings = get_settings()
@@ -36,11 +41,16 @@ async def generation_config(user: User = Depends(get_current_user)) -> dict:
                        "audio": settings.model_audio}}
 
 
-@router.get("/reference-assets")
+@router.get(
+    "/reference-assets",
+    summary="分页查询个人参考资产",
+    description="需要登录，分页读取本人个人空间可用的图片、视频和音频参考资产，支持媒体类型与名称关键词筛选。",
+    response_description="参考资产及分页信息",
+)
 async def list_reference_assets(
     kind: Literal["image", "video", "audio"] | None = None,
-    q: str = Query("", max_length=200), page: int = Query(1, ge=1),
-    page_size: int = Query(24, ge=1, le=50),
+    q: str = Query("", max_length=200, description="参考资产名称搜索关键词"), page: int = Query(1, ge=1, description="页码，从 1 开始"),
+    page_size: int = Query(24, ge=1, le=50, description="每页返回的记录数"),
     db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user),
 ) -> dict:
     media_kind = asset_kind_expression()
@@ -57,7 +67,12 @@ async def list_reference_assets(
             "total": total or 0, "page": page, "page_size": page_size}
 
 
-@router.post("/estimate")
+@router.post(
+    "/estimate",
+    summary="估算独立视频生成费用",
+    description="需要登录，校验视频生成参数和参考素材，按当前计费配置返回估算费用、计费模式及价格版本；不会提交生成任务。金额提供分和元两种单位。",
+    response_description="生成费用估算与价格信息",
+)
 async def estimate_generation(
     body: ToolEstimateRequest, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user),
 ) -> dict:
@@ -84,17 +99,27 @@ async def estimate_generation(
             "items": [{key: value for key, value in item.items() if key != "route"} for item in snapshot.get("items", [])]}
 
 
-@router.post("/run", response_model=ToolRunOut)
+@router.post(
+    "/run",
+    response_model=ToolRunOut,
+    summary="提交独立媒体生成任务",
+    description=(
+        "需要登录，通过 multipart/form-data 提交图片、视频或音频生成参数及参考文件，校验通过后加入后台队列。"
+        "单个参考文件最大 40 MB；参考素材使用 JSON references 配置。"
+        "返回当前记录，生成结果通过任务查询获取。"
+    ),
+    response_description="已提交的工具生成记录",
+)
 async def run_tool(
-    tool_id: str = Form(..., max_length=16), prompt: str = Form("", max_length=7000),
-    negative: str = Form("", max_length=2000), ratio: str = Form("", max_length=16),
-    strength: str = Form("", max_length=16), mode: str = Form("", max_length=32),
-    pack: str = Form("", max_length=32), duration: str = Form("", max_length=16),
-    motion: str = Form("", max_length=16), voice: str = Form("narrator_calm", max_length=64),
-    model_id: str = Form("", max_length=128), resolution: str = Form("", max_length=16),
-    video_mode: str = Form("", max_length=32), references: str = Form("[]", max_length=8000),
-    price_version: int | None = Form(default=None, ge=0),
-    files: list[UploadFile] | None = File(default=None),
+    tool_id: str = Form(..., max_length=16, description="工具标识：t2i 文生图、i2i 图生图、i2p 商品图、ecom 电商图片、t2v 文生视频、v2v 参考视频、audio 配音"), prompt: str = Form("", max_length=7000, description="生成提示词或音频朗读文本"),
+    negative: str = Form("", max_length=2000, description="反向提示词，用于描述需要避免的内容"), ratio: str = Form("", max_length=16, description="输出画面比例，按所选模型支持的值填写"),
+    strength: str = Form("", max_length=16, description="图生图参考相似度：低允许较大变化，高尽量保留参考图；其他值使用中等强度"), mode: str = Form("", max_length=32, description="商品图模式，如白底图、详情长图或场景图"),
+    pack: str = Form("", max_length=32, description="电商图片组合方式：主图拼接、详情排版或卖点海报"), duration: str = Form("", max_length=16, description="生成视频的时长，如 5s；支持范围取决于所选模型"),
+    motion: str = Form("", max_length=16, description="视频运动幅度：弱、强，其他值使用中等运动"), voice: str = Form("narrator_calm", max_length=64, description="配音音色：narrator_calm、warm_storyteller 或 teacher_clear"),
+    model_id: str = Form("", max_length=128, description="生成模型标识；留空时使用工具默认模型"), resolution: str = Form("", max_length=16, description="输出分辨率，按所选模型支持的值填写"),
+    video_mode: str = Form("", max_length=32, description="视频模式：text_to_video 文生视频、first_last_frame 首尾帧、omni_reference 全能参考；留空兼容旧流程"), references: str = Form("[]", max_length=8000, description="最多 12 项的 JSON 数组；每项包含 role，并且仅提供 file_index 上传文件索引或 asset_id 个人资产编号之一"),
+    price_version: int | None = Form(default=None, ge=0, description="客户端确认的价格版本；传入有效版本时用于价格一致性校验"),
+    files: list[UploadFile] | None = File(default=None, description="参考图片、视频或音频文件；单个文件最大 40 MB，格式由工具及素材角色决定"),
     db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user),
 ) -> ToolRunOut:
     tid = tool_id.strip()
@@ -151,7 +176,13 @@ async def run_tool(
     return ToolRunOut.model_validate(data)
 
 
-@router.get("/tasks/{task_id}", response_model=ToolTaskOut)
+@router.get(
+    "/tasks/{task_id}",
+    response_model=ToolTaskOut,
+    summary="查询独立生成任务状态",
+    description="需要登录，仅可查询本人的工具任务。返回当前状态、媒体地址和错误信息；兼容旧任务时可能查询供应商并同步结算，新任务由服务端后台轮询。",
+    response_description="工具任务当前状态与结果",
+)
 async def get_tool_task(task_id: str, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)) -> ToolTaskOut:
     row = (await db.execute(select(ToolRun).where(ToolRun.user_id == user.id, ToolRun.task_id == task_id).limit(1))).scalar_one_or_none()
     if not row:
@@ -197,12 +228,18 @@ def _record_out(row: ToolRun, task: TaskRun | None = None) -> ToolRunRecordOut:
     )
 
 
-@router.get("/runs", response_model=ToolRunListOut)
+@router.get(
+    "/runs",
+    response_model=ToolRunListOut,
+    summary="分页查询独立生成历史",
+    description="需要登录，分页返回本人的工具生成历史，支持媒体类型、状态、任务标识和创建时间筛选，并返回各状态数量统计。",
+    response_description="工具生成记录、分页与状态统计",
+)
 async def list_runs(
-    page: int = Query(1, ge=1), page_size: int = Query(8, ge=1, le=50),
-    kind: str | None = Query(None, pattern="^(video|image|audio)$"),
-    status: str | None = Query(None, pattern="^(processing|succeeded|failed|cancelled)$"),
-    task_id: str | None = Query(None, max_length=128),
+    page: int = Query(1, ge=1, description="页码，从 1 开始"), page_size: int = Query(8, ge=1, le=50, description="每页返回的记录数"),
+    kind: str | None = Query(None, pattern="^(video|image|audio)$", description="媒体类型：video 视频、image 图片、audio 音频"),
+    status: str | None = Query(None, pattern="^(processing|succeeded|failed|cancelled)$", description="记录状态：processing 处理中、succeeded 成功、failed 失败、cancelled 已取消"),
+    task_id: str | None = Query(None, max_length=128, description="任务标识，可匹配工具、平台或供应商任务编号"),
     created_from: datetime | None = None, created_to: datetime | None = None,
     db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user),
 ) -> ToolRunListOut:
@@ -234,7 +271,13 @@ async def list_runs(
                           page=page, page_size=page_size, counts={**counts, "all": sum(counts.values())})
 
 
-@router.get("/runs/{run_id}", response_model=ToolRunRecordOut)
+@router.get(
+    "/runs/{run_id}",
+    response_model=ToolRunRecordOut,
+    summary="获取独立生成记录详情",
+    description="需要登录，仅可读取本人的工具运行记录，先同步关联平台任务状态后返回结果；记录不存在返回 404。",
+    response_description="工具生成记录详情",
+)
 async def get_run(run_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)) -> ToolRunRecordOut:
     row = await get_tool_run(db, user.id, run_id)
     if not row:

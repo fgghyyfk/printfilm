@@ -5,6 +5,7 @@ import { withDramaEditLock, recordDramaResponse } from '../features/teams/editLo
 import { teamsApi } from './teams'
 import { projectTeam } from '../features/teams/editLocks'
 import { workspaceScope } from '../features/teams/workspaceScope'
+import type { AssetDetailReference } from '../lib/assetDetailReferences'
 
 /** 只读资产目录：工具结果 ID 不可作为可编辑的 DramaAsset ID 使用。 */
 export type MediaLibraryItem = {
@@ -19,6 +20,7 @@ export type MediaLibraryItem = {
   cover?: string | null
   url?: string | null
   params?: Record<string, unknown> | null
+  references?: AssetDetailReference[]
   project_id?: number | null
   project_kind?: 'drama' | 'short_video' | null
   project_title?: string | null
@@ -26,6 +28,7 @@ export type MediaLibraryItem = {
   updated_at?: string | null
 }
 export type MediaLibraryType = 'all' | 'character' | 'scene' | 'prop' | 'voice' | 'image' | 'video' | 'audio'
+export type MediaLibraryGenerationStatus = 'all' | 'generated' | 'ungenerated'
 export type MediaLibraryPage = {
   items: MediaLibraryItem[]
   meta: { total: number; total_all: number; page: number; page_size: number }
@@ -191,6 +194,7 @@ export type DramaAsset = {
   cover?: string | null
   url?: string | null
   params?: Record<string, unknown> | null
+  references?: AssetDetailReference[]
   project_id: number
   updated_at?: string | null
 }
@@ -214,6 +218,7 @@ export type DramaFragment = {
   video: string
   duration_sec?: number | null
   params?: Record<string, unknown> | null
+  references?: AssetDetailReference[]
   asset_ids: number[]
 }
 
@@ -368,9 +373,10 @@ export const dramaApi = {
       body: JSON.stringify({ message, project_id }),
     }),
 
-  listLibraryAssets: (filters: { type?: MediaLibraryType; mediaKind?: MediaLibraryItem['media_kind']; projectId?: number; projectKind?: 'drama' | 'short_video'; unassigned?: boolean; q?: string; page?: number; pageSize?: number }, signal?: AbortSignal) => {
+  listLibraryAssets: (filters: { type?: MediaLibraryType; mediaKind?: MediaLibraryItem['media_kind']; generationStatus?: MediaLibraryGenerationStatus; projectId?: number; projectKind?: 'drama' | 'short_video'; unassigned?: boolean; q?: string; page?: number; pageSize?: number }, signal?: AbortSignal) => {
     const params = new URLSearchParams({ type: filters.type || 'all', page: String(filters.page || 1), page_size: String(filters.pageSize || 12) })
     if (filters.mediaKind) params.set('media_kind', filters.mediaKind)
+    if (filters.generationStatus) params.set('generation_status', filters.generationStatus)
     if (filters.projectId) params.set('project_id', String(filters.projectId))
     if (filters.projectKind) params.set('project_kind', filters.projectKind)
     if (filters.unassigned) params.set('unassigned', 'true')

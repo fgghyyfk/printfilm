@@ -13,11 +13,10 @@ from app.models import Project, ProjectStatus, Shot
 from app.models_creation import CreationMessage, CreationRun, CreationSession
 from app.models_tasks import TaskRun
 from app.schemas import ProjectCreate, ProjectUpdate
-from app.schemas_creation import CreationMessageCreate, CreationSessionCreate
 from app.services import creation, pipeline
 from app.services.ark import StoryboardResult
 from tests.conftest import make_task, make_user
-from tests.test_creation_workflow import context, produce, start, succeed  # noqa: F401
+from tests.test_creation_workflow import context, persisted_turn, produce, start, succeed  # noqa: F401
 
 
 async def test_handoff_waits_for_terminal_and_settled_writer_then_keeps_materials(context):
@@ -64,17 +63,20 @@ async def test_handoff_waits_for_terminal_and_settled_writer_then_keeps_material
 
 async def test_empty_or_foreign_session_cannot_create_editor_project(context):
     db, user = context
-    snapshot = await creation.create_session(db, user, CreationSessionCreate())
+    session = CreationSession(user_id=user.id, template_id="anim_3d", brief={})
+    db.add(session)
+    await db.commit()
+    session_id = session.id
     stranger = await make_user(db)
     with pytest.raises(HTTPException) as forbidden:
-        await creation.open_editor(db, stranger, snapshot.id)
+        await creation.open_editor(db, stranger, session_id)
     assert forbidden.value.status_code == 404
     with pytest.raises(HTTPException) as empty:
-        await creation.open_editor(db, user, snapshot.id)
+        await creation.open_editor(db, user, session_id)
     assert empty.value.status_code == 400
 
 
-async def test_draft_handoff_reuses_one_project_and_prevents_late_turn_or_retry(context):
+async def test_draft_handoff_reuses_one_project_and_prevents_late_turn(context):
     db, user = context
     session, turn = await start(context)
     with pytest.raises(HTTPException):
@@ -90,14 +92,8 @@ async def test_draft_handoff_reuses_one_project_and_prevents_late_turn_or_retry(
     assert project.source_text == "给小学生讲为什么天空是蓝色的"
     assert project.pipeline_mode == "image_text" and project.output_ratio == "9:16"
     assert await db.scalar(select(func.count(Project.id)).where(Project.user_id == user.id)) == 1
-    for operation in (
-        creation.retry_session(db, user, session.id),
-        creation.cancel_session(db, user, session.id),
-        creation.add_message(db, user, session.id, CreationMessageCreate(content="修改内容", client_message_id="old-tab")),
-    ):
-        with pytest.raises(HTTPException) as rejected:
-            await operation
-        assert rejected.value.status_code == 409
+    assert (await creation.execute_creation_turn(turn))["cancelled"]
+    assert await creation.reconcile_creation_sessions(db, session_id=session.id) == 0
     assert session.status == "editor"
 
 
@@ -119,8 +115,7 @@ async def test_selecting_old_version_keeps_other_wizard_versions_independent(con
     session, first_run, task = await produce(context)
     await succeed(db, task)
     old_project_id = first_run.project_id
-    await creation.add_message(db, user, session.id, CreationMessageCreate(content="再做一个温暖的版本", client_message_id="version-two"))
-    turn = await db.get(TaskRun, session.active_turn_task_id)
+    turn = await persisted_turn(db, user, session, "再做一个温暖的版本")
     await creation.execute_creation_turn(turn)
     await succeed(db, turn)
     latest_run = await db.get(CreationRun, session.active_run_id)
@@ -152,9 +147,7 @@ async def test_selecting_old_version_keeps_other_wizard_versions_independent(con
 async def test_selected_version_must_belong_to_owner_and_session_before_cancellation(context):
     db, user = context
     session, _run, task = await produce(context)
-    other = await creation.create_session(db, user, CreationSessionCreate(message="另一段独立故事", client_message_id="other-session"))
-    other_session = await db.get(CreationSession, other.id)
-    other_turn = await db.get(TaskRun, other_session.active_turn_task_id)
+    other_session, other_turn = await start(context, message="另一段独立故事")
     await creation.execute_creation_turn(other_turn)
     other_run = await db.get(CreationRun, other_session.active_run_id)
     stranger = await make_user(db)

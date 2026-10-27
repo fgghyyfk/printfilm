@@ -1188,6 +1188,7 @@ async def run_episode_fragment_plan_job(
 # 任务平台（NIO）：Worker 短生命周期 — prepare → submit → 注册 awaiting_poll，由 Selector 轮询。
 async def submit_fragment_video_task(task: TaskRun) -> dict[str, Any]:
     from app.services.tasks.generation_metadata import prepared_generation_params
+    from app.services.tasks.generation_references import public_references
     from app.services.tasks.service import append_task_event, get_task_for_runtime, set_task_step_state
 
     payload = task.payload if isinstance(task.payload, dict) else {}
@@ -1289,6 +1290,7 @@ async def submit_fragment_video_task(task: TaskRun) -> dict[str, Any]:
             next_payload["attempt_limit"] = max_attempts
             next_payload["prepared"] = serialize_fragment_video_prepared(prepared)
             next_payload["generation_params"] = prepared_generation_params(next_payload["prepared"])
+            next_payload["generation_references"] = public_references(next_payload["prepared"])
             task_row.status = "pending"
             task_row.progress_percent = 25
             task_row.current_step_status = "prepared"
@@ -1332,8 +1334,11 @@ async def submit_fragment_video_task(task: TaskRun) -> dict[str, Any]:
         frag.params = params
         task_row.progress_percent = max(int(task_row.progress_percent or 0), 30)
         task_row.current_step_status = "submitting"
-        generation_params = prepared_generation_params(serialize_fragment_video_prepared(prepared))
-        task_row.payload = {**payload, "generation_params": generation_params}
+        serialized = serialize_fragment_video_prepared(prepared)
+        generation_params = prepared_generation_params(serialized)
+        generation_references = public_references(serialized)
+        task_row.payload = {**payload, "generation_params": generation_params,
+                            "generation_references": generation_references}
         await db.commit()
 
         provider_task_id = await submit_prepared_fragment_video(prepared, project_id=project.id)
@@ -1360,6 +1365,7 @@ async def submit_fragment_video_task(task: TaskRun) -> dict[str, Any]:
         next_payload = dict(payload)
         next_payload.pop("prepared", None)
         next_payload["generation_params"] = generation_params
+        next_payload["generation_references"] = generation_references
         next_payload["nio_phase"] = "poll"
         next_payload["generation_attempts"] = attempts
         next_payload["attempt_limit"] = max_attempts
@@ -1856,7 +1862,11 @@ async def run_asset_image_job(
                 (asset.url or asset.cover or "")[:80],
             )
             url = asset.url or asset.cover
-            return {"ok": True, "asset_id": asset.id, "kind": "image", "urls": [url] if url else []}
+            from app.services.tasks.generation_references import public_references
+            metadata = (asset.params or {}).get("media_metadata")
+            return {"ok": True, "asset_id": asset.id, "kind": "image", "urls": [url] if url else [],
+                    **({"references": public_references(metadata["references"])}
+                       if isinstance(metadata, dict) and "references" in metadata else {})}
         except Exception as exc:  # noqa: BLE001
             from app.services.exc_format import format_exception_message
 
@@ -2004,8 +2014,12 @@ async def run_asset_video_job(
                 asset.id,
                 (asset.url or "")[:80],
             )
+            from app.services.tasks.generation_references import public_references
+            metadata = (asset.params or {}).get("media_metadata")
             return {"ok": True, "asset_id": asset.id, "kind": "video", "urls": [asset.url] if asset.url else [],
-                    "preview_url": asset.cover or None}
+                    "preview_url": asset.cover or None,
+                    **({"references": public_references(metadata["references"])}
+                       if isinstance(metadata, dict) and "references" in metadata else {})}
         except Exception as exc:  # noqa: BLE001
             from app.services.drama.asset_video import DOWNLOAD_RETRY_MESSAGE
             from app.services.exc_format import format_exception_message

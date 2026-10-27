@@ -46,7 +46,7 @@ function AssetLibraryInner() {
   const [listing, setListing] = useState<MediaLibraryPage>({ items: [], meta: { total: 0, total_all: 0, page: 1, page_size: 12 } })
   const [projects, setProjects] = useState<LibraryProject[]>([])
   const [projectId, setProjectId] = useState('')
-  const [mediaFilter, setMediaFilter] = useState<MediaLibraryFilter>({ kind: 'image', imageType: 'all' })
+  const [mediaFilter, setMediaFilter] = useState<MediaLibraryFilter>({ kind: 'image', imageType: 'all', generationStatus: 'all' })
   const [query, setQuery] = useState('')
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
@@ -92,7 +92,7 @@ function AssetLibraryInner() {
     setLoading(true)
     setError('')
     dramaApi.listLibraryAssets({ type: mediaFilter.kind === 'image' && mediaFilter.imageType !== 'all' ? mediaFilter.imageType : mediaFilter.kind,
-      mediaKind: mediaFilter.kind, ...projectSelection(projectId), q: search, page, pageSize }, controller.signal)
+      mediaKind: mediaFilter.kind, generationStatus: mediaFilter.generationStatus, ...projectSelection(projectId), q: search, page, pageSize }, controller.signal)
       .then((result) => { if (!controller.signal.aborted) setListing(result) })
       .catch((cause) => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : '加载失败') })
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })
@@ -132,7 +132,7 @@ function AssetLibraryInner() {
   return <AppShell active="assets">
     <div className="drama-page pf-library-panel">
       <header className="pf-library-page-head">
-        <div className="pf-library-heading"><div><h1>资产库</h1><p className="pf-muted" style={{ margin: '0.35rem 0 0' }}>按图片、视频、音频浏览，图片可进一步筛选角色、场景与道具</p></div>
+        <div className="pf-library-heading"><div><h1>数字资产库</h1><p className="pf-muted" style={{ margin: '0.35rem 0 0' }}>按图片、视频、音频浏览，可筛选已生成与未生成资产；图片可进一步筛选角色、场景与道具</p></div>
           <span className="pf-library-count"><Image size={14} />{listing.meta.total} 项资产</span>
         </div>
         <AssetBanner>项目素材、分镜视频与成片汇集在这里，按来源项目筛选；独立生成的素材也可直接预览与下载。</AssetBanner>
@@ -162,7 +162,7 @@ function AssetLibraryInner() {
               {asset.project_url ? <Button to={asset.project_url} variant="ghost" size="sm">打开项目</Button> : <Button size="sm" onClick={() => setSelectedAsset(asset)}>查看素材</Button>}
             </>} />
         })}</AssetGrid>
-        <Pagination page={listing.meta.page} pageCount={pageCount} total={listing.meta.total} pageSize={pageSize} pageSizeOptions={PAGE_SIZE_OPTIONS} onPageSizeChange={(size) => { setPageSize(size); setPage(1) }} onChange={setPage} ariaLabel="资产库分页" />
+        <Pagination page={listing.meta.page} pageCount={pageCount} total={listing.meta.total} pageSize={pageSize} pageSizeOptions={PAGE_SIZE_OPTIONS} onPageSizeChange={(size) => { setPageSize(size); setPage(1) }} onChange={setPage} ariaLabel="数字资产库分页" />
       </>}
       {selectedAsset && <AssetDetailDialog asset={selectedAsset} audioUrl={selectedAsset.media_kind !== 'audio' ? previewAudio(selectedAsset) : undefined} onClose={() => setSelectedAsset(null)} actions={selectedAsset.project_url ? <Button to={selectedAsset.project_url} variant="dark">打开来源项目</Button> : undefined} />}
     </div>

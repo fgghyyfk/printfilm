@@ -7,6 +7,7 @@ import { assetDetailInfo, formatMediaDuration, type AssetDetailRecord } from '..
 import { formatDateTime } from '../../i18n'
 import { canvasMediaFilename, downloadCanvasMedia, downloadCanvasText, isPlayableVideoUrl } from '../../lib/canvasNodeMedia'
 import { AssetVisual } from './AssetLibrary'
+import { DetailPrompt, DetailReferences, DetailReferencePreview, readableDetailPrompt, type ReferencePreview } from './AssetDetailReferences'
 import './asset-detail.css'
 
 type Props = {
@@ -20,16 +21,6 @@ type Props = {
   audioUrl?: string | null
 }
 
-/** 长文本默认收起，展开后在固定区域滚动，原始内容保持完整。 */
-function DetailText({ text }: { text: string }) {
-  const [expanded, setExpanded] = useState(false)
-  const long = text.length > 160 || text.split('\n').length > 5
-  return <div className="pf-asset-detail-text">
-    <p className={expanded ? 'is-expanded' : 'is-collapsed'}>{text}</p>
-    {long && <button type="button" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? '收起' : '展开全文'}</button>}
-  </div>
-}
-
 /** 展示并下载当前媒体；各业务入口仅通过插槽提供编辑/生成操作。 */
 export function AssetDetailDialog({ asset, open = true, onClose, actions, children, notice, description, audioUrl }: Props) {
   /* zoomed 为媒体放大态；feedback 为复制/下载反馈；dimensions 为浏览器实际读取的媒体尺寸。 */
@@ -38,6 +29,8 @@ export function AssetDetailDialog({ asset, open = true, onClose, actions, childr
   const [downloading, setDownloading] = useState(false)
   const [dimensions, setDimensions] = useState('')
   const [mediaDuration, setMediaDuration] = useState('')
+  const [playback, setPlayback] = useState({ current: 0, duration: 0 })
+  const [referencePreview, setReferencePreview] = useState<ReferencePreview | null>(null)
   const info = assetDetailInfo(asset)
   const title = asset.name || info.filename || '资产详情'
   const url = resolveDramaMediaUrl(asset.url || asset.cover)
@@ -48,12 +41,12 @@ export function AssetDetailDialog({ asset, open = true, onClose, actions, childr
   const labels: Record<string, string> = { character: '角色', scene: '场景', prop: '道具', voice: '音色', image: '图片', video: '视频', audio: '音频', text: '文本' }
 
   useEffect(() => {
-    if (open) { setZoomed(false); setFeedback(''); setDimensions(''); setMediaDuration('') }
+    if (open) { setZoomed(false); setFeedback(''); setDimensions(''); setMediaDuration(''); setPlayback({ current: 0, duration: 0 }); setReferencePreview(null) }
   }, [open, asset.id, asset.url])
 
   /** 复制完整提示词，折叠展示不会截断复制内容。 */
   async function copyPrompt() {
-    try { await navigator.clipboard.writeText(prompt); setFeedback('已复制完整提示词') }
+    try { await navigator.clipboard.writeText(readableDetailPrompt(prompt, info.references)); setFeedback('已复制完整提示词') }
     catch { setFeedback('复制失败，请手动复制') }
   }
 
@@ -73,12 +66,13 @@ export function AssetDetailDialog({ asset, open = true, onClose, actions, childr
   return <Modal open={open} onClose={onClose} size="xl" className="pf-asset-detail-shell">
     <div className={`pf-asset-detail-dialog${zoomed ? ' is-zoomed' : ''}`}>
       <section className={`pf-asset-detail-media is-${kind}`} aria-label="媒体预览">
-        {kind === 'video' && url ? <video key={url} src={url} poster={resolveDramaMediaUrl(asset.cover)} controls playsInline preload="metadata" onLoadedMetadata={(event) => { const media = event.currentTarget; setDimensions(media.videoWidth > 0 && media.videoHeight > 0 ? `${media.videoWidth} × ${media.videoHeight}` : ''); setMediaDuration(formatMediaDuration(media.duration)) }} />
+        {kind === 'video' && url ? <video key={url} src={url} poster={resolveDramaMediaUrl(asset.cover)} controls playsInline preload="metadata" onTimeUpdate={event => { const currentTime = event.currentTarget.currentTime; setPlayback(current => ({ ...current, current: currentTime })) }} onLoadedMetadata={(event) => { const media = event.currentTarget; setDimensions(media.videoWidth > 0 && media.videoHeight > 0 ? `${media.videoWidth} × ${media.videoHeight}` : ''); setMediaDuration(formatMediaDuration(media.duration)); setPlayback({ current: media.currentTime, duration: Number.isFinite(media.duration) ? media.duration : 0 }) }} />
           : kind === 'audio' ? <div className="pf-asset-detail-audio"><AssetVisual asset={asset} />{url && <audio key={url} src={url} controls preload="metadata" onLoadedMetadata={(event) => setMediaDuration(formatMediaDuration(event.currentTarget.duration))} />}</div>
           : kind === 'text' ? <pre>{text || '暂无文本'}</pre>
           : url ? <img key={url} src={url} alt={title} onLoad={(event) => { const media = event.currentTarget; setDimensions(`${media.naturalWidth} × ${media.naturalHeight}`) }} />
           : <AssetVisual asset={asset} />}
         {audio && kind === 'image' && <audio className="pf-asset-detail-voice" src={audio} controls preload="none" />}
+        {kind === 'video' && playback.duration > 0 && <span className="pf-asset-detail-time" aria-hidden>{playback.current.toFixed(2)} / {playback.duration.toFixed(2)}s</span>}
         <div className="pf-asset-detail-media-tools">
           {kind === 'image' && url && <button type="button" onClick={() => setZoomed(!zoomed)} aria-label={zoomed ? '退出放大' : '放大预览'}>{zoomed ? <Minimize2 size={18} /> : <Maximize2 size={18} />}</button>}
           <button type="button" onClick={onClose} aria-label="关闭资产详情"><X size={20} /></button>
@@ -89,7 +83,8 @@ export function AssetDetailDialog({ asset, open = true, onClose, actions, childr
           <span className="pf-asset-detail-type">{labels[asset.type] || labels[kind] || asset.type}</span>
           <h2 title={title}>{title}</h2>
           {notice}
-          {prompt && <section className="pf-asset-detail-prompt"><h3>{info.source === 'AI 生成' ? '生成提示词' : '资产说明'}</h3><DetailText key={`${asset.id}:${url}`} text={prompt} /></section>}
+          {prompt && <section className="pf-asset-detail-prompt"><h3>{info.source === 'AI 生成' ? '生成提示词' : '资产说明'}</h3><DetailPrompt key={`${asset.id}:${url}`} text={prompt} references={info.references} onPreview={setReferencePreview} /></section>}
+          <DetailReferences references={info.references} onPreview={setReferencePreview} />
           <dl className="pf-asset-detail-meta">
             <dt>来源</dt><dd>{info.source}</dd>
             {info.source !== '上传' && <><dt>模型</dt><dd title={info.model}>{info.model || '未记录'}</dd></>}
@@ -113,5 +108,6 @@ export function AssetDetailDialog({ asset, open = true, onClose, actions, childr
         </footer>
       </aside>
     </div>
+    {referencePreview && <DetailReferencePreview key={`${referencePreview.reference.kind}:${referencePreview.reference.url}`} preview={referencePreview} onClose={() => setReferencePreview(null)} />}
   </Modal>
 }

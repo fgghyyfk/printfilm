@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Path
 from sqlalchemy import and_, exists, false, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -133,16 +133,29 @@ def _status_condition(status: str | None):
     )
 
 
-@router.get("/projects", response_model=DramaProjectListOut)
+@router.get(
+    "/projects",
+    response_model=DramaProjectListOut,
+    summary="分页查询漫剧与自由画布项目",
+    description=(
+        "查询当前空间内可访问的项目，按更新时间、项目编号倒序排列。"
+        "不传 team_id 查询参数或 X-Team-Id 请求头时，仅列出本人个人空间项目；"
+        "指定团队空间时列出该团队项目，需为有效团队成员，二者同时提供时必须一致。"
+        "工作流、进度、标题筛选均在分页前执行；超过最后一页的页码自动回落到最后一页。"
+        "usage 仅汇总当前计费空间的项目用量：团队所有者查看团队合计，其他成员仅查看本人用量，"
+        "迁入团队前的个人用量不计入团队统计。进度筛选依据剧本、资产和分集数量，非任务运行状态。"
+    ),
+    response_description="项目列表及分页信息，每项包含工作流、封面状态和可见用量统计",
+)
 async def list_projects(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
     scope_team_id: int | None = Depends(workspace_team),
-    workflow: Literal["script", "canvas"] | None = None,
-    status: Literal["all", "running", "done", "draft"] | None = Query(None, description="all|running|done|draft"),
-    q: str | None = Query(None, description="标题搜索"),
-    page: int = Query(1, ge=1),
-    page_size: int = Query(9, ge=1, le=200),
+    workflow: Annotated[Literal["script", "canvas"] | None, Query(description="工作流：script 为剧本分集，canvas 为自由画布；省略时查询全部，兼容按标题及创意识别的历史画布项目")] = None,
+    status: Literal["all", "running", "done", "draft"] | None = Query(None, description="进度：all 或省略为全部；draft 为无资产的画布或无剧本的漫剧；running 为已有资产的画布或有剧本且至少 1 集的漫剧；done 为有剧本且至少 8 集的漫剧。running 与 done 可重叠，画布不进入 done"),
+    q: str | None = Query(None, description="项目标题的大小写不敏感子串搜索，忽略首尾空白，% 和 _ 按普通字符匹配；空值不筛选"),
+    page: int = Query(1, ge=1, description="页码，从 1 开始；超出范围时返回最后一页，空列表页码为 1"),
+    page_size: int = Query(9, ge=1, le=200, description="每页项目数，范围为 1 至 200"),
 ) -> DramaProjectListOut:
     # List current workspace's drama projects, paged；筛选与分页均在服务端完成
     team_id = scope_team_id if isinstance(scope_team_id, int) else None
@@ -202,7 +215,19 @@ async def list_projects(
     return DramaProjectListOut(items=items, meta=PageMeta(page=page, page_size=page_size, total=total))
 
 
-@router.post("/projects", response_model=DramaProjectOut)
+@router.post(
+    "/projects",
+    response_model=DramaProjectOut,
+    summary="创建漫剧或自由画布项目",
+    description=(
+        "创建项目及初始剧本草稿，source 去除首尾空白后至少 20 字。标题为空时按创意前 40 字自动生成。"
+        "team_id 优先使用请求体，否则沿用 team_id 查询参数或 X-Team-Id 指定的当前空间；"
+        "请求体与当前团队空间不一致时返回 422，创建团队项目需为该团队成员。"
+        "params 会保留扩展配置，但 workflow、episode_count、image_style_id 以请求的专用字段为准；"
+        "自由画布项目的目标集数保存为 0，剧本生成状态标记为 skipped。此接口不启动 AI 生成任务。"
+    ),
+    response_description="新建项目详情及初始剧本草稿，用量统计初始为零",
+)
 async def create_project(
     body: DramaProjectCreate,
     db: AsyncSession = Depends(get_db),
@@ -263,9 +288,18 @@ async def create_project(
     return _project_out(project)
 
 
-@router.get("/projects/{project_id}", response_model=DramaProjectOut)
+@router.get(
+    "/projects/{project_id}",
+    response_model=DramaProjectOut,
+    summary="获取项目详情",
+    description=(
+        "按 project_id 获取项目、剧本及资产和分集数量。个人项目仅所有者可访问，团队项目需保有有效成员身份。"
+        "用量按项目实际所属空间统计；团队所有者查看团队合计，其他成员仅查看本人用量。"
+    ),
+    response_description="项目详情、关联剧本、资产和分集数量，以及当前用户可见的累计用量",
+)
 async def get_project(
-    project_id: int,
+    project_id: Annotated[int, Path(description="项目编号，需有该项目的个人或团队访问权限")],
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> DramaProjectOut:
@@ -276,9 +310,21 @@ async def get_project(
     return _project_out(project, usage)
 
 
-@router.patch("/projects/{project_id}", response_model=DramaProjectOut)
+@router.patch(
+    "/projects/{project_id}",
+    response_model=DramaProjectOut,
+    summary="更新项目基本信息和配置",
+    description=(
+        "按 project_id 更新项目，省略或传 null 的字段保持原值；title 去除首尾空白后为空时保留原标题。"
+        "content 与 params 均整体替换，不做增量合并，调用方应保留仍需使用的配置。"
+        "镜间尾帧衔接开关变化时，会按新设置重排仍在排队的分镜视频任务。"
+        "个人项目需为所有者；团队项目需为有效成员，并携带结构资源的 X-Edit-Session、"
+        "X-Edit-Token、X-Edit-Version 编辑租约请求头，租约或任务占用冲突时无法写入。"
+    ),
+    response_description="更新后的完整项目详情及当前用户可见的累计用量",
+)
 async def update_project(
-    project_id: int,
+    project_id: Annotated[int, Path(description="项目编号，需有该项目的个人或团队访问权限")],
     body: DramaProjectUpdate,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -312,9 +358,19 @@ async def update_project(
     return _project_out(project, usage)
 
 
-@router.delete("/projects/{project_id}")
+@router.delete(
+    "/projects/{project_id}",
+    summary="删除项目及关联创作数据",
+    description=(
+        "按 project_id 删除项目并级联清理剧本、资产、分集及分镜等关联数据，同时请求取消关联任务。"
+        "任务与用量历史保留，仅解除对已删除项目和子资源的外键引用。"
+        "个人项目需为所有者；团队项目仅团队所有者或管理员可删除，"
+        "且需携带结构资源的 X-Edit-Session、X-Edit-Token、X-Edit-Version 编辑租约请求头，不能存在冲突任务。"
+    ),
+    response_description="删除成功标记，ok 为 true",
+)
 async def delete_project(
-    project_id: int,
+    project_id: Annotated[int, Path(description="项目编号，需有该项目的个人或团队访问权限")],
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:

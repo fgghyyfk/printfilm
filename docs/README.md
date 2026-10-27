@@ -4,6 +4,7 @@ PRINTFILM（ai_movie）产品与工程文档。
 
 | 文档 | 说明 |
 |------|------|
+| [API.md](./API.md) | 中文 API 文档入口、登录认证、团队编辑租约、漫剧字段与分页/任务/错误约定 |
 | [DIGITAL_ASSET_DEVELOPMENT.md](./DIGITAL_ASSET_DEVELOPMENT.md) | 数字资产市场分期：第一期 Web 广场与版权交易，第二期 App 持续收益；Word 版见同目录 docx |
 | [MARKETPLACE.md](./MARKETPLACE.md) | 单视频 + 短剧剧集数字资产市场、客服招募、版权核验、平台投放收益与私有 OSS：配置、接口、操作流程及验收边界 |
 | [LOCAL_DEVELOPMENT.md](./LOCAL_DEVELOPMENT.md) | 本机 Windows 环境、后台启停脚本、访问地址与日志位置 |

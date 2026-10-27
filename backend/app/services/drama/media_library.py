@@ -1,5 +1,7 @@
 """Combine authorized project assets and delivered standalone tool results."""
 from datetime import UTC, datetime
+from pathlib import PurePosixPath
+from urllib.parse import urlsplit
 
 from fastapi import HTTPException
 from sqlalchemy import select
@@ -8,10 +10,35 @@ from sqlalchemy.orm import selectinload
 from app.models import Project, ToolRun
 from app.models_drama import DramaAsset, DramaProject
 from app.models_tasks import TaskRun
-from app.schemas_media_library import MediaLibraryItem, MediaLibraryMeta, MediaLibraryPage
+from app.schemas_media_library import LibraryGenerationStatus, MediaLibraryItem, MediaLibraryMeta, MediaLibraryPage
 from app.services.drama.workflow import resolve_drama_workflow
 from app.services.drama.media_library_video import deduplicate_videos, task_project, video_items
-from app.services.tasks.generation_history import _tool_link
+from app.services.drama.media_library_references import hydrate_library_references
+from app.services.tasks.generation_references import public_references
+from app.services.tasks.generation_history import _safe_url, _tool_link
+
+
+_MEDIA_EXTENSIONS = {
+    "image": frozenset({".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif", ".bmp", ".svg", ".tif", ".tiff", ".heic"}),
+    "video": frozenset({".mp4", ".webm", ".mov", ".m4v", ".mkv", ".avi", ".m3u8"}),
+    "audio": frozenset({".mp3", ".wav", ".ogg", ".m4a", ".aac", ".flac", ".opus", ".webm"}),
+}
+_KNOWN_MEDIA_EXTENSIONS = frozenset().union(*_MEDIA_EXTENSIONS.values())
+
+
+def has_generated_media(item: MediaLibraryItem) -> bool:
+    """Count only the current formal media field, independent of provenance or task status."""
+    candidates = (item.url, item.cover) if item.media_kind == "image" else (item.url,)
+    for value in candidates:
+        url = _safe_url(value)
+        if not url:
+            continue
+        suffix = PurePosixPath(urlsplit(url).path).suffix.casefold()
+        if suffix in _KNOWN_MEDIA_EXTENSIONS and suffix not in _MEDIA_EXTENSIONS[item.media_kind]:
+            continue
+        # CDN/provider content endpoints may have no recognizable extension.
+        return True
+    return False
 
 
 def media_kind(primary: str, secondary: str, url: str = "") -> str:
@@ -21,9 +48,9 @@ def media_kind(primary: str, secondary: str, url: str = "") -> str:
     if primary in {"voice", "audio"} or secondary in {"voice", "audio"}:
         return "audio"
     suffix = url.split("?", 1)[0].split("#", 1)[0].lower()
-    if suffix.endswith((".mp4", ".webm", ".mov", ".m4v")):
+    if suffix.endswith(tuple(_MEDIA_EXTENSIONS["video"])):
         return "video"
-    if suffix.endswith((".mp3", ".wav", ".ogg", ".m4a", ".aac", ".flac")):
+    if suffix.endswith(tuple(_MEDIA_EXTENSIONS["audio"])):
         return "audio"
     return "image"
 
@@ -72,6 +99,7 @@ def tool_items(run: ToolRun) -> list[MediaLibraryItem]:
             type=run.kind, asset_type=run.kind, media_kind=run.kind,
             name=f"{labels[run.kind]}生成 · 结果 {index + 1}", url=url,
             cover=url if run.kind == "image" else poster,
+            references=public_references(params),
             updated_at=run.updated_at or run.created_at,
             params={"media_metadata": {"source": "generated", "prompt": run.prompt,
                 "model_id": params.get("model_id") if isinstance(params.get("model_id"), str) else None,
@@ -82,7 +110,8 @@ def tool_items(run: ToolRun) -> list[MediaLibraryItem]:
 
 
 async def library_page(db, user_id: int, team_id: int | None, *, kind="all", media_filter=None, project_id=None,
-                       project_kind="drama", unassigned=False, q="", page=1, page_size=12) -> MediaLibraryPage:
+                       project_kind="drama", generation_status: LibraryGenerationStatus = "all",
+                       unassigned=False, q="", page=1, page_size=12) -> MediaLibraryPage:
     scope = (DramaProject.team_id == team_id) if team_id is not None else (
         (DramaProject.user_id == user_id) & DramaProject.team_id.is_(None))
     # Project ID namespaces are separate; a short-video ID must never select a drama with the same ID.
@@ -136,6 +165,7 @@ async def library_page(db, user_id: int, team_id: int | None, *, kind="all", med
                 continue
             rows = tool_items(run)
             for row in rows:
+                row._reference_task_id = task.id if task is not None else None
                 for key, value in fields.items():
                     setattr(row, key, value)
             items.extend(rows)
@@ -146,6 +176,7 @@ async def library_page(db, user_id: int, team_id: int | None, *, kind="all", med
         item for item in items
         if (media_filter is None or item.media_kind == media_filter)
         and (kind == "all" or (item.media_kind == kind if kind in {"image", "video", "audio"} else item.type == kind))
+        and (generation_status == "all" or has_generated_media(item) == (generation_status == "generated"))
         and (not search or search in " ".join((
             item.name or "", item.project_title or "", item.type, str(item.project_id or ""),
         )).casefold())
@@ -153,5 +184,7 @@ async def library_page(db, user_id: int, team_id: int | None, *, kind="all", med
     items.sort(key=lambda item: ((item.updated_at or datetime(1970, 1, 1, tzinfo=UTC)).timestamp(), item.key), reverse=True)
     total = len(items)
     page = min(page, max(1, (total + page_size - 1) // page_size))
-    return MediaLibraryPage(items=items[(page - 1) * page_size:page * page_size],
+    selected = items[(page - 1) * page_size:page * page_size]
+    await hydrate_library_references(db, selected, user_id=user_id, team_id=team_id)
+    return MediaLibraryPage(items=selected,
         meta=MediaLibraryMeta(total=total, total_all=total_all, page=page, page_size=page_size))

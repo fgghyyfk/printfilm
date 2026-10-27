@@ -9,9 +9,10 @@ from app.models_drama import DramaEpisode, DramaEpisodeFragment
 from app.models_tasks import TaskRun
 from app.schemas_media_library import MediaLibraryItem
 from app.services.tasks.generation_history import (
-    _kind_expression, _safe_url, _submitted_parameters, _tool_link, project_generation,
+    _kind_expression, _safe_url, _submitted_evidence, _tool_link, project_generation,
 )
 from app.services.tasks.generation_metadata import public_generation_params
+from app.services.tasks.generation_references import public_references
 
 
 def project_fields(project, project_kind: str) -> dict:
@@ -24,18 +25,19 @@ def project_fields(project, project_kind: str) -> dict:
     return dict(project_id=project.id, project_kind=project_kind, project_title=project.title, project_url=url)
 
 
-def video_item(*, key, source_kind, source_id, name, url, cover=None, params=None, updated_at=None, lineage=None, **project):
+def video_item(*, key, source_kind, source_id, name, url, cover=None, params=None, references=None,
+               updated_at=None, lineage=None, **project):
     url = _safe_url(url)
     if not url:
         return None
     item = MediaLibraryItem(key=key, id=source_id, source_kind=source_kind, source_id=source_id,
         type="video", asset_type="video", media_kind="video", name=name, url=url,
-        cover=_safe_url(cover), params=params, updated_at=updated_at, **project)
+        cover=_safe_url(cover), params=params, references=references or [], updated_at=updated_at, **project)
     item._lineage = lineage
     return item
 
 
-def metadata(prompt, parameters, created_at, *, request=False):
+def metadata(prompt, parameters, created_at, *, request=False, references=None):
     safe = public_generation_params(parameters)
     for key in ("media_duration_sec", "media_width", "media_height"):
         value = parameters.get(key)
@@ -54,6 +56,7 @@ def metadata(prompt, parameters, created_at, *, request=False):
     return {"media_metadata": {"source": "generated", "prompt": prompt,
         "model_id": safe.get("model_id"), "parameters": safe,
         "created_at": created_at.isoformat() if created_at else None,
+        "references": public_references(references),
         **({"parameter_source": "request"} if request else {})}}
 
 
@@ -140,14 +143,16 @@ async def video_items(db, user_id, team_id, dramas, shorts, *, include_unassigne
     for run, task_id in (await db.execute(select(ToolRun, TaskRun.id).join(TaskRun, _tool_link())
             .where(TaskRun.id.in_(ids), ToolRun.kind == "video"))).all():
         tools.setdefault(task_id, []).append(run)
-    submitted = await _submitted_parameters(db, tasks)
+    submitted = await _submitted_evidence(db, tasks)
     for task in tasks:
         fields = task_project(task, dramas, shorts, user_id, team_id)
         if fields is None:
             continue
         linked = tools.get(task.id, [])
         record = project_generation(task, viewer_id=user_id, linked_tool=linked[0] if linked else None,
-            submitted_params=submitted.get(task.id))
+            submitted_params=submitted.get(task.id, {}).get("params"),
+            submitted_refs=submitted.get(task.id, {}).get("references"))
+        references = [ref.model_dump(exclude_none=True) for ref in record.references]
         urls = list(dict.fromkeys([*record.urls, *(url for run in linked for value in (run.urls or [])
                                                  if (url := _safe_url(value)))]))
         label = "分集合成" if task.task_type == "episode_compose" else "视频生成"
@@ -161,7 +166,8 @@ async def video_items(db, user_id, team_id, dramas, shorts, *, include_unassigne
         for index, url in enumerate(urls):
             row = video_item(key=f"task:{task.id}:{index}", source_kind="task", source_id=task.id,
                 name=name, url=url, cover=record.preview_url,
-                params=metadata(record.prompt, record.params, stamp, request=True), updated_at=stamp, lineage=lineage, **fields)
+                params=metadata(record.prompt, record.params, stamp, request=True, references=references),
+                references=references, updated_at=stamp, lineage=lineage, **fields)
             if row:
                 items.append(row)
     return items, ids
@@ -186,9 +192,20 @@ def deduplicate_videos(items):
                 consumed.add(identity)
                 # Keep immutable accepted generation parameters on the visible entity.
                 snapshot = (item.params or {}).get("media_metadata", {})
-                if snapshot.get("prompt") or snapshot.get("parameters"):
+                if snapshot.get("prompt") or snapshot.get("parameters") or item.references:
                     entity = entities[identity]
+                    saved = (entity.params or {}).get("media_metadata", {})
+                    if isinstance(saved, dict) and saved.get("source") == "generated":
+                        # The stored user prompt retains @asset tokens; the provider prompt has translated them.
+                        if isinstance(saved.get("prompt"), str) and saved["prompt"].strip():
+                            snapshot = {**snapshot, "prompt": saved["prompt"]}
+                        saved_refs = {(ref["kind"], ref["url"], ref["role"]): ref
+                                      for ref in public_references(saved.get("references"))}
+                        references = [{**saved_refs.get((ref["kind"], ref["url"], ref["role"]), {}), **ref}
+                                      for ref in public_references(snapshot.get("references"))]
+                        snapshot = {**snapshot, "references": references}
                     entity.params = {**(entity.params or {}), "media_metadata": snapshot}
+                    entity.references = item.references
                     entity.cover = entity.cover or item.cover
                 continue
         result.append(item)

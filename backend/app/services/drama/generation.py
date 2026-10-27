@@ -1375,10 +1375,12 @@ async def generate_asset_image(
         },
     }
     from app.services.drama.asset_metadata import generated_media_metadata
+    from app.services.tasks.generation_references import public_references
     gen_meta["media_metadata"] = generated_media_metadata(
         model_id=model, prompt=full_prompt.strip(),
         options={"aspect_ratio": ratio, "resolution": res, "size": size, "image_style_id": style_id},
         requested_model_id=model_id,
+        references=public_references({"style_ref_urls": [board] if board else []}),
     )
 
     if asset is None:

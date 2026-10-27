@@ -202,6 +202,7 @@ async def generate_asset_video(
             project_id=project.id,
             shot_no=asset.id,
         )
+        references = await _retry_reference_snapshot(db, user, project, asset, existing_task_id)
         video_url = await _publish_asset_video(
             project,
             asset,
@@ -213,6 +214,7 @@ async def generate_asset_video(
             res=res,
             duration=duration,
             style_id=style_id,
+            references=references,
         )
         await _bill_asset_video(
             db,
@@ -251,6 +253,18 @@ async def generate_asset_video(
             "character_intro": False,
         }
     )
+    from app.services.tasks.generation_references import public_references
+    references = public_references(body)
+    identities = {}
+    for kind, files in (("image", catalog.images), ("video", catalog.videos), ("audio", catalog.audios)):
+        for reference in files:
+            identities.setdefault((kind, reference.url), set()).add(reference.asset_id)
+    assets_by_id = {reference.id: reference for reference in ref_assets}
+    for reference in references:
+        matches = identities.get((reference["kind"], reference["url"]), set())
+        if len(matches) == 1 and (source := assets_by_id.get(next(iter(matches)))) is not None:
+            reference["asset_id"] = source.id
+            reference["name"] = source.name
     local_video, local_last_frame, task_result = await ark.gen_and_wait_seedance_body(
         body,
         project_id=project.id,
@@ -275,6 +289,7 @@ async def generate_asset_video(
             "aspect_ratio": body.get("ratio") or "auto",
         },
         actual_model=body.get("model"),
+        references=references,
     )
     await _bill_asset_video(
         db,
@@ -299,6 +314,23 @@ async def generate_asset_video(
     return asset
 
 
+async def _retry_reference_snapshot(db, user, project, asset, provider_task_id):
+    """A download retry must retain the original request, never today's editable references."""
+    from app.models_tasks import TaskRun
+    from app.services.billing.context import get_current_task_run_id
+    from app.services.tasks.generation_history import _submitted_evidence
+
+    task_id = get_current_task_run_id()
+    if task_id is None:
+        return None
+    task = await db.get(TaskRun, task_id, populate_existing=True)
+    if (task is None or task.requested_by != user.id or task.team_id != project.team_id
+            or task.drama_project_id != project.id or task.asset_id != asset.id
+            or task.provider_task_id != provider_task_id):
+        return None
+    return (await _submitted_evidence(db, [task])).get(task.id, {}).get("references")
+
+
 async def _publish_asset_video(
     project: DramaProject,
     asset: DramaAsset,
@@ -313,6 +345,7 @@ async def _publish_asset_video(
     style_id: str | None,
     generation_options: dict | None = None,
     actual_model: str | None = None,
+    references: list[dict] | None = None,
 ) -> str:
     """落成片与封面，并写回资产参数。"""
     from app.services import storage as storage_svc
@@ -351,6 +384,7 @@ async def _publish_asset_video(
     params["media_metadata"] = generated_media_metadata(
         model_id=actual_model or model_id or get_settings().model_video, prompt=content,
         options={**params["videoOptions"], **(generation_options or {})},
+        **({"references": references} if references is not None else {}),
     )
     asset.params = params
     return video_url

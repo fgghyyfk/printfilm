@@ -15,7 +15,11 @@ from app.services.teams import admin_queries, admin_wallet
 router = APIRouter(prefix="/teams", dependencies=[Depends(get_current_admin)])
 
 
-@router.get("", response_model=AdminTeamPage)
+@router.get("", response_model=AdminTeamPage,
+    summary="分页查询全站团队",
+    description="管理员按团队或所有者搜索团队，返回基本资料、钱包及消费快照。",
+    response_description="团队列表、钱包与消费快照以及分页信息",
+)
 async def list_teams(
     q: str = Query("", max_length=180),
     owner_id: int | None = Query(None, ge=1, le=2_147_483_647),
@@ -27,7 +31,11 @@ async def list_teams(
     return await admin_queries.list_teams(db, q=q, owner_id=owner_id, page=page, page_size=page_size)
 
 
-@router.get("/{team_id}", response_model=AdminTeamOut)
+@router.get("/{team_id}", response_model=AdminTeamOut,
+    summary="查看团队详情",
+    description="管理员查看指定团队的基本资料与消费信息。",
+    response_description="操作成功，返回结果详见响应结构",
+)
 async def team_detail(
     team_id: int = Path(ge=1, le=2_147_483_647),
     db: AsyncSession = Depends(get_db),
@@ -36,7 +44,11 @@ async def team_detail(
     return await admin_queries.team_detail(db, team_id)
 
 
-@router.get("/{team_id}/members", response_model=AdminTeamMemberPage)
+@router.get("/{team_id}/members", response_model=AdminTeamMemberPage,
+    summary="分页查询团队成员",
+    description="管理员查看团队有效或已退出成员，可按关键词、角色、成员状态和月份筛选；返回对应月份的消费、预留及额度。月份格式为 YYYY-MM。",
+    response_description="操作成功，返回结果详见响应结构",
+)
 async def list_members(
     team_id: int = Path(ge=1, le=2_147_483_647),
     q: str = Query("", max_length=180),
@@ -51,7 +63,11 @@ async def list_members(
     return await admin_queries.list_members(db, team_id, q=q, role=role, state=state, period=period, page=page, page_size=page_size)
 
 
-@router.get("/{team_id}/usage-events", response_model=AdminTeamUsagePage)
+@router.get("/{team_id}/usage-events", response_model=AdminTeamUsagePage,
+    summary="分页查询团队消费",
+    description="管理员按成员、模型或项目关键词、结算状态和日期范围查询团队消费。日期按 Asia/Shanghai 时区解释。",
+    response_description="操作成功，返回结果详见响应结构",
+)
 async def list_usage(
     team_id: int = Path(ge=1, le=2_147_483_647),
     q: str = Query("", max_length=180),
@@ -67,18 +83,26 @@ async def list_usage(
     return await admin_queries.list_usage(db, team_id, q=q, user_id=user_id, settled=settled, date_from=date_from, date_to=date_to, page=page, page_size=page_size)
 
 
-@router.post("/{team_id}/balance-adjustments", response_model=AdminTeamBalanceAdjustmentOut)
+@router.post("/{team_id}/balance-adjustments", response_model=AdminTeamBalanceAdjustmentOut,
+    summary="团队钱包调账（已停用）", responses={410: {"description": "团队钱包调账已停用，请调整所有者个人余额"}},
+    description="此兼容入口始终返回 410。团队已改为由所有者的个人账户付费，请通过用户管理接口调整团队所有者的个人余额。",
+    response_description="兼容保留的响应结构；此入口实际返回 HTTP 410",
+)
 async def adjust_balance(
     body: AdminTeamBalanceAdjustmentInput,
     team_id: int = Path(ge=1, le=2_147_483_647),
     admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ) -> AdminTeamBalanceAdjustmentOut:
-    """按金额增减团队可用余额，并将操作者和备注同事务写入钱包流水。"""
+    """团队钱包调账已停用，请通过用户管理调整所有者个人余额。"""
     raise HTTPException(410, "团队已改为所有者个人账户付费，请在用户管理调整所有者余额")
 
 
-@router.get("/{team_id}/wallet-ledger", response_model=AdminTeamWalletLedgerPage)
+@router.get("/{team_id}/wallet-ledger", response_model=AdminTeamWalletLedgerPage,
+    summary="分页查询团队历史钱包流水",
+    description="管理员查看团队历史钱包流水及后台调账审计记录；adjustments_only 可仅查看调账记录。",
+    response_description="操作成功，返回结果详见响应结构",
+)
 async def wallet_ledger(
     team_id: int = Path(ge=1, le=2_147_483_647),
     q: str = Query("", max_length=180),
@@ -91,7 +115,11 @@ async def wallet_ledger(
     return await admin_wallet.list_wallet_ledger(db, team_id, q=q, adjustments_only=adjustments_only, page=page, page_size=page_size)
 
 
-@router.patch("/{team_id}/budget")
+@router.patch("/{team_id}/budget",
+    summary="设置团队月度额度",
+    description="管理员设置团队月总额度，金额单位为分，保留已有消费和在途任务。返回设置后的 monthly_limit_fen。",
+    response_description="操作成功，返回结果详见响应结构",
+)
 async def update_budget(body: AdminTeamBudgetInput, team_id: int = Path(ge=1), admin: User = Depends(get_current_admin), db: AsyncSession = Depends(get_db)) -> dict:
     """平台管理员设置团队月总额度，保留已有消费和在途任务。"""
     from app.services.teams.budgets import set_budget
@@ -100,7 +128,11 @@ async def update_budget(body: AdminTeamBudgetInput, team_id: int = Path(ge=1), a
     return {"monthly_limit_fen": body.monthly_limit_fen}
 
 
-@router.patch("/{team_id}/members/{user_id}/budget")
+@router.patch("/{team_id}/members/{user_id}/budget",
+    summary="设置成员月度额度",
+    description="管理员设置指定有效成员的月度额度，支持团队所有者，金额单位为分。返回设置后的 monthly_limit_fen。",
+    response_description="操作成功，返回结果详见响应结构",
+)
 async def update_member_budget(body: AdminTeamBudgetInput, team_id: int = Path(ge=1), user_id: int = Path(ge=1), admin: User = Depends(get_current_admin), db: AsyncSession = Depends(get_db)) -> dict:
     """平台管理员设置有效成员月额度，包含所有者。"""
     from app.services.teams.budgets import set_budget

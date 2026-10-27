@@ -1,4 +1,4 @@
-"""Real media acceptance for the conversation's automatically scheduled stages.
+"""Real media acceptance for draining persisted legacy production stages.
 
 All provider calls are local substitutes. The shared DB fixture uses a separate
 test database and rollback; generated files live only inside pytest's tmp_path.
@@ -16,17 +16,19 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
-from app.models import ProjectStatus, Template
-from app.models_creation import CreationRun, CreationSession
+from app.models import Project, ProjectStatus, Template
+from app.models_creation import CreationMessage, CreationRun, CreationSession
 from app.models_tasks import TaskRun
-from app.schemas_creation import CreationDecision, CreationSessionCreate
+from app.schemas_creation import CreationDecision
 from app.services import creation, ffmpeg_compose, pipeline, storage
 from app.services.ark import ShotPlan, StoryboardResult
 from app.services.tasks import executor
 from app.services.templates_seed import TEMPLATES
 from tests.conftest import make_user
+from tests.test_creation_workflow import persisted_turn
 
 
 def _media_command(command: list[str]) -> subprocess.CompletedProcess:
@@ -36,7 +38,7 @@ def _media_command(command: list[str]) -> subprocess.CompletedProcess:
 
 
 @pytest.mark.asyncio
-async def test_conversation_delivers_real_vertical_mp4_with_voice_motion_and_captions(
+async def test_persisted_creation_delivers_real_vertical_mp4_with_voice_motion_and_captions(
     db_session, monkeypatch, tmp_path,
 ):
     ffmpeg = shutil.which(get_settings().ffmpeg_path) or shutil.which("ffmpeg")
@@ -154,10 +156,11 @@ async def test_conversation_delivers_real_vertical_mp4_with_voice_motion_and_cap
 
     monkeypatch.setattr(ffmpeg_compose, "_run", traced_ffmpeg)
 
-    initial = await creation.create_session(db, user, CreationSessionCreate(
-        message="给小学生讲讲为什么天空是蓝色的", client_message_id="real-media-acceptance",
-    ))
-    session = await db.get(CreationSession, initial.id)
+    session = CreationSession(user_id=user.id, template_id="anim_3d", brief={})
+    db.add(session)
+    await db.flush()
+    await persisted_turn(db, user, session, "给小学生讲讲为什么天空是蓝色的")
+    await creation.reconcile_creation_sessions(db, session_id=session.id)
     executed_stages = []
     for _ in range(4):
         run = await db.get(CreationRun, session.active_run_id) if session.active_run_id else None
@@ -173,11 +176,11 @@ async def test_conversation_delivers_real_vertical_mp4_with_voice_motion_and_cap
         # next task. The shorter TTS above retimes the two planned 4 s shots.
         await db.refresh(session)
 
-    snapshot = await creation.session_snapshot(db, session.id, user.id)
     assert executed_stages == ["creation_turn", "script", "assets", "compose"]
-    assert snapshot.status == "completed"
-    assert len(snapshot.runs) == 1
-    project = snapshot.runs[0].project
+    assert session.status == "completed"
+    runs = list((await db.execute(select(CreationRun).where(CreationRun.session_id == session.id))).scalars())
+    assert len(runs) == 1
+    project = await db.scalar(select(Project).where(Project.id == runs[0].project_id).options(selectinload(Project.shots)))
     assert project is not None
     assert project.status == ProjectStatus.DONE and project.progress == 100
     assert project.pipeline_mode == "image_text" and project.template_id == "anim_3d"
@@ -185,7 +188,8 @@ async def test_conversation_delivers_real_vertical_mp4_with_voice_motion_and_cap
     assert image_calls == [1, 2] and audio_calls == [copy_text]
     assert len(project.shots) == 2
     assert all(shot.image_url and shot.audio_url and not shot.video_url for shot in project.shots)
-    assert sum("视频制作完成" in message.content for message in snapshot.messages) == 1
+    messages = (await db.execute(select(CreationMessage).where(CreationMessage.session_id == session.id))).scalars()
+    assert sum("视频制作完成" in message.content for message in messages) == 1
     tasks = list((await db.execute(select(TaskRun).where(creation._session_task_filter(session.id)))).scalars())
     assert len(tasks) == 4 and all(task.status == "succeeded" for task in tasks)
 

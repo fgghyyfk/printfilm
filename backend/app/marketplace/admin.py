@@ -11,13 +11,23 @@ from .service import (asset_owned, check_version, data, event, fail, now, notify
 router = APIRouter()
 
 
-@router.get("/categories", response_model=dict)
+@router.get(
+    "/categories", response_model=dict,
+    summary='获取市场分类管理配置',
+    description='仅管理员可访问。读取可用分类名称及当前配置版本，供编辑前确认。',
+    response_description='分类名称 names 与配置版本 version。',
+)
 async def get_categories(db: DB, user: Admin):
     from .categories import category_config
     return await category_config(db)
 
 
-@router.put("/categories", response_model=dict)
+@router.put(
+    "/categories", response_model=dict,
+    summary='更新市场分类配置',
+    description='仅管理员可操作。提交完整分类列表及读取到的 version，首次保存版本为 0；并发修改导致版本不匹配时返回 409。',
+    response_description='保存后的分类名称列表与新版本。',
+)
 async def save_categories(body: CategoryInput, db: DB, user: Admin):
     from sqlalchemy import text
     from .models import CategoryConfig
@@ -41,7 +51,12 @@ MODELS = {"works": Work, "rights": Rights, "cases": RegistrationCase, "recruits"
           "ledger": RevenueLedger, "payouts": Payout, "entitlements": Entitlement}
 
 
-@router.get("/overview", response_model=dict)
+@router.get(
+    "/overview", response_model=dict,
+    summary='获取市场运营概览',
+    description='仅管理员可访问。汇总待审作品、权属与需求、失败媒体任务、待处理举报、存储字节数及咨询次数；咨询计数不代表成交。',
+    response_description='各项运营计数与 storage_bytes 存储用量。',
+)
 async def overview(db: DB, user: Admin):
     """运营计数不把咨询、候选或扫码计为成交。"""
     counts = {}
@@ -56,7 +71,12 @@ async def overview(db: DB, user: Admin):
     return counts
 
 
-@router.get("/records/{kind}", response_model=dict)
+@router.get(
+    "/records/{kind}", response_model=dict,
+    summary='分页查询市场运营记录',
+    description='仅管理员可访问。kind 支持 works、rights、cases、recruits、submissions、reports、jobs、events、previews、series、episodes、orders、ledger、payouts、entitlements。支持按适用的状态筛选；权益记录还可按 user_id、owner_id 筛选。',
+    response_description='运营记录 items 与分页信息 meta。',
+)
 async def records(kind: str, db: DB, user: Admin, status: str = "", user_id: int | None = Query(None, ge=1), owner_id: int | None = Query(None, ge=1), page_number: int = Query(1, alias="page", ge=1), page_size: int = Query(20, ge=1, le=100)):
     """管理员分页工作台；敏感材料在单独鉴权接口读取。"""
     model = MODELS.get(kind)
@@ -124,7 +144,12 @@ async def records(kind: str, db: DB, user: Admin, status: str = "", user_id: int
     return {"items": items, "meta": meta}
 
 
-@router.post("/works/{work_id}/review", response_model=dict)
+@router.post(
+    "/works/{work_id}/review", response_model=dict,
+    summary='审核单视频作品与版权',
+    description='仅管理员可操作，须匹配当前 version 且作品处于 pending。通过时须确认 content 和 copyright 检查项，并验证媒体、试看、授权与证明材料；审核通过后仍保持下架，由作者主动上架。',
+    response_description='操作成功时返回 ok=true。',
+)
 async def review_work(work_id: int, body: ReviewInput, db: DB, user: Admin):
     """一次审核同时检查作品内容和版权信息。"""
     item = await db.get(Work, work_id, with_for_update=True)
@@ -169,13 +194,23 @@ async def review_work(work_id: int, body: ReviewInput, db: DB, user: Admin):
     return {"ok": True}
 
 
-@router.get("/revenue-config", response_model=dict)
+@router.get(
+    "/revenue-config", response_model=dict,
+    summary='获取平台分成配置',
+    description='仅管理员可访问。读取平台分成比例、启用状态与版本；尚未设置时返回 version=0、enabled=false。',
+    response_description='当前分成配置；platform_share_bps 使用基点，10000 表示 100%。',
+)
 async def get_revenue_config(db: DB, user: Admin):
     item = await db.get(RevenueConfig, 1)
     return data(item, "id", "version", "platform_share_bps", "enabled") if item else {"version": 0, "enabled": False}
 
 
-@router.put("/revenue-config", response_model=dict)
+@router.put(
+    "/revenue-config", response_model=dict,
+    summary='保存平台分成配置',
+    description='仅管理员可操作。提交当前 version，首次保存为 0；版本不匹配返回 409。platform_share_bps 使用基点，10000 表示 100%。',
+    response_description='保存后的平台分成比例、启用状态与配置版本。',
+)
 async def save_revenue_config(body: RevenueConfigInput, db: DB, user: Admin):
     item = await db.get(RevenueConfig, 1, with_for_update=True)
     current = item.version if item else 0
@@ -191,7 +226,12 @@ async def save_revenue_config(body: RevenueConfigInput, db: DB, user: Admin):
     return data(item, "id", "version", "platform_share_bps", "enabled")
 
 
-@router.post("/payouts", response_model=dict)
+@router.post(
+    "/payouts", response_model=dict,
+    summary='登记创作者人工打款',
+    description='仅管理员可操作。记录收款作者、金额、状态和备注；金额单位为人民币分。仅登记人工打款记录，不触发自动转账。',
+    response_description='新建打款记录及完成时间、操作人信息。',
+)
 async def create_payout(body: PayoutInput, db: DB, user: Admin):
     """记录人工打款；不触发任何自动转账。"""
     item = Payout(owner_id=body.owner_id, amount_fen=body.amount_fen, status=body.status,
@@ -204,7 +244,12 @@ async def create_payout(body: PayoutInput, db: DB, user: Admin):
     return data(item, "id", "owner_id", "amount_fen", "status", "note", "paid_at", "operator_id", "created_at")
 
 
-@router.patch("/payouts/{payout_id}", response_model=dict)
+@router.patch(
+    "/payouts/{payout_id}", response_model=dict,
+    summary='更新创作者打款记录',
+    description='仅管理员可操作。更新收款作者、金额、状态和备注；金额单位为人民币分。已完成打款不可回退为其他状态，冲突时返回 409。',
+    response_description='更新后的打款记录。',
+)
 async def update_payout(payout_id: int, body: PayoutInput, db: DB, user: Admin):
     item = await db.get(Payout, payout_id, with_for_update=True)
     if not item:
@@ -219,7 +264,12 @@ async def update_payout(payout_id: int, body: PayoutInput, db: DB, user: Admin):
     return data(item, "id", "owner_id", "amount_fen", "status", "note", "paid_at", "operator_id", "created_at")
 
 
-@router.post("/series/{series_id}/review", response_model=dict)
+@router.post(
+    "/series/{series_id}/review", response_model=dict,
+    summary='审核短剧系列与各集版权',
+    description='仅管理员可操作，须匹配系列当前 version 且处于 pending。通过时须确认 content、copyright，检查分集连续性、媒体、封面、版权和必要试看；结果同步到各集与发布版本，通过后由作者另行上架。',
+    response_description='操作成功时返回 ok=true。',
+)
 async def review_series(series_id: int, body: ReviewInput, db: DB, user: Admin):
     series = await db.get(Series, series_id, with_for_update=True)
     if not series:
@@ -285,7 +335,12 @@ async def review_series(series_id: int, body: ReviewInput, db: DB, user: Admin):
     return {"ok": True}
 
 
-@router.post("/rights/{rights_id}/review", response_model=dict)
+@router.post(
+    "/rights/{rights_id}/review", response_model=dict,
+    summary='审核独立权属档案',
+    description='仅管理员可操作，须匹配当前 version 且档案待核验。full 控制完整材料与逐项确认检查；通过或拒绝结果同步至档案基础、完整核验状态。关联单视频作品须通过作品统一审核处理。',
+    response_description='操作成功时返回 ok=true。',
+)
 async def review_rights(rights_id: int, body: ReviewInput, db: DB, user: Admin, full: bool = False):
     """必须逐项确认核验结果；证书上传与登记案件办结不能自动放行。"""
     item = await db.get(Rights, rights_id, with_for_update=True)
@@ -329,7 +384,12 @@ async def review_rights(rights_id: int, body: ReviewInput, db: DB, user: Admin, 
     return {"ok": True}
 
 
-@router.post("/recruits/{post_id}/review", response_model=dict)
+@router.post(
+    "/recruits/{post_id}/review", response_model=dict,
+    summary='审核招募需求',
+    description='仅管理员可操作，须匹配当前 version 且需求待审。已关闭、过期或被封禁的需求不能通过；审核通过后需求进入 open 状态。',
+    response_description='操作成功时返回 ok=true。',
+)
 async def review_recruit(post_id: int, body: ReviewInput, db: DB, user: Admin):
     """需求公开审核，过期、关闭、封禁不能被过期审核重新开启。"""
     item = await db.get(Recruit, post_id, with_for_update=True)
@@ -348,7 +408,12 @@ async def review_recruit(post_id: int, body: ReviewInput, db: DB, user: Admin):
     return {"ok": True}
 
 
-@router.post("/cases/{case_id}/status", response_model=dict)
+@router.post(
+    "/cases/{case_id}/status", response_model=dict,
+    summary='更新版权登记案件进度',
+    description='仅管理员可操作，须匹配当前案件 version。标记已取证前须有证书编号和证明材料；保存后递增案件版本并通知申请人，案件办结不自动通过权属审核。',
+    response_description='操作成功时返回 ok=true。',
+)
 async def case_status(case_id: int, body: CaseReview, db: DB, user: Admin):
     """办理进度独立于权属审核；录入已取证仍不解锁销售。"""
     item = await db.get(RegistrationCase, case_id, with_for_update=True)
@@ -367,7 +432,12 @@ async def case_status(case_id: int, body: CaseReview, db: DB, user: Admin):
     return {"ok": True}
 
 
-@router.post("/block/{kind}/{record_id}", response_model=dict)
+@router.post(
+    "/block/{kind}/{record_id}", response_model=dict,
+    summary='设置市场记录封禁状态',
+    description='仅管理员可操作。kind 支持 work、rights、recruit、submission，按 blocked 标记限制或解除限制并记录原因；作品被操作时下架且递增版本，解除封禁不会自动上架。',
+    response_description='操作成功时返回 ok=true。',
+)
 async def block(kind: str, record_id: int, body: BlockInput, db: DB, user: Admin):
     """争议处理可暂停播放和咨询；解除封禁不自动重新上架。"""
     model = {"work": Work, "rights": Rights, "recruit": Recruit, "submission": Submission}.get(kind)
@@ -388,7 +458,12 @@ async def block(kind: str, record_id: int, body: BlockInput, db: DB, user: Admin
     return {"ok": True}
 
 
-@router.post("/reports/{report_id}/resolve", response_model=dict)
+@router.post(
+    "/reports/{report_id}/resolve", response_model=dict,
+    summary='登记举报处理结论',
+    description='仅管理员可操作。将举报标记为 resolved，保存处理说明并通知举报人；需要限制内容时另行调用封禁接口。',
+    response_description='操作成功时返回 ok=true。',
+)
 async def resolve_report(report_id: int, body: ResolutionInput, db: DB, user: Admin):
     """投诉处理结论留痕，限制内容须使用明确的封禁操作。"""
     item = await db.get(Report, report_id, with_for_update=True)
@@ -401,14 +476,24 @@ async def resolve_report(report_id: int, body: ResolutionInput, db: DB, user: Ad
     return {"ok": True}
 
 
-@router.get("/support", response_model=dict)
+@router.get(
+    "/support", response_model=dict,
+    summary='获取市场客服管理配置',
+    description='仅管理员可访问。读取客服名称、微信、服务时间、二维码资产 ID 与启用状态；尚未配置时返回 enabled=false。',
+    response_description='客服配置，不包含私有存储对象地址。',
+)
 async def get_support(db: DB, user: Admin):
     """管理配置不返回 OSS 对象位置。"""
     item = await db.get(Support, 1)
     return data(item, "name", "wechat", "hours", "qr_asset_id", "enabled") if item else {"enabled": False}
 
 
-@router.put("/support", response_model=dict)
+@router.put(
+    "/support", response_model=dict,
+    summary='保存市场客服配置',
+    description='仅管理员可操作。二维码须为本人已就绪的 qr 类型资产；启用客服时必须同时填写微信号与有效二维码。',
+    response_description='操作成功时返回 ok=true。',
+)
 async def save_support(body: SupportInput, db: DB, user: Admin):
     """仅使用已处理完成的真实二维码资产。"""
     if body.qr_asset_id:

@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
+from app.schemas_media_references import MediaReferenceOut
 
 
 class GenerationRecordOut(BaseModel):
@@ -21,6 +22,7 @@ class GenerationRecordOut(BaseModel):
     text_content: str = ""
     task_id: str | None = None
     params: dict = Field(default_factory=dict)
+    references: list[MediaReferenceOut] = Field(default_factory=list)
     error: str | None = None
     created_at: str = ""
     platform_task_id: int | None = None

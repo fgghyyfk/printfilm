@@ -114,7 +114,12 @@ async def episode_context(db, owner_id: int, project_id: int, episode) -> dict:
     return result
 
 
-@router.get("/printfilm/dramas/{project_id}/publish-context", response_model=dict)
+@router.get(
+    "/printfilm/dramas/{project_id}/publish-context", response_model=dict,
+    summary='获取漫剧发布到市场的上下文',
+    description='仅有权操作源漫剧项目的登录用户可访问。返回分集来源版本、可用目标系列和已有导入映射，同时报告授权函与存储配置状态，供发布前明确选择和确认更新。',
+    response_description='项目 project、分集 episodes、目标系列 series、授权与存储状态。',
+)
 async def publish_context(project_id: int, db: DB, user: Actor):
     from .storage import configured
     project = await owned_project(db, user.id, project_id)
@@ -303,7 +308,12 @@ async def publish_selected(project_id: int, body: DramaPublishInput, db, user):
     return await batch_result(db, batch)
 
 
-@router.post("/printfilm/dramas/{project_id}/publish", response_model=dict)
+@router.post(
+    "/printfilm/dramas/{project_id}/publish", response_model=dict,
+    summary='将选中漫剧分集同步到市场草稿',
+    description='仅有权操作源项目和目标系列的用户可操作。按选定来源版本冻结分集内容，创建或复用草稿与异步转存任务；已有分集更新须明确确认。幂等键绑定请求内容，来源或目标版本冲突返回 409；请求本身不等待长视频转存。',
+    response_description='series_id、目标分集草稿 items 与异步转存任务 handoffs。',
+)
 async def publish(project_id: int, body: DramaPublishInput, db: DB, user: Actor):
     return await publish_selected(project_id, body, db, user)
 

@@ -13,7 +13,14 @@ from .service import event, fail, is_public_work, recruit_open, rights_for, righ
 router = APIRouter()
 
 
-@router.get("/media/{kind}/{record_id}/{purpose}", response_model=dict, dependencies=[Depends(storage_ready)])
+@router.get(
+    "/media/{kind}/{record_id}/{purpose}",
+    response_model=dict,
+    dependencies=[Depends(storage_ready)],
+    summary="获取市场媒体临时访问链接",
+    description="按业务上下文校验访问权限后签发短期链接。kind 支持 work、series、series_episode、submission、asset、recruit、support；purpose 须匹配对应业务，例如 preview、cover、original、review、image-0 或 qr。公开内容可按权限供访客访问，私有资产与客服二维码须登录；收费内容的 preview 返回短试看，完整播放使用购买权益接口。媒体未就绪返回 409。",
+    response_description="临时访问链接 url 与有效秒数 expires_in；每次新签名均重新检查权限。",
+)
 async def media_url(kind: str, record_id: int, purpose: str, db: DB, user: Visitor):
     """每次签名前鉴权；签名最长5分钟，既有链接不能即时撤回。"""
     asset, key, content_type = None, None, "video/mp4"

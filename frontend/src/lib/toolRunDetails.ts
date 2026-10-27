@@ -32,6 +32,7 @@ export function toolRunDetailAsset(record: ToolRunRecord, resultIndex = 0): Asse
     cover: record.kind === 'image' ? url || record.preview_url
       : record.kind === 'video' && url && record.preview_url !== url ? record.preview_url : null,
     updated_at: record.finished_at || record.created_at,
+    references: record.references,
     params: {
       ...((record.kind === 'text' || !url) ? { textContent } : {}),
       media_metadata: {

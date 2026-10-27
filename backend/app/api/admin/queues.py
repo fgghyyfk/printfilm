@@ -19,7 +19,11 @@ from app.services.tasks.execution_policy import llm_task_condition
 router = APIRouter()
 
 
-@router.get("/queues", response_model=AdminQueuesOut)
+@router.get("/queues", response_model=AdminQueuesOut,
+    summary="查看任务队列概况",
+    description="管理员查看统一任务平台的排队、租约、运行数量与各队列容量。此为兼容旧管理页面的入口；detail 为保留参数，任务明细请使用 /api/admin/tasks。",
+    response_description="操作成功，返回结果详见响应结构",
+)
 async def admin_queues(
     detail: bool = Query(default=False, description="保留参数，任务中心请用 /admin/tasks"),
     _admin: User = Depends(get_current_admin),
