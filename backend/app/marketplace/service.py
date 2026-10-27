@@ -102,20 +102,20 @@ def rights_valid(rights: Rights | None, *, full: bool = False) -> bool:
 
 
 def full_proof_present(rights: Rights) -> bool:
-    """本平台绑定现行授权函；外部来源绑定证明文件，旧档案沿用证书规则。"""
+    """读取已核验材料时保留明确支持的历史授权；新提交另行检查现行版本。"""
     if rights.details.get("source") == "printfilm":
-        from .authorization import VERSION
-        return bool(rights.details.get("authorization_id") and rights.details.get("authorization_version") == VERSION)
+        from .letter_template import PUBLISHED_VERSIONS
+        return bool(rights.details.get("authorization_id") and rights.details.get("authorization_version") in PUBLISHED_VERSIONS)
     return bool(rights.certificate_asset_id)
 
 
 def public_work_filters() -> tuple:
     """列表与详情使用相同 SQL 条件，价格筛选前即排除不可售作品。"""
-    from .authorization import VERSION
+    from .letter_template import PUBLISHED_VERSIONS
     from .previews import CLIP_WORK_PREFIX
     proof = or_(and_(Rights.details["source"].as_string() == "printfilm",
                      Rights.details["authorization_id"].as_string().is_not(None),
-                     Rights.details["authorization_version"].as_string() == VERSION),
+                     Rights.details["authorization_version"].as_string().in_(PUBLISHED_VERSIONS)),
                 and_(Rights.details["source"].as_string() != "printfilm", Rights.certificate_asset_id.is_not(None)))
     def preview_exists():
         return select(WorkPreview.id).where(

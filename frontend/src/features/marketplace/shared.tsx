@@ -12,7 +12,7 @@ export function Gate({ children }: { children: ReactNode }) {
   const { capabilities, error } = useMarketplace()
   if (error) return <p role="alert">{error}</p>
   if (!capabilities) return <p role="status">正在读取服务状态…</p>
-  if (!capabilities.enabled) return <p>作品与招募模块尚未启用。</p>
+  if (!capabilities.enabled) return <p>数字资产市场尚未启用。</p>
   return <><MarketNav />{!capabilities.storage_configured && <div className="pf-market-storage-note" role="note"><Info size={17} aria-hidden /><p><strong>文件服务暂未配置</strong><span>可保存文字草稿和无附件需求，上传及媒体发布暂不可用。</span></p></div>}{children}</>
 }
 
@@ -24,7 +24,7 @@ export function NeedLogin({ children }: { children: ReactNode }) {
 
 // 统一下游页内导航，不接管原个人中心逻辑。
 export function MarketNav() {
-  return <><header className="pf-market-top"><div className="pf-market-brand"><span className="pf-market-brand-icon"><Store size={22} strokeWidth={1.7} /></span><div><p className="pf-market-eyebrow">PRINTFILM MARKETPLACE</p><p className="pf-market-title">数字资产市场</p></div></div><div className="pf-market-publish-actions"><Button to="/marketplace/recruits/new" variant="outline" size="sm" icon><Plus size={16} />发布招募</Button><Button to="/marketplace/works/new" variant="lime" size="sm" icon><Plus size={16} />发布作品</Button></div></header><div className="pf-market-nav-row"><nav className="pf-market-nav" aria-label="数字资产市场导航"><NavLink to="/marketplace" end><Grid2X2 size={17} />作品广场</NavLink><NavLink to="/marketplace/recruits" end><UsersRound size={18} />招募广场</NavLink><NavLink to="/marketplace/mine"><CircleUserRound size={17} />我的发布与通知</NavLink></nav><span className="pf-market-nav-hint"><LockKeyhole size={13} />权属核验 · 人工审核</span></div></>
+  return <><header className="pf-market-top"><div className="pf-market-brand"><span className="pf-market-brand-icon"><Store size={22} strokeWidth={1.7} /></span><div><p className="pf-market-eyebrow">PRINTFILM MARKETPLACE</p><p className="pf-market-title">数字资产市场</p></div></div><div className="pf-market-publish-actions"><Button to="/marketplace/recruits/new" variant="outline" size="sm" icon><Plus size={16} />发布招募</Button><Button to="/marketplace/works/new" variant="lime" size="sm" icon><Plus size={16} />发布作品</Button></div></header><div className="pf-market-nav-row"><nav className="pf-market-nav" aria-label="数字资产市场导航"><NavLink to="/marketplace" end><Grid2X2 size={17} />作品广场</NavLink><NavLink to="/marketplace/recruits" end><UsersRound size={18} />招募广场</NavLink><NavLink to="/marketplace/mine"><CircleUserRound size={17} />我的发布与通知</NavLink></nav><span className="pf-market-nav-hint"><LockKeyhole size={13} />版权材料 · 统一审核</span></div></>
 }
 
 // 列表均请求服务端分页，搜索时由调用方重置页码。
@@ -63,7 +63,7 @@ export function Contact({ kind, id, disabled = false, label }: { kind: string; i
     catch { setCopyMessage('复制失败，请选中下方文字手动复制') }
   }
   const text = detail ? `${detail.reference}｜${detail.title}｜${detail.price_fen === null ? '' : money(detail.price_fen)}｜${window.location.href}` : ''
-  return <><button type="button" className="pf-market-buy" disabled={disabled || busy} onClick={open}>{disabled ? '待完成权属核验' : busy ? '正在获取客服…' : label ? label : kind === 'case' ? '联系客服协办' : kind === 'recruit' ? '联系客服接单' : '联系客服购买'}</button>{error && <p role="alert">{error}</p>}{detail && <div className="pf-market-modal" role="dialog" aria-modal="true" aria-label="联系客服" onKeyDown={e => { if (e.key === 'Escape') setDetail(null) }}><section><button type="button" autoFocus onClick={() => setDetail(null)}>关闭</button><h2>{detail.name}</h2><Media kind="support" id={1} purpose="qr" /><p>微信：{detail.wechat} · {detail.hours}</p><p>{detail.notice}</p>{(kind === 'work' || kind === 'submission' || kind === 'series_episode') && <div className="pf-market-purchase-notice"><strong>版权购买须知</strong><p>如需购买作品版权（著作财产权转让），须另行签订书面转让合同，并按约定办理版权转让及相关手续，可能产生转让办理、登记或服务等费用。具体流程、费用项目及承担方请先与客服确认。</p><p>页面参考价不代表已包含上述费用。仅购买使用授权不等于取得作品版权。</p></div>}<p className="pf-market-copy">{text}</p><button type="button" onClick={() => copy(text)}>复制咨询信息</button><p role="status">{copyMessage}</p><p>可在二维码上右键或长按保存图片。</p></section></div>}</>
+  return <><button type="button" className="pf-market-buy" disabled={disabled || busy} onClick={open}>{disabled ? '版权材料待核验' : busy ? '正在获取客服…' : label ? label : kind === 'case' ? '联系客服协办' : kind === 'recruit' ? '联系客服接单' : '联系客服购买'}</button>{error && <p role="alert">{error}</p>}{detail && <div className="pf-market-modal" role="dialog" aria-modal="true" aria-label="联系客服" onKeyDown={e => { if (e.key === 'Escape') setDetail(null) }}><section><button type="button" autoFocus onClick={() => setDetail(null)}>关闭</button><h2>{detail.name}</h2><Media kind="support" id={1} purpose="qr" /><p>微信：{detail.wechat} · {detail.hours}</p><p>{detail.notice}</p>{(kind === 'work' || kind === 'submission' || kind === 'series_episode') && <div className="pf-market-purchase-notice"><strong>版权购买须知</strong><p>如需购买作品版权（著作财产权转让），须另行签订书面转让合同，并按约定办理版权转让及相关手续，可能产生转让办理、登记或服务等费用。具体流程、费用项目及承担方请先与客服确认。</p><p>页面参考价不代表已包含上述费用。仅购买使用授权不等于取得作品版权。</p></div>}<p className="pf-market-copy">{text}</p><button type="button" onClick={() => copy(text)}>复制咨询信息</button><p role="status">{copyMessage}</p><p>可在二维码上右键或长按保存图片。</p></section></div>}</>
 }
 
 // 举报证据可后续由平台要求补充，联系方式不公开。

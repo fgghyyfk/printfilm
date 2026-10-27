@@ -127,10 +127,10 @@ async def _series_data(db, item: Series, *, private: bool = False) -> dict:
 
 def public_series_filters():
     """免费集检查原片，收费集检查当前版本短试看，实时校验权属限制。"""
-    from .authorization import VERSION
+    from .letter_template import PUBLISHED_VERSIONS
     proof = or_(and_(Rights.details["source"].as_string() == "printfilm",
                      Rights.details["authorization_id"].as_string().is_not(None),
-                     Rights.details["authorization_version"].as_string() == VERSION),
+                     Rights.details["authorization_version"].as_string().in_(PUBLISHED_VERSIONS)),
                 and_(Rights.details["source"].as_string() != "printfilm", Rights.certificate_asset_id.is_not(None)))
     asset_ready = select(Asset.id).join(Rights, Rights.asset_id == Asset.id).where(
         Asset.id == SeriesEpisode.asset_id, Asset.status == "ready", Asset.owner_id == Series.owner_id,

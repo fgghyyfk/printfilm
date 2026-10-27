@@ -134,18 +134,19 @@ async def _view(db, item: Handoff) -> dict:
     """给页面的状态。不返回源地址、对象键或指纹原文以外的内部快照。"""
     authorization = await current_authorization(db, item.owner_id)
     ready = bool(authorization)
+    retryable = not any(code in (item.error or "") for code in ("SOURCE_CHANGED", "TARGET_CHANGED", "SOURCE_INCOMPATIBLE", "重新选择分集"))
     if item.status == "failed":
-        label = "复制失败可重试"
+        label = "同步失败，可重新同步" if retryable else "同步中断，请重新选择成片"
     elif item.status == "ready":
-        label = "已就绪" if ready else "待补充授权"
+        label = "成片同步完成" if ready else "成片同步完成，提交审核前请签署授权函"
     else:
         label = "正在同步"
     payload = data(item, "id", "status", "target_kind", "target_id", "series_id", "asset_id", "attempts", "created_at")
     phase = (item.source_snapshot or {}).get("phase", "queued")
-    phases = {"queued": "排队", "copying": "同步素材", "composing": "拼接整集", "validating": "校验", "ready": "已就绪", "failed": "同步失败"}
+    phases = {"queued": "排队中", "copying": "正在同步素材", "composing": "正在合成完整分集", "validating": "正在校验视频", "ready": "同步完成", "failed": "同步失败"}
     payload.update(label=label, phase=item.status if item.status in ("ready", "failed") else phase,
                    phase_label=phases.get(item.status if item.status in ("ready", "failed") else phase, "正在同步"),
-                   retryable=not any(code in (item.error or "") for code in ("SOURCE_CHANGED", "TARGET_CHANGED", "SOURCE_INCOMPATIBLE", "重新选择分集")),
+                   retryable=retryable,
                    authorization_ready=ready, error=item.error if item.status == "failed" else "",
                    work_id=item.target_id if item.target_kind == "work" else None,
                    episode_id=item.target_id if item.target_kind == "series_episode" else None)
@@ -380,7 +381,9 @@ async def _fail(handoff_id: int, token: str, message: str) -> None:
                 asset.status, asset.error = "failed", message[:500]
         if terminal:
             link = f"/marketplace/works/{item.target_id}/edit?handoff={item.id}" if item.target_kind == "work" else f"/marketplace/series/{item.series_id}/edit"
-            notify(db, item.owner_id, "成片复制失败，可在发布页重试", link)
+            must_reselect = any(code in message for code in ("SOURCE_CHANGED", "TARGET_CHANGED", "SOURCE_INCOMPATIBLE", "重新选择分集"))
+            notice = "成片同步中断，请在发布页查看原因并重新选择成片" if must_reselect else "成片同步失败，可在发布页重新同步"
+            notify(db, item.owner_id, notice, link)
         await db.commit()
 
 

@@ -63,7 +63,7 @@ export default function DramaPublishModal({ projectId, initialEpisodeId, targetS
     <Button type="button" variant="ghost" disabled={busy} onClick={onClose}>取消</Button>
     <Button type="button" variant="lime" disabled={loading || busy || !storageReady || !selected.length || missingUpdates || (targetId !== 'new' && !target)} onClick={() => void publish()}>{busy ? <><Loader2 size={16} className="pf-drama-publish-spin" />正在创建同步任务…</> : '同步并继续编辑'}</Button>
   </>}>
-    <p className="pf-drama-publish-intro">选中的完整分集会同步到市场独立保存。随后补充封面、价格与授权，提交管理员审核。</p>
+    <p className="pf-drama-publish-intro">选中的完整分集会同步到市场独立保存。随后补充封面和价格，确认版权信息后一并提交审核；有效账号授权函会自动关联。</p>
     {loading ? <p role="status">正在检查分集和市场状态…</p> : context ? <>
       {!storageReady && <p className="pf-drama-publish-warning" role="alert">文件服务暂未配置，暂时无法同步视频。请联系管理员完成文件服务配置后重试。</p>}
       <div className="pf-drama-publish-project"><Film size={20} /><div><strong>{context.project.title}</strong><span>{context.episodes.length} 集 · 仅完整生成的分集可发布</span></div></div>
@@ -75,7 +75,7 @@ export default function DramaPublishModal({ projectId, initialEpisodeId, targetS
         </div>
       })}{context.episodes.length === 0 && <p>这个项目还没有分集。</p>}</div>
       <label className="pf-drama-publish-field">发布到<select disabled={busy || Boolean(targetSeriesId)} value={targetId} onChange={event => { setTargetId(event.target.value); setUpdates([]) }}><option value="new">新建市场短剧</option>{context.series.map(item => <option key={item.id} value={item.id}>{item.title}{item.listed ? '（已上架）' : ''}</option>)}</select></label>
-      {targetId === 'new' ? <label className="pf-drama-publish-field">市场短剧名称<input value={title} disabled={busy} maxLength={200} onChange={event => setTitle(event.target.value)} placeholder={context.project.title} /></label> : <p className="pf-drama-publish-hint">保留已有系列的介绍、封面和收费设置；新分集接续目标系列集号。</p>}
+      {targetId === 'new' ? <label className="pf-drama-publish-field">市场短剧名称<input value={title} disabled={busy} maxLength={200} onChange={event => setTitle(event.target.value)} placeholder={context.project.title} /></label> : <p className="pf-drama-publish-hint">保留已有系列的介绍、封面和收益设置；新分集接续目标系列集号。</p>}
       {(changed.length > 0 || (target && (target.listed || target.audit_status === 'approved' || target.audit_status === 'pending'))) && <p className="pf-drama-publish-warning">同步更新或追加分集后，系列将退回草稿并暂停公开销售，需要重新提交审核。历史买家仍可播放已购买版本。</p>}
       <p className="pf-drama-publish-hint"><CheckCircle2 size={15} />{context.authorization_ready ? '当前授权函有效，同步后自动关联，无需逐集签署。' : '可先同步并保存草稿，提交系列审核前统一签署一次 PrintFilm 授权函。'}</p>
     </> : null}

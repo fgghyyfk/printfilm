@@ -1,3 +1,5 @@
+import { explainMarketplaceError, marketplaceErrorCode } from './messages'
+
 /** 下游独立客户端；不修改原 api.ts。金额统一以分传输。 */
 export type Row = {
   id: number; title?: string; description?: string; category?: string; author?: string;
@@ -33,38 +35,25 @@ export type RightsRecord = {
 // 使用与用户端相同的 API 域名约定，但隔离请求实现。
 export const base = import.meta.env.VITE_API_BASE ?? `${window.location.protocol}//${window.location.hostname}:8000`
 
-const fieldNames: Record<string, string> = {
-  title: '标题', description: '简介', category: '分类', tags: '标签', price_fen: '版权参考价',
-  copyright_price_fen: '版权参考价', unlock_price_fen: '解锁价', share_bps: '平台分成',
-  license_scope: '拟授权用途及限制', asset_id: '视频', cover_asset_id: '封面', source: '内容来源',
-  certificate_number: '版权证书编号', dispute_ack: '纠纷确认', episode_no: '集数',
-}
-
-function explainValidation(detail: unknown[]) {
-  const lines = detail.map(item => {
-    if (!item || typeof item !== 'object') return ''
-    const row = item as { loc?: unknown[]; msg?: string }
-    const loc = (row.loc ?? []).filter(part => part !== 'body' && part !== 'query').map(part => typeof part === 'number' ? `第 ${part + 1} 项` : fieldNames[String(part)] || String(part))
-    const raw = row.msg || ''
-    const msg = /field required/i.test(raw) ? '这是必填项' : /at least 1 character/i.test(raw) ? '不能为空' : /valid integer|valid number/i.test(raw) ? '请填写数字' : /extra inputs are not permitted/i.test(raw) ? '不能提交' : raw
-    return loc.length ? `${loc.join('的')}：${msg}` : msg
-  }).filter(Boolean)
-  return [...new Set(lines)].join('；') || '请检查表单内容和必填字段'
-}
-
 // 统一解析中文业务错误；不把原项目令牌发给 OSS。
 export async function request<T>(path: string, method = 'GET', body?: unknown, signal?: AbortSignal): Promise<T> {
   const token = localStorage.getItem('token')
   const binary = body instanceof Blob
-  const response = await fetch(`${base}/api/marketplace${path}`, {
-    method, signal, headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(body !== undefined ? { 'Content-Type': binary ? 'application/octet-stream' : 'application/json' } : {}) },
-    body: body === undefined ? undefined : binary ? body : JSON.stringify(body),
-  })
+  let response: Response
+  try {
+    response = await fetch(`${base}/api/marketplace${path}`, {
+      method, signal, headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(body !== undefined ? { 'Content-Type': binary ? 'application/octet-stream' : 'application/json' } : {}) },
+      body: body === undefined ? undefined : binary ? body : JSON.stringify(body),
+    })
+  } catch (cause) {
+    if (signal?.aborted) throw cause
+    throw new Error('网络连接失败，请检查网络后重试。', { cause })
+  }
   const result = await response.json().catch(() => ({}))
   if (!response.ok) {
     if (response.status === 401) window.location.assign(`/auth?next=${encodeURIComponent(window.location.pathname + window.location.search)}`)
-    const detail = result.detail
-    throw new Error(typeof detail === 'string' ? detail : detail?.message || (Array.isArray(detail) ? explainValidation(detail) : `请求失败（${response.status}）`))
+    const detail = result?.detail
+    throw Object.assign(new Error(explainMarketplaceError(detail, response.status)), { code: marketplaceErrorCode(detail), status: response.status })
   }
   return result as T
 }
@@ -83,8 +72,8 @@ export async function letterFile(id: number): Promise<Blob> {
   if (!response.ok) {
     if (response.status === 401) window.location.assign(`/auth?next=${encodeURIComponent(window.location.pathname + window.location.search)}`)
     const result = await response.json().catch(() => ({}))
-    const detail = result.detail
-    throw new Error(typeof detail === 'string' ? detail : '授权函暂时无法打开')
+    const detail = result?.detail
+    throw Object.assign(new Error(explainMarketplaceError(detail, response.status)), { code: marketplaceErrorCode(detail), status: response.status })
   }
   return response.blob()
 }

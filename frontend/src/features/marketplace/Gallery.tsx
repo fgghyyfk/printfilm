@@ -50,7 +50,7 @@ export default function Gallery({ recruits = false }: { recruits?: boolean }) {
       <div className="pf-market-hero-copy"><span className="pf-market-kicker">{recruits ? '连接需求与创作' : '让创作，继续发生'}</span><h1>{recruits ? <>发现值得投入的<br /><em>下一个创作机会。</em></> : <>让好作品，<br /><em>遇见新的价值。</em></>}</h1><p>{recruits ? '寻找适合你的创作需求，先联系平台客服，开启下一次合作。' : '发现创作者的优质视频，也让你的作品被更多人看见。'}</p><Button variant="dark" to={recruits ? '/marketplace/recruits/new' : '/marketplace/works/new'} icon>{recruits ? '发布我的需求' : '发布我的作品'}<ArrowUpRight size={17} /></Button></div>
       <div className="pf-market-hero-art" aria-hidden="true"><div className="pf-market-art-orbit" /><div className="pf-market-art-frame pf-market-art-back"><Film size={27} /><span>CREATIVE ASSETS</span></div><div className="pf-market-art-frame pf-market-art-front"><div className="pf-market-art-top"><span>PRINTFILM</span><span>● ● ●</span></div><div className="pf-market-art-play">{recruits ? <UsersRound size={40} strokeWidth={1.3} /> : <Play size={38} strokeWidth={1.2} />}</div><div className="pf-market-art-bottom"><span>{recruits ? '灵感与需求，在此相遇' : '每一份创作，都有新的可能'}</span><ArrowUpRight size={20} /></div></div><span className="pf-market-art-label"><Handshake size={16} />连接创作与合作</span></div>
     </section>
-    <div className="pf-market-principles"><span><ShieldCheck size={17} />{recruits ? '招募需求人工审核' : '权属材料人工核验'}</span><span><Film size={17} />{recruits ? '意向接单 · 先联系客服' : '按收费类型播放 · 先看再聊'}</span><span><Handshake size={17} />客服撮合 · 线下确认授权</span></div>
+    <div className="pf-market-principles"><span><ShieldCheck size={17} />{recruits ? '招募需求人工审核' : '权属材料人工核验'}</span><span><Film size={17} />{recruits ? '意向接单 · 先联系客服' : '免费完整观看 · 收费先试看'}</span><span><Handshake size={17} />{recruits ? '客服撮合 · 线下确认合作' : '版权出售 · 平台投放'}</span></div>
     <section className="pf-market-catalog" aria-labelledby="market-catalog-title">
       <header className="pf-market-section-heading"><div><h2 id="market-catalog-title">{recruits ? '招募广场' : '作品广场'}</h2><p>{recruits ? '明确的创作需求，寻找合适的合作伙伴。' : '浏览已审核上架的单视频和短剧。'}</p></div><span className="pf-market-count">{loading ? '正在更新' : `${listing?.meta.total ?? 0} ${recruits ? '个需求' : '件作品'}`}</span></header>
       {!recruits && categoryError && <p role="alert">{categoryError}</p>}<form ref={formRef} className="pf-market-filter-panel" onSubmit={search}>
@@ -68,7 +68,7 @@ export default function Gallery({ recruits = false }: { recruits?: boolean }) {
       </article>})}</div> : <EmptyState title={filtered ? '暂时没有找到匹配结果' : recruits ? '下一个好项目，从你的需求开始' : '好作品，值得被更多人看见'} description={filtered ? '试试其他关键词，或放宽分类和价格范围。' : recruits ? '当前暂无公开招募。写下你的创作需求，寻找合适的创作者。' : '当前暂无已审核上架的作品。上传你的作品，完成核验后开启展示。'} action={filtered ? undefined : recruits ? '发布第一份需求' : '发布我的作品'} to={recruits ? '/marketplace/recruits/new' : '/marketplace/works/new'}>{filtered && <Button variant="outline" onClick={reset}>清空筛选条件</Button>}</EmptyState>}
       <Pager listing={listing} page={page} change={setPage} />
     </section>
-    <p className="pf-market-footnote">{recruits ? '接单请先联系平台客服，具体合作在线下协商。' : '所有标价均为人民币参考价。'}最终价格、授权范围与交付方式由客服协助在线下确认。</p>
+    <p className="pf-market-footnote">{recruits ? '接单请先联系平台客服，具体合作条件在线下协商确认。' : '版权合作参考价以客服洽谈为准；观众解锁价用于购买在线播放权益，不包含版权转让。版权转让手续及相关费用请与客服确认。'}</p>
   </div>
 }
 
