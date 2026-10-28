@@ -291,7 +291,10 @@ body:has(.pf-market-shell) .pf-wx-fab-root { display:none; }
 @media(max-width:640px) { .pf-market-kind-choice { grid-template-columns:1fr; } }
 .pf-market-series-mark { display:grid; place-items:center; width:100%; height:100%; min-height:160px; color:#8ea084; }
 .pf-market-handoff { display:flex; justify-content:space-between; gap:12px; align-items:center; flex-wrap:wrap; padding:12px 0; border-bottom:1px solid var(--pf-line); }
-.pf-market-handoff div { display:flex; gap:8px; flex-wrap:wrap; }
+.pf-market-handoff > div,.pf-market-publish-actions,.pf-market-series-step div { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+.pf-market-series-step,.pf-market-handoff .pf-market-series-step { flex-basis:100%; display:flex; flex-direction:column; align-items:stretch; gap:10px; padding:12px; border:1px solid var(--pf-line); border-radius:10px; background:var(--pf-bg); }
+.pf-market-series-step p { margin:0; color:var(--pf-muted); font-size:13px; }
+.pf-market-series-step label { display:flex; flex-direction:column; gap:6px; min-width:220px; }
 .pf-market-purchase-notice { padding:15px 17px; margin:16px 0; border:1px solid #e2e8d8; background:#f5f8ee; border-radius:12px; line-height:1.8; }
 .pf-market-purchase-notice strong { font-size:14px; }.pf-market-purchase-notice p { font-size:12px; color:var(--pf-muted); }
 .pf-series-layout { display:grid; grid-template-columns:minmax(640px,1fr) 320px; gap:28px; align-items:start; }

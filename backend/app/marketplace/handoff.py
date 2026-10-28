@@ -24,7 +24,7 @@ from .authorization import current as current_authorization
 from .categories import category_config
 from .config import get_marketplace_settings
 from .dependencies import Actor, DB, storage_ready
-from .models import Asset, Handoff, SeriesEpisode, Work
+from .models import Asset, Handoff, Series, SeriesEpisode, Work
 from .schemas import PrintfilmEpisodeInput, PrintfilmWorkInput
 from .service import data, fail, notify, now
 
@@ -516,7 +516,7 @@ async def _copy(handoff_id: int, token: str) -> None:
         await db.commit()
 
 
-async def _bind(db, item: Handoff, asset_id: int, cover_id: int | None) -> None:
+async def _bind(db, item: Handoff, asset_id: int, cover_id: int | None, series_cover_id: int | None = None) -> None:
     """把就绪资产挂到草稿上；不改审核状态，也不生成水印。"""
     if item.target_kind == "work":
         work = await db.get(Work, item.target_id)
@@ -530,6 +530,11 @@ async def _bind(db, item: Handoff, asset_id: int, cover_id: int | None) -> None:
         episode.asset_id = asset_id
         if cover_id and not episode.cover_asset_id:
             episode.cover_asset_id = cover_id
+        series = await db.get(Series, item.series_id)
+        snapshot = item.source_snapshot or {}
+        if (series_cover_id and snapshot.get("inherit_series_cover") and not series.cover_asset_id
+                and series.version == snapshot.get("series_cover_version")):
+            series.cover_asset_id = series_cover_id
         episode.source_snapshot = {**(episode.source_snapshot or {}), "pending_handoff_id": None,
             "last_handoff_id": item.id, "imported_source_version": item.source_version}
         from .drama_publish import ensure_import_rights
@@ -559,7 +564,7 @@ async def _drama_target(db, item):
 
 
 async def _validate_drama_source(db, item):
-    from .drama_publish import episode_snapshot
+    from .drama_publish import episode_snapshot, source_matches
     snapshot = item.source_snapshot or {}
     if snapshot.get("schema_version") != 2:
         fail("MARKETPLACE_SOURCE_CHANGED:旧导入未包含完整分镜，请重新选择分集并确认更新", 409)
@@ -569,7 +574,7 @@ async def _validate_drama_source(db, item):
         if exc.status_code == 503:
             raise
         fail("MARKETPLACE_SOURCE_CHANGED:源分集已变化或正在重新生成，请重新选择分集", 409)
-    if current["source_version"] != item.source_version:
+    if not source_matches(current, item):
         fail("MARKETPLACE_SOURCE_CHANGED:源分集已更新，请重新选择分集", 409)
 
 
@@ -595,26 +600,27 @@ async def _copy_drama(handoff_id, token):
     folder = f"marketplace/series/u{owner_id}/{target_id}"
     dest = f"{folder}/{uuid.uuid4().hex}.mp4"
     cover_key = f"{folder}/cover-{uuid.uuid4().hex}.png"
-    bound = False
+    series_cover_key = (cover_key if snapshot.get("project_cover_locator") == snapshot.get("cover_locator")
+                        else f"{folder}/series-cover-{uuid.uuid4().hex}.png")
+    object_keys = tuple(dict.fromkeys((dest, cover_key, series_cover_key)))
     try:
-        bound = await _finish_drama_copy(handoff_id, token, snapshot, owner_id, dest, cover_key)
+        await _finish_drama_copy(handoff_id, token, snapshot, owner_id, dest, cover_key, series_cover_key)
     finally:
-        if not bound:
-            from .storage import discard_generated
-            try:
-                # A database commit error can have an uncertain outcome. Never
-                # remove an object unless a fresh read confirms it is unbound.
-                async with AsyncSessionLocal() as db:
-                    referenced = set((await db.execute(select(Asset.object_key).where(Asset.object_key.in_((dest, cover_key))))).scalars().all())
-                for key in (dest, cover_key):
-                    if key in referenced:
-                        continue
+        from .storage import discard_generated
+        try:
+            # A commit error can have an uncertain outcome. Only discard objects
+            # confirmed unbound, including covers superseded by the author's edit.
+            async with AsyncSessionLocal() as db:
+                referenced = set((await db.execute(select(Asset.object_key).where(Asset.object_key.in_(object_keys)))).scalars().all())
+            for key in object_keys:
+                if key not in referenced:
                     await asyncio.to_thread(discard_generated, key)
-            except Exception:
-                logger.warning("未绑定的市场同步对象清理失败，任务 %s", handoff_id)
+        except Exception:
+            logger.warning("未绑定的市场同步对象清理失败，任务 %s", handoff_id)
 
 
-async def _finish_drama_copy(handoff_id, token, snapshot, owner_id, dest, cover_key):
+async def _finish_drama_copy(handoff_id, token, snapshot, owner_id, dest, cover_key, series_cover_key):
+    """独立转存分集与项目封面，仅为未被编辑的新系列回填项目封面。"""
     from .drama_media import prepare_drama_video, prepare_drama_cover
     result = await prepare_drama_video(snapshot, dest, lambda phase: _phase(handoff_id, token, phase))
     cover = None
@@ -623,6 +629,16 @@ async def _finish_drama_copy(handoff_id, token, snapshot, owner_id, dest, cover_
             cover = {**await prepare_drama_cover(snapshot["cover_locator"], cover_key, snapshot.get("cover_stamp")), "object_key": cover_key}
         except (ValueError, HTTPException, OSError):
             logger.info("漫剧来源封面不可用，保留为待上传封面")
+    series_cover = None
+    if snapshot.get("inherit_series_cover") and snapshot.get("project_cover_locator"):
+        if snapshot["project_cover_locator"] == snapshot.get("cover_locator"):
+            series_cover = cover
+        else:
+            try:
+                series_cover = {**await prepare_drama_cover(snapshot["project_cover_locator"], series_cover_key,
+                    snapshot.get("project_cover_stamp")), "object_key": series_cover_key}
+            except (ValueError, HTTPException, OSError):
+                logger.info("漫剧项目封面不可用，保留为待上传系列封面")
     async with AsyncSessionLocal() as db:
         # Queue/update locks series -> episode -> handoff; use the same order.
         candidate = await db.get(Handoff, handoff_id)
@@ -634,20 +650,32 @@ async def _finish_drama_copy(handoff_id, token, snapshot, owner_id, dest, cover_
         if not item:
             return False
         await _validate_drama_source(db, item)
-        await _drama_target(db, item)
+        episode = await _drama_target(db, item)
         asset = Asset(owner_id=owner_id, kind="video", filename=f"{snapshot['title'][:180]}.mp4", object_key=dest,
             status="ready", **{key: result[key] for key in ("size_bytes", "content_type", "fingerprint", "duration_seconds")})
         db.add(asset)
         await db.flush()
         item.asset_id, item.source_fingerprint = asset.id, asset.fingerprint
         cover_id = None
-        if cover:
+        if cover and not episode.cover_asset_id:
             cover_asset = Asset(owner_id=owner_id, kind="image", filename="cover" + Path(cover["object_key"]).suffix,
                 status="ready", **{key: cover[key] for key in ("object_key", "size_bytes", "content_type")})
             db.add(cover_asset)
             await db.flush()
             cover_id = cover_asset.id
-        await _bind(db, item, asset.id, cover_id)
+        series_cover_id = None
+        series = await db.get(Series, item.series_id)
+        if (series_cover and not series.cover_asset_id and snapshot.get("inherit_series_cover")
+                and series.version == snapshot.get("series_cover_version")):
+            if series_cover is cover and cover_id is not None:
+                series_cover_id = cover_id
+            else:
+                series_cover_asset = Asset(owner_id=owner_id, kind="image", filename="series-cover.png", status="ready",
+                    **{key: series_cover[key] for key in ("object_key", "size_bytes", "content_type")})
+                db.add(series_cover_asset)
+                await db.flush()
+                series_cover_id = series_cover_asset.id
+        await _bind(db, item, asset.id, cover_id, series_cover_id)
         item.status, item.error, item.lease_token, item.lease_until = "ready", "", None, None
         item.source_snapshot = {**item.source_snapshot, "phase": "ready"}
         await db.commit()

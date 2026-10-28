@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import type { Project } from '../api'
 import BillingErrorNotice from '../components/billing/BillingErrorNotice'
@@ -26,6 +26,7 @@ import {
 import { hasActiveTasks, isRunning, STATUS_CN } from '../lib/status'
 import { pageCountOf } from '../lib/pagination'
 import { SHORT_VIDEO_CREATE_PATH, shortVideoProjectPath } from '../lib/shortVideoRoutes'
+import { withReturn } from '../features/marketplace/ui'
 import { formatDateTime, useI18n } from '../i18n'
 import './drama/project-list.css'
 import './shortVideoList.css'
@@ -60,6 +61,7 @@ function canDownload(p: HistoryItem) {
 
 export default function HistoryPage() {
   const nav = useNavigate()
+  const location = useLocation()
   const { t, m, locale } = useI18n()
   /*
    * items 当前页项目
@@ -368,7 +370,7 @@ export default function HistoryPage() {
                     <button type="button" className="pf-btn-text" onClick={() => continueEdit(p)}><IconEdit size={14} />{t('history.continueEdit')}</button>
                     <button type="button" className="pf-btn-text" disabled={!p.final_video_url} onClick={() => p.final_video_url && setPreview({ url: api.assetUrl(p.final_video_url, p.updated_at), title: p.title, projectId: p.id })}><IconEye size={14} />{t('common.preview')}</button>
                     <button type="button" className="pf-btn-text" disabled={!canDownload(p) || busyId === p.id || packing} onClick={() => downloadOne(p)}><IconDownload size={14} />{busyId === p.id ? t('common.downloading') : t('common.download')}</button>
-                    <button type="button" className="pf-btn-text" disabled={!p.final_video_url} onClick={() => nav(`/marketplace/from-printfilm?project=${p.id}`)}><IconSend size={14} />发布到市场</button>
+                    <button type="button" className="pf-btn-text" disabled={!p.final_video_url} onClick={() => nav(withReturn(`/marketplace/from-printfilm?project=${p.id}`, `${location.pathname}${location.search}`))}><IconSend size={14} />发布到市场</button>
                   </>}
                 />
               })}
