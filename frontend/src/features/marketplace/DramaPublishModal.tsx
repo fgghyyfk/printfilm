@@ -1,20 +1,22 @@
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { CheckCircle2, Film, Loader2 } from 'lucide-react'
 import Modal from '../../components/ui/Modal'
 import Button from '../../components/ui/Button'
 import { request } from './api'
+import { internalReturn, withReturn } from './ui'
 import { publishSelection, sourceRelation, type DramaPublishContext, type DramaPublishResult } from './dramaPublishing'
 import './dramaPublishing.css'
 
 type Props = {
-  projectId: number; initialEpisodeId?: number; targetSeriesId?: number
+  projectId: number; initialEpisodeId?: number; targetSeriesId?: number; selectReady?: boolean
   onClose: () => void; onPublished?: (result: DramaPublishResult) => void
 }
 
 // 漫剧卡片、分集预览和市场编辑页共用同一发布流程，只提交服务端校验过的编号与版本。
-export default function DramaPublishModal({ projectId, initialEpisodeId, targetSeriesId, onClose, onPublished }: Props) {
+export default function DramaPublishModal({ projectId, initialEpisodeId, targetSeriesId, selectReady = false, onClose, onPublished }: Props) {
   const navigate = useNavigate()
+  const location = useLocation()
   const [context, setContext] = useState<DramaPublishContext | null>(null)
   const [selected, setSelected] = useState<number[]>([])
   const [updates, setUpdates] = useState<number[]>([])
@@ -33,11 +35,16 @@ export default function DramaPublishModal({ projectId, initialEpisodeId, targetS
       if (!active) return
       setContext(value)
       setTitle(current => current || value.project.title)
-      setSelected(current => current.length ? current.filter(id => value.episodes.some(item => item.id === id && item.ready)) : initialEpisodeId && value.episodes.some(item => item.id === initialEpisodeId && item.ready) ? [initialEpisodeId] : [])
+      setSelected(current => {
+        const readyIds = value.episodes.filter(item => item.ready).map(item => item.id)
+        if (current.length) return current.filter(id => readyIds.includes(id))
+        if (initialEpisodeId && readyIds.includes(initialEpisodeId)) return [initialEpisodeId]
+        return selectReady ? readyIds : []
+      })
       setUpdates([])
     }).catch(err => { if (active) setError((err as Error).message) }).finally(() => { if (active) setLoading(false) })
     return () => { active = false }
-  }, [projectId, initialEpisodeId, reload])
+  }, [projectId, initialEpisodeId, selectReady, reload])
   const target = context?.series.find(item => String(item.id) === targetId)
   const changed = context?.episodes.filter(item => selected.includes(item.id) && sourceRelation(item, target).changed) || []
   const missingUpdates = changed.some(item => !updates.includes(item.id))
@@ -54,7 +61,7 @@ export default function DramaPublishModal({ projectId, initialEpisodeId, targetS
       if (requestKey.current.signature !== signature) requestKey.current = { signature, key: crypto.randomUUID() }
       const result = await request<DramaPublishResult>(`/printfilm/dramas/${projectId}/publish`, 'POST', { ...payload, idempotency_key: requestKey.current.key })
       if (onPublished) onPublished(result)
-      else navigate(`/marketplace/series/${result.series_id}/edit`)
+      else navigate(withReturn(`/marketplace/series/${result.series_id}/edit`, internalReturn(`${location.pathname}${location.search}`)))
       onClose()
     } catch (err) { setError((err as Error).message) }
     finally { submitting.current = false; setBusy(false) }

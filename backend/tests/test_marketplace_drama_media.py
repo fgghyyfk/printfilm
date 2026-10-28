@@ -50,8 +50,8 @@ def test_local_stamp_and_version_changes_when_same_length_file_changes(local_med
 
 
 @pytest.mark.parametrize("locator", ["/static/../secret.mp4", "https://evil.test/kepu/generated/p1/video.mp4",
-    "https://test-bucket.oss-cn-hangzhou.aliyuncs.com.evil.test/kepu/generated/a.mp4", "kepu/secrets/a.mp4",
-    "marketplace/works/1/a.mp4", "https://media.example.test/not-assets/kepu/generated/a.mp4"])
+    "https://test-bucket.oss-cn-hangzhou.aliyuncs.com.evil.test/kepu/generated/a.mp4",
+    "https://media.example.test/not-assets/kepu/generated/a.mp4"])
 def test_source_locator_rejects_untrusted_paths(local_media, locator):
     with pytest.raises(ValueError, match="MARKETPLACE_SOURCE_NOT_READY"):
         media.source_stamp(locator)
@@ -72,6 +72,28 @@ def test_oss_stamp_ignores_temporary_signed_query(local_media, monkeypatch):
     assert media.stamp_version(first) == media.stamp_version(second)
     cdn = media.source_stamp("https://media.example.test/assets/kepu/generated/p1/a.mp4?signature=hidden")
     assert media.stamp_version(first) == media.stamp_version(cdn)
+
+
+def test_old_folder_oss_url_uses_local_file_when_present(local_media, monkeypatch):
+    """存储目录已改名时，旧 OSS 地址仍优先使用磁盘上的成片。"""
+    static, _cache, _uploaded, settings = local_media
+    settings.oss_folder = "printfilm"
+    source = static / "generated" / "p1" / "a.mp4"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"local-video")
+    monkeypatch.setattr(media.storage, "source_metadata", lambda key: (_ for _ in ()).throw(AssertionError(key)))
+    stamp = media.source_stamp("https://test-bucket.oss-cn-hangzhou.aliyuncs.com/kepu/generated/p1/a.mp4")
+    assert stamp["kind"] == "local"
+    assert Path(stamp["locator"]) == source.resolve()
+
+
+def test_old_folder_oss_object_is_used_when_local_file_missing(local_media, monkeypatch):
+    """本地成片已不在时，仍从当前桶按原始对象键复制，不要求目录名是现在的 oss_folder。"""
+    _static, _cache, _uploaded, settings = local_media
+    settings.oss_folder = "printfilm"
+    monkeypatch.setattr(media.storage, "source_metadata", lambda key: {"etag": "E", "size_bytes": 12})
+    stamp = media.source_stamp("https://test-bucket.oss-cn-hangzhou.aliyuncs.com/kepu/generated/p1/a.mp4")
+    assert stamp["kind"] == "oss" and stamp["key"] == "kepu/generated/p1/a.mp4"
 
 
 @pytest.mark.asyncio

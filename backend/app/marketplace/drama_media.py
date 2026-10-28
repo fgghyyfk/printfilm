@@ -62,10 +62,8 @@ def _local_source(locator: str) -> Path | None:
 
 
 def _source_key(locator: str) -> str:
-    """只接受配置桶、明确配置的 CDN 基址或上游 generated 对象键。"""
+    """只接受当前配置的 OSS 桶或 CDN。目录名可以和现在的 oss_folder 不同。"""
     settings = get_settings()
-    folder = settings.oss_folder.strip().strip("/") or "kepu"
-    prefix = folder + "/generated/"
     text = locator.strip()
     if text.startswith(("http://", "https://")):
         parsed = urlparse(text)
@@ -88,9 +86,39 @@ def _source_key(locator: str) -> str:
             raise _error("SOURCE_NOT_READY", "源视频不属于配置的 OSS 桶")
     else:
         key = text
-    if not settings.oss_bucket or not key.startswith(prefix) or "\\" in key or ".." in key.split("/") or "?" in key or "#" in key:
-        raise _error("SOURCE_NOT_READY", "源视频不属于上游生成目录")
+    if not settings.oss_bucket or not key or "\\" in key or ".." in key.split("/") or "?" in key or "#" in key:
+        raise _error("SOURCE_NOT_READY", "源视频不属于当前 OSS")
     return key
+
+
+def _generated_local(locator: str) -> Path | None:
+    """当前 OSS 或 CDN 地址若能对上 static 里已有的 generated 文件，就当本地成片。"""
+    text = locator.strip()
+    if not text.startswith(("http://", "https://")):
+        return None
+    try:
+        key = _source_key(text)
+    except ValueError:
+        return None
+    parts = key.split("/")
+    if "generated" not in parts:
+        return None
+    rest = "/".join(parts[parts.index("generated"):])
+    path = (STATIC_ROOT / rest).resolve()
+    try:
+        path.relative_to(STATIC_ROOT.resolve())
+    except ValueError:
+        return None
+    return path if path.is_file() else None
+
+
+def _local_stamp(path: Path) -> dict:
+    """读取本地成片的大小和指纹。文件在读取过程中变化则要求重新选择。"""
+    before = _stat_stamp(path)
+    digest = fingerprint(path)
+    if before != _stat_stamp(path):
+        raise _error("SOURCE_CHANGED", "源视频正在更新，请稍后重新选择")
+    return {"kind": "local", "locator": str(path), **before, "fingerprint": digest}
 
 
 def _stat_stamp(path: Path) -> dict:
@@ -106,12 +134,10 @@ def source_stamp(locator: str) -> dict:
     if not text:
         raise _error("SOURCE_NOT_READY", "分镜视频尚未生成")
     local = _local_source(text)
+    if local is None:
+        local = _generated_local(text)
     if local is not None:
-        before = _stat_stamp(local)
-        digest = fingerprint(local)
-        if before != _stat_stamp(local):
-            raise _error("SOURCE_CHANGED", "源视频正在更新，请稍后重新选择")
-        result = {"kind": "local", "locator": str(local), **before, "fingerprint": digest}
+        result = _local_stamp(local)
     else:
         key = _source_key(text)
         result = {"kind": "oss", "locator": key, "key": key, **storage.source_metadata(key)}

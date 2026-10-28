@@ -1,11 +1,29 @@
 import type { ReactNode } from 'react'
 import { ArrowLeft, ArrowUpRight, FolderOpen, ShieldCheck } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import Button from '../../components/ui/Button'
 
-// 模块内统一页头，明确当前任务和返回路径。
+/** 只接受站内相对地址，避免把返回链到外部网站。 */
+export function internalReturn(value: string | null | undefined): string | undefined {
+  if (!value) return
+  const path = value.trim()
+  if (!path.startsWith('/') || path.startsWith('//') || path.includes('\\') || path.includes('://')) return
+  return path
+}
+
+/** 把来源页带到下一步地址上，已有查询参数时追加 from。 */
+export function withReturn(path: string, from: string | undefined): string {
+  if (!from) return path
+  return `${path}${path.includes('?') ? '&' : '?'}from=${encodeURIComponent(from)}`
+}
+
+// 模块内统一页头。地址带站内 from 时回到来源页，否则用调用方指定的广场。
 export function PageHeading({ title, description, back, backLabel = '返回广场' }: { title: string; description: string; back?: string; backLabel?: string }) {
-  return <header className="pf-market-page-heading">{back && <Link className="pf-market-back" to={back}><ArrowLeft size={15} />{backLabel}</Link>}<h1>{title}</h1><p>{description}</p></header>
+  const [search] = useSearchParams()
+  const from = internalReturn(search.get('from'))
+  const href = from || back
+  const label = from ? '返回上一页' : backLabel
+  return <header className="pf-market-page-heading">{href && <Link className="pf-market-back" to={href}><ArrowLeft size={15} />{label}</Link>}<h1>{title}</h1><p>{description}</p></header>
 }
 
 // 空数据、空搜索和个人工作台共用真实空态，不填充示例作品。
