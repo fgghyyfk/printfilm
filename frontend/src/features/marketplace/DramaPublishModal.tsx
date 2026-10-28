@@ -8,6 +8,13 @@ import { internalReturn, withReturn } from './ui'
 import { publishSelection, sourceRelation, type DramaPublishContext, type DramaPublishResult } from './dramaPublishing'
 import './dramaPublishing.css'
 
+/** HTTP 页面没有 randomUUID，改用随机字节拼一个不少于 8 位的幂等键。 */
+function publishKey() {
+  if (typeof crypto?.randomUUID === 'function') return crypto.randomUUID()
+  if (typeof crypto?.getRandomValues === 'function') return Array.from(crypto.getRandomValues(new Uint32Array(4)), part => part.toString(16).padStart(8, '0')).join('')
+  return `pf${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`
+}
+
 type Props = {
   projectId: number; initialEpisodeId?: number; targetSeriesId?: number; selectReady?: boolean
   onClose: () => void; onPublished?: (result: DramaPublishResult) => void
@@ -58,7 +65,7 @@ export default function DramaPublishModal({ projectId, initialEpisodeId, targetS
       const payload = { episodes, series_id: target?.id ?? null, ...(target ? { series_version: target.version } : { title: title.trim() || context.project.title }) }
       const signature = JSON.stringify(payload)
       // 网络超时后保留同一个幂等键；只有用户改变发布内容才创建新批次。
-      if (requestKey.current.signature !== signature) requestKey.current = { signature, key: crypto.randomUUID() }
+      if (requestKey.current.signature !== signature) requestKey.current = { signature, key: publishKey() }
       const result = await request<DramaPublishResult>(`/printfilm/dramas/${projectId}/publish`, 'POST', { ...payload, idempotency_key: requestKey.current.key })
       if (onPublished) onPublished(result)
       else navigate(withReturn(`/marketplace/series/${result.series_id}/edit`, internalReturn(`${location.pathname}${location.search}`)))
