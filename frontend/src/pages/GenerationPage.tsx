@@ -10,6 +10,7 @@ import PromptMentionPopover from '../components/tools/PromptMentionPopover'
 import { AssetDetailDialog } from '../components/assets/AssetDetailDialog'
 import { useToolRunDetail } from '../hooks/useToolRunDetail'
 import { mediaIcons, type MediaKind, useGenerationText } from '../lib/generationMedia'
+import { formatGenerationErrorMessage } from '../lib/generationError'
 import { fetchMediaBlob, triggerBlobDownload } from '../lib/clientDownload'
 import { useMediaModelsCatalog } from '../hooks/useMediaModelsCatalog'
 import { MediaCostNotice } from '../components/billing/MediaCostNotice'
@@ -287,7 +288,7 @@ function GenerationWorkspace({ kind }: { kind: MediaKind }) {
     {detail && detailAsset && <AssetDetailDialog asset={detailAsset} onClose={closeDetail}
       notice={<section className="pf-asset-detail-prompt"><div className="pf-asset-detail-text">
         <p role="status">{text(detail.status === 'succeeded' ? '已完成' : detail.status === 'failed' ? '生成失败' : detail.status === 'cancelled' ? '已取消' : '正在生成，结果会自动更新。', detail.status === 'succeeded' ? 'Completed' : detail.status === 'failed' ? 'Generation failed' : detail.status === 'cancelled' ? 'Cancelled' : 'Generating. Results will update automatically.')}</p>
-        {(detail.error || detailError) && <p role="alert">{detail.error || detailError}</p>}
+        {(detail.error || detailError) && <p role="alert">{formatGenerationErrorMessage(detail.error || detailError)}</p>}
       </div></section>}
       actions={detail.urls.length > 1 && <div className="pf-asset-detail-utilities" role="group" aria-label={text('生成结果', 'Generation results')}>
         {detail.urls.map((url, index) => <button type="button" key={url} className="pf-btn pf-btn-sm" aria-pressed={resultIndex === index} onClick={() => selectResult(index)}>{text(`结果 ${index + 1}`, `Result ${index + 1}`)}</button>)}

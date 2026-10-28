@@ -9,6 +9,7 @@ import GenerationSelect from '../components/tools/GenerationSelect'
 import { AssetDetailDialog } from '../components/assets/AssetDetailDialog'
 import { useToolRunDetail } from '../hooks/useToolRunDetail'
 import { mediaIcons, useGenerationText } from '../lib/generationMedia'
+import { formatGenerationErrorMessage } from '../lib/generationError'
 import { generationBillingState, generationRecordKey, generationTaskKind, generationTaskKinds as taskKinds, type GenerationTaskKind as TaskKind } from '../lib/generationTaskHistory'
 import { subscribeWorkspace, workspaceScope } from '../features/teams/workspaceScope'
 import Pagination from '../components/ui/Pagination'
@@ -112,6 +113,8 @@ function TaskHistoryContent() {
     return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`
   }
   function errorSummary(error: string) {
+    const friendlyMessage = formatGenerationErrorMessage(error)
+    if (friendlyMessage !== error) return friendlyMessage
     if (/sensitive|policyviolation|content.?filter|审核/i.test(error)) return text('内容未通过审核，请调整描述后重试', 'Content review failed. Try adjusting your prompt.')
     if (/余额不足|insufficient.*balance/i.test(error)) return text('余额不足，请充值后重试', 'Insufficient balance. Please top up.')
     if (/timeout|timed out|超时/i.test(error)) return text('生成超时，请稍后重试', 'Generation timed out. Please try again.')
@@ -170,7 +173,7 @@ function TaskHistoryContent() {
           {item.kind === 'image' && (item.preview_url || item.urls[0]) ? <img src={resolveToolMediaUrl(item.preview_url || item.urls[0])} alt="" /> : item.kind === 'video' && item.preview_url ? <img src={resolveToolMediaUrl(item.preview_url)} alt="" /> : item.kind === 'video' && item.urls[0] ? <video src={resolveToolMediaUrl(item.urls[0])} preload="metadata" muted /> : <RowIcon size={28} />}
           <span className="gen-cover-overlay"><Eye size={18} /></span>
         </button>
-        <div className="gen-task-description"><button type="button" className="gen-task-title" onClick={() => openDetail(item)} title={title}>{title}</button><div className="gen-task-metadata"><span className="gen-task-tag">{kindLabels[item.kind as TaskKind] || 'AI'}</span>{shortVideoImage && <span className="gen-task-tag">{text('AI短视频', 'AI short video')}</span>}{item.kind === 'image' && item.urls.length > 1 && <span className="gen-task-tag">{text(`${item.urls.length} 张图片`, `${item.urls.length} images`)}</span>}{ratio && <span className="gen-task-tag">{ratio}</span>}</div>{item.error && <button type="button" className="gen-task-error" onClick={() => openDetail(item)} title={item.error}><AlertCircle size={12} /><span>{errorSummary(item.error)}</span><ArrowUpRight size={12} /></button>}</div>
+        <div className="gen-task-description"><button type="button" className="gen-task-title" onClick={() => openDetail(item)} title={title}>{title}</button><div className="gen-task-metadata"><span className="gen-task-tag">{kindLabels[item.kind as TaskKind] || 'AI'}</span>{shortVideoImage && <span className="gen-task-tag">{text('AI短视频', 'AI short video')}</span>}{item.kind === 'image' && item.urls.length > 1 && <span className="gen-task-tag">{text(`${item.urls.length} 张图片`, `${item.urls.length} images`)}</span>}{ratio && <span className="gen-task-tag">{ratio}</span>}</div>{item.error && <button type="button" className="gen-task-error" onClick={() => openDetail(item)} title={formatGenerationErrorMessage(item.error)}><AlertCircle size={12} /><span>{errorSummary(item.error)}</span><ArrowUpRight size={12} /></button>}</div>
         <div className="gen-task-state"><span className={`gen-state is-${item.status}`}><RowStatusIcon size={13} />{labels[item.status] || item.status}</span><small>{formatLabel}</small></div>
         <div className="gen-task-cost"><strong>{billingState === 'hidden' ? '—' : `¥${((item.billing_charged_fen || 0) / 100).toFixed(2)}`}</strong><small>{billingLabels[billingState]}</small></div>
         <div className="gen-task-time"><span>{when(item.created_at)}</span><small>{text('耗时', 'Duration')} {elapsed(item)}</small></div>
@@ -184,7 +187,7 @@ function TaskHistoryContent() {
     {detail && detailAsset && <AssetDetailDialog key={generationRecordKey(detail)} asset={detailAsset} onClose={closeDetail}
       notice={<section className="pf-asset-detail-prompt"><div className="pf-asset-detail-text">
         <p role="status">{labels[detail.status] || detail.status}{(detail.status === 'queued' || detail.status === 'running') && text('，结果会自动更新。', '. Results will update automatically.')}</p>
-        {(detail.error || detailError) && <p role="alert">{detail.error || detailError}</p>}
+        {(detail.error || detailError) && <p role="alert">{formatGenerationErrorMessage(detail.error || detailError)}</p>}
       </div></section>}
       actions={detail.urls.length > 1 && <div className="pf-asset-detail-utilities" role="group" aria-label={text('生成结果', 'Generation results')}>
         {detail.urls.map((url, index) => <button type="button" key={url} className="pf-btn pf-btn-sm" aria-pressed={resultIndex === index} onClick={() => selectResult(index)}>{text(`结果 ${index + 1}`, `Result ${index + 1}`)}</button>)}
