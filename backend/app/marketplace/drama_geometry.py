@@ -4,6 +4,9 @@ from __future__ import annotations
 from fractions import Fraction
 import math
 
+# 模型返回的同画幅视频可能存在小幅尺寸偏差；最多接受整集 5% 的显示比例跨度。
+_MAX_ASPECT_SPREAD = Fraction(1, 20)
+
 
 def _pixel_ratio(video: dict) -> Fraction:
     """缺失或无效的像素宽高比按方形像素解释。"""
@@ -48,18 +51,19 @@ def display_dimensions(info: dict) -> tuple[int, int]:
 
 
 def validate_aspects(infos: list[dict], clips: list[dict]) -> list[tuple[int, int]]:
-    """允许同画幅不同清晰度；冲突时只报告镜号、尺寸等安全诊断信息。"""
+    """允许小幅比例偏差交给等比补边；按整集极值校验，结果不依赖首镜选择。"""
     ratios = [display_ratio(info) for info in infos]
-    for index, ratio in enumerate(ratios[1:], 1):
-        if abs(ratio / ratios[0] - 1) > Fraction(5, 1000):
-            def describe(position):
-                """把真实来源规格映射回发布时的分镜顺序。"""
-                info, clip = infos[position], clips[position]
-                value = ratios[position].limit_denominator(10000)
-                return (f"第{position + 1}镜（分镜编号{clip['id']}，{info['width']}×{info['height']}，"
-                        f"显示{value.numerator}:{value.denominator}）")
-            raise ValueError("MARKETPLACE_SOURCE_INCOMPATIBLE:分镜画幅比例不一致："
-                f"{describe(0)}与{describe(index)}；请先统一画幅后发布")
+    low = min(range(len(ratios)), key=ratios.__getitem__)
+    high = max(range(len(ratios)), key=ratios.__getitem__)
+    if ratios[high] / ratios[low] - 1 > _MAX_ASPECT_SPREAD:
+        def describe(position):
+            """把真实来源规格映射回发布时的分镜顺序。"""
+            info, clip = infos[position], clips[position]
+            value = ratios[position].limit_denominator(10000)
+            return (f"第{position + 1}镜（分镜编号{clip['id']}，{info['width']}×{info['height']}，"
+                    f"显示{value.numerator}:{value.denominator}）")
+        raise ValueError("MARKETPLACE_SOURCE_INCOMPATIBLE:分镜画幅比例不一致："
+            f"{describe(low)}与{describe(high)}；差异超过5%的自动补边范围，请先统一画幅后发布")
     return [display_dimensions(info) for info in infos]
 
 

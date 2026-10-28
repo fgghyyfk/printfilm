@@ -185,6 +185,54 @@ async def test_mixed_sizes_and_audio_use_highest_source_resolution(local_media):
 
 
 @pytest.mark.asyncio
+async def test_small_landscape_ratio_difference_pads_without_stretching_or_cropping(local_media):
+    """真实832/854宽度兼容：完整画面等比居中补边，镜序、时长及源文件不变。"""
+    static, cache, uploaded, settings = local_media
+    narrow, wide = static / "narrow.mp4", static / "wide.mp4"
+    # 图案和四边标记能检出拉伸或裁切，避免纯色测试误判画面保真。
+    pattern = (
+        "testsrc2=s=832x480:r=10:d=0.6,"
+        "drawbox=x=0:y=0:w=8:h=ih:color=yellow:t=fill,"
+        "drawbox=x=iw-8:y=0:w=8:h=ih:color=magenta:t=fill,"
+        "drawbox=x=0:y=0:w=iw:h=8:color=white:t=fill,"
+        "drawbox=x=0:y=ih-8:w=iw:h=8:color=cyan:t=fill"
+    )
+    await media.command(settings.ffmpeg_path, "-y", "-v", "error", "-f", "lavfi", "-i", pattern,
+        "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", "10", "-g", "10", "-crf", "18",
+        "-video_track_timescale", "90000", str(narrow), timeout=30)
+    await _clip(settings, wide, "blue", size="854x480", duration=0.7)
+    originals = {path: media.fingerprint(path) for path in (narrow, wide)}
+
+    result = await media.prepare_drama_video(_snapshot(static, [narrow, wide]), "marketplace/test/padded.mp4")
+    info = await media._probe(uploaded)
+    assert (info["width"], info["height"]) == (854, 480)
+    assert info["video"]["sample_aspect_ratio"] == "1:1"
+    assert result["duration_seconds"] == pytest.approx(1.3, abs=0.15)
+
+    frames = []
+    for path in (narrow, uploaded):
+        frames.append(await media.command(settings.ffmpeg_path, "-v", "error", "-ss", "0.2", "-i", str(path),
+            "-frames:v", "1", "-pix_fmt", "rgb24", "-f", "rawvideo", "-", timeout=30))
+    original, composed = frames
+    assert len(original) == 832 * 480 * 3
+    assert len(composed) == 854 * 480 * 3
+    # 黑边左右差最多2px，兼容yuv420p对奇数居中坐标的色度对齐。
+    for x in (1, 852):
+        pixel = composed[(240 * 854 + x) * 3:(240 * 854 + x + 1) * 3]
+        assert max(pixel) < 20
+    errors = {}
+    for left in (10, 11, 12):
+        cropped = b"".join(composed[(row * 854 + left) * 3:(row * 854 + left + 832) * 3] for row in range(480))
+        errors[left] = sum(abs(a - b) for a, b in zip(original, cropped)) / len(original)
+    # 有效区与原始解码帧逐像素比对；仅允许高质量二次编码的小幅误差。
+    assert min(errors.values()) < 5, errors
+    blue = await _pixel(settings, uploaded, 0.9)
+    assert blue[2] > 180 and blue[0] < 60 and blue[1] < 60
+    assert {path: media.fingerprint(path) for path in (narrow, wide)} == originals
+    assert not list(cache.iterdir())
+
+
+@pytest.mark.asyncio
 async def test_single_clip_is_not_reencoded(local_media, monkeypatch):
     static, _cache, uploaded, settings = local_media
     source = static / "single.mp4"
@@ -208,6 +256,20 @@ async def test_different_aspect_ratios_fail_without_upload(local_media):
         await media.prepare_drama_video(_snapshot(static, paths), "marketplace/test/invalid.mp4")
     assert "第1镜（分镜编号1，90×160，显示9:16）" in str(error.value)
     assert "第2镜（分镜编号2，160×90，显示16:9）" in str(error.value)
+    assert not uploaded.exists()
+    assert not list(cache.iterdir())
+
+
+@pytest.mark.asyncio
+async def test_four_by_three_and_widescreen_still_fail_without_upload(local_media):
+    """小偏差补边不能放行明显不同的4:3和16:9横屏画幅。"""
+    static, cache, uploaded, settings = local_media
+    paths = [static / "four-three.mp4", static / "widescreen.mp4"]
+    await _clip(settings, paths[0], "red", size="320x240")
+    await _clip(settings, paths[1], "blue", size="320x180")
+    with pytest.raises(ValueError, match="MARKETPLACE_SOURCE_INCOMPATIBLE") as error:
+        await media.prepare_drama_video(_snapshot(static, paths), "marketplace/test/incompatible.mp4")
+    assert "显示4:3" in str(error.value) and "显示16:9" in str(error.value)
     assert not uploaded.exists()
     assert not list(cache.iterdir())
 

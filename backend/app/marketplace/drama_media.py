@@ -214,7 +214,7 @@ async def _concat(paths: list[Path], output: Path, timeout: float) -> None:
 
 
 async def _encode(paths: list[Path], infos: list[dict], output: Path, timeout: float) -> None:
-    """保持显示比例与最大源尺寸，必要时补齐取整像素并统一编码。"""
+    """保持显示比例与最大源尺寸，等比补边兼容小幅尺寸偏差并统一编码。"""
     sizes = [_dimensions(info) for info in infos]
     width = math.ceil(max(size[0] for size in sizes) / 2) * 2
     height = math.ceil(max(size[1] for size in sizes) / 2) * 2
@@ -242,7 +242,7 @@ async def _encode(paths: list[Path], infos: list[dict], output: Path, timeout: f
             args += ["-map", "0:a:0" if info["audio"] else "1:a:0", "-af",
                      f"aresample=48000:async=1:first_pts=0,apad,atrim=duration={info['duration']}",
                      "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2"]
-        # 同画幅因像素取整略有差异时补边，避免把人物画面拉伸。
+        # 模型实际尺寸略有偏差时等比补边，避免裁切或拉伸人物画面。
         fit_width, fit_height = fit_dimensions(info, width, height)
         args += ["-sn", "-dn", "-t", str(info["duration"]), "-vf",
                  f"scale={fit_width}:{fit_height}:flags=lanczos,setsar=1,"
