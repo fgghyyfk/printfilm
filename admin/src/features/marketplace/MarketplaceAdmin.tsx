@@ -1,6 +1,6 @@
 import CategoryForm from './CategoryForm'
 import { useEffect, useState, type FormEvent } from 'react'
-import { request, assetUrl, letterFile, useMarketplaceStatus, type Item, type Listing } from './api'
+import { request, assetFile, assetUrl, letterFile, useMarketplaceStatus, type Item, type Listing } from './api'
 import { fieldStatusLabel, recordDetailsTitle, recordStatus, statusLabel, statusOptions } from './presentation'
 import { PaginationBar } from '@/components/PaginationBar'
 import { AdminModal } from '@/components/admin/AdminModal'
@@ -25,8 +25,20 @@ function Summary({ item, kind }: { item: Item; kind: string }) {
 
 // 直接从服务端签名，不将原始 OSS key 传到页面。
 function FileLink({ id, label, purpose = 'original', video = false }: { id: number; label: string; purpose?: string; video?: boolean }) {
-  const [url, setUrl] = useState(''); const [error, setError] = useState('')
-  return <div className="market-ops-file"><button type="button" onClick={async () => { try { setUrl(await assetUrl(id, purpose)); setError('') } catch (e) { setError((e as Error).message) } }}>{label}</button>{url && (video ? <video src={url} controls className="my-3 max-h-[500px] w-full" /> : <a href={url} target="_blank" rel="noreferrer">打开文件</a>)}{error && <p role="alert">{error}</p>}</div>
+  const [url, setUrl] = useState('')
+  const [preview, setPreview] = useState<{ url: string; image: boolean; pdf: boolean } | null>(null)
+  const [error, setError] = useState('')
+  useEffect(() => () => { if (preview) URL.revokeObjectURL(preview.url) }, [preview])
+  async function open() {
+    try {
+      if (video) { setUrl(await assetUrl(id, purpose)); setError(''); return }
+      const blob = await assetFile(id, purpose)
+      const type = blob.type
+      setPreview(current => { if (current) URL.revokeObjectURL(current.url); return { url: URL.createObjectURL(blob), image: type.startsWith('image/'), pdf: type.includes('pdf') } })
+      setError('')
+    } catch (e) { setError((e as Error).message) }
+  }
+  return <div className="market-ops-file"><button type="button" onClick={() => { void open() }}>{label}</button>{url && video && <video src={url} controls className="my-3 max-h-[500px] w-full" />}{preview?.image && <img src={preview.url} alt={label} />}{preview?.pdf && <iframe className="market-ops-file-frame" src={preview.url} title={label} />}{preview && !preview.image && !preview.pdf && <p>这个文件暂时不能在页面里预览。</p>}{error && <p role="alert">{error}</p>}</div>
 }
 
 function WorkPreviewLink({ id }: { id: number }) {
