@@ -110,7 +110,8 @@ async def test_source_change_is_rejected_before_upload(local_media):
     assert not list(cache.iterdir())
 
 
-async def _clip(settings, path, color, size="160x90", duration=0.6, audio=False):
+async def _clip(settings, path, color, size="160x90", duration=0.6, audio=False, sar="1:1"):
+    """生成用于真实 FFmpeg 拼接回归的短分镜。"""
     if not Path(settings.ffmpeg_path).is_file() and not shutil.which(settings.ffmpeg_path):
         pytest.skip("FFmpeg is not available")
     args = [settings.ffmpeg_path, "-y", "-v", "error", "-f", "lavfi", "-i", f"color=c={color}:s={size}:r=10:d={duration}"]
@@ -118,7 +119,7 @@ async def _clip(settings, path, color, size="160x90", duration=0.6, audio=False)
         args += ["-f", "lavfi", "-i", f"sine=frequency=1000:sample_rate=48000:duration={duration}", "-c:a", "aac", "-ar", "48000", "-ac", "2"]
     else:
         args += ["-an"]
-    await media.command(*args, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", "10", "-g", "10", "-crf", "18",
+    await media.command(*args, "-vf", f"setsar={sar.replace(':', '/')}", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", "10", "-g", "10", "-crf", "18",
         "-video_track_timescale", "90000", "-t", str(duration), str(path), timeout=30)
 
 
@@ -203,9 +204,65 @@ async def test_different_aspect_ratios_fail_without_upload(local_media):
     paths = [static / "portrait.mp4", static / "landscape.mp4"]
     await _clip(settings, paths[0], "red", size="90x160")
     await _clip(settings, paths[1], "blue", size="160x90")
-    with pytest.raises(ValueError, match="MARKETPLACE_SOURCE_INCOMPATIBLE"):
+    with pytest.raises(ValueError, match="MARKETPLACE_SOURCE_INCOMPATIBLE") as error:
         await media.prepare_drama_video(_snapshot(static, paths), "marketplace/test/invalid.mp4")
+    assert "第1镜（分镜编号1，90×160，显示9:16）" in str(error.value)
+    assert "第2镜（分镜编号2，160×90，显示16:9）" in str(error.value)
     assert not uploaded.exists()
+    assert not list(cache.iterdir())
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("rotation", [0, 90])
+async def test_sar_sources_keep_display_aspect_without_extra_borders(local_media, rotation):
+    """真实编码验证：等效画幅可合成，非方形像素不会被压窄或额外补黑边。"""
+    static, cache, uploaded, settings = local_media
+    source = static / "sar.mp4"
+    await _clip(settings, source, "red", size="180x144", sar="16:15")
+    if rotation:
+        rotated = static / "rotated.mp4"
+        await media.command(settings.ffmpeg_path, "-y", "-v", "error", "-display_rotation", str(rotation),
+            "-i", str(source), "-c", "copy", str(rotated), timeout=30)
+        source = rotated
+    peer = static / "peer.mp4"
+    dimensions = (144, 192) if rotation else (192, 144)
+    await _clip(settings, peer, "blue", size=f"{dimensions[0]}x{dimensions[1]}")
+    before = media.fingerprint(source)
+    await media.prepare_drama_video(_snapshot(static, [source, peer]), "marketplace/test/sar-full.mp4")
+    output = await media._probe(uploaded)
+    assert media._dimensions(output) == dimensions
+    assert output["video"]["sample_aspect_ratio"] == "1:1"
+    raw = await media.command(settings.ffmpeg_path, "-v", "error", "-ss", "0.2", "-i", str(uploaded),
+        "-vf", "crop=2:2:0:0,scale=1:1", "-frames:v", "1", "-pix_fmt", "rgb24", "-f", "rawvideo", "-", timeout=30)
+    assert raw[0] > 180 and raw[1] < 60 and raw[2] < 60
+    assert media.fingerprint(source) == before
+    assert not list(cache.iterdir())
+
+
+@pytest.mark.asyncio
+async def test_project_video_cover_extracts_first_frame_and_normalizes_display_shape(local_media, monkeypatch, tmp_path):
+    """项目卡片以视频首帧展示时，生成相同画幅的独立 PNG，不返回源视频充当图片。"""
+    static, cache, _uploaded, settings = local_media
+    source = static / "cover-video.mp4"
+    await _clip(settings, source, "blue", size="180x144", sar="16:15")
+    captured = tmp_path / "cover.png"
+    def upload(key, path, content_type):
+        assert key == "marketplace/test/cover.png" and content_type == "image/png"
+        assert cache in path.parents
+        shutil.copyfile(path, captured)
+    monkeypatch.setattr(media.storage, "upload", upload)
+    # 模拟视频大于图片上传上限；来源仍按视频上限检查，输出按图片上限检查。
+    original_limits = media.get_marketplace_settings()
+    limits = original_limits.model_copy(update={"max_document_bytes": 1000})
+    monkeypatch.setattr(media, "get_marketplace_settings", lambda: limits)
+    assert source.stat().st_size > limits.max_document_bytes
+    before = media.fingerprint(source)
+    result = await media.prepare_drama_cover("/static/cover-video.mp4", "marketplace/test/cover.png")
+    assert (result["width"], result["height"]) == (192, 144)
+    assert result["fingerprint"] == media.fingerprint(captured)
+    pixel = await _pixel(settings, captured, 0)
+    assert pixel[2] > 180 and pixel[0] < 60 and pixel[1] < 60
+    assert media.fingerprint(source) == before
     assert not list(cache.iterdir())
 
 

@@ -14,6 +14,7 @@ from app.config import get_settings
 from app.services.storage import STATIC_ROOT
 from . import storage
 from .config import get_marketplace_settings
+from .drama_geometry import display_dimensions as _dimensions, fit_dimensions, validate_aspects
 from .worker import cache_root, command, fingerprint
 
 _FORMATS = "mov,mp4,matroska,webm"
@@ -204,28 +205,6 @@ def _signature(info: dict) -> tuple:
             video.get("side_data_list", []), video.get("tags", {}).get("rotate"))
 
 
-def _dimensions(info: dict) -> tuple[int, int]:
-    video = info["video"]
-    rotation = float(video.get("tags", {}).get("rotate") or 0)
-    for side in video.get("side_data_list", []):
-        if "rotation" in side:
-            rotation = float(side["rotation"])
-    width, height = info["width"], info["height"]
-    if round(rotation) % 180:
-        width, height = height, width
-    sar = video.get("sample_aspect_ratio") or "1:1"
-    try:
-        pixel_ratio = float(Fraction(sar.replace(":", "/"))) if sar not in ("N/A", "0:1") else 1.0
-    except (ValueError, ZeroDivisionError):
-        pixel_ratio = 1.0
-    # 扩大显示尺寸以消除非方形像素，绝不缩小来源像素。
-    if pixel_ratio > 1:
-        width = math.ceil(width * pixel_ratio)
-    elif 0 < pixel_ratio < 1:
-        height = math.ceil(height / pixel_ratio)
-    return width, height
-
-
 async def _concat(paths: list[Path], output: Path, timeout: float) -> None:
     listing = output.with_suffix(".txt")
     listing.write_text("\n".join(f"file '{path.name}'" for path in paths), encoding="utf-8")
@@ -235,10 +214,8 @@ async def _concat(paths: list[Path], output: Path, timeout: float) -> None:
 
 
 async def _encode(paths: list[Path], infos: list[dict], output: Path, timeout: float) -> None:
+    """保持显示比例与最大源尺寸，必要时补齐取整像素并统一编码。"""
     sizes = [_dimensions(info) for info in infos]
-    ratio = sizes[0][0] / sizes[0][1]
-    if any(abs(width / height / ratio - 1) > 0.005 for width, height in sizes):
-        raise _error("SOURCE_INCOMPATIBLE", "分镜画幅比例不一致，请先统一画幅后发布")
     width = math.ceil(max(size[0] for size in sizes) / 2) * 2
     height = math.ceil(max(size[1] for size in sizes) / 2) * 2
     if width * height > 50_000_000:
@@ -266,9 +243,10 @@ async def _encode(paths: list[Path], infos: list[dict], output: Path, timeout: f
                      f"aresample=48000:async=1:first_pts=0,apad,atrim=duration={info['duration']}",
                      "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2"]
         # 同画幅因像素取整略有差异时补边，避免把人物画面拉伸。
+        fit_width, fit_height = fit_dimensions(info, width, height)
         args += ["-sn", "-dn", "-t", str(info["duration"]), "-vf",
-                 f"scale={width}:{height}:force_original_aspect_ratio=decrease:flags=lanczos,"
-                 f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,setpts=PTS-STARTPTS", "-r", str(fps),
+                 f"scale={fit_width}:{fit_height}:flags=lanczos,setsar=1,"
+                 f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setpts=PTS-STARTPTS", "-r", str(fps),
                  "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p",
                  "-threads", "2", "-video_track_timescale", "90000", "-movflags", "+faststart", str(dest)]
         await command(*args, timeout=timeout)
@@ -315,10 +293,7 @@ async def prepare_drama_video(snapshot: dict, dest_key: str, progress=None) -> d
             except ValueError as exc:
                 raise _error("SOURCE_INCOMPATIBLE", "分镜编码无法无损封装为市场视频") from exc
         else:
-            dimensions = [_dimensions(info) for info in infos]
-            ratio = dimensions[0][0] / dimensions[0][1]
-            if any(abs(width / height / ratio - 1) > 0.005 for width, height in dimensions):
-                raise _error("SOURCE_INCOMPATIBLE", "分镜画幅比例不一致，请先统一画幅后发布")
+            validate_aspects(infos, clips)
             compatible = all(_signature(info) == _signature(infos[0]) for info in infos[1:])
             copied = False
             if compatible:
@@ -346,27 +321,42 @@ async def prepare_drama_video(snapshot: dict, dest_key: str, progress=None) -> d
 
 
 async def prepare_drama_cover(locator: str, dest_key: str, stamp: dict | None = None) -> dict:
-    """安全复制可选封面，重编码为 PNG；失败由调用方提示用户补充封面。"""
+    """安全复制项目封面；卡片以视频展示时取首帧，统一保存为市场私有 PNG。"""
     if not dest_key.startswith("marketplace/") or ".." in dest_key.split("/") or "\\" in dest_key:
         raise _error("SOURCE_NOT_READY", "市场封面目标目录无效")
     expected = stamp if stamp is not None else await _thread(source_stamp, locator)
-    if not 0 < int(expected.get("size_bytes", 0)) <= get_marketplace_settings().max_document_bytes:
-        raise _error("SOURCE_NOT_READY", "封面为空或超过图片大小限制")
+    limits = get_marketplace_settings()
+    if not 0 < int(expected.get("size_bytes", 0)) <= limits.max_video_bytes:
+        raise _error("SOURCE_NOT_READY", "源封面为空或超过媒体大小限制")
     with tempfile.TemporaryDirectory(prefix="job-", dir=cache_root()) as directory:
         root = Path(directory)
         source, output = root / "cover-source", root / "cover.png"
         await _thread(_copy_source, {"locator": locator, "stamp": expected}, source)
         try:
+            formats = "png_pipe,jpeg_pipe,webp_pipe,image2," + _FORMATS
             probe = json.loads(await command(get_settings().ffprobe_path, "-v", "error", "-protocol_whitelist", "file,pipe",
-                "-format_whitelist", "png_pipe,jpeg_pipe,webp_pipe,image2", "-show_streams", "-of", "json", str(source), timeout=60))
-            image = next(stream for stream in probe.get("streams", []) if stream.get("codec_type") == "video")
+                "-format_whitelist", formats, "-show_streams", "-show_format", "-of", "json", str(source), timeout=60))
+            image = next(stream for stream in probe.get("streams", []) if stream.get("codec_type") == "video"
+                         and not stream.get("disposition", {}).get("attached_pic"))
             width, height = int(image["width"]), int(image["height"])
-            if image.get("codec_name") not in ("png", "mjpeg", "webp") or min(width, height) < 2 or width * height > 50_000_000:
+            video_source = bool(set(probe.get("format", {}).get("format_name", "").split(",")) & set(_FORMATS.split(",")))
+            if min(width, height) < 2 or width * height > 50_000_000:
                 raise ValueError("invalid image")
+            if not video_source and (image.get("codec_name") not in ("png", "mjpeg", "webp")
+                                     or expected["size_bytes"] > limits.max_document_bytes):
+                raise ValueError("invalid image")
+            if video_source:
+                duration = float(probe.get("format", {}).get("duration", 0))
+                if not math.isfinite(duration) or not 0 < duration <= limits.max_duration_seconds:
+                    raise ValueError("invalid video")
+            width, height = _dimensions({"video": image, "width": width, "height": height})
+            if width * height > 50_000_000:
+                raise ValueError("invalid display size")
             await command(get_settings().ffmpeg_path, "-y", "-v", "error", "-protocol_whitelist", "file,pipe",
-                "-format_whitelist", "png_pipe,jpeg_pipe,webp_pipe,image2", "-i", str(source), "-frames:v", "1", str(output), timeout=60)
+                "-format_whitelist", formats, "-i", str(source), "-map", f"0:{image['index']}", "-an", "-sn", "-dn",
+                "-vf", f"scale={width}:{height}:flags=lanczos,setsar=1", "-frames:v", "1", str(output), timeout=60)
         except (ValueError, KeyError, StopIteration) as exc:
-            raise _error("SOURCE_NOT_READY", "源封面不是有效的 PNG、JPG 或 WebP 图片，请重新上传封面") from exc
+            raise _error("SOURCE_NOT_READY", "源封面不是有效图片或项目视频，请重新上传封面") from exc
         size = output.stat().st_size
         if not 0 < size <= get_marketplace_settings().max_document_bytes:
             raise _error("SOURCE_NOT_READY", "处理后的封面超过图片大小限制")

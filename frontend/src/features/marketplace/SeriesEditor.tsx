@@ -9,7 +9,7 @@ import { useCategories } from './useCategories'
 import { dialog } from '../../lib/dialog'
 import AuthorizationPanel from './AuthorizationPanel'
 import DramaPublishModal from './DramaPublishModal'
-import { handoffLabel, isHandoffActive, latestEpisodeHandoffs, mergeSyncedEpisodes } from './dramaPublishing'
+import { handoffLabel, isHandoffActive, latestEpisodeHandoffs, mergeSyncedCover, mergeSyncedEpisodes } from './dramaPublishing'
 import { isFreeEpisode, previewStatusLabel } from './playbackPolicy'
 import { explainMarketplaceError } from './messages'
 
@@ -61,6 +61,8 @@ export default function SeriesEditor() {
   const [message, setMessage] = useState('')
   const [previewPollError, setPreviewPollError] = useState('')
   const savedEpisodes = useRef<EpisodeDraft[]>([])
+  const savedCoverId = useRef<number | null>(null)
+  const coverEdited = useRef(false)
   const [poll, setPoll] = useState(0)
   const [busy, setBusy] = useState(false); const [error, setError] = useState('')
   const [expanded, setExpanded] = useState<Set<number>>(() => new Set([0]))
@@ -72,9 +74,16 @@ export default function SeriesEditor() {
   const previewFailed = Boolean(series?.episodes.some(episode => !isFreeEpisode(series, episode.episode_no) && episode.preview_status === 'failed'))
   function acceptSaved(value: SeriesDraft) {
     setSeries(value); setSaleType(value.sale_type); setFreeEpisodeCount(value.free_episode_count || 0); setCategory(value.category || '其他'); setCoverId(value.cover_asset_id ?? null)
+    savedCoverId.current = value.cover_asset_id ?? null; coverEdited.current = false
     const normalized = value.episodes.map(item => ({ ...item, asset_id: item.asset_id ?? null, cover_asset_id: item.cover_asset_id ?? null }))
     setEpisodes(normalized); savedEpisodes.current = normalized; setRemovedEpisodeIds([]); setDirty(false)
     if (value.pending_handoffs) setHandoffs(current => [...value.pending_handoffs!, ...current.filter(item => !value.pending_handoffs!.some(pending => pending.id === item.id))])
+  }
+  // 同步封面以已加载的远端值为基线，避免保存草稿时把后台刚回填的封面清空。
+  function acceptSyncedCover(value: SeriesDraft) {
+    const previous = savedCoverId.current, remote = value.cover_asset_id ?? null, edited = coverEdited.current
+    setCoverId(current => mergeSyncedCover(current, remote, previous, edited))
+    savedCoverId.current = remote
   }
   useEffect(() => {
     if (!id) { setEpisodes([{ episode_no: 1, title: '第1集', asset_id: null, cover_asset_id: null, copyright_price_fen: 0, unlock_price_fen: 0 }]); return }
@@ -120,8 +129,9 @@ export default function SeriesEditor() {
           const previous = savedEpisodes.current
           setEpisodes(current => mergeSyncedEpisodes(current, fresh.episodes, previous))
           savedEpisodes.current = fresh.episodes
-          // Worker 也会推进父系列版本；仅合并状态，保留用户正在填写的标题、价格与封面。
-          setSeries(current => current ? { ...current, version: fresh.version, audit_status: fresh.audit_status, listed: fresh.listed, authorization_ready: fresh.authorization_ready, sync_in_progress: fresh.sync_in_progress } : fresh)
+          acceptSyncedCover(fresh)
+          // Worker 也会推进父系列版本和封面；表单仍保留用户正在填写的内容。
+          setSeries(current => current ? { ...current, cover_asset_id: fresh.cover_asset_id, version: fresh.version, audit_status: fresh.audit_status, listed: fresh.listed, authorization_ready: fresh.authorization_ready, sync_in_progress: fresh.sync_in_progress } : fresh)
         }
         if (activeSync) timer = window.setTimeout(() => setPoll(value => value + 1), 3000)
       } catch { if (!stop) { setHandoffError('同步进度暂时无法读取，正在重试。当前填写的内容已保留。'); timer = window.setTimeout(() => setPoll(value => value + 1), 5000) } }
@@ -208,7 +218,7 @@ export default function SeriesEditor() {
   const current = series
   if (id && !series && !error) return <p role="status">正在加载系列…</p>
   return <><PageHeading title={id ? '编辑短剧' : '发布短剧'} description="短剧和单条视频一样出现在作品广场。在这一页添加分集，版权规则与单视频相同。" back="/marketplace" /><div className="pf-market-editor-layout"><form className="pf-market-editor-main pf-market-form" onSubmit={save} onChangeCapture={event => { if (!(event.target as HTMLElement).closest('.pf-market-authorization, [data-market-transient]')) setDirty(true) }}>
-    <FormSection step="01" title="系列信息" description="先建立系列，再逐集上传或导入成片。"><label>系列标题<span className="pf-req-mark">必填</span><input name="title" required maxLength={200} placeholder="例如：城市里的光" defaultValue={current?.title} /></label><label>简介<textarea name="description" maxLength={5000} defaultValue={current?.description} placeholder="介绍整部短剧的主题和内容" /></label><div className="pf-market-field-row"><label>分类<span className="pf-req-mark">必填</span><select name="category" required value={category || current?.category || ''} onChange={event => setCategory(event.target.value)} disabled={!categories.length}><option value="" disabled>请选择系列分类</option>{current?.category && !categories.includes(current.category) && <option value={current.category}>{current.category}（历史分类）</option>}{categories.map(name => <option key={name} value={name}>{name}</option>)}</select>{categoryError && <span role="alert">{categoryError}</span>}</label><label>标签<input name="tags" defaultValue={current?.tags?.join('，')} placeholder="都市，短剧" /></label></div><AssetPicker kind="image" value={coverId} onChange={value => { setCoverId(value); setDirty(true) }} title="系列封面（与分集封面至少上传一处）" /></FormSection>
+    <FormSection step="01" title="系列信息" description="先建立系列，再逐集上传或导入成片。"><label>系列标题<span className="pf-req-mark">必填</span><input name="title" required maxLength={200} placeholder="例如：城市里的光" defaultValue={current?.title} /></label><label>简介<textarea name="description" maxLength={5000} defaultValue={current?.description} placeholder="介绍整部短剧的主题和内容" /></label><div className="pf-market-field-row"><label>分类<span className="pf-req-mark">必填</span><select name="category" required value={category || current?.category || ''} onChange={event => setCategory(event.target.value)} disabled={!categories.length}><option value="" disabled>请选择系列分类</option>{current?.category && !categories.includes(current.category) && <option value={current.category}>{current.category}（历史分类）</option>}{categories.map(name => <option key={name} value={name}>{name}</option>)}</select>{categoryError && <span role="alert">{categoryError}</span>}</label><label>标签<input name="tags" defaultValue={current?.tags?.join('，')} placeholder="都市，短剧" /></label></div><AssetPicker kind="image" value={coverId} onChange={value => { coverEdited.current = true; setCoverId(value); setDirty(true) }} title="系列封面（与分集封面至少上传一处）" /></FormSection>
     <FormSection step="02" title="收益方式" description="免费公开供完整观看；版权出售通过客服洽谈；平台投放按集解锁并分成。"><select value={saleType} onChange={event => setSaleType(event.target.value as typeof saleType)}><option value="free">免费公开</option><option value="copyright_contact">版权出售收益</option><option value="platform_unlock">平台投放收益</option></select><label>参考价（元）<input name="copyright_price" type="number" min="0" step="0.01" defaultValue={current?.copyright_price_fen ? current.copyright_price_fen / 100 : ''} /></label><label>免费集数<span className="pf-req-mark">前几集免费</span><input type="number" min="0" max="10000" step="1" value={freeEpisodeCount} onChange={event => setFreeEpisodeCount(Math.max(0, Number(event.target.value) || 0))} /></label><p className="pf-market-notice">选择“免费公开”时全部分集播放原片，无需试看；其他收益方式可将前几集设为免费，其余分集提供最长15秒且不超过原片30%的无水印短试看。版权合作参考价不代表已包含版权转让手续等额外费用，具体事项请与客服确认。平台投放按集定价，观众解锁仅获得永久在线播放权益，不包含版权转让；需在平台启用分成后才能提交审核。修改收益方式或免费集数后，将重新检查播放准备状态。</p></FormSection>
     <FormSection step="03" title="分集内容" description="每集一个完整视频和封面。同步期间可以填写信息，完成后再保存。">
       <div className="pf-episode-tools"><button type="button" onClick={() => setExpanded(new Set(episodes.map((_, index) => index)))}>展开全部</button><button type="button" onClick={() => setExpanded(new Set())}>收起全部</button><span>共 {episodes.length} 集</span></div>
@@ -260,7 +270,8 @@ export default function SeriesEditor() {
       const previous = savedEpisodes.current
       setEpisodes(current => [...mergeSyncedEpisodes(current, fresh.episodes, previous), ...fresh.episodes.filter(item => !current.some(local => local.id === item.id))])
       savedEpisodes.current = fresh.episodes
-      setSeries(current => current ? { ...current, version: fresh.version, audit_status: fresh.audit_status, listed: fresh.listed, sync_in_progress: fresh.sync_in_progress } : fresh)
+      acceptSyncedCover(fresh)
+      setSeries(current => current ? { ...current, cover_asset_id: fresh.cover_asset_id, version: fresh.version, audit_status: fresh.audit_status, listed: fresh.listed, authorization_ready: fresh.authorization_ready, sync_in_progress: fresh.sync_in_progress } : fresh)
       setPoll(value => value + 1); setExpanded(new Set(fresh.episodes.map((_, index) => index))); setMessage('同步任务已创建，完成后会自动填入完整视频。当前填写的内容已保留。')
     }).catch(err => setError((err as Error).message)).finally(() => setBusy(false))
   }} />}

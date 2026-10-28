@@ -50,6 +50,10 @@ export function latestEpisodeHandoffs(items: Handoff[]) {
 }
 
 type SyncEpisode = { id?: number; version?: number; asset_id: number | null; cover_asset_id: number | null; source?: string }
+// 接纳后台同步的系列封面；用户选过或主动清空后，后续轮询不能覆盖本地意图。
+export function mergeSyncedCover(current: number | null, remote: number | null, previous: number | null, edited = false) {
+  return !edited && current === previous ? remote : current
+}
 // 只回填同步产物和版本；封面被用户编辑过时保留本地选择，标题和价格始终保留。
 export function mergeSyncedEpisodes<T extends SyncEpisode>(current: T[], remote: T[], previous: T[]) {
   return current.map(episode => {
