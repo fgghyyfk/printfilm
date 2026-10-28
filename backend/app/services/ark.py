@@ -534,11 +534,17 @@ class ArkGateway:
             preferred = enabled[0] if enabled else None
         if preferred is not None:
             return (preferred.api_key or "").strip()
+        if channels:
+            return ""
         return (self.settings.ark_api_key or "").strip()
 
     @property
     def mock(self) -> bool:
-        return self.settings.ark_mock or not self._ark_api_key()
+        if self.settings.ark_mock:
+            return True
+        if not self._ark_api_key():
+            raise RuntimeError("当前生效配置未填写 API Key")
+        return False
 
     def _headers(self) -> dict[str, str]:
         return {
@@ -556,8 +562,14 @@ class ArkGateway:
 
     # 按逻辑路由解析 ARK 渠道凭证
     def _resolve_ark_route(self, capability: str, model_id: str | None) -> ResolvedModelRoute | None:
-        logical_id = resolve_logical_model_id(capability, model_id)
-        return resolve_logical_model(capability, logical_id)
+        from app.services.provider_profiles import is_byteplus
+
+        byteplus = is_byteplus(self.settings.ark_base_url)
+        # BytePlus 每种能力由当前配置指定一个实际模型，不使用 TokenFree 别名直连。
+        route = resolve_logical_model(capability, "" if byteplus else resolve_logical_model_id(capability, model_id))
+        if route is None and byteplus:
+            raise RuntimeError(f"当前 BytePlus 配置未填写 {capability} 模型或 API Key")
+        return route
 
     def _route_headers(self, route: ResolvedModelRoute | None = None) -> dict[str, str]:
         if route and route.api_key:
@@ -610,9 +622,13 @@ class ArkGateway:
             headers: dict[str, str] | None = None
             timeout: float | httpx.Timeout = 300.0
             download_url = source
-            if is_tokenfree_content_url(download_url) or is_tokenfree_image_url(download_url):
-                api_key = self._ark_api_key()
-                headers = {"Authorization": f"Bearer {api_key}"}
+            from app.services.tokenfree_gateway import tokenfree_media_headers
+
+            headers = tokenfree_media_headers(download_url) if (
+                is_tokenfree_content_url(download_url) or is_tokenfree_image_url(download_url)
+            ) else None
+            if headers:
+                api_key = headers["Authorization"].removeprefix("Bearer ")
                 timeout = httpx.Timeout(connect=30.0, read=600.0, write=60.0, pool=30.0)
                 if is_tokenfree_content_url(download_url):
                     resolved = await resolve_tokenfree_media_download_url(download_url, api_key=api_key)
@@ -1025,8 +1041,27 @@ class ArkGateway:
             is_gpt_image_25,
         )
 
+        from app.services.provider_profiles import is_byteplus
+
+        # BytePlus 原生图像接口，模型/接入点 ID 原样传递。
+        if is_byteplus(route.base_url if route else self.settings.ark_base_url):
+            path = "/images/generations"
+            native_size = str(resolved_size or "2K")
+            if "x" not in native_size.lower():
+                native_size = native_size.upper()
+                if aspect_ratio:
+                    from app.services.drama.seedream_options import SEEDREAM_SIZE_MAP
+
+                    native_size = SEEDREAM_SIZE_MAP.get(native_size, {}).get(aspect_ratio, native_size)
+            body = {
+                "model": chosen, "prompt": full_prompt, "size": native_size,
+                "response_format": "url", "watermark": False,
+            }
+            refs = list(dict.fromkeys([*(subject_refs or []), *(style_refs or [])]))
+            if refs:
+                body["image"] = refs[0] if len(refs) == 1 else refs
         # 2.5 的渠道是 image-generation，走 /responses 会报 default 分组无 distributor
-        if is_gpt_image_25(chosen):
+        elif is_gpt_image_25(chosen):
             path = "/images/generations"
             body = build_tokenfree_openai_image_body(
                 model=chosen,
@@ -1098,7 +1133,9 @@ class ArkGateway:
         dest = dest_dir / name
         dl_headers = None
         if is_tokenfree_image_url(remote) or is_tokenfree_content_url(remote):
-            dl_headers = {"Authorization": f"Bearer {self._ark_api_key()}"}
+            from app.services.tokenfree_gateway import tokenfree_media_headers
+
+            dl_headers = tokenfree_media_headers(remote)
         await storage.download_to(remote, dest, headers=dl_headers)
         merged_usage = dict(raw_usage or {})
         if resolved_size:
@@ -1336,9 +1373,10 @@ class ArkGateway:
         route = self._resolve_ark_route("video", self.settings.model_video)
         from app.services.tokenfree_pricing import canonicalize_channel_model_id
 
-        video_model = canonicalize_channel_model_id(
-            route.upstream_model if route else self.settings.model_video
-        )
+        from app.services.provider_profiles import is_byteplus
+
+        raw_model = route.upstream_model if route else self.settings.model_video
+        video_model = raw_model if is_byteplus(route.base_url if route else self.settings.ark_base_url) else canonicalize_channel_model_id(raw_model)
         body: dict[str, Any] = {
             "model": video_model,
             "content": content,
@@ -1497,6 +1535,8 @@ class ArkGateway:
             model=str(payload.get("model") or ""),
         )
         route = self._resolve_ark_route("video", str(payload.get("model") or ""))
+        if route:
+            payload["model"] = route.upstream_model
 
         logger.info(
             "Seedance multimodal create model=%s duration=%s items=%s",
@@ -1890,6 +1930,10 @@ class ArkGateway:
         raise RuntimeError(str(last_err) if last_err else "video generation failed")
 
     def _resolved_audio_model(self) -> str:
+        from app.services.provider_profiles import is_byteplus
+
+        if is_byteplus(self.settings.ark_base_url):
+            raise RuntimeError("当前 BytePlus 配置不支持独立配音；可使用视频自带音频或切换 TokenFree")
         routed = (resolve_upstream_model("audio", None) or "").strip()
         mid = routed or (self.settings.model_audio or "").strip() or TOKENFREE_DEFAULT_TTS_MODEL
         return resolve_tokenfree_tts_model(mid)

@@ -125,20 +125,11 @@ def _refresh_routing_snapshot(
 # 从 env 构建默认渠道（开源版仅 TokenFree）
 def _bootstrap_channels_from_env(settings: Settings | None = None) -> list[SystemModelChannel]:
     from app.services.tokenfree_gateway import locked_tokenfree_channel
-    from app.services.tokenfree_pricing import canonicalize_channel_models
+    from app.services.media_model_presets import all_preset_channel_models
 
     src = settings or get_settings()
     key = (src.openai_api_key or src.ark_api_key or "").strip()
-    models = canonicalize_channel_models(
-        [
-            src.model_llm,
-            src.model_image,
-            src.model_image_45,
-            src.model_video,
-            src.model_video_2,
-            src.model_audio,
-        ]
-    )
+    models = all_preset_channel_models()
     return [locked_tokenfree_channel(api_key=key, models=models, enabled=True)]
 
 
@@ -358,8 +349,7 @@ async def _load_channels(db: AsyncSession, *, runtime: bool) -> list[SystemModel
 async def _ensure_bootstrapped_channels(db: AsyncSession) -> list[SystemModelChannelRow]:
     existing = list((await db.execute(select(SystemModelChannelRow))).scalars().all())
     if existing:
-        await _ensure_tokenfree_channel(db, existing)
-        return list((await db.execute(select(SystemModelChannelRow))).scalars().all())
+        return existing
     channels = _bootstrap_channels_from_env()
     rows: list[SystemModelChannelRow] = []
     for channel in channels:
@@ -387,43 +377,6 @@ async def _ensure_bootstrapped_channels(db: AsyncSession) -> list[SystemModelCha
     await db.commit()
     return rows
 
-
-async def _ensure_tokenfree_channel(db: AsyncSession, existing: list[SystemModelChannelRow]) -> None:
-    """锁定唯一 TokenFree 渠道：固定 Base URL，其它渠道停用。"""
-    from app.services.tokenfree_gateway import (
-        TOKENFREE_BASE_URL,
-        TOKENFREE_CHANNEL_ID,
-        TOKENFREE_CHANNEL_NAME,
-        pick_migratable_api_key,
-    )
-
-    runtime = [_channel_row_to_runtime(row) for row in existing]
-    migrated_key = pick_migratable_api_key(runtime)
-    token_row = next((row for row in existing if row.id == TOKENFREE_CHANNEL_ID), None)
-    if token_row is None:
-        token_row = SystemModelChannelRow(id=TOKENFREE_CHANNEL_ID)
-        db.add(token_row)
-    current_key = _decrypt_secret(token_row.api_key_ciphertext or "")
-    token_row.name = TOKENFREE_CHANNEL_NAME
-    token_row.base_url = TOKENFREE_BASE_URL
-    token_row.api_format = "openai"
-    token_row.protocol = "auto"
-    token_row.enabled = True
-    token_row.sort_order = 0
-    token_row.advanced_config = None
-    if not current_key and migrated_key:
-        token_row.api_key_ciphertext = _encrypt_secret(migrated_key)
-        current_key = migrated_key
-    from app.services.media_model_presets import all_preset_channel_models
-
-    # 渠道 models 固定为站点预设并集（含 gpt-image-2 / gpt-image-2.5 / 仅 qwen-tts）
-    preset = all_preset_channel_models()
-    if list(token_row.models or []) != preset:
-        token_row.models = preset
-    for row in existing:
-        if row.id != TOKENFREE_CHANNEL_ID:
-            row.enabled = False
-    await db.commit()
 
 
 def _settings_to_dict(settings: Settings | None = None) -> dict[str, Any]:
@@ -467,69 +420,15 @@ def _effective_flat(stored: dict[str, Any] | None) -> dict[str, Any]:
 
 
 async def _compose_runtime_state(db: AsyncSession) -> tuple[list[SystemModelChannel], list[LogicalModel], DefaultModels, dict[str, Any], AppSettings]:
-    """组装运行时路由：始终按渠道 models 同步逻辑模型，默认文字模型随可用上游回落。"""
+    """组装手动所选配置的路由与完整运行时覆盖，不跨渠道回退。"""
     app_row = await _get_or_create_app_row(db)
     await _ensure_bootstrapped_channels(db)
-    # 同步能力前预热 TokenFree 价目（tags / endpoints）
-    try:
-        from app.services.tokenfree_pricing import ensure_official_rates
+    from app.services.provider_profiles import profile_state, profile_overlay
 
-        await ensure_official_rates()
-    except Exception:  # noqa: BLE001
-        pass
     channels = await _load_channels(db, runtime=True)
     config = dict(app_row.config_json or {})
-    logical_models = [LogicalModel.model_validate(item) for item in config.get("logical_models") or []]
-    default_models = default_models_from_dict(config.get("default_models"))
-    if not logical_models and channels:
-        logical_models, default_models = _bootstrap_logical_from_channels(
-            [_channel_row_to_admin(row) for row in (await db.execute(select(SystemModelChannelRow))).scalars().all()]
-        )
-    # 渠道 models 变更后，丢弃失效绑定并补齐新上游（支持任意 OpenAI 兼容模型）
-    logical_models = synchronize_logical_models_with_channels(logical_models, channels)
-    boot_logical, boot_defaults = _bootstrap_logical_from_channels(
-        [_channel_row_to_admin(row) for row in (await db.execute(select(SystemModelChannelRow))).scalars().all()]
-    )
-    # 仅合并视频 Seedance 短名；图模一律用 TokenFree 渠道真实 id，不做 seedream-5.0 换绑
-    alias_ids = {"seedance-2.5", "seedance-2.0", "seedance-2", "seedance-2.0-mini", "seedance-2.0-fast"}
-    logical_models = _merge_friendly_alias_models(
-        logical_models,
-        [model for model in boot_logical if model.id in alias_ids],
-    )
-    if not (default_models.video_model or "").strip() and boot_defaults.video_model:
-        default_models = default_models.model_copy(update={"video_model": boot_defaults.video_model})
-    # 默认图模若仍是旧别名，收到价目真实名
-    image_default = (default_models.image_model or boot_defaults.image_model or "").strip()
-    image_default = _TOKENFREE_IMAGE_IDS.get(image_default.lower(), image_default)
-    if image_default:
-        default_models = default_models.model_copy(update={"image_model": image_default})
-    from app.services.media_model_presets import clamp_default_to_preset
-
-    # 启动/读缓存时钳回预设（配音 gemini→qwen；非法图模→Seedream Pro 等）
-    default_models = default_models.model_copy(
-        update={
-            "text_model": clamp_default_to_preset("text", default_models.text_model),
-            "image_model": clamp_default_to_preset("image", default_models.image_model),
-            "video_model": clamp_default_to_preset("video", default_models.video_model),
-            "audio_model": clamp_default_to_preset("audio", default_models.audio_model),
-        }
-    )
-    default_models = normalize_default_models(default_models, logical_models, channels)
-    flat = _effective_flat(_decrypt_flat_config(config))
-    from app.services.tokenfree_gateway import apply_tokenfree_flat_overlay
-
-    flat = apply_tokenfree_flat_overlay(flat, channels)
-    if default_models.text_model:
-        flat["model_llm"] = default_models.text_model
-    if default_models.image_model:
-        flat["model_image"] = default_models.image_model
-    if default_models.video_model:
-        flat["model_video"] = default_models.video_model
-    if default_models.audio_model:
-        flat["model_audio"] = default_models.audio_model
-    # 4.5 档用价目名
-    flat["model_image_45"] = (flat.get("model_image_45") or "seedream-4-5").strip()
-    flat["model_image_45"] = _TOKENFREE_IMAGE_IDS.get(flat["model_image_45"].lower(), flat["model_image_45"])
+    logical_models, default_models = profile_state(channels, default_models_from_dict(config.get("default_models")))
+    flat = profile_overlay(_effective_flat(_decrypt_flat_config(config)), channels, default_models)
     return channels, logical_models, default_models, flat, app_row
 
 
@@ -546,7 +445,7 @@ async def load_model_settings_cache(db: AsyncSession) -> None:
     new_caps = {model.id: model.capability for model in logical_models}
     old_defaults = default_models_from_dict(config.get("default_models"))
     flat_cfg = dict(config.get("flat") or {})
-    flat_cfg.update({k: v for k, v in flat.items() if v not in (None, "")})
+    flat_cfg.update({k: v for k, v in flat.items() if v is not None})
     flat_changed = flat_cfg != dict(config.get("flat") or {})
     if old_ids != new_ids or old_caps != new_caps or old_defaults != default_models or flat_changed:
         config["logical_models"] = [model.model_dump() for model in logical_models]
@@ -606,12 +505,8 @@ async def get_admin_model_settings(db: AsyncSession) -> AdminModelSettingsOut:
 
 
 async def get_admin_routing_settings(db: AsyncSession) -> AdminRoutingSettingsOut:
-    from app.services.tokenfree_gateway import TOKENFREE_CHANNEL_ID
-
     channels, logical_models, defaults, _, app_row = await _compose_runtime_state(db)
-    admin_channels = [
-        item for item in await _load_channels(db, runtime=False) if item.id == TOKENFREE_CHANNEL_ID
-    ]
+    admin_channels = await _load_channels(db, runtime=False)
     errors = model_routing_validation_errors(logical_models, admin_channels or channels, defaults)
     return AdminRoutingSettingsOut(
         system_channels=admin_channels,
@@ -706,135 +601,52 @@ async def patch_admin_routing_settings(
     db: AsyncSession,
     body: AdminRoutingSettingsPatch,
 ) -> tuple[AdminRoutingSettingsOut, list[str]]:
-    app_row = await _get_or_create_app_row(db)
-    applied: list[str] = []
-    existing_rows = {
-        row.id: row
-        for row in (await db.execute(select(SystemModelChannelRow))).scalars().all()
-    }
+    from app.models_tasks import TaskRun
+    from app.services.tasks.service import TERMINAL_TASK_STATUSES
+    from app.services.provider_profiles import normalize_profiles, profile_state
 
-    if body.system_channels is not None:
-        from app.services.tokenfree_gateway import (
-            TOKENFREE_BASE_URL,
-            TOKENFREE_CHANNEL_ID,
-            TOKENFREE_CHANNEL_NAME,
-            locked_tokenfree_channel,
-        )
-        from app.services.media_model_presets import all_preset_channel_models
-
-        incoming = next(
-            (item for item in body.system_channels if (item.id or "").strip() == TOKENFREE_CHANNEL_ID),
-            body.system_channels[0] if body.system_channels else None,
-        )
-        prev = existing_rows.get(TOKENFREE_CHANNEL_ID)
-        prev_key = _decrypt_secret(prev.api_key_ciphertext or "") if prev else ""
-        api_key = prev_key
-        if incoming is not None:
-            if incoming.clear_api_key:
-                api_key = ""
-            elif incoming.api_key is not None and str(incoming.api_key).strip():
-                api_key = str(incoming.api_key).strip()
-        # 渠道 models 固定为站点预设并集，忽略前端自由勾选
-        models = all_preset_channel_models()
-        locked = locked_tokenfree_channel(api_key=api_key, models=models, enabled=True)
-        row = prev or SystemModelChannelRow(id=TOKENFREE_CHANNEL_ID)
-        row.name = TOKENFREE_CHANNEL_NAME
-        row.base_url = TOKENFREE_BASE_URL
-        row.api_key_ciphertext = _encrypt_secret(locked.api_key) if locked.api_key else None
-        row.api_format = "openai"
-        row.protocol = "auto"
-        row.models = locked.models
-        row.enabled = True
-        row.sort_order = 0
-        row.advanced_config = None
-        db.add(row)
-        for cid, stale in existing_rows.items():
-            if cid == TOKENFREE_CHANNEL_ID:
-                continue
-            stale.enabled = False
-            db.add(stale)
-        await db.flush()
-        applied.append("system_channels")
-    else:
-        # 仅改默认模型时也把渠道 models 纠到预设并集
-        from app.services.tokenfree_gateway import TOKENFREE_CHANNEL_ID
-        from app.services.media_model_presets import all_preset_channel_models
-
-        prev = existing_rows.get(TOKENFREE_CHANNEL_ID)
-        if prev is not None:
-            preset = all_preset_channel_models()
-            if list(prev.models or []) != preset:
-                prev.models = preset
-                db.add(prev)
-                await db.flush()
-                applied.append("system_channels")
-
-    config = dict(app_row.config_json or {})
-    channels_after = await _load_channels(db, runtime=False)
-    logical_models = [LogicalModel.model_validate(item) for item in config.get("logical_models") or []]
-    defaults = default_models_from_dict(config.get("default_models"))
-
+    # 先校验整份请求，错误配置不能留下部分写入。
     if body.logical_models is not None:
-        logical_models = body.logical_models
-        applied.append("logical_models")
+        raise ValueError("请通过渠道配置选择模型")
+    if body.system_channels is None:
+        raise ValueError("请提交完整渠道配置")
+    items = normalize_profiles(body.system_channels)
+    from sqlalchemy import text
 
-    # 无论前端是否提交逻辑模型，最终都以渠道 models 为准同步（通用 OpenAI 兼容）
-    try:
-        from app.services.tokenfree_pricing import ensure_official_rates
-
-        await ensure_official_rates()
-    except Exception:  # noqa: BLE001
-        pass
-    synced = synchronize_logical_models_with_channels(logical_models, channels_after)
-    bootstrapped, boot_defaults = _bootstrap_logical_from_channels(channels_after)
-    alias_ids = {"seedance-2.5", "seedance-2.0", "seedance-2", "seedance-2.0-mini", "seedance-2.0-fast"}
-    logical_models = _merge_friendly_alias_models(
-        synced,
-        [model for model in bootstrapped if model.id in alias_ids],
-    )
-    if body.system_channels is not None and not (defaults.video_model or "").strip() and boot_defaults.video_model:
-        defaults = defaults.model_copy(update={"video_model": boot_defaults.video_model})
-    if body.default_models is not None:
-        defaults = body.default_models
-        applied.append("default_models")
-    from app.services.media_model_presets import clamp_default_to_preset
-
-    # 四类默认强制落在预设内（配音仅 qwen-tts-2025-05-22）
-    defaults = defaults.model_copy(
-        update={
-            "text_model": clamp_default_to_preset("text", defaults.text_model),
-            "image_model": clamp_default_to_preset("image", defaults.image_model),
-            "video_model": clamp_default_to_preset("video", defaults.video_model),
-            "audio_model": clamp_default_to_preset("audio", defaults.audio_model),
-        }
-    )
-    image_default = (defaults.image_model or "").strip()
-    image_default = _TOKENFREE_IMAGE_IDS.get(image_default.lower(), image_default)
-    if image_default:
-        defaults = defaults.model_copy(
-            update={"image_model": clamp_default_to_preset("image", image_default)}
-        )
-    defaults = normalize_default_models(defaults, logical_models, channels_after)
-    # normalize 可能清空不可解析项；再次钳回预设
-    defaults = defaults.model_copy(
-        update={
-            "text_model": clamp_default_to_preset("text", defaults.text_model),
-            "image_model": clamp_default_to_preset("image", defaults.image_model),
-            "video_model": clamp_default_to_preset("video", defaults.video_model),
-            "audio_model": clamp_default_to_preset("audio", defaults.audio_model),
-        }
-    )
-
-    errors = model_routing_validation_errors(logical_models, channels_after, defaults)
-    if errors:
-        raise ValueError("；".join(errors[:5]))
-
-    config["logical_models"] = [model.model_dump() for model in logical_models]
+    await db.execute(text("LOCK TABLE task_runs IN SHARE ROW EXCLUSIVE MODE"))
+    busy = await db.scalar(select(TaskRun.id).where(TaskRun.status.notin_(TERMINAL_TASK_STATUSES)).limit(1))
+    if busy:
+        raise ValueError("有未结束任务，请等待任务结束后再修改渠道配置")
+    app_row = await _get_or_create_app_row(db)
+    existing_rows = {row.id: row for row in (await db.execute(select(SystemModelChannelRow))).scalars()}
+    # 整组预检结束前不修改任一渠道行。
+    for item in items:
+        previous = existing_rows.get(item.id)
+        previous_base = (previous.base_url or "").rstrip("/") if previous else ""
+        if previous_base and previous_base != item.base_url and not (item.api_key or "").strip():
+            raise ValueError("更换平台或区域时请重新填写 API Key")
+    for item in items:
+        row = existing_rows.get(item.id) or SystemModelChannelRow(id=item.id)
+        for field in ("name", "base_url", "api_format", "protocol", "models", "enabled", "sort_order"):
+            setattr(row, field, getattr(item, field))
+        row.advanced_config = item.advanced_config.model_dump()
+        if item.clear_api_key:
+            row.api_key_ciphertext = None
+        elif (item.api_key or "").strip():
+            row.api_key_ciphertext = _encrypt_secret(item.api_key.strip())
+        db.add(row)
+    # 列表为完整替换；UI 删除的配置从数据库删除，不再参与路由。
+    ids = {item.id for item in items}
+    for cid, row in existing_rows.items():
+        if cid not in ids:
+            await db.delete(row)
+    await db.flush()
+    channels = await _load_channels(db, runtime=True)
+    config = dict(app_row.config_json or {})
+    logical, defaults = profile_state(channels, body.default_models or default_models_from_dict(config.get("default_models")))
+    config["logical_models"] = [model.model_dump() for model in logical]
     config["default_models"] = default_models_to_dict(defaults)
-    if "flat" not in config:
-        config["flat"] = _encrypt_flat_config(_settings_to_dict())
     app_row.config_json = config
     await db.commit()
     await load_model_settings_cache(db)
-    out = await get_admin_routing_settings(db)
-    return out, applied
+    return await get_admin_routing_settings(db), ["system_channels", "default_models"]

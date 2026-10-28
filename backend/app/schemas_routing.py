@@ -46,9 +46,11 @@ class SystemChannelAdvancedConfig(BaseModel):
     """Optional per-channel protocol hints."""
 
     protocol: ChannelProtocol = "auto"
+    provider: Literal["tokenfree", "byteplus"] = "tokenfree"
     text_model: str = ""
     image_model: str = ""
     video_model: str = ""
+    audio_model: str = ""
     create_path: str = ""
     query_path: str = ""
 

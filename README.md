@@ -164,6 +164,10 @@ docker compose --env-file deploy/.env.docker -f docker-compose.full.yml up -d --
 
 开源版文字 / 图 / 视频统一走 **TokenFree New API**（OpenAI 兼容：`https://www.tokenfree.com/v1`）。没有 Key 时只能 `ARK_MOCK=true` 看界面，不能真实生图 / 生视频。
 
+### 多渠道与多个 Key（本机定制）
+
+管理后台现在支持保存多组 TokenFree / BytePlus 配置，手动选择一组生效，不自动轮换。每条配置独立保存 Key、区域与默认模型，原有 TokenFree 配置保留。BytePlus 使用 ModelArk 原生图片与视频接口；独立 TTS 暂未接入。详见 [docs/MODEL_PROFILES.md](docs/MODEL_PROFILES.md)。
+
 ### A. 在 TokenFree 拿到 Key
 
 1. 打开 [https://www.tokenfree.com](https://www.tokenfree.com) 注册并登录。

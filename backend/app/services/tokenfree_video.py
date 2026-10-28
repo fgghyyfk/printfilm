@@ -27,8 +27,9 @@ VIDEO_FAILED_STATUSES = {"failed", "cancelled", "canceled", "expired", "failure"
 
 def uses_tokenfree_video(*, base_url: str = "", channel_id: str = "") -> bool:
     """视频只走 TokenFree / New API，不再按主机切方舟原生。"""
-    del base_url, channel_id
-    return True
+    from app.services.provider_profiles import is_byteplus
+
+    return not is_byteplus(base_url)
 
 
 def remap_video_path(path: str, *, base_url: str = "", channel_id: str = "") -> str:
@@ -240,7 +241,8 @@ def prepare_video_create_body(
     channel_id: str = "",
 ) -> dict[str, Any]:
     """一律包装成 TokenFree POST /v1/videos 请求体。"""
-    del base_url, channel_id
+    if not uses_tokenfree_video(base_url=base_url, channel_id=channel_id):
+        return dict(body)
     return wrap_seedance_payload_for_newapi(body)
 
 

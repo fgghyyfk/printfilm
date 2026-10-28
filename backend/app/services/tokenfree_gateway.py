@@ -1,8 +1,6 @@
-"""开源版固定对接 TokenFree New API，不允许切换其它上游。"""
+"""TokenFree 接口常量、默认配置与仅限本平台的凭据解析。"""
 
 from __future__ import annotations
-
-from typing import Any
 
 from app.schemas_routing import SystemModelChannel
 
@@ -32,8 +30,10 @@ def resolve_tokenfree_api_key() -> str:
     except Exception:  # noqa: BLE001
         channels = []
     for channel in channels:
-        if channel.id == TOKENFREE_CHANNEL_ID and (channel.api_key or "").strip():
+        if channel.enabled and channel.base_url.rstrip("/") == TOKENFREE_BASE_URL:
             return (channel.api_key or "").strip()
+    if channels:
+        return ""
     from app.config import get_settings
 
     s = get_settings()
@@ -76,16 +76,12 @@ def pick_migratable_api_key(channels: list[SystemModelChannel]) -> str:
     return ""
 
 
-def apply_tokenfree_flat_overlay(flat: dict[str, Any], channels: list[SystemModelChannel]) -> dict[str, Any]:
-    """运行时把 TokenFree Key / Base 同步到 LLM 与方舟客户端共用字段。"""
-    channel = next((item for item in channels if item.id == TOKENFREE_CHANNEL_ID), None)
-    if channel is None:
-        return flat
-    out = dict(flat)
-    out["openai_base_url"] = TOKENFREE_BASE_URL
-    out["ark_base_url"] = TOKENFREE_BASE_URL
-    key = (channel.api_key or "").strip()
-    if key:
-        out["openai_api_key"] = key
-        out["ark_api_key"] = key
-    return out
+def tokenfree_media_headers(url: str) -> dict[str, str] | None:
+    """仅对 TokenFree 官方 HTTPS origin 附加对应渠道 Key，CDN 不带凭据。"""
+    from urllib.parse import urlsplit
+
+    parsed = urlsplit(url)
+    if parsed.scheme != "https" or parsed.netloc != "www.tokenfree.com":
+        return None
+    key = resolve_tokenfree_api_key()
+    return {"Authorization": f"Bearer {key}"} if key else None

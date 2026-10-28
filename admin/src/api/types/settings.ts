@@ -111,6 +111,14 @@ export type AdminRoutingChannel = {
   models: string[];
   enabled: boolean;
   sort_order: number;
+  clear_api_key?: boolean;
+  advanced_config?: {
+    provider: "tokenfree" | "byteplus";
+    text_model: string;
+    image_model: string;
+    video_model: string;
+    audio_model: string;
+  } | null;
 };
 
 export type AdminLogicalModelBinding = {

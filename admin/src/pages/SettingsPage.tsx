@@ -29,7 +29,7 @@ function SettingsPageHeader() {
       <div className="min-w-0">
         <h1 className="settings-page-title">系统设置</h1>
         <p className="settings-head-desc">
-          TokenFree API Key、运行参数、OSS / 易支付 / 计费与站点配置；密钥加密存库，留空保存不修改。
+          模型渠道与 API Key、运行参数、OSS / 易支付 / 计费与站点配置；密钥加密存库，留空保存不修改。
         </p>
       </div>
       {action ? (
