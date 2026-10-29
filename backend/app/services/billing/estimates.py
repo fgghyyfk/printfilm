@@ -119,7 +119,9 @@ def _catalog_image_fen(settings: Settings, *, model: str = "", size: str = "", p
 def _estimate_assets_fen(project: Project, settings: Settings) -> int:
     """只估尚未完成的出图 + 整片配音（不含镜头视频）。"""
     shots = list(project.shots or [])
-    need_img = sum(1 for s in shots if not shot_image_ready(s))
+    # 数字人：分镜图就是上传的半身照，不出图
+    avatar = (getattr(project, "pipeline_mode", "") or "") == "avatar"
+    need_img = 0 if avatar else sum(1 for s in shots if not shot_image_ready(s))
     # 整片 TTS 一次估算；旁白已就绪（整片文件或全部镜头文件）则不再预扣
     need_tts = 0 if project_audio_ready(project) else 1
     if need_img <= 0 and need_tts <= 0:
@@ -140,6 +142,10 @@ def _estimate_assets_fen(project: Project, settings: Settings) -> int:
 
 def _estimate_videos_fen(project: Project, settings: Settings) -> int:
     """只估尚未出片的镜头视频。"""
+    if (getattr(project, "pipeline_mode", "") or "") == "avatar":
+        from app.services.kepu_avatar import estimate_videos_fen
+
+        return max(1, estimate_videos_fen(project))
     shots = [s for s in list(project.shots or []) if not shot_video_ready(s)]
     if not shots:
         return 1
@@ -207,6 +213,8 @@ async def estimate_task_fen(db: AsyncSession, task: TaskRun, settings: Settings 
             dur = float(payload.get("duration") or 5)
             project_id = task.project_id or payload.get("project_id")
             project = await db.get(Project, int(project_id)) if project_id else None
+            if project is not None and (getattr(project, "pipeline_mode", "") or "") == "avatar":
+                return max(1, int(round(max(dur, 2.0) * int(s.avatar_price_fen_per_sec or 0))))
             c = charge_fen_official_video(
                 max(dur, 2.0),
                 s,

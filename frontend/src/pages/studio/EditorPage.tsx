@@ -190,7 +190,7 @@ export default function EditorPage() {
     )
   }
 
-  const isPortrait = (project.output_ratio || '') === '9:16' || (!project.output_ratio && project.pipeline_mode === 'image_text')
+  const isPortrait = (project.output_ratio || '') === '9:16' || (!project.output_ratio && (project.pipeline_mode === 'image_text' || project.pipeline_mode === 'avatar'))
   // Prefer current shot media; final film is for dedicated preview, not shot editing.
   const shotVideo = shot?.video_url ? api.assetUrl(shot.video_url, shot.version) : null
   const shotImage = shot?.image_url ? api.assetUrl(shot.image_url, shot.version) : null

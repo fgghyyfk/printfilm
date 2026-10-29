@@ -181,9 +181,21 @@ def _is_image_text(project: Project) -> bool:
     return (project.pipeline_mode or "full") == "image_text"
 
 
+def _is_avatar(project: Project) -> bool:
+    """数字人口播模式（素材/视频阶段见 kepu_avatar.py）。"""
+    return (project.pipeline_mode or "full") == "avatar"
+
+
+async def _project_is_avatar(project_id: int) -> bool:
+    """按 id 判断项目是否为数字人口播模式。"""
+    async with AsyncSessionLocal() as db:
+        project = await db.get(Project, project_id)
+        return bool(project and _is_avatar(project))
+
+
 def _kepu_seedance_native_audio(project: Project | None = None) -> bool:
     """科普 full：Seedance 视频内置口播，不走外部 TTS。"""
-    if project is not None and _is_image_text(project):
+    if project is not None and (_is_image_text(project) or _is_avatar(project)):
         return False
     return bool(getattr(get_settings(), "kepu_seedance_native_audio", True))
 
@@ -192,7 +204,7 @@ def _kepu_seedance_sfx_audio(project: Project | None = None) -> bool:
     """科普 full 回退：Seedance 只要操作音效，口播改后期 TTS。"""
     if _kepu_seedance_native_audio(project):
         return False
-    if project is not None and _is_image_text(project):
+    if project is not None and (_is_image_text(project) or _is_avatar(project)):
         return False
     return bool(get_settings().kepu_seedance_sfx_audio)
 
@@ -227,6 +239,10 @@ def clamp_shot_duration(duration: float, *, pipeline_mode: str, tpl_min: int, tp
     if pipeline_mode == "image_text":
         lo = IMAGE_TEXT_DURATION_MIN
         hi = IMAGE_TEXT_DURATION_MAX
+    elif pipeline_mode == "avatar":
+        # 数字人：段长最终以该段配音实测时长为准，这里只给拆镜一个合理区间
+        hi = max(6, int(settings.avatar_segment_max_sec))
+        lo = min(6, hi)
     else:
         hi = min(max(tpl_max, 1), settings.max_shot_duration, segplan.KEPU_FULL_SHOT_DURATION_MAX)
         lo = max(1, min(tpl_min, hi))
@@ -684,7 +700,13 @@ async def _script_stage(project_id: int) -> None:
         tpl = project.template
         image_text = _is_image_text(project)
         mode = project.pipeline_mode or "full"
-        if image_text:
+        # 数字人沿用图文的拆镜提示词（口播 + 每段标题），段数按口播字数估
+        llm_mode = "image_text" if mode == "avatar" else mode
+        shot_range = template_shot_range(tpl)
+        if mode == "avatar":
+            d_min, d_max = 6, max(6, int(get_settings().avatar_segment_max_sec))
+            shot_range = shot_range or segplan.suggested_avatar_shot_range(project.source_text, max_sec=d_max)
+        elif image_text:
             d_min, d_max = IMAGE_TEXT_DURATION_MIN, IMAGE_TEXT_DURATION_MAX
         else:
             d_min = tpl.shot_duration_min
@@ -706,13 +728,13 @@ async def _script_stage(project_id: int) -> None:
             duration_min=d_min,
             duration_max=d_max,
             max_shot_duration=d_max,
-            pipeline_mode=mode,
+            pipeline_mode=llm_mode,
             # 仅用户显式覆盖才当强制人设；模板角色交给 llm_system_addon 与主题由 AI 决定
             character_hint=char_hint,
             extra_requirements=extra,
             consistency_mode=consist,
             output_ratio=_project_output_ratio(project),
-            shot_range_override=template_shot_range(tpl),
+            shot_range_override=shot_range,
             allow_source_names=template_allow_source_names(tpl),
         )
         plans = plans_result.shots
@@ -868,7 +890,12 @@ def _db_write_lock() -> asyncio.Lock:
 
 
 async def _parallel_image_and_audio(project_id: int) -> None:
-    """逐镜出图（后镜参考上一镜静帧），同时整片连贯配音。"""
+    """逐镜出图（后镜参考上一镜静帧），同时整片连贯配音。数字人模式改为逐段配音。"""
+    if await _project_is_avatar(project_id):
+        from app.services.kepu_avatar import prepare_assets
+
+        await prepare_assets(project_id)
+        return
     await _set_status(project_id, ProjectStatus.IMAGING, 18, "PARALLEL_ASSETS")
     cfg = get_settings()
     ark = get_ark()
@@ -1100,8 +1127,14 @@ async def _parallel_image_and_audio(project_id: int) -> None:
 
 
 async def _parallel_videos(project_id: int) -> None:
-    """按镜序逐个出视频；后镜参考上一镜尾帧。"""
+    """按镜序逐个出视频；后镜参考上一镜尾帧。数字人模式改为逐段对口型。"""
     from app.services.kepu_stages import VIDEO_SKIP_REASON_PRIVACY
+
+    if await _project_is_avatar(project_id):
+        from app.services.kepu_avatar import generate_videos
+
+        await generate_videos(project_id)
+        return
 
     await _set_status(project_id, ProjectStatus.VIDEOING, 55, "VIDEOING")
     cfg = get_settings()
@@ -1397,9 +1430,15 @@ async def _compose_stage(project_id: int) -> None:
 
         ratio = _project_output_ratio(project)
         mode = project.pipeline_mode or "full"
+        avatar = mode == "avatar"
+        if avatar:
+            # 数字人：标题条第一行固定作品标题（黄），第二行是该段小标题（白）
+            for item, shot in zip(media, sorted(project.shots, key=lambda s: s.shot_no)):
+                item.overlay_subtitle = (shot.overlay_title or "").strip()
+                item.overlay_title = (project.title or "").strip()
 
         # full 模式：成片节奏跟镜头视频真实时长，勿被整片旁白重分配后的短 duration 裁掉画面
-        if mode == "full":
+        if mode in ("full", "avatar"):
             for item in media:
                 if not item.video_path:
                     continue
@@ -1410,7 +1449,7 @@ async def _compose_stage(project_id: int) -> None:
         native_audio = _kepu_seedance_native_audio(project)
         # 视频内置口播：不叠外部 full_narration；回退/静图仍可用整片 TTS
         full_audio = None
-        if not native_audio:
+        if not native_audio and not avatar:
             full_audio = _full_narration_path(project_id)
             if not full_audio.exists():
                 full_audio = None
@@ -1424,6 +1463,8 @@ async def _compose_stage(project_id: int) -> None:
             layout = "top"
         # bottom/center still use top dual-line unless explicitly split
         subtitle_layout = "split" if layout == "split" else "top"
+        if avatar:
+            subtitle_layout = "band"
 
         def _f(key: str, default: float) -> float:
             try:
@@ -1446,7 +1487,8 @@ async def _compose_stage(project_id: int) -> None:
                 out,
                 ComposeOptions(
                     ratio=ratio,
-                    mode=mode,
+                    # 数字人每段视频按 full 路径合成：段内配音即该段原始 TTS（口型对齐的那条）
+                    mode="full" if avatar else mode,
                     resolution_mode=project.resolution_mode or "preview",
                     full_audio_path=full_audio,
                     subtitle_layout=subtitle_layout,
@@ -1458,6 +1500,7 @@ async def _compose_stage(project_id: int) -> None:
                     keep_video_sfx=keep_video_sfx,
                     prefer_video_audio=native_audio,
                     sfx_volume=0.22,
+                    video_fit="cover" if avatar else "contain",
                 ),
             ),
         )
@@ -1590,6 +1633,11 @@ async def regen_shot_image(project_id: int, shot_id: int) -> None:
 @storage.without_intermediate_oss
 async def regen_shot_video(project_id: int, shot_id: int) -> None:
     """重绘单镜视频；后镜参考上一镜尾帧。"""
+    if await _project_is_avatar(project_id):
+        from app.services.kepu_avatar import regen_segment_video
+
+        await regen_segment_video(project_id, shot_id)
+        return
     ark = get_ark()
     cfg = get_settings()
     async with AsyncSessionLocal() as db:
@@ -1686,6 +1734,11 @@ async def regen_shot_video(project_id: int, shot_id: int) -> None:
 @storage.without_intermediate_oss
 async def regen_shot_audio(project_id: int, shot_id: int) -> None:
     """Re-TTS uses continuous full-film narration (editing one shot re-voices the whole track)."""
+    if await _project_is_avatar(project_id):
+        from app.services.kepu_avatar import regen_segment_audio
+
+        await regen_segment_audio(project_id, shot_id)
+        return
     async with AsyncSessionLocal() as db:
         result = await db.execute(
             select(Project)
@@ -1737,6 +1790,8 @@ async def regen_shot_audio(project_id: int, shot_id: int) -> None:
 @storage.without_intermediate_oss
 async def regen_project_audio_and_compose(project_id: int) -> None:
     """Force continuous re-TTS with current voice, then compose."""
+    if await _project_is_avatar(project_id):
+        raise ValueError("数字人口播换配音后各段口型需重新生成：请逐段「重新配音」后再生成视频")
     await _set_status(project_id, ProjectStatus.AUDIOING, 80, "AUDIOING")
     async with AsyncSessionLocal() as db:
         result = await db.execute(

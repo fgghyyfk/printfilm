@@ -52,6 +52,15 @@ class AdminModelSettingsOut(BaseModel):
     drama_fragment_max_attempts: int = 3
 
     ark_mock: bool = False
+    avatar_base_url: str = ""
+    avatar_api_key: str = ""
+    has_avatar_api_key: bool = False
+    avatar_engine: str = "infinitetalk"
+    avatar_resolution: str = "480p"
+    avatar_poll_interval: float = 30.0
+    avatar_poll_timeout: float = 14400.0
+    avatar_segment_max_sec: int = 20
+    avatar_price_fen_per_sec: int = 0
 
     # Aliyun OSS
     oss_enabled: bool = False
@@ -167,6 +176,15 @@ class AdminModelSettingsPatch(BaseModel):
     drama_fragment_max_attempts: int | None = None
 
     ark_mock: bool | None = None
+    avatar_base_url: str | None = None
+    avatar_api_key: str | None = None
+    clear_avatar_api_key: bool = False
+    avatar_engine: str | None = Field(default=None, pattern="^(infinitetalk|longcat)$")
+    avatar_resolution: str | None = Field(default=None, pattern="^(480p|720p)$")
+    avatar_poll_interval: float | None = Field(default=None, ge=5, le=600)
+    avatar_poll_timeout: float | None = Field(default=None, ge=600, le=86400)
+    avatar_segment_max_sec: int | None = Field(default=None, ge=6, le=30)
+    avatar_price_fen_per_sec: int | None = Field(default=None, ge=0, le=10000)
 
     oss_enabled: bool | None = None
     oss_endpoint: str | None = None
@@ -281,6 +299,14 @@ def model_config_field_names() -> tuple[str, ...]:
         "drama_user_video_job_limit",
         "drama_fragment_max_attempts",
         "ark_mock",
+        "avatar_base_url",
+        "avatar_api_key",
+        "avatar_engine",
+        "avatar_resolution",
+        "avatar_poll_interval",
+        "avatar_poll_timeout",
+        "avatar_segment_max_sec",
+        "avatar_price_fen_per_sec",
         "oss_enabled",
         "oss_endpoint",
         "oss_region",
@@ -342,6 +368,7 @@ def model_config_field_names() -> tuple[str, ...]:
 SECRET_FIELD_FLAGS: dict[str, str] = {
     "openai_api_key": "has_openai_api_key",
     "ark_api_key": "has_ark_api_key",
+    "avatar_api_key": "has_avatar_api_key",
     "oss_access_key_id": "has_oss_access_key_id",
     "oss_access_key_secret": "has_oss_access_key_secret",
     "tos_access_key": "has_tos_access_key",

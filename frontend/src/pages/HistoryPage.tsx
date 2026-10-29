@@ -98,7 +98,7 @@ export default function HistoryPage() {
   const [packProgress, setPackProgress] = useState('')
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [tab, setTab] = useState<HistoryTab>('all')
-  const [typeMode, setTypeMode] = useState<'' | 'full' | 'image_text'>('')
+  const [typeMode, setTypeMode] = useState<'' | 'full' | 'image_text' | 'avatar'>('')
   const [q, setQ] = useState('')
   const [debouncedQ, setDebouncedQ] = useState('')
   const [page, setPage] = useState(1)
@@ -344,11 +344,12 @@ export default function HistoryPage() {
                 className="pf-type-select"
                 value={typeMode}
                 aria-label={t('history.typeAria')}
-                onChange={(e) => setTypeMode(e.target.value as '' | 'full' | 'image_text')}
+                onChange={(e) => setTypeMode(e.target.value as '' | 'full' | 'image_text' | 'avatar')}
               >
                 <option value="">{t('history.typeAll')}</option>
                 <option value="full">{t('history.typeFull')}</option>
                 <option value="image_text">{t('history.typeImageText')}</option>
+                <option value="avatar">{t('history.typeAvatar')}</option>
               </select>
               <label className="pf-search-field">
                 <IconSearch size={15} />
@@ -385,7 +386,7 @@ export default function HistoryPage() {
             {pageItems.map((p) => {
               const badge = statusBadgeClass(p.status)
               const ratio =
-                p.output_ratio || (p.pipeline_mode === 'image_text' ? '9:16' : '16:9')
+                p.output_ratio || (p.pipeline_mode && p.pipeline_mode !== 'full' ? '9:16' : '16:9')
               const tplName = templates[p.template_id] || p.template_id
               return (
                 <article key={p.id} className="pf-project-card">

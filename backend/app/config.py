@@ -71,6 +71,20 @@ class Settings(BaseSettings):
     # 仅当 native_audio=false 时生效：Seedance 只要操作音效，口播改后期 TTS（默认开）
     kepu_seedance_sfx_audio: bool = True
 
+    # 数字人口播（自建 GPU 推理服务，见 deploy/avatar-gpu/server）
+    avatar_base_url: str = ""
+    avatar_api_key: str = ""
+    # 默认引擎：infinitetalk | longcat（项目可单独指定）
+    avatar_engine: str = "infinitetalk"
+    avatar_resolution: str = "480p"
+    avatar_poll_interval: float = 30.0
+    # 单段最长等待（秒）；24GB 单卡 15 秒片段约 30 分钟，排队时更久
+    avatar_poll_timeout: float = 4 * 3600.0
+    # 每段口播最长秒数（拆镜按此切段，太长单段生成慢、失败重试代价大）
+    avatar_segment_max_sec: int = 20
+    # 计费：每秒成片预扣/结算的分（自建 GPU 默认 0）
+    avatar_price_fen_per_sec: int = 0
+
     ark_mock: bool = False
     # 本地连接共享测试库时关闭，避免本机和服务器同时消费、恢复同一队列。
     task_runtime_enabled: bool = True

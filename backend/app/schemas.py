@@ -136,7 +136,7 @@ class ProjectCreate(BaseModel):
     source_type: str = Field(default="theme", pattern="^(theme|script)$")
     source_text: str = Field(min_length=2, max_length=20000)
     resolution_mode: str = Field(default="preview", pattern="^(preview|hd)$")
-    pipeline_mode: str = Field(default="full", pattern="^(full|image_text)$")
+    pipeline_mode: str = Field(default="full", pattern="^(full|image_text|avatar)$")
     output_ratio: str | None = Field(
         default=None,
         pattern=r"^(16:9|9:16|1:1|4:3|21:9)?$",
@@ -149,6 +149,7 @@ class ProjectCreate(BaseModel):
     image_model: str | None = Field(default=None, max_length=64)
     video_model: str | None = Field(default=None, max_length=64)
     ref_image_url: str | None = None
+    avatar_engine: str | None = Field(default=None, pattern="^(|infinitetalk|longcat)$")
 
 
 class ProjectUpdate(BaseModel):
@@ -156,7 +157,7 @@ class ProjectUpdate(BaseModel):
     source_type: str | None = Field(default=None, pattern="^(theme|script)$")
     source_text: str | None = Field(default=None, min_length=2, max_length=20000)
     template_id: str | None = None
-    pipeline_mode: str | None = Field(default=None, pattern="^(full|image_text)$")
+    pipeline_mode: str | None = Field(default=None, pattern="^(full|image_text|avatar)$")
     output_ratio: str | None = Field(
         default=None,
         pattern=r"^(16:9|9:16|1:1|4:3|21:9)$",
@@ -173,6 +174,7 @@ class ProjectUpdate(BaseModel):
     subtitle_preset: str | None = Field(default=None, max_length=32)
     ref_image_url: str | None = None
     cover_url: str | None = Field(default=None, max_length=1024)
+    avatar_engine: str | None = Field(default=None, pattern="^(|infinitetalk|longcat)$")
 
 
 class ProjectOut(BaseModel):
@@ -199,6 +201,8 @@ class ProjectOut(BaseModel):
     image_model: str = ""
     video_model: str = ""
     ref_image_url: str | None
+    avatar_image_url: str | None = None
+    avatar_engine: str = ""
     created_at: datetime
     updated_at: datetime
     shots: list[ShotOut] = []

@@ -80,6 +80,15 @@ billing_expr USD sell = official_CNY / 7.3 * 1.5
 
 管理端「官方用量对照」复用模型页 TokenFree API Key，拉取 New API 日消耗（`/api/data/self` 或 billing usage，日期无效时按累计额度差分记到当天）并与本地成本对照。
 
+### 数字人口播（自建 GPU）
+
+`pipeline_mode=avatar` 的对口型视频由自建 GPU 服务生成（见 `deploy/avatar-gpu/server/`），没有上游账单：
+
+- 单价在管理后台「系统设置 → 数字人」配置 `avatar_price_fen_per_sec`（分/秒成片），**默认 0 不收费**。
+- 视频阶段预扣 = 未完成段的配音秒数 × 单价；单段重做按该段时长预扣。
+- 每段下载成功后写一行 `billing_key=avatar_video`、`provider=avatar` 的用量，`raw.cost_fen` = 成片秒数 × 单价，结算按实际秒数。
+- 逐段配音仍按 `tts` 估价；数字人模式不出分镜图，素材阶段不预扣生图。
+
 ## TaskRun 计费流程
 
 任务中心分别展示「预估」「冻结状态」「实扣」「退款」与用量计费依据；未结算时实扣应显示未结算，而不是已消费 0 元。冻结是任务的预留金额，不是额外收费；总费用不能把冻结和实扣相加。取消/失败后按既有结算逻辑释放冻结，并保留真实已发生的上游用量。

@@ -411,6 +411,7 @@ export const zhPages = {
     typeAll: '全部类型',
     typeFull: '成片视频',
     typeImageText: '图文视频',
+    typeAvatar: '数字人口播',
     searchPlaceholder: '搜索项目名称',
     packing: '打包中 {progress}…',
     packDownload: '打包下载 ({count})',

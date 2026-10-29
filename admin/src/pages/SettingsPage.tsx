@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Loader2, Save } from "lucide-react";
+import { AvatarSettingsPanel } from "@/components/settings/AvatarSettingsPanel";
 import { OssSettingsPanel } from "@/components/settings/OssSettingsPanel";
 import { PaymentSettingsPanel } from "@/components/settings/PaymentSettingsPanel";
 import { RoutingSettingsPanel } from "@/components/settings/RoutingSettingsPanel";
@@ -11,10 +12,11 @@ import {
 } from "@/components/settings/SettingsSaveContext";
 import { cn } from "@/lib/utils";
 
-type SettingsTab = "routing" | "runtime" | "oss" | "payment" | "site";
+type SettingsTab = "routing" | "avatar" | "runtime" | "oss" | "payment" | "site";
 
 const TABS: { id: SettingsTab; label: string }[] = [
   { id: "routing", label: "模型" },
+  { id: "avatar", label: "数字人" },
   { id: "runtime", label: "运行参数" },
   { id: "oss", label: "存储 OSS" },
   { id: "payment", label: "支付计费" },
@@ -72,6 +74,7 @@ function SettingsPageInner() {
 
       <div className="settings-main">
         {tab === "routing" ? <RoutingSettingsPanel /> : null}
+        {tab === "avatar" ? <AvatarSettingsPanel /> : null}
         {tab === "runtime" ? <RuntimeSettingsPanel /> : null}
         {tab === "oss" ? <OssSettingsPanel /> : null}
         {tab === "payment" ? <PaymentSettingsPanel /> : null}

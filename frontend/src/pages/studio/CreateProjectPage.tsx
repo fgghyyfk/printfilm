@@ -282,8 +282,8 @@ export default function CreateProjectPage() {
       const tpl = templates.find((t) => t.id === templateId)
       const d = tpl ? defaultsFromTemplate(tpl) : undefined
       const modeParam = params.get('mode')
-      const pipeline_mode: 'full' | 'image_text' =
-        modeParam === 'image_text' || modeParam === 'full' ? modeParam : 'full'
+      const pipeline_mode: 'full' | 'image_text' | 'avatar' =
+        modeParam === 'image_text' || modeParam === 'full' || modeParam === 'avatar' ? modeParam : 'full'
       const finalTitle =
         title.trim() || deriveTitle(sourceText) || sourceText.trim().slice(0, 24) || '未命名作品'
       const project = await api.createProject({

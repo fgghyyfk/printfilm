@@ -35,6 +35,15 @@ export type AdminModelSettings = {
   drama_user_video_job_limit: number;
   drama_fragment_max_attempts: number;
   ark_mock: boolean;
+  avatar_base_url: string;
+  avatar_api_key: string;
+  has_avatar_api_key: boolean;
+  avatar_engine: "infinitetalk" | "longcat";
+  avatar_resolution: "480p" | "720p";
+  avatar_poll_interval: number;
+  avatar_poll_timeout: number;
+  avatar_segment_max_sec: number;
+  avatar_price_fen_per_sec: number;
   oss_enabled: boolean;
   oss_endpoint: string;
   oss_region: string;

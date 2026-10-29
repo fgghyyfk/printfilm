@@ -68,7 +68,7 @@ def project_runtime_view(project: Project) -> tuple[str, int, str | None]:
 # 关键词和类型筛选同时用于列表、总数与统计，避免三个查询范围漂移。
 def _scope_filters(user_id: int, mode: str, keyword: str) -> list:
     filters = [Project.user_id == user_id]
-    if mode in {"full", "image_text"}:
+    if mode in {"full", "image_text", "avatar"}:
         filters.append(Project.pipeline_mode == mode)
     if keyword:
         like = f"%{keyword}%"

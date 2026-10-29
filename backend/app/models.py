@@ -110,8 +110,12 @@ class Project(Base):
     final_video_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     resolution_mode: Mapped[str] = mapped_column(String(16), default="preview")  # preview | hd
     # full = 图→视频→配音→合成；image_text = 静图+叠字+配音+Ken Burns（跳过 AI 视频）
+    # avatar = 数字人口播：一张半身照 + 逐段配音 → 自建 GPU 对口型视频 → 标题条合成
     # 由用户选择，不由模板锁定
     pipeline_mode: Mapped[str] = mapped_column(String(32), default="full")
+    # 数字人口播：半身照（/static 或 OSS URL）与引擎（infinitetalk | longcat，空则用后台默认）
+    avatar_image_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    avatar_engine: Mapped[str] = mapped_column(String(32), default="")
     # 输出画幅，如 16:9 / 9:16；空则回退模板 default_ratio
     output_ratio: Mapped[str] = mapped_column(String(16), default="")
     # 配音预设 id；空则用模板默认
@@ -168,6 +172,8 @@ class Shot(Base):
     audio_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     # 跳过 AI 视频的原因（privacy=真人隐私拦截，静图合成）；NULL 表示正常出视频
     video_skip_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # 数字人口播：GPU 服务端任务 id，流水线中断重启后接着等同一个任务，不重复提交
+    avatar_job_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     status: Mapped[str] = mapped_column(String(32), default=ShotStatus.PENDING)
     version: Mapped[int] = mapped_column(Integer, default=1)
 

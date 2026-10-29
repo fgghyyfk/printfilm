@@ -4,7 +4,20 @@ import { apiErrorMessage } from './api/http'
 /** 科普、账号和计费 API 共用 JSON 传输层。 */
 const request = createJsonRequester()
 
-export type PipelineMode = 'full' | 'image_text'
+export type PipelineMode = 'full' | 'image_text' | 'avatar'
+
+/** 数字人引擎：空串表示用后台默认 */
+export type AvatarEngine = '' | 'infinitetalk' | 'longcat'
+
+/** 数字人服务状态（创建页提示用） */
+export type AvatarServiceStatus = {
+  configured: boolean
+  online: boolean
+  mock: boolean
+  engines: string[]
+  active_engine?: string | null
+  queued?: number
+}
 
 export type Template = {
   id: string
@@ -127,6 +140,8 @@ export type Project = {
   image_model?: string
   video_model?: string
   ref_image_url: string | null
+  avatar_image_url?: string | null
+  avatar_engine?: AvatarEngine
   created_at: string
   updated_at: string
   shots: Shot[]
@@ -370,6 +385,7 @@ export const api = {
       bgm_lock?: string
       subtitle_preset?: string
       cover_url?: string | null
+      avatar_engine?: AvatarEngine
     },
   ) {
     return request<Project>(`/api/projects/${id}`, {
@@ -386,6 +402,16 @@ export const api = {
       throw new Error(apiErrorMessage(detail, response.statusText) || '封面上传失败')
     })
   },
+  /** 上传数字人半身照；换照片后已生成的对口型视频作废。 */
+  uploadAvatarImage(id: number, file: File) {
+    return uploadFile<Project>(`/api/projects/${id}/avatar-image`, file, (response, detail) => {
+      throw new Error(apiErrorMessage(detail, response.statusText) || '照片上传失败')
+    })
+  },
+  /** 数字人服务是否已配置、在线。 */
+  avatarStatus() {
+    return request<AvatarServiceStatus>('/api/avatar/status')
+  },
   voices() {
     return request<VoicePreset[]>('/api/voices')
   },
@@ -400,7 +426,7 @@ export const api = {
     page_size?: number
     status?: 'all' | 'draft' | 'running' | 'done' | 'published' | string
     q?: string
-    pipeline_mode?: '' | 'full' | 'image_text' | string
+    pipeline_mode?: '' | 'full' | 'image_text' | 'avatar' | string
   }) {
     const sp = new URLSearchParams()
     if (params?.page) sp.set('page', String(params.page))

@@ -325,6 +325,15 @@ def suggested_kepu_shot_range(source_text: str, *, pipeline_mode: str = "full") 
     return 8, 10
 
 
+def suggested_avatar_shot_range(source_text: str, *, max_sec: int = 20) -> tuple[int, int]:
+    """数字人口播的段数区间：按约 4.5 字/秒的语速，每段不超过 max_sec 秒，最多 12 段。"""
+    n = len(re.sub(r"\s+", "", source_text or ""))
+    per_seg = max(20, int(max_sec * 4.5))
+    lo = max(2, min(12, -(-n // per_seg)))
+    hi = max(lo + 1, min(12, -(-n // max(15, per_seg * 2 // 3))))
+    return lo, min(12, hi)
+
+
 def clamp_segment_duration(seconds: float | int) -> int:
     return int(max(SEGMENT_DURATION_MIN, min(int(round(float(seconds))), SEGMENT_DURATION_MAX)))
 

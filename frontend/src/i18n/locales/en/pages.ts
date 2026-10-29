@@ -418,6 +418,7 @@ export const enPages = {
     typeAll: 'All types',
     typeFull: 'AI video',
     typeImageText: 'Stills + voice',
+    typeAvatar: 'Talking avatar',
     searchPlaceholder: 'Search by title',
     packing: 'Zipping {progress}…',
     packDownload: 'Download zip ({count})',

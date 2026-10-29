@@ -27,6 +27,7 @@ import {
   kepuPhaseHint,
   kepuStepIndex,
   kepuSteps,
+  pipelineModeLabel,
   isProjectWideBusy,
   isShotGenerating,
   shotsByNo,
@@ -244,14 +245,19 @@ export default function StoryboardPage() {
         ? 'compose'
         : 'generate'
 
+  const isAvatar = project?.pipeline_mode === 'avatar'
   const generateLabel = running
     ? '生成中…'
     : shots.length === 0
       ? '去风格页生成分镜'
       : needsScriptConfirm
-        ? '确认分镜，逐镜出图与配音'
+        ? isAvatar
+          ? '确认分镜，逐段配音'
+          : '确认分镜，逐镜出图与配音'
         : needsVideos
-          ? '逐镜出视频'
+          ? isAvatar
+            ? '生成数字人视频'
+            : '逐镜出视频'
           : '继续生成'
 
   // 工作台进度：完整模式要镜头视频 + 外部 TTS，静图模式只配音合成
@@ -262,19 +268,20 @@ export default function StoryboardPage() {
     const auds = list.filter((s) => s.audio_url).length
     const vids = list.filter((s) => s.video_url).length
     const full = project.pipeline_mode !== 'image_text'
+    const avatar = project.pipeline_mode === 'avatar'
     const stage = effectiveStatus(project)
     type ProgressItem = { label: string; done: boolean; run?: boolean; pct?: number }
     const items: ProgressItem[] = [
       { label: '主题解析', done: true },
       { label: '分镜脚本', done: list.length > 0 || !['DRAFT', 'SCRIPTING'].includes(project.status) },
       {
-        label: `画面生成 (${imgs}/${list.length || 0})`,
+        label: avatar ? `数字人照片 (${imgs}/${list.length || 0})` : `画面生成 (${imgs}/${list.length || 0})`,
         done: list.length > 0 && imgs === list.length,
       },
     ]
     if (full) {
       items.push({
-        label: `镜头视频 (${vids}/${list.length || 0})`,
+        label: `${avatar ? '数字人视频' : '镜头视频'} (${vids}/${list.length || 0})`,
         done:
           list.length > 0 &&
           (vids === list.length ||
@@ -884,7 +891,7 @@ title="用当前镜头重新拼接"
             </li>
             <li>
               <span>成片方式</span>
-              <span>{project.pipeline_mode === 'image_text' ? '静图成片' : 'AI 视频'}</span>
+              <span>{pipelineModeLabel(project.pipeline_mode)}</span>
             </li>
             <li>
               <span>风格</span>

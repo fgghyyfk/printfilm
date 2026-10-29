@@ -9,6 +9,7 @@ from sqlalchemy import select, text
 
 from app.api import auth, billing, projects, tasks, templates, tools
 from app.api import api_keys as user_api_keys
+from app.api import project_avatar
 from app.api.v1 import router as v1_router
 from app.api.admin import router as admin_router
 from app.api.drama import router as drama_router
@@ -86,6 +87,7 @@ app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 app.include_router(auth.router, prefix="/api")
 app.include_router(templates.router, prefix="/api")
 app.include_router(projects.router, prefix="/api")
+app.include_router(project_avatar.router, prefix="/api")
 app.include_router(tasks.router, prefix="/api")
 app.include_router(billing.router, prefix="/api")
 app.include_router(tools.router, prefix="/api")
@@ -160,6 +162,8 @@ async def _apply_schema_patches() -> None:
             await conn.execute(text("ALTER TABLE shots ADD COLUMN last_frame_url VARCHAR(1024)"))
         if "video_skip_reason" not in scols:
             await conn.execute(text("ALTER TABLE shots ADD COLUMN video_skip_reason VARCHAR(32)"))
+        if "avatar_job_id" not in scols:
+            await conn.execute(text("ALTER TABLE shots ADD COLUMN avatar_job_id VARCHAR(64)"))
 
         pcols = await _pg_columns(conn, "projects")
         if "pipeline_mode" not in pcols:
@@ -184,6 +188,10 @@ async def _apply_schema_patches() -> None:
             await conn.execute(text("ALTER TABLE projects ADD COLUMN image_model VARCHAR(64) DEFAULT ''"))
         if "video_model" not in pcols:
             await conn.execute(text("ALTER TABLE projects ADD COLUMN video_model VARCHAR(64) DEFAULT ''"))
+        if "avatar_image_url" not in pcols:
+            await conn.execute(text("ALTER TABLE projects ADD COLUMN avatar_image_url VARCHAR(1024)"))
+        if "avatar_engine" not in pcols:
+            await conn.execute(text("ALTER TABLE projects ADD COLUMN avatar_engine VARCHAR(32) DEFAULT ''"))
 
         # User billing columns
         ucols = await _pg_columns(conn, "users")

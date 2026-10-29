@@ -271,6 +271,7 @@ async def create_project(
         image_model=(body.image_model or "").strip(),
         video_model=(body.video_model or "").strip(),
         ref_image_url=body.ref_image_url,
+        avatar_engine=(body.avatar_engine or "").strip(),
         status=ProjectStatus.DRAFT,
     )
     db.add(project)
@@ -293,7 +294,7 @@ async def list_projects(
     q: str | None = Query(None, description="title search"),
     pipeline_mode: str | None = Query(
         None,
-        description="full|image_text；空=全部类型",
+        description="full|image_text|avatar；空=全部类型",
     ),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -839,8 +840,14 @@ async def update_shot(
     )
     for k, v in data.items():
         setattr(shot, k, v)
+    if (project.pipeline_mode or "") == "avatar":
+        # 数字人：画面固定是半身照，只有口播变了才需重做该段的配音与对口型视频，其它段不受影响
+        if audio_dirty:
+            shot.audio_url = None
+            shot.video_url = None
+            shot.avatar_job_id = None
     # Invalidate downstream if visual prompts changed
-    if "img_prompt" in data:
+    elif "img_prompt" in data:
         shot.image_url = None
         shot.video_url = None
         shot.last_frame_url = None
@@ -855,7 +862,7 @@ async def update_shot(
         shot.video_url = None
         shot.last_frame_url = None
         shot.video_skip_reason = None
-    if audio_dirty:
+    if audio_dirty and (project.pipeline_mode or "") != "avatar":
         full_narration = storage.project_dir(project_id) / "full_narration.mp3"
         full_narration.unlink(missing_ok=True)
         for sibling in project.shots:
@@ -906,7 +913,8 @@ async def regen_video(
         raise HTTPException(status_code=400, detail="图文模式无需生成 AI 视频，请直接重新合成成片")
     shot = next((s for s in project.shots if s.id == shot_id), None)
     if not shot or not (shot.image_url or shot.image_ark_url):
-        raise HTTPException(status_code=400, detail="请先生成该镜画面")
+        detail = "请先上传数字人照片并完成配音" if (project.pipeline_mode or "") == "avatar" else "请先生成该镜画面"
+        raise HTTPException(status_code=400, detail=detail)
     project.status = ProjectStatus.VIDEOING
     project.error_msg = None
     await db.commit()

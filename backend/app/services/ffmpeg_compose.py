@@ -54,7 +54,7 @@ class ComposeOptions:
     # One continuous TTS track for the whole film (preferred over per-shot audio)
     full_audio_path: Path | None = None
     # Overlay / caption sizing & layout (from template.subtitle_config)
-    subtitle_layout: str = "top"  # top | split（标题在上；口播字幕始终底部）
+    subtitle_layout: str = "top"  # top | split | band（band：画面中部半透明标题条，数字人口播用）
     title_scale: float = 1.35
     sub_scale: float = 1.3
     caption_scale: float = 1.25
@@ -66,6 +66,8 @@ class ComposeOptions:
     # Seedance 内置口播：直接保留视频音轨，不叠外部 TTS
     prefer_video_audio: bool = False
     sfx_volume: float = 0.22
+    # 镜头视频适配画布：contain 等比缩放加黑边；cover 等比放大裁满（数字人口播用）
+    video_fit: str = "contain"
 
 
 def allocate_durations_by_narration(
@@ -543,7 +545,31 @@ def _make_silent_audio(path: Path, duration: float) -> None:
     )
 
 
-def _scale_pad(w: int, h: int) -> str:
+def _fit_canvas_filter(w: int, h: int, fit: str, src: Path) -> str:
+    """镜头适配画布的滤镜（不含 format）。
+
+    cover：画幅接近时裁满；源画面明显更宽（如 3:4 数字人放进 9:16）时不硬裁放大，
+    改为人物完整居中、上下用同一画面放大模糊填充，避免脸被放得过大、标题条压住嘴。
+    """
+    if fit == "cover":
+        dims = probe_video_dimensions(src)
+        if dims and dims[1] > 0 and (dims[0] / dims[1]) > (w / h) * 1.15:
+            return (
+                f"split[bgsrc][fgsrc];"
+                f"[bgsrc]scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},boxblur=24:2[bg];"
+                f"[fgsrc]scale={w}:{h}:force_original_aspect_ratio=decrease[fg];"
+                f"[bg][fg]overlay=(W-w)/2:(H-h)/2"
+            )
+    return _scale_pad(w, h, fit).replace(",format=yuv420p", "")
+
+
+def _scale_pad(w: int, h: int, fit: str = "contain") -> str:
+    """缩放到画布：contain 加黑边；cover 裁满（竖向多余时偏上裁，保住人脸）。"""
+    if fit == "cover":
+        return (
+            f"scale={w}:{h}:force_original_aspect_ratio=increase,"
+            f"crop={w}:{h}:(iw-ow)/2:(ih-oh)/3,format=yuv420p"
+        )
     return (
         f"scale={w}:{h}:force_original_aspect_ratio=decrease,"
         f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,format=yuv420p"
@@ -636,7 +662,9 @@ def _overlay_drawtext(
     title_scale: float = 1.35,
     sub_scale: float = 1.3,
 ) -> str:
-    """顶部标题叠字。split 也把副标题放在标题下方，底部留给口播字幕。"""
+    """顶部标题叠字。split 也把副标题放在标题下方，底部留给口播字幕。band 见 _band_title_drawtext。"""
+    if layout == "band":
+        return _band_title_drawtext(w, h, title, subtitle, font, title_scale=title_scale, sub_scale=sub_scale)
     title = _strip_caption_punct(title)
     subtitle = _strip_caption_punct(subtitle)
     title_cap = 14 if layout == "split" else 12
@@ -674,6 +702,49 @@ def _overlay_drawtext(
             f"fontcolor=white:borderw=3:bordercolor=black@0.75:"
             f"x=(w-text_w)/2:y={sub_y}"
         )
+    return ",".join(parts)
+
+
+def _band_title_drawtext(
+    w: int,
+    h: int,
+    title: str,
+    subtitle: str,
+    font: str | None,
+    *,
+    title_scale: float = 1.35,
+    sub_scale: float = 1.3,
+) -> str:
+    """数字人口播标题条：画面中下部一条半透明深色底，两行大字，第一行黄、第二行白，均带黑描边。
+
+    数字人成片右上角固定加「AI 生成」小字标识（合规要求，与是否有标题无关）。
+    """
+    title = _strip_caption_punct(title)[:12]
+    subtitle = _strip_caption_punct(subtitle)[:14]
+    font_opt = f":fontfile='{_escape_fontfile(font)}'" if font else ""
+    mark_size = max(18, int(w * 0.03))
+    mark = (
+        f"drawtext=text='AI 生成'{font_opt}:fontsize={mark_size}:fontcolor=white@0.75:"
+        f"borderw=2:bordercolor=black@0.5:x=w-text_w-{int(w * 0.03)}:y={int(h * 0.02)}"
+    )
+    if not title and not subtitle:
+        return mark
+    title_size = max(40, min(72, int(w * 0.075 * max(0.8, title_scale) / 1.35)))
+    sub_size = max(36, min(64, int(w * 0.066 * max(0.8, sub_scale) / 1.3)))
+    gap = int(h * 0.012)
+    pad = int(h * 0.018)
+    lines = [(t, s, c) for t, s, c in ((title, title_size, "0xFFD400"), (subtitle, sub_size, "white")) if t]
+    bar_h = sum(s for _, s, _ in lines) + gap * (len(lines) - 1) + pad * 2
+    # 胸口位置：人物居中时嘴大约在 55% 高度，标题条从 70% 开始不压脸；底部仍留给口播字幕
+    bar_y = int(h * 0.70)
+    parts = [mark, f"drawbox=x=0:y={bar_y}:w={w}:h={bar_h}:color=black@0.45:t=fill"]
+    y = bar_y + pad
+    for text, size, color in lines:
+        parts.append(
+            f"drawtext=text='{_escape_drawtext(text)}'{font_opt}:fontsize={size}:"
+            f"fontcolor={color}:borderw=4:bordercolor=black@0.9:x=(w-text_w)/2:y={y}"
+        )
+        y += size + gap
     return ",".join(parts)
 
 
@@ -859,6 +930,7 @@ def _pad_or_trim_video(
     w: int,
     h: int,
     keep_audio: bool = False,
+    fit: str = "contain",
 ) -> None:
     """Scale video to canvas and force exact duration: trim if longer, freeze-pad if shorter.
 
@@ -870,7 +942,7 @@ def _pad_or_trim_video(
     src_dur = probe_duration(src) or 0.0
     # Reset PTS before fps/tpad. Seedance clips often have a wild timebase;
     # tpad then writes 100h+ timestamps and OOM on trailer.
-    base_vf = f"{_scale_pad(w, h).replace(',format=yuv420p', '')},setpts=PTS-STARTPTS,fps=24"
+    base_vf = f"{_fit_canvas_filter(w, h, fit, src)},setpts=PTS-STARTPTS,fps=24"
     if src_dur > 0.05 and src_dur + 0.08 < target:
         pad = min(target - src_dur, 120.0)
         vf = f"{base_vf},tpad=stop_mode=clone:stop_duration={pad:.3f},format=yuv420p"
@@ -1182,6 +1254,7 @@ def compose_project(
                     w=w,
                     h=h,
                     keep_audio=keep_clip_audio,
+                    fit=opts.video_fit,
                 )
                 _burn_captions_on_video(
                     raw_v,

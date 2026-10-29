@@ -1,0 +1,5 @@
+# 实测素材与结果不入库（含真人肖像/声音与生成媒体）
+inputs/*
+!inputs/script.txt
+!inputs/prompt.txt
+results/

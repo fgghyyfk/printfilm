@@ -16,6 +16,11 @@ def _is_image_text(project: Any) -> bool:
     return (getattr(project, "pipeline_mode", None) or "full") == "image_text"
 
 
+def is_avatar(project: Any) -> bool:
+    """数字人口播模式：照片 + 逐段配音 → 对口型视频。"""
+    return (getattr(project, "pipeline_mode", None) or "full") == "avatar"
+
+
 def shot_image_ready(shot: Any) -> bool:
     """分镜是否已有可用分镜图。"""
     return bool(getattr(shot, "image_url", None) or getattr(shot, "image_ark_url", None))
@@ -50,6 +55,10 @@ def continuous_narration_ok(project_id: int) -> bool:
 
 def project_audio_ready(project: Any) -> bool:
     """项目旁白是否就绪：视频内置口播无需外部 TTS；否则整片/分镜旁白文件 OK。"""
+    shots = list(getattr(project, "shots", None) or [])
+    # 数字人：每段单独配音（口型对齐该段音频），不认整片旁白
+    if is_avatar(project):
+        return bool(shots) and all(shot_audio_file_ok(s) for s in shots)
     # full + Seedance 内置口播：assets 阶段不强制外部配音
     if not _is_image_text(project):
         try:
@@ -63,7 +72,6 @@ def project_audio_ready(project: Any) -> bool:
     project_id = getattr(project, "id", None)
     if project_id is not None and continuous_narration_ok(int(project_id)):
         return True
-    shots = list(getattr(project, "shots", None) or [])
     return bool(shots) and all(shot_audio_file_ok(s) for s in shots)
 
 

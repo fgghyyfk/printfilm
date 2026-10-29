@@ -1,14 +1,23 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { api, defaultsFromTemplate, resolveVoiceId } from '../../api'
-import type { MediaModelOption, MediaModelsCatalog, PipelineMode, Project, Template, VoicePreset } from '../../api'
+import type {
+  AvatarEngine,
+  MediaModelOption,
+  MediaModelsCatalog,
+  PipelineMode,
+  Project,
+  Template,
+  VoicePreset,
+} from '../../api'
+import AvatarSetupBlock from '../../components/studio/AvatarSetupBlock'
 import AppShell from '../../components/layout/AppShell'
 import Stepper from '../../components/ui/Stepper'
 import ComingSoon from '../../components/ui/ComingSoon'
 import { IconChevronLeft, IconPlay } from '../../components/ui/Icons'
 import BillingErrorNotice from '../../components/billing/BillingErrorNotice'
 import { handleBillingError } from '../../lib/billingError'
-import { kepuStepIndex, kepuSteps } from '../../lib/status'
+import { kepuStepIndex, kepuSteps, pipelineModeLabel } from '../../lib/status'
 
 const OUTPUT_MODES: { id: PipelineMode; label: string; desc: string; image: string }[] = [
   { id: 'full', label: 'AI 视频', desc: '图→视频→配音→合成', image: '/mode-presets/full.jpg' },
@@ -17,6 +26,12 @@ const OUTPUT_MODES: { id: PipelineMode; label: string; desc: string; image: stri
     label: '静图成片',
     desc: '静图+叠字+配音，不生成 AI 视频',
     image: '/mode-presets/image_text.jpg',
+  },
+  {
+    id: 'avatar',
+    label: '数字人口播',
+    desc: '半身照+配音→对口型视频，加标题条',
+    image: '/mode-presets/avatar.svg',
   },
 ]
 
@@ -52,6 +67,7 @@ export default function StyleConfigPage() {
   const [extraPrompt, setExtraPrompt] = useState('')
   const [voiceId, setVoiceId] = useState('')
   const [pipelineMode, setPipelineMode] = useState<PipelineMode>('full')
+  const [avatarEngine, setAvatarEngine] = useState<AvatarEngine>('')
   const [ratio, setRatio] = useState('16:9')
   const [imageModel, setImageModel] = useState('')
   const [videoModel, setVideoModel] = useState('')
@@ -88,7 +104,8 @@ export default function StyleConfigPage() {
         setExtraPrompt(p.extra_prompt || '')
         setVoiceId(p.voice_id || '')
         setPipelineMode(p.pipeline_mode || 'full')
-        setRatio(p.output_ratio || (p.pipeline_mode === 'image_text' ? '9:16' : '16:9'))
+        setAvatarEngine(p.avatar_engine || '')
+        setRatio(p.output_ratio || (p.pipeline_mode && p.pipeline_mode !== 'full' ? '9:16' : '16:9'))
         if (p.image_model) setImageModel(p.image_model)
         if (p.video_model) setVideoModel(p.video_model)
       })
@@ -181,8 +198,18 @@ export default function StyleConfigPage() {
     }
   }
 
+  /** 切换成片方式；数字人口播默认竖屏 */
+  function pickMode(mode: PipelineMode) {
+    setPipelineMode(mode)
+    if (mode === 'avatar' && !project?.output_ratio) setRatio('9:16')
+  }
+
   async function generate() {
     if (!project) return
+    if (pipelineMode === 'avatar' && !project.avatar_image_url) {
+      setError('请先上传数字人半身照')
+      return
+    }
     stopPreview()
     setBusy(true)
     setError('')
@@ -205,6 +232,7 @@ export default function StyleConfigPage() {
         output_ratio: ratio,
         image_model: imageModel,
         video_model: videoModel,
+        avatar_engine: avatarEngine,
       })
       const started = await api.generate(project.id)
       nav(`/studio/${started.id}`)
@@ -409,13 +437,13 @@ export default function StyleConfigPage() {
             <p className="pf-muted" style={{ fontSize: '0.78rem', margin: '0 0 0.65rem' }}>
               任意模板都可选择是否生成 AI 视频，与画幅无关。
             </p>
-            <div className="pf-style-grid" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
+            <div className="pf-style-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
               {OUTPUT_MODES.map((m) => (
                 <button
                   key={m.id}
                   type="button"
                   className={pipelineMode === m.id ? 'pf-style-opt selected' : 'pf-style-opt'}
-                  onClick={() => setPipelineMode(m.id)}
+                  onClick={() => pickMode(m.id)}
                 >
                   <img src={m.image} alt="" />
                   <div className="cap">{m.label}</div>
@@ -425,7 +453,17 @@ export default function StyleConfigPage() {
             </div>
           </div>
 
-          {mediaCatalog ? (
+          {pipelineMode === 'avatar' ? (
+            <AvatarSetupBlock
+              project={project}
+              engine={avatarEngine}
+              onEngineChange={setAvatarEngine}
+              onProjectUpdated={setProject}
+              disabled={busy}
+            />
+          ) : null}
+
+          {mediaCatalog && pipelineMode !== 'avatar' ? (
             <div className="pf-style-block">
               <h3>图片模型</h3>
               <p className="pf-muted" style={{ fontSize: '0.78rem', margin: '0 0 0.65rem' }}>
@@ -535,7 +573,7 @@ export default function StyleConfigPage() {
             </li>
             <li>
               <span>成片</span>
-              <span>{pipelineMode === 'image_text' ? '静图成片' : 'AI 视频'}</span>
+              <span>{pipelineModeLabel(pipelineMode)}</span>
             </li>
           </ul>
           {selectedVoice ? (
