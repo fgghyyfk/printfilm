@@ -7346,6 +7346,73 @@ button.pf-shot-editable:disabled {
   text-align: center;
 }
 
+/* 数字人：人脸照 / 定妆照两列、风格与改图模型选择 */
+.pf-avatar-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex: 0 0 auto;
+}
+
+.pf-avatar-label {
+  font-size: 0.74rem;
+  color: var(--pf-muted);
+  white-space: nowrap;
+}
+
+.pf-avatar-look {
+  cursor: default;
+  border-style: solid;
+}
+
+.pf-avatar-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin-top: 0.7rem;
+}
+
+.pf-avatar-row > .pf-avatar-label {
+  flex: 0 0 4.5em;
+}
+
+.pf-avatar-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.pf-avatar-chip {
+  border: 1px solid var(--pf-line);
+  border-radius: 999px;
+  background: #fff;
+  padding: 0.25rem 0.7rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+  color: inherit;
+}
+
+.pf-avatar-chip.selected {
+  border-color: #111318;
+  background: #111318;
+  color: #fff;
+}
+
+.pf-avatar-chip:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.pf-avatar-gen {
+  margin-top: 0.8rem;
+}
+
+@media (max-width: 560px) {
+  .pf-avatar-setup {
+    flex-wrap: wrap;
+  }
+}
+
 .pf-avatar-tips {
   flex: 1 1 auto;
   min-width: 0;

@@ -19,6 +19,14 @@ export type AvatarServiceStatus = {
   queued?: number
 }
 
+/** 数字人形象选项：定妆照风格、可选改图模型、素材服务是否已配置 */
+export type AvatarOptions = {
+  ai_configured: boolean
+  default_image_model: string
+  image_models: { id: string; label: string; hint: string }[]
+  look_styles: { id: string; label: string }[]
+}
+
 export type Template = {
   id: string
   name: string
@@ -92,6 +100,8 @@ export type Shot = {
   image_url: string | null
   video_url: string | null
   audio_url: string | null
+  /** 数字人：重点文字，「|」分隔 */
+  highlights?: string
   status: string
   version: number
 }
@@ -142,6 +152,9 @@ export type Project = {
   ref_image_url: string | null
   avatar_image_url?: string | null
   avatar_engine?: AvatarEngine
+  avatar_face_url?: string | null
+  avatar_look_style?: string
+  avatar_image_model?: string
   created_at: string
   updated_at: string
   shots: Shot[]
@@ -386,6 +399,7 @@ export const api = {
       subtitle_preset?: string
       cover_url?: string | null
       avatar_engine?: AvatarEngine
+      avatar_image_model?: string
     },
   ) {
     return request<Project>(`/api/projects/${id}`, {
@@ -407,6 +421,21 @@ export const api = {
     return uploadFile<Project>(`/api/projects/${id}/avatar-image`, file, (response, detail) => {
       throw new Error(apiErrorMessage(detail, response.statusText) || '照片上传失败')
     })
+  },
+  /** 由人脸照生成定妆照（只保留脸）；约 10–60 秒。 */
+  generateAvatarLook(id: number, style: string, model: string) {
+    return request<Project>(`/api/projects/${id}/avatar-look`, {
+      method: 'POST',
+      body: JSON.stringify({ style, model }),
+    })
+  },
+  /** 按该段场景描述重画场景图（同一个人）。 */
+  regenAvatarScene(projectId: number, shotId: number) {
+    return request<Project>(`/api/projects/${projectId}/shots/${shotId}/avatar-scene`, { method: 'POST' })
+  },
+  /** 定妆照风格与可选改图模型。 */
+  avatarOptions() {
+    return request<AvatarOptions>('/api/avatar/options')
   },
   /** 数字人服务是否已配置、在线。 */
   avatarStatus() {

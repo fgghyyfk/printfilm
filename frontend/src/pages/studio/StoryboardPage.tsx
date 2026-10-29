@@ -504,7 +504,12 @@ export default function StoryboardPage() {
     if (!project) return
     markShotBusy(shot.id)
     try {
-      setProject(await api.regenImage(project.id, shot.id))
+      // 数字人：按该段场景描述重画「同一个人 + 场景」
+      setProject(
+        project.pipeline_mode === 'avatar'
+          ? await api.regenAvatarScene(project.id, shot.id)
+          : await api.regenImage(project.id, shot.id),
+      )
     } catch (err) {
       setError(err instanceof Error ? err.message : '生成画面失败')
     } finally {
@@ -604,7 +609,16 @@ export default function StoryboardPage() {
     }
     setBusy(true)
     try {
-      await api.updateShot(project.id, editing.id, {
+      // 数字人没有逐段脚本：只提交口播、小标题、场景描述与重点文字，避免脚本规范化改写字段
+      const body: Partial<Shot> =
+        project.pipeline_mode === 'avatar'
+          ? {
+              narration: editing.narration,
+              overlay_title: editing.overlay_title,
+              img_prompt: editing.img_prompt,
+              highlights: editing.highlights || '',
+            }
+          : {
         narration: editing.narration,
         overlay_title: editing.overlay_title,
         overlay_subtitle: editing.overlay_subtitle,
@@ -613,7 +627,8 @@ export default function StoryboardPage() {
         segment_script: editing.segment_script,
         duration: durationCheck.total > 0 ? durationCheck.total : Number(editing.duration) || 4,
         camera: editing.camera,
-      })
+      }
+      await api.updateShot(project.id, editing.id, body)
       closeShotEdit()
       setProject(await api.getProject(project.id))
     } catch (err) {
@@ -1090,6 +1105,11 @@ title="用当前镜头重新拼接"
                               <span className="line">
                                 {narration ? `“${narration}”` : '—'}
                               </span>
+                              {isAvatar && shot.highlights ? (
+                                <span className="pf-muted" style={{ display: 'block', fontSize: '0.75rem' }}>
+                                  重点：{shot.highlights.split('|').join(' · ')}
+                                </span>
+                              ) : null}
                             </button>
                           </td>
                           <td className="col-seg">
@@ -1173,7 +1193,7 @@ title="用当前镜头重新拼接"
                                 disabled={rowBusy}
                                 onClick={() => regenImage(shot)}
                               >
-                                {shot.image_url ? '重绘画面' : '生成画面'}
+                                {isAvatar ? '重画场景' : shot.image_url ? '重绘画面' : '生成画面'}
                               </button>
                               {isFullPipeline ? (
                                 <button
@@ -1422,6 +1442,32 @@ title="用当前镜头重新拼接"
                       会同步到脚本旁白段，并影响整片配音（改完需重新生成配音/成片）
                     </span>
                   </label>
+                  {isAvatar ? (
+                    <>
+                      <label>
+                        出镜场景
+                        <textarea
+                          value={editing.img_prompt}
+                          onChange={(e) => setEditing({ ...editing, img_prompt: e.target.value })}
+                          rows={3}
+                        />
+                        <span className="pf-muted pf-prompt-hint">
+                          人物站在什么背景前讲解（英文效果更稳）；改后该段场景图与视频会重新生成
+                        </span>
+                      </label>
+                      <label>
+                        重点文字
+                        <input
+                          value={editing.highlights || ''}
+                          placeholder="用 | 分隔，最多 3 个，如 散射|波长短"
+                          onChange={(e) => setEditing({ ...editing, highlights: e.target.value })}
+                        />
+                        <span className="pf-muted pf-prompt-hint">
+                          说到这个词时在画面上方弹出黄色大字；只影响合成，不用重新生成视频
+                        </span>
+                      </label>
+                    </>
+                  ) : null}
                 </>
               ) : null}
               {editMode === 'full' ? (

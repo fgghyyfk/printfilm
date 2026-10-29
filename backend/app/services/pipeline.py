@@ -689,6 +689,16 @@ async def _set_status(project_id: int, status: str, progress: int, stage: str) -
 
 async def _script_stage(project_id: int) -> None:
     await _set_status(project_id, ProjectStatus.SCRIPTING, 5, "SCRIPTING")
+    if await _project_is_avatar(project_id):
+        from app.services import avatar_ai
+
+        if avatar_ai.is_configured():
+            # 数字人：分段口播 + 每段场景 + 重点词一次写好（见 kepu_avatar_look.write_script）
+            from app.services.kepu_avatar_look import write_script
+
+            await write_script(project_id)
+            await publish_progress(project_id, {"event": "progress", "stage": "SCRIPT_READY", "percent": 15})
+            return
     ark = get_ark()
     async with AsyncSessionLocal() as db:
         result = await db.execute(
@@ -1433,9 +1443,12 @@ async def _compose_stage(project_id: int) -> None:
         avatar = mode == "avatar"
         if avatar:
             # 数字人：标题条第一行固定作品标题（黄），第二行是该段小标题（白）
+            from app.services.kepu_avatar_look import split_highlights
+
             for item, shot in zip(media, sorted(project.shots, key=lambda s: s.shot_no)):
                 item.overlay_subtitle = (shot.overlay_title or "").strip()
                 item.overlay_title = (project.title or "").strip()
+                item.highlights = split_highlights(getattr(shot, "highlights", ""))
 
         # full 模式：成片节奏跟镜头视频真实时长，勿被整片旁白重分配后的短 duration 裁掉画面
         if mode in ("full", "avatar"):

@@ -116,6 +116,11 @@ class Project(Base):
     # 数字人口播：半身照（/static 或 OSS URL）与引擎（infinitetalk | longcat，空则用后台默认）
     avatar_image_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     avatar_engine: Mapped[str] = mapped_column(String(32), default="")
+    # 数字人：上传的原始人脸照（只取脸）；avatar_image_url 是据此生成并确认的「定妆照」（没生成时等于原图）
+    avatar_face_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    # 定妆照风格 id（见 kepu_avatar_look.LOOK_STYLES）与保脸改图模型（空则用后台默认）
+    avatar_look_style: Mapped[str] = mapped_column(String(64), default="")
+    avatar_image_model: Mapped[str] = mapped_column(String(64), default="")
     # 输出画幅，如 16:9 / 9:16；空则回退模板 default_ratio
     output_ratio: Mapped[str] = mapped_column(String(16), default="")
     # 配音预设 id；空则用模板默认
@@ -174,6 +179,8 @@ class Shot(Base):
     video_skip_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
     # 数字人口播：GPU 服务端任务 id，流水线中断重启后接着等同一个任务，不重复提交
     avatar_job_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # 数字人：该段要突出的重点文字，「|」分隔（合成时按口播出现位置弹出）
+    highlights: Mapped[str] = mapped_column(String(256), default="")
     status: Mapped[str] = mapped_column(String(32), default=ShotStatus.PENDING)
     version: Mapped[int] = mapped_column(Integer, default=1)
 

@@ -22,12 +22,21 @@ type AvatarStatus = {
   queued?: number;
 };
 
-// 数字人口播：自建 GPU 推理服务地址、Key、默认引擎与计费
+/** 推荐的保脸改图模型（也可手填其它模型名） */
+const IMAGE_MODEL_OPTIONS = [
+  { id: "gemini-3.1-flash-image", label: "Gemini Flash Image（保脸最稳，推荐）" },
+  { id: "gpt-image-2", label: "GPT Image 2（画质最好）" },
+  { id: "qwen-image-edit-plus", label: "通义千问改图 Plus（便宜）" },
+];
+
+// 数字人口播：自建 GPU 推理服务、形象/场景生成服务、默认引擎与计费
 export function AvatarSettingsPanel() {
   const { form, loading, saving, patchField, save } = useAdminModelSettings();
-  /* 密钥输入与连通性测试 */
+  /* 密钥输入与连通性测试（GPU 服务 / 形象服务各一把 Key） */
   const [keyInput, setKeyInput] = useState("");
   const [clearKey, setClearKey] = useState(false);
+  const [aiKeyInput, setAiKeyInput] = useState("");
+  const [clearAiKey, setClearAiKey] = useState(false);
   const [checking, setChecking] = useState(false);
   const [status, setStatus] = useState<AvatarStatus | null>(null);
 
@@ -44,11 +53,19 @@ export function AvatarSettingsPanel() {
         avatar_poll_timeout: Number(form.avatar_poll_timeout),
         avatar_segment_max_sec: Number(form.avatar_segment_max_sec),
         avatar_price_fen_per_sec: Number(form.avatar_price_fen_per_sec),
+        avatar_ai_base_url: form.avatar_ai_base_url.trim(),
+        avatar_ai_api_key: aiKeyInput.trim() || undefined,
+        clear_avatar_ai_api_key: clearAiKey,
+        avatar_image_model: form.avatar_image_model.trim(),
+        avatar_image_size: form.avatar_image_size.trim() || "1024x1536",
+        avatar_text_model: form.avatar_text_model.trim(),
       },
       "数字人配置已保存",
     );
     setKeyInput("");
     setClearKey(false);
+    setAiKeyInput("");
+    setClearAiKey(false);
     setStatus(null);
   }
 
@@ -84,6 +101,13 @@ export function AvatarSettingsPanel() {
             ready: configured,
             readyText: "已填写",
             pendingText: "未填写",
+          },
+          {
+            id: "ai",
+            label: "形象生成",
+            ready: form.has_avatar_ai_api_key && !clearAiKey,
+            readyText: "已配置",
+            pendingText: "未配置",
           },
           {
             id: "online",
@@ -202,6 +226,64 @@ export function AvatarSettingsPanel() {
                 min={0}
                 value={form.avatar_price_fen_per_sec}
                 onChange={(e) => patchField("avatar_price_fen_per_sec", Number(e.target.value))}
+              />
+            </LabeledControl>
+          </div>
+        </SettingsPanel>
+
+        <SettingsPanel
+          className="settings-panel--compact"
+          title="3. 形象与场景生成"
+          description="只取上传照片的人脸，生成定妆照与每段场景图，并写分段口播与重点文字；OpenAI 兼容接口（默认 promptoll），不配则仍用原照片"
+        >
+          <div className="settings-field-grid">
+            <LabeledControl label="接口地址" hint="OpenAI 兼容的 /v1 根路径" className="settings-field-span-full">
+              <input
+                className="settings-input"
+                placeholder="https://promptoll.com/v1"
+                value={form.avatar_ai_base_url}
+                onChange={(e) => patchField("avatar_ai_base_url", e.target.value)}
+              />
+            </LabeledControl>
+            <SecretField
+              label="API Key"
+              hint="在 promptoll 控制台创建"
+              value={aiKeyInput}
+              configured={form.has_avatar_ai_api_key && !clearAiKey}
+              onChange={setAiKeyInput}
+              onClear={() => {
+                setAiKeyInput("");
+                setClearAiKey(true);
+              }}
+            />
+            <LabeledControl label="默认改图模型" hint="项目里可单独切换；需在服务端已开通该模型">
+              <input
+                className="settings-input"
+                list="avatar-image-models"
+                value={form.avatar_image_model}
+                onChange={(e) => patchField("avatar_image_model", e.target.value)}
+              />
+              <datalist id="avatar-image-models">
+                {IMAGE_MODEL_OPTIONS.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}
+                  </option>
+                ))}
+              </datalist>
+            </LabeledControl>
+            <LabeledControl label="出图尺寸" hint="竖屏建议 1024x1536；部分模型忽略此项">
+              <input
+                className="settings-input"
+                placeholder="1024x1536"
+                value={form.avatar_image_size}
+                onChange={(e) => patchField("avatar_image_size", e.target.value)}
+              />
+            </LabeledControl>
+            <LabeledControl label="文案模型" hint="写分段口播、场景描述与重点文字，如 qwen3.6-plus / kimi-k2.6">
+              <input
+                className="settings-input"
+                value={form.avatar_text_model}
+                onChange={(e) => patchField("avatar_text_model", e.target.value)}
               />
             </LabeledControl>
           </div>

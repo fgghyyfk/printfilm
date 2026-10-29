@@ -61,6 +61,12 @@ class AdminModelSettingsOut(BaseModel):
     avatar_poll_timeout: float = 14400.0
     avatar_segment_max_sec: int = 20
     avatar_price_fen_per_sec: int = 0
+    avatar_ai_base_url: str = "https://promptoll.com/v1"
+    avatar_ai_api_key: str = ""
+    has_avatar_ai_api_key: bool = False
+    avatar_image_model: str = "gemini-3.1-flash-image"
+    avatar_image_size: str = "1024x1536"
+    avatar_text_model: str = "qwen3.6-plus"
 
     # Aliyun OSS
     oss_enabled: bool = False
@@ -185,6 +191,12 @@ class AdminModelSettingsPatch(BaseModel):
     avatar_poll_timeout: float | None = Field(default=None, ge=600, le=86400)
     avatar_segment_max_sec: int | None = Field(default=None, ge=6, le=30)
     avatar_price_fen_per_sec: int | None = Field(default=None, ge=0, le=10000)
+    avatar_ai_base_url: str | None = None
+    avatar_ai_api_key: str | None = None
+    clear_avatar_ai_api_key: bool = False
+    avatar_image_model: str | None = Field(default=None, pattern=r"^[A-Za-z0-9._:/-]{1,64}$")
+    avatar_image_size: str | None = Field(default=None, pattern=r"^(auto|\d{3,4}x\d{3,4})$")
+    avatar_text_model: str | None = Field(default=None, pattern=r"^[A-Za-z0-9._:/-]{1,64}$")
 
     oss_enabled: bool | None = None
     oss_endpoint: str | None = None
@@ -307,6 +319,11 @@ def model_config_field_names() -> tuple[str, ...]:
         "avatar_poll_timeout",
         "avatar_segment_max_sec",
         "avatar_price_fen_per_sec",
+        "avatar_ai_base_url",
+        "avatar_ai_api_key",
+        "avatar_image_model",
+        "avatar_image_size",
+        "avatar_text_model",
         "oss_enabled",
         "oss_endpoint",
         "oss_region",
@@ -369,6 +386,7 @@ SECRET_FIELD_FLAGS: dict[str, str] = {
     "openai_api_key": "has_openai_api_key",
     "ark_api_key": "has_ark_api_key",
     "avatar_api_key": "has_avatar_api_key",
+    "avatar_ai_api_key": "has_avatar_ai_api_key",
     "oss_access_key_id": "has_oss_access_key_id",
     "oss_access_key_secret": "has_oss_access_key_secret",
     "tos_access_key": "has_tos_access_key",

@@ -84,6 +84,14 @@ class Settings(BaseSettings):
     avatar_segment_max_sec: int = 20
     # 计费：每秒成片预扣/结算的分（自建 GPU 默认 0）
     avatar_price_fen_per_sec: int = 0
+    # 数字人形象/场景/文案：OpenAI 兼容服务（默认 promptoll），与主流水线的 TokenFree 渠道互不影响
+    avatar_ai_base_url: str = "https://promptoll.com/v1"
+    avatar_ai_api_key: str = ""
+    # 保脸改图模型（项目可单独指定）：gemini-3.1-flash-image | gpt-image-2 | qwen-image-edit-plus 等
+    avatar_image_model: str = "gemini-3.1-flash-image"
+    avatar_image_size: str = "1024x1536"
+    # 写口播分段、场景描述、重点文字的文本模型
+    avatar_text_model: str = "qwen3.6-plus"
 
     ark_mock: bool = False
     # 本地连接共享测试库时关闭，避免本机和服务器同时消费、恢复同一队列。

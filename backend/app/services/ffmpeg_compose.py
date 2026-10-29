@@ -8,7 +8,7 @@ import re
 import shutil
 import subprocess
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from app.config import get_settings
@@ -44,6 +44,8 @@ class ShotMedia:
     image_path: Path | None = None
     overlay_title: str = ""
     overlay_subtitle: str = ""
+    # 数字人：该段重点文字，按口播出现位置依次弹出（band 布局才画）
+    highlights: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -748,6 +750,55 @@ def _band_title_drawtext(
     return ",".join(parts)
 
 
+def highlight_windows(highlights: list[str], narration: str, duration: float) -> list[tuple[str, float, float]]:
+    """重点词的显示时间窗：按它在口播里出现的位置估算说到它的时刻，显示到下一个词出现或本段结束。
+
+    口播按匀速估算（字幕也是这么切的）；找不到的词按顺序均匀补位。
+    每个词至少显示约 1.5 秒（靠近段尾的词会提前出现），相邻两个词至少间隔 1.2 秒，放不下的词丢弃。
+    """
+    words = [w for w in highlights if w][:3]
+    if not words or duration < 1.5:
+        return []
+    text = re.sub(r"\s+", "", narration or "")
+    total = max(1, len(text))
+    raw: list[tuple[float, str]] = []
+    for i, word in enumerate(words):
+        idx = text.find(word)
+        ratio = idx / total if idx >= 0 else (i + 0.5) / len(words)
+        raw.append((ratio * duration - 0.1, word))
+    raw.sort()
+    latest = duration - 1.5
+    starts: list[tuple[float, str]] = []
+    for a, word in raw:
+        a = min(max(0.2, a), latest)
+        if starts:
+            a = max(a, starts[-1][0] + 1.2)
+        if a > latest + 1e-6:
+            break
+        starts.append((a, word))
+    return [(word, a, starts[i + 1][0] if i + 1 < len(starts) else duration)
+            for i, (a, word) in enumerate(starts)]
+
+
+def _highlight_drawtext(
+    highlights: list[str], narration: str, duration: float, w: int, h: int, font: str | None
+) -> str:
+    """重点文字贴纸：画面上方黄底黑字大字，0.25 秒淡入，按 highlight_windows 的时间窗依次出现。"""
+    font_opt = f":fontfile='{_escape_fontfile(font)}'" if font else ""
+    size = max(44, min(80, int(w * 0.085)))
+    y = int(h * 0.075)
+    parts: list[str] = []
+    for word, a, b in highlight_windows(highlights, narration, duration):
+        parts.append(
+            f"drawtext=text='{_escape_drawtext(word)}'{font_opt}:fontsize={size}:fontcolor=black:"
+            f"box=1:boxcolor=0xFFD400@0.95:boxborderw={int(size * 0.35)}:"
+            f"x=(w-text_w)/2:y={y}:"
+            f"alpha='if(lt(t\\,{a + 0.25:.2f})\\,max(0\\,(t-{a:.2f})/0.25)\\,1)':"
+            f"enable='between(t\\,{a:.2f}\\,{b:.2f})'"
+        )
+    return ",".join(parts)
+
+
 def build_video_caption_vf(
     *,
     narration: str,
@@ -761,8 +812,9 @@ def build_video_caption_vf(
     title_scale: float = 1.35,
     sub_scale: float = 1.3,
     caption_scale: float = 1.25,
+    highlights: list[str] | None = None,
 ) -> str:
-    """合成阶段字幕滤镜：顶部标题 + 底部口播，始终烧录（含 split 布局）。"""
+    """合成阶段字幕滤镜：顶部标题 + 底部口播，始终烧录（含 split 布局）；band 布局另加重点文字贴纸。"""
     parts: list[str] = []
     overlay = _overlay_drawtext(
         w,
@@ -781,6 +833,10 @@ def build_video_caption_vf(
     )
     if captions:
         parts.append(captions)
+    if highlights and subtitle_layout == "band":
+        stickers = _highlight_drawtext(highlights, narration, duration, w, h, font)
+        if stickers:
+            parts.append(stickers)
     return ",".join(parts)
 
 
@@ -857,6 +913,7 @@ def _burn_captions_on_video(
     title_scale: float = 1.35,
     sub_scale: float = 1.3,
     keep_audio: bool = False,
+    highlights: list[str] | None = None,
 ) -> None:
     """Burn title + timed bottom narration captions onto an existing video clip."""
     vf = build_video_caption_vf(
@@ -871,6 +928,7 @@ def _burn_captions_on_video(
         title_scale=title_scale,
         sub_scale=sub_scale,
         caption_scale=caption_scale,
+        highlights=highlights,
     )
     ffmpeg = _which("ffmpeg")
     if not vf:
@@ -1271,6 +1329,7 @@ def compose_project(
                     title_scale=opts.title_scale,
                     sub_scale=opts.sub_scale,
                     keep_audio=keep_clip_audio,
+                    highlights=shot.highlights,
                 )
             elif shot.image_path and shot.image_path.exists():
                 _image_to_video(shot.image_path, shot.duration, video, w=w, h=h)

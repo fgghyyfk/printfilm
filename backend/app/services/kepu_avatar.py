@@ -37,17 +37,28 @@ async def _load_project(db, project_id: int) -> Project:
     return result.scalar_one()
 
 
-async def portrait_path(project: Project) -> Path:
-    """项目半身照的本地路径；未上传时抛错。"""
-    url = (project.avatar_image_url or "").strip()
+async def portrait_path(project: Project, *, url: str | None = None) -> Path:
+    """图片的本地路径（默认项目定妆照 avatar_image_url）；未上传时抛错，OSS 地址先下载到本地。"""
+    url = (url if url is not None else project.avatar_image_url or "").strip()
     if not url:
-        raise RuntimeError("请先上传数字人半身照")
+        raise RuntimeError("请先上传数字人照片")
     local = storage.local_path_from_url(url)
     if local and local.exists():
         return local
     if url.startswith("http"):
-        return await storage.ensure_local_media(url, storage.project_dir(project.id) / "avatar_portrait.png")
-    raise RuntimeError("数字人半身照文件不存在，请重新上传")
+        name = Path(url.split("?", 1)[0]).name or "avatar_portrait.png"
+        return await storage.ensure_local_media(url, storage.project_dir(project.id) / f"dl_{name}")
+    raise RuntimeError("数字人照片文件不存在，请重新上传")
+
+
+async def shot_image_path(project: Project, shot: Shot) -> Path:
+    """该段对口型用的画面：有场景图用场景图，否则用定妆照。"""
+    if (shot.image_url or "").strip():
+        try:
+            return await portrait_path(project, url=shot.image_url)
+        except RuntimeError:
+            logger.warning("avatar shot image missing project=%s shot=%s, fallback to look", project.id, shot.shot_no)
+    return await portrait_path(project)
 
 
 async def prepare_assets(project_id: int) -> None:
@@ -55,19 +66,35 @@ async def prepare_assets(project_id: int) -> None:
     from app.services.pipeline import _ensure_not_cancelled, _project_voice, _record_usage_est, _set_status
     from app.services.kepu_stages import shot_audio_file_ok
 
+    from app.services import avatar_ai
+    from app.services.kepu_avatar_look import ensure_scene_images
+
     await _set_status(project_id, ProjectStatus.IMAGING, 18, "AVATAR_TTS")
     async with AsyncSessionLocal() as db:
         project = await _load_project(db, project_id)
-        await portrait_path(project)
+        look = await portrait_path(project)
         voice = _project_voice(project)
         portrait_url = project.avatar_image_url
         shots = sorted(project.shots, key=lambda s: s.shot_no)
         todo = [(s.id, s.shot_no, (s.narration or "").strip()) for s in shots if not shot_audio_file_ok(s)]
         for s in shots:
-            s.image_url = portrait_url
+            # 没有场景图的段先用定妆照占位（配了改图服务时下面会逐段重画）
+            if not (s.image_url or "").strip():
+                s.image_url = portrait_url
             if s.status == ShotStatus.PENDING:
                 s.status = ShotStatus.IMAGE_READY
         await db.commit()
+
+    if avatar_ai.is_configured():
+        async def scene_progress(done: int, total: int, shot_no: int) -> None:
+            await publish_progress(project_id, {"event": "progress", "stage": "AVATAR_SCENE",
+                                                "percent": 18 + int(15 * done / max(1, total)),
+                                                "message": f"场景图 {done}/{total}（第 {shot_no} 段完成）"})
+
+        await _ensure_not_cancelled(project_id)
+        await publish_progress(project_id, {"event": "progress", "stage": "AVATAR_SCENE", "percent": 18,
+                                            "message": "按每段内容生成场景图"})
+        await ensure_scene_images(project_id, look, on_progress=scene_progress)
 
     from app.services.ark import get_ark
 
@@ -77,7 +104,7 @@ async def prepare_assets(project_id: int) -> None:
         if not text:
             raise RuntimeError(f"第 {shot_no} 段没有口播文案，请补充后再继续")
         await publish_progress(project_id, {"event": "progress", "stage": "AVATAR_TTS",
-                                            "percent": 18 + int(30 * i / max(1, len(todo))),
+                                            "percent": 33 + int(15 * i / max(1, len(todo))),
                                             "message": f"配音第 {shot_no} 段（{i}/{len(todo)}）"})
         url = await ark.tts(text, voice, project_id=project_id, shot_no=shot_no,
                             duration_hint=max(3.0, len(text) / 4.5))
@@ -113,10 +140,19 @@ async def generate_videos(project_id: int) -> None:
         # 重试时清掉上次失败留下的报错，避免成功后页面仍显示旧错误
         project.error_msg = None
         await db.commit()
+    # 换过定妆照/场景描述后可能还有段没画场景图：先补齐，避免拿占位定妆照去对口型
+    from app.services import avatar_ai
+    from app.services.kepu_avatar_look import ensure_scene_images
+
+    if avatar_ai.is_configured():
+        await ensure_scene_images(project_id, image)
+        async with AsyncSessionLocal() as db:
+            project = await _load_project(db, project_id)
+            todo = [s.id for s in sorted(project.shots, key=lambda s: s.shot_no) if not shot_video_ready(s)]
     total = len(todo)
     for i, shot_id in enumerate(todo, start=1):
         await _ensure_not_cancelled(project_id)
-        await _one_segment(project_id, shot_id, image=image, engine=engine, index=i, total=total)
+        await _one_segment(project_id, shot_id, engine=engine, index=i, total=total)
     await _set_stage_done(project_id, ProjectStatus.VIDEO_READY, 88)
 
 
@@ -132,8 +168,8 @@ async def _set_stage_done(project_id: int, status: str, progress: int) -> None:
             await db.commit()
 
 
-async def _one_segment(project_id: int, shot_id: int, *, image: Path, engine: str, index: int, total: int) -> None:
-    """提交（或接续）单段 GPU 任务，等待完成后下载并回写分镜。"""
+async def _one_segment(project_id: int, shot_id: int, *, engine: str, index: int, total: int) -> None:
+    """提交（或接续）单段 GPU 任务（画面用该段场景图），等待完成后下载并回写分镜。"""
     from app.services.pipeline import PipelineCancelled, _ensure_not_cancelled
 
     async with AsyncSessionLocal() as db:
@@ -141,6 +177,7 @@ async def _one_segment(project_id: int, shot_id: int, *, image: Path, engine: st
         audio = storage.local_path_from_url(shot.audio_url or "") if shot else None
         if not shot or not audio or not audio.exists():
             raise RuntimeError(f"第 {shot.shot_no if shot else '?'} 段缺少配音，请先重新生成配音")
+        image = await shot_image_path(await db.get(Project, project_id), shot)
         shot_no, job_id = shot.shot_no, shot.avatar_job_id
         if not job_id:
             job_id = await avatar_video.submit(image, audio, engine=engine, prompt=AVATAR_PROMPT)
@@ -205,7 +242,6 @@ async def regen_segment_video(project_id: int, shot_id: int) -> None:
     """单段重新生成对口型视频（沿用该段现有配音）。"""
     async with AsyncSessionLocal() as db:
         project = await _load_project(db, project_id)
-        image = await portrait_path(project)
         engine = avatar_video.resolve_engine(project.avatar_engine)
         shot = next((s for s in project.shots if s.id == shot_id), None)
         if not shot:
@@ -213,7 +249,7 @@ async def regen_segment_video(project_id: int, shot_id: int) -> None:
         shot.video_url = None
         shot.avatar_job_id = None
         await db.commit()
-    await _one_segment(project_id, shot_id, image=image, engine=engine, index=1, total=1)
+    await _one_segment(project_id, shot_id, engine=engine, index=1, total=1)
     await _after_regen(project_id)
 
 

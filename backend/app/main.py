@@ -164,6 +164,8 @@ async def _apply_schema_patches() -> None:
             await conn.execute(text("ALTER TABLE shots ADD COLUMN video_skip_reason VARCHAR(32)"))
         if "avatar_job_id" not in scols:
             await conn.execute(text("ALTER TABLE shots ADD COLUMN avatar_job_id VARCHAR(64)"))
+        if "highlights" not in scols:
+            await conn.execute(text("ALTER TABLE shots ADD COLUMN highlights VARCHAR(256) DEFAULT ''"))
 
         pcols = await _pg_columns(conn, "projects")
         if "pipeline_mode" not in pcols:
@@ -192,6 +194,12 @@ async def _apply_schema_patches() -> None:
             await conn.execute(text("ALTER TABLE projects ADD COLUMN avatar_image_url VARCHAR(1024)"))
         if "avatar_engine" not in pcols:
             await conn.execute(text("ALTER TABLE projects ADD COLUMN avatar_engine VARCHAR(32) DEFAULT ''"))
+        if "avatar_face_url" not in pcols:
+            await conn.execute(text("ALTER TABLE projects ADD COLUMN avatar_face_url VARCHAR(1024)"))
+        if "avatar_look_style" not in pcols:
+            await conn.execute(text("ALTER TABLE projects ADD COLUMN avatar_look_style VARCHAR(64) DEFAULT ''"))
+        if "avatar_image_model" not in pcols:
+            await conn.execute(text("ALTER TABLE projects ADD COLUMN avatar_image_model VARCHAR(64) DEFAULT ''"))
 
         # User billing columns
         ucols = await _pg_columns(conn, "users")

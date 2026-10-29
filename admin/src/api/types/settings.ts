@@ -44,6 +44,12 @@ export type AdminModelSettings = {
   avatar_poll_timeout: number;
   avatar_segment_max_sec: number;
   avatar_price_fen_per_sec: number;
+  avatar_ai_base_url: string;
+  avatar_ai_api_key: string;
+  has_avatar_ai_api_key: boolean;
+  avatar_image_model: string;
+  avatar_image_size: string;
+  avatar_text_model: string;
   oss_enabled: boolean;
   oss_endpoint: string;
   oss_region: string;

@@ -442,6 +442,8 @@ async def update_project(
 
         if not is_valid_project_media_model(data["video_model"], "video"):
             raise HTTPException(status_code=400, detail="无效视频模型")
+    if "avatar_image_model" in data:
+        data["avatar_image_model"] = str(data["avatar_image_model"] or "").strip()
     if "bgm_lock" in data:
         data["bgm_lock"] = str(data["bgm_lock"] or "").strip()
     if "subtitle_preset" in data:
@@ -838,12 +840,19 @@ async def update_shot(
         new_narration is not None
         and str(new_narration).strip() != str(shot.narration or "").strip()
     )
+    scene_dirty = (
+        "img_prompt" in data
+        and str(data["img_prompt"] or "").strip() != str(shot.img_prompt or "").strip()
+    )
     for k, v in data.items():
         setattr(shot, k, v)
     if (project.pipeline_mode or "") == "avatar":
-        # 数字人：画面固定是半身照，只有口播变了才需重做该段的配音与对口型视频，其它段不受影响
+        # 数字人：口播变了重做该段配音与对口型；场景描述变了重画该段场景图（回到定妆照占位）再对口型
         if audio_dirty:
             shot.audio_url = None
+        if scene_dirty:
+            shot.image_url = project.avatar_image_url
+        if audio_dirty or scene_dirty:
             shot.video_url = None
             shot.avatar_job_id = None
     # Invalidate downstream if visual prompts changed

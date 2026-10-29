@@ -106,6 +106,7 @@ class ShotOut(BaseModel):
     image_url: str | None
     video_url: str | None
     audio_url: str | None
+    highlights: str = ""
     status: str
     version: int
 
@@ -128,6 +129,8 @@ class ShotUpdate(BaseModel):
     duration: float | None = Field(default=None, ge=1, le=30)
     camera: str | None = None
     bgm_mood: str | None = None
+    # 数字人：重点文字，「|」分隔
+    highlights: str | None = Field(default=None, max_length=256)
 
 
 class ProjectCreate(BaseModel):
@@ -175,6 +178,7 @@ class ProjectUpdate(BaseModel):
     ref_image_url: str | None = None
     cover_url: str | None = Field(default=None, max_length=1024)
     avatar_engine: str | None = Field(default=None, pattern="^(|infinitetalk|longcat)$")
+    avatar_image_model: str | None = Field(default=None, pattern=r"^[A-Za-z0-9._:/-]{0,64}$")
 
 
 class ProjectOut(BaseModel):
@@ -203,6 +207,9 @@ class ProjectOut(BaseModel):
     ref_image_url: str | None
     avatar_image_url: str | None = None
     avatar_engine: str = ""
+    avatar_face_url: str | None = None
+    avatar_look_style: str = ""
+    avatar_image_model: str = ""
     created_at: datetime
     updated_at: datetime
     shots: list[ShotOut] = []
