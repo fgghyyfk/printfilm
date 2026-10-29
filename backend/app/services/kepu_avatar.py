@@ -96,6 +96,7 @@ async def prepare_assets(project_id: int) -> None:
                 row.avatar_job_id = None
                 row.status = ShotStatus.AUDIO_READY
                 await db.commit()
+    await _set_stage_done(project_id, ProjectStatus.IMAGE_READY, 50)
 
 
 async def generate_videos(project_id: int) -> None:
@@ -116,6 +117,19 @@ async def generate_videos(project_id: int) -> None:
     for i, shot_id in enumerate(todo, start=1):
         await _ensure_not_cancelled(project_id)
         await _one_segment(project_id, shot_id, image=image, engine=engine, index=i, total=total)
+    await _set_stage_done(project_id, ProjectStatus.VIDEO_READY, 88)
+
+
+async def _set_stage_done(project_id: int, status: str, progress: int) -> None:
+    """阶段跑完后落到对应就绪态（与 pipeline 原有素材/视频阶段一致），页面才会显示「待继续」。"""
+    async with AsyncSessionLocal() as db:
+        project = await db.get(Project, project_id)
+        if project and project.status != ProjectStatus.CANCELLED:
+            project.status = status
+            project.progress = progress
+            if not project.cover_url:
+                project.cover_url = project.avatar_image_url
+            await db.commit()
 
 
 async def _one_segment(project_id: int, shot_id: int, *, image: Path, engine: str, index: int, total: int) -> None:
