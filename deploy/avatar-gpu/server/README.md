@@ -34,6 +34,18 @@ New-NetFirewallRule -DisplayName "avatar-gpu 8780" -Direction Inbound -Protocol 
 
 （WSL 重启后 IP 会变，需要重跑第一、二行。）临时联调也可以在主站机器上开 SSH 隧道：`ssh -N -L 8780:localhost:8780 user@gpu-host`。
 
+### 主站在公网、GPU 在内网：反向隧道
+
+公网服务器连不进内网时，由 GPU 机器主动连出去，把服务器的 `127.0.0.1:8780` 接回本机 8780（kaikou.haituike.com 即此方式）：
+
+- GPU 机器（Windows）：专用密钥放 `C:\ProgramData\kaikou-tunnel\`，计划任务 `KaikouGpuTunnel`（SYSTEM、开机启动）循环执行
+  `ssh -N -R 127.0.0.1:8780:127.0.0.1:8780 -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 ubuntu@<服务器>`，断线 10 秒重连，日志 `tunnel.log`
+- 服务器 `authorized_keys` 里这把公钥加限制：`restrict,port-forwarding,permitlisten="127.0.0.1:8780",permitopen="127.0.0.1:1",command="/bin/false"`，只能开这一个本机端口，不能登录
+- 主站跑在 Docker 里访问不到宿主 127.0.0.1，用一个 `network_mode: host` 的 socat 容器把 `172.17.0.1:8780` 转到 `127.0.0.1:8780`，API 配 `AVATAR_BASE_URL=http://host.docker.internal:8780`（需 `extra_hosts: host.docker.internal:host-gateway`）
+
+GPU 服务开机自启：计划任务 `KaikouGpuService`（yihui 身份、S4U 免登录、开机 1 分钟后）前台运行 `wsl.exe -- bash /root/server/boot.sh`。
+boot.sh 发现服务已在跑就陪跑到它退出，否则带 `AVATAR_PRELOAD=1 AVATAR_WARMUP=1` 启动；服务退出后计划任务 1 分钟内重拉。日志 `/root/server/data/service.log`。
+
 ## 接口
 
 | 方法 | 路径 | 说明 |
