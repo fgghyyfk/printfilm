@@ -128,6 +128,8 @@ X-Edit-Version: <acquire 返回的 version>
 
 列表 `status=running` 和 `status=done` 可以重叠：漫剧有剧本且至少 1 集即符合 running，有剧本且至少 8 集符合 done；自由画布已有资产符合 running，不进入 done。`draft` 表示无资产的画布或无剧本的漫剧。详细规则见 Swagger 参数说明。
 
+`GET /api/drama/canvas/{project_id}` 返回节点时，已有资产的 `mediaUrl`、`url`、`cover` 以服务端当前资产为准。`POST /api/drama/canvas` 保存布局时不会用客户端旧节点覆盖已有资产的视频、图片或封面地址；个人节点名称、提示词与布局仍按提交内容保存，上传和明确更换媒体继续使用资产接口。
+
 ## 分页、任务与错误
 
 分页通常使用 `page`（从 1 开始）与 `page_size`，返回 `items` 和 `meta.page`、`meta.page_size`、`meta.total`。部分接口使用平铺分页字段或直接返回数组，请以各自响应结构为准。漫剧项目列表会将超出范围的页码修正为最后一页。
