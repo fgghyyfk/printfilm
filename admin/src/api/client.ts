@@ -31,8 +31,10 @@ export async function api<T>(
   const isLoginRequest = path.includes("/api/auth/login");
   if (res.status === 401 && !isLoginRequest) {
     clearAuth();
-    if (!window.location.pathname.startsWith("/login")) {
-      window.location.href = "/login";
+    // 登录页地址要带部署前缀（如 /admin/login）
+    const loginPath = `${import.meta.env.BASE_URL.replace(/\/$/, "")}/login`;
+    if (!window.location.pathname.startsWith(loginPath)) {
+      window.location.href = loginPath;
     }
     throw new Error("未登录或登录已失效");
   }

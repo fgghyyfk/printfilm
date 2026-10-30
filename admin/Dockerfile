@@ -4,6 +4,9 @@ WORKDIR /src
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
+# 子路径部署（如 /admin/）时由 compose 传入
+ARG VITE_ADMIN_BASE=/
+ENV VITE_ADMIN_BASE=$VITE_ADMIN_BASE
 RUN npm run build
 
 FROM nginx:1.27-alpine

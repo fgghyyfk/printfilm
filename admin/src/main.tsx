@@ -5,9 +5,12 @@ import { Toaster } from "sonner";
 import App from "./App";
 import "./index.css";
 
+// 路由前缀跟随构建 base（如 /admin/），根路径部署时为空
+const basename = import.meta.env.BASE_URL.replace(/\/$/, "");
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <BrowserRouter>
+    <BrowserRouter basename={basename || undefined}>
       <App />
       <Toaster richColors position="top-right" />
     </BrowserRouter>

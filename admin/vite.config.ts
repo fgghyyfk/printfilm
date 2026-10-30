@@ -7,7 +7,9 @@ import tailwindcss from "@tailwindcss/vite";
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 
 // Vite config: React + Tailwind, admin on 5174 with /api proxy
+// VITE_ADMIN_BASE：部署在子路径时设为 "/admin/"（线上 kaikou.haituike.com/admin），默认根路径
 export default defineConfig({
+  base: process.env.VITE_ADMIN_BASE || "/",
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
