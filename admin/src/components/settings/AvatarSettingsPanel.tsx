@@ -9,6 +9,21 @@ import {
   SettingsStatusBar,
   SettingsTabShell,
 } from "@/components/settings/SettingsPanel";
+import { SettingsSelect } from "@/components/settings/SettingsSelect";
+import {
+  AVATAR_AI_BASE_OPTIONS,
+  AVATAR_IMAGE_MODEL_OPTIONS,
+  AVATAR_IMAGE_SIZE_OPTIONS,
+  AVATAR_POLL_INTERVAL_OPTIONS,
+  AVATAR_POLL_TIMEOUT_OPTIONS,
+  AVATAR_PRICE_OPTIONS,
+  AVATAR_SEGMENT_OPTIONS,
+  AVATAR_TEXT_MODEL_OPTIONS,
+  VOLC_INSTRUCTION_OPTIONS,
+  VOLC_PRICE_OPTIONS,
+  VOLC_RESOURCE_OPTIONS,
+  VOLC_SPEECH_RATE_OPTIONS,
+} from "@/lib/settingsOptions";
 import { SecretField } from "@/components/settings/SecretField";
 import { useAdminModelSettings } from "@/hooks/useAdminModelSettings";
 
@@ -23,12 +38,6 @@ type AvatarStatus = {
 };
 
 /** 推荐的保脸改图模型（也可手填其它模型名） */
-const IMAGE_MODEL_OPTIONS = [
-  { id: "gemini-3.1-flash-image", label: "Gemini Flash Image（保脸最稳，推荐）" },
-  { id: "gpt-image-2", label: "GPT Image 2（画质最好）" },
-  { id: "qwen-image-edit-plus", label: "通义千问改图 Plus（便宜）" },
-];
-
 // 数字人口播：自建 GPU 推理服务、形象/场景生成服务、默认引擎与计费
 export function AvatarSettingsPanel() {
   const { form, loading, saving, patchField, save } = useAdminModelSettings();
@@ -200,44 +209,17 @@ export function AvatarSettingsPanel() {
           description="口播按段生成；单卡 3090 每 15 秒片段约 30 分钟"
         >
           <div className="settings-field-grid">
-            <LabeledControl label="每段最长（秒）" hint="6–30；越长单段越慢，失败重做代价越大">
-              <input
-                type="number"
-                className="settings-input"
-                min={6}
-                max={30}
-                value={form.avatar_segment_max_sec}
-                onChange={(e) => patchField("avatar_segment_max_sec", Number(e.target.value))}
-              />
+            <LabeledControl label="每段最长（秒）" hint="越长单段越慢，失败重做代价越大">
+              <SettingsSelect value={form.avatar_segment_max_sec} options={AVATAR_SEGMENT_OPTIONS} onChange={(v) => patchField("avatar_segment_max_sec", v)} />
             </LabeledControl>
             <LabeledControl label="轮询间隔（秒）">
-              <input
-                type="number"
-                className="settings-input"
-                min={5}
-                max={600}
-                value={form.avatar_poll_interval}
-                onChange={(e) => patchField("avatar_poll_interval", Number(e.target.value))}
-              />
+              <SettingsSelect value={form.avatar_poll_interval} options={AVATAR_POLL_INTERVAL_OPTIONS} onChange={(v) => patchField("avatar_poll_interval", v)} />
             </LabeledControl>
             <LabeledControl label="单段超时（秒）" hint="含排队时间，默认 4 小时">
-              <input
-                type="number"
-                className="settings-input"
-                min={600}
-                max={86400}
-                value={form.avatar_poll_timeout}
-                onChange={(e) => patchField("avatar_poll_timeout", Number(e.target.value))}
-              />
+              <SettingsSelect value={form.avatar_poll_timeout} options={AVATAR_POLL_TIMEOUT_OPTIONS} onChange={(v) => patchField("avatar_poll_timeout", v)} />
             </LabeledControl>
             <LabeledControl label="单价（分/秒成片）" hint="自建 GPU 默认 0 不收费；开启计费时按成片秒数扣费">
-              <input
-                type="number"
-                className="settings-input"
-                min={0}
-                value={form.avatar_price_fen_per_sec}
-                onChange={(e) => patchField("avatar_price_fen_per_sec", Number(e.target.value))}
-              />
+              <SettingsSelect value={form.avatar_price_fen_per_sec} options={AVATAR_PRICE_OPTIONS} onChange={(v) => patchField("avatar_price_fen_per_sec", v)} />
             </LabeledControl>
           </div>
         </SettingsPanel>
@@ -249,12 +231,7 @@ export function AvatarSettingsPanel() {
         >
           <div className="settings-field-grid">
             <LabeledControl label="接口地址" hint="OpenAI 兼容的 /v1 根路径" className="settings-field-span-full">
-              <input
-                className="settings-input"
-                placeholder="https://promptoll.com/v1"
-                value={form.avatar_ai_base_url}
-                onChange={(e) => patchField("avatar_ai_base_url", e.target.value)}
-              />
+              <SettingsSelect value={form.avatar_ai_base_url} options={AVATAR_AI_BASE_OPTIONS} onChange={(v) => patchField("avatar_ai_base_url", v)} />
             </LabeledControl>
             <SecretField
               label="API Key"
@@ -268,34 +245,13 @@ export function AvatarSettingsPanel() {
               }}
             />
             <LabeledControl label="默认改图模型" hint="项目里可单独切换；需在服务端已开通该模型">
-              <input
-                className="settings-input"
-                list="avatar-image-models"
-                value={form.avatar_image_model}
-                onChange={(e) => patchField("avatar_image_model", e.target.value)}
-              />
-              <datalist id="avatar-image-models">
-                {IMAGE_MODEL_OPTIONS.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.label}
-                  </option>
-                ))}
-              </datalist>
+              <SettingsSelect value={form.avatar_image_model} options={AVATAR_IMAGE_MODEL_OPTIONS} onChange={(v) => patchField("avatar_image_model", v)} />
             </LabeledControl>
-            <LabeledControl label="出图尺寸" hint="竖屏建议 1024x1536；部分模型忽略此项">
-              <input
-                className="settings-input"
-                placeholder="1024x1536"
-                value={form.avatar_image_size}
-                onChange={(e) => patchField("avatar_image_size", e.target.value)}
-              />
+            <LabeledControl label="出图尺寸" hint="部分模型忽略此项">
+              <SettingsSelect value={form.avatar_image_size} options={AVATAR_IMAGE_SIZE_OPTIONS} onChange={(v) => patchField("avatar_image_size", v)} />
             </LabeledControl>
-            <LabeledControl label="文案模型" hint="写分段口播、场景描述与重点文字，如 qwen3.6-plus / kimi-k2.6">
-              <input
-                className="settings-input"
-                value={form.avatar_text_model}
-                onChange={(e) => patchField("avatar_text_model", e.target.value)}
-              />
+            <LabeledControl label="文案模型" hint="写分段口播、场景描述与重点文字">
+              <SettingsSelect value={form.avatar_text_model} options={AVATAR_TEXT_MODEL_OPTIONS} onChange={(v) => patchField("avatar_text_model", v)} />
             </LabeledControl>
           </div>
         </SettingsPanel>
@@ -317,38 +273,17 @@ export function AvatarSettingsPanel() {
                 setClearVolcKey(true);
               }}
             />
-            <LabeledControl label="语速" hint="-50~100，0 为正常，10 约 1.1 倍">
-              <input
-                className="settings-input"
-                type="number"
-                min={-50}
-                max={100}
-                value={form.volc_tts_speech_rate}
-                onChange={(e) => patchField("volc_tts_speech_rate", Number(e.target.value))}
-              />
+            <LabeledControl label="语速" hint="口播一般稍快一点更有节奏">
+              <SettingsSelect value={form.volc_tts_speech_rate} options={VOLC_SPEECH_RATE_OPTIONS} onChange={(v) => patchField("volc_tts_speech_rate", v)} />
             </LabeledControl>
-            <LabeledControl label="语气指令（2.0 音色）" hint="如：用热情、有感染力的短视频口播博主语气" className="settings-field-span-full">
-              <input
-                className="settings-input"
-                value={form.volc_tts_instruction}
-                onChange={(e) => patchField("volc_tts_instruction", e.target.value)}
-              />
+            <LabeledControl label="语气指令（2.0 音色）" hint="只对豆包 2.0 音色生效" className="settings-field-span-full">
+              <SettingsSelect value={form.volc_tts_instruction} options={VOLC_INSTRUCTION_OPTIONS} onChange={(v) => patchField("volc_tts_instruction", v)} />
             </LabeledControl>
             <LabeledControl label="1.0 音色资源" hint="非 2.0 音色用；2.0 音色自动用 seed-tts-2.0">
-              <input
-                className="settings-input"
-                value={form.volc_tts_resource_id}
-                onChange={(e) => patchField("volc_tts_resource_id", e.target.value)}
-              />
+              <SettingsSelect value={form.volc_tts_resource_id} options={VOLC_RESOURCE_OPTIONS} onChange={(v) => patchField("volc_tts_resource_id", v)} />
             </LabeledControl>
-            <LabeledControl label="成本（分/万字符）" hint="用于计费估价，按火山实际单价填写">
-              <input
-                className="settings-input"
-                type="number"
-                min={0}
-                value={form.volc_tts_fen_per_10k_chars}
-                onChange={(e) => patchField("volc_tts_fen_per_10k_chars", Number(e.target.value))}
-              />
+            <LabeledControl label="成本（分/万字符）" hint="用于计费估价，按火山控制台的实际单价选">
+              <SettingsSelect value={form.volc_tts_fen_per_10k_chars} options={VOLC_PRICE_OPTIONS} onChange={(v) => patchField("volc_tts_fen_per_10k_chars", v)} />
             </LabeledControl>
           </div>
         </SettingsPanel>

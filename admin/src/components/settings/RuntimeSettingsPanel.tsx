@@ -10,6 +10,13 @@ import {
   SettingsTabShell,
 } from "@/components/settings/SettingsPanel";
 import { Switch } from "@/components/ui/switch";
+import { SettingsSelect } from "@/components/settings/SettingsSelect";
+import {
+  IMAGE_SIZE_OPTIONS,
+  RUNTIME_NUMBER_OPTIONS,
+  VIDEO_RATIO_OPTIONS,
+  VIDEO_RESOLUTION_OPTIONS,
+} from "@/lib/settingsOptions";
 
 const NUMBER_FIELDS = [
   "seedance_duration_min", "seedance_duration_max", "ark_video_poll_interval", "ark_video_poll_timeout",
@@ -24,14 +31,12 @@ export function RuntimeSettingsPanel() {
   const [form, setForm] = useState<AdminModelSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [numberDrafts, setNumberDrafts] = useState<Partial<Record<NumberField, string>>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const data = await api<AdminModelSettings>("/api/admin/settings/models");
       setForm(data);
-      setNumberDrafts({});
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "加载失败");
     } finally {
@@ -62,11 +67,8 @@ export function RuntimeSettingsPanel() {
   const errors: Partial<Record<NumberField | "ark_image_size" | "ark_video_resolution" | "ark_video_ratio", string>> = {};
   if (form) {
     NUMBER_FIELDS.forEach((key) => {
-      const raw = numberDrafts[key] ?? String(form[key]);
-      const value = Number(raw);
-      const seconds = key === "ark_video_poll_interval" || key === "ark_video_poll_timeout";
-      if (!raw.trim() || !Number.isFinite(value) || value <= 0) errors[key] = seconds ? "请输入大于 0 的秒数" : "请输入不小于 1 的整数";
-      else if (!seconds && !Number.isInteger(value)) errors[key] = "请输入整数";
+      const value = Number(form[key]);
+      if (!Number.isFinite(value) || value <= 0) errors[key] = "请选择";
     });
     if (!errors.seedance_duration_min && !errors.seedance_duration_max && form.seedance_duration_min > form.seedance_duration_max) {
       errors.seedance_duration_max = "最大时长不能小于最小时长";
@@ -75,30 +77,22 @@ export function RuntimeSettingsPanel() {
       errors.ark_video_poll_timeout = "超时应大于轮询间隔";
     }
     (["ark_image_size", "ark_video_resolution", "ark_video_ratio"] as const).forEach((key) => {
-      if (!form[key].trim()) errors[key] = "请填写默认值";
+      if (!(form[key] ?? "").trim()) errors[key] = "请选择默认值";
     });
   }
   const hasErrors = Object.keys(errors).length > 0;
 
-  function numberField(key: NumberField, label: string, hint: string, unit: string) {
+  // 数字项一律下拉选择（选项见 settingsOptions.RUNTIME_NUMBER_OPTIONS）；unit 已含在选项文字里
+  function numberField(key: NumberField, label: string, hint: string, _unit: string) {
     if (!form) return null;
-    const seconds = key === "ark_video_poll_interval" || key === "ark_video_poll_timeout";
     return (
       <LabeledControl label={label} hint={hint} error={errors[key]} required>
-        <div className="relative">
-          <input
-            className="settings-input !pr-12"
-            type="number" required min={seconds ? 0 : 1} step={seconds ? "any" : 1}
-            aria-invalid={Boolean(errors[key])}
-            value={numberDrafts[key] ?? form[key]}
-            onChange={(event) => {
-              const raw = event.target.value;
-              setNumberDrafts((prev) => ({ ...prev, [key]: raw }));
-              if (raw.trim() && Number.isFinite(Number(raw))) patchField(key, Number(raw));
-            }}
-          />
-          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[var(--admin-muted)]">{unit}</span>
-        </div>
+        <SettingsSelect
+          aria-invalid={Boolean(errors[key])}
+          value={form[key]}
+          options={RUNTIME_NUMBER_OPTIONS[key] ?? []}
+          onChange={(v) => patchField(key, v)}
+        />
       </LabeledControl>
     );
   }
@@ -159,14 +153,14 @@ export function RuntimeSettingsPanel() {
 
       <SettingsPanel title="生成默认值" description="设置新生成任务的默认画质、画幅和时长；具体支持范围仍由所选模型决定。">
         <div className="settings-field-grid settings-field-grid--3">
-          <LabeledControl label="生图尺寸" hint="沿用上游支持的尺寸，例如 2K 或 1024x1024。" error={errors.ark_image_size} required>
-            <input className="settings-input" required placeholder="例如 2K" aria-invalid={Boolean(errors.ark_image_size)} value={form.ark_image_size} onChange={(e) => patchField("ark_image_size", e.target.value)} />
+          <LabeledControl label="生图尺寸" hint="以所选模型支持的尺寸为准。" error={errors.ark_image_size} required>
+            <SettingsSelect aria-invalid={Boolean(errors.ark_image_size)} value={form.ark_image_size} options={IMAGE_SIZE_OPTIONS} onChange={(v) => patchField("ark_image_size", v)} />
           </LabeledControl>
-          <LabeledControl label="视频清晰度" hint="例如 480p、720p；以当前模型支持值为准。" error={errors.ark_video_resolution} required>
-            <input className="settings-input" required placeholder="例如 720p" aria-invalid={Boolean(errors.ark_video_resolution)} value={form.ark_video_resolution} onChange={(e) => patchField("ark_video_resolution", e.target.value)} />
+          <LabeledControl label="视频清晰度" hint="以当前模型支持值为准。" error={errors.ark_video_resolution} required>
+            <SettingsSelect aria-invalid={Boolean(errors.ark_video_resolution)} value={form.ark_video_resolution} options={VIDEO_RESOLUTION_OPTIONS} onChange={(v) => patchField("ark_video_resolution", v)} />
           </LabeledControl>
-          <LabeledControl label="视频画幅" hint="宽:高，例如 16:9 或 9:16。" error={errors.ark_video_ratio} required>
-            <input className="settings-input" required placeholder="例如 16:9" aria-invalid={Boolean(errors.ark_video_ratio)} value={form.ark_video_ratio} onChange={(e) => patchField("ark_video_ratio", e.target.value)} />
+          <LabeledControl label="视频画幅" hint="宽:高。" error={errors.ark_video_ratio} required>
+            <SettingsSelect aria-invalid={Boolean(errors.ark_video_ratio)} value={form.ark_video_ratio} options={VIDEO_RATIO_OPTIONS} onChange={(v) => patchField("ark_video_ratio", v)} />
           </LabeledControl>
         </div>
         <div className="settings-field-grid settings-field-grid--2 mt-5">

@@ -3,6 +3,8 @@ import { LabeledControl, SettingsLoading, SettingsPanel, SettingsStatusBar, Sett
 import { SecretField } from "@/components/settings/SecretField";
 import { Switch } from "@/components/ui/switch";
 import { useAdminModelSettings } from "@/hooks/useAdminModelSettings";
+import { SettingsSelect } from "@/components/settings/SettingsSelect";
+import { OSS_ENDPOINT_OPTIONS, OSS_QUEUE_OPTIONS, OSS_REGION_OPTIONS } from "@/lib/settingsOptions";
 
 export function OssSettingsPanel() {
   const { form, loading, saving, patchField, save } = useAdminModelSettings();
@@ -78,14 +80,17 @@ export function OssSettingsPanel() {
         “配置完整”仅表示配置项已填写，实际权限仍需云端验证。
       </p>
       <div className="settings-field-grid mt-5">
-        <LabeledControl label="服务域名 Endpoint" required={form.oss_enabled} error={endpointError} hint="如 oss-cn-beijing.aliyuncs.com；不要填写 Bucket 访问地址。">
-          <input className="settings-input" placeholder="oss-cn-beijing.aliyuncs.com" value={form.oss_endpoint} onChange={(event) => patchField("oss_endpoint", event.target.value)} autoCapitalize="none" spellCheck={false} />
+        <LabeledControl label="地域 Region" required={form.oss_enabled} hint="选好地域会自动带出对应的公网 Endpoint。">
+          <SettingsSelect value={form.oss_region} options={[{ value: "", label: "请选择地域" }, ...OSS_REGION_OPTIONS]}
+            onChange={(v) => { patchField("oss_region", v); if (v) patchField("oss_endpoint", `oss-${v}.aliyuncs.com`); }} />
+        </LabeledControl>
+        <LabeledControl label="服务域名 Endpoint" required={form.oss_enabled} error={endpointError} hint="服务器与 Bucket 同地域时可选内网，省流量费。">
+          <SettingsSelect value={form.oss_endpoint}
+            options={[{ value: "", label: "请选择 Endpoint" }, ...OSS_ENDPOINT_OPTIONS.filter((o) => !form.oss_region || o.value.includes(`oss-${form.oss_region}`))]}
+            onChange={(v) => patchField("oss_endpoint", v)} />
         </LabeledControl>
         <LabeledControl label="存储空间 Bucket" required={form.oss_enabled} error={bucketError} hint="与 OSS 控制台名称一致，例如 printfilm-media。">
           <input className="settings-input" placeholder="printfilm-media" value={form.oss_bucket} onChange={(event) => patchField("oss_bucket", event.target.value)} autoCapitalize="none" spellCheck={false} maxLength={63} />
-        </LabeledControl>
-        <LabeledControl label="地域 Region" optional hint="如 cn-beijing，应与 Endpoint 所属地域一致。">
-          <input className="settings-input" placeholder="cn-beijing" value={form.oss_region} onChange={(event) => patchField("oss_region", event.target.value)} autoCapitalize="none" spellCheck={false} />
         </LabeledControl>
         <LabeledControl label="文件目录前缀" optional hint="仅用于生成业务，不含域名；例如 kepu。留空使用默认目录 kepu。">
           <input className="settings-input" placeholder="kepu" value={form.oss_folder} onChange={(event) => patchField("oss_folder", event.target.value)} spellCheck={false} />
@@ -125,7 +130,7 @@ export function OssSettingsPanel() {
         </div>
         <div className="settings-field-grid mt-5">
           <LabeledControl label="上传队列名称" required={form.oss_enabled && form.oss_upload_async} hint="仅异步上传使用；保留与本地 Worker 配置一致的队列名称。">
-            <input className="settings-input" placeholder="例如 oss_upload" value={form.oss_upload_queue} disabled={!form.oss_enabled || !form.oss_upload_async} onChange={(event) => patchField("oss_upload_queue", event.target.value)} spellCheck={false} />
+            <SettingsSelect value={form.oss_upload_queue} options={OSS_QUEUE_OPTIONS} disabled={!form.oss_enabled || !form.oss_upload_async} onChange={(v) => patchField("oss_upload_queue", v)} />
           </LabeledControl>
         </div>
       </div>

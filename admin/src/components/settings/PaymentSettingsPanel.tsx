@@ -1,4 +1,13 @@
 import { useState, type ChangeEvent } from "react";
+import { SettingsSelect } from "@/components/settings/SettingsSelect";
+import {
+  ALERT_INTERVAL_OPTIONS,
+  ESTIMATE_TOKEN_OPTIONS,
+  MULTIPLIER_OPTIONS,
+  SIGNUP_GRANT_OPTIONS,
+  SMTP_HOST_OPTIONS,
+  SMTP_PORT_OPTIONS,
+} from "@/lib/settingsOptions";
 import { LabeledControl, SettingsLoading, SettingsPanel, SettingsStatusBar, SettingsTabShell } from "@/components/settings/SettingsPanel";
 import { SecretField } from "@/components/settings/SecretField";
 import { Switch } from "@/components/ui/switch";
@@ -137,7 +146,7 @@ export function PaymentSettingsPanel() {
         </div>
         <div className="settings-field-grid mt-5">
           <LabeledControl label="注册赠送金额（分）" required hint={moneyHint("billing_signup_grant_fen")}>
-            <input className="settings-input" type="number" min={0} step={1} placeholder="0" {...numericControl("billing_signup_grant_fen")} />
+            <SettingsSelect value={form.billing_signup_grant_fen} options={SIGNUP_GRANT_OPTIONS} onChange={(v) => patchField("billing_signup_grant_fen", v)} />
           </LabeledControl>
         </div>
         <details className="settings-advanced mt-5">
@@ -154,10 +163,10 @@ export function PaymentSettingsPanel() {
               <div className="settings-subsection-title">任务预估</div>
               <div className="settings-field-grid">
                 <LabeledControl label="冻结缓冲系数（倍）" required={form.billing_enabled} hint="最低 1；例如 1.2 表示在预估费用上预留 20%。">
-                  <input className="settings-input" type="number" min={1} step="0.01" {...numericControl("billing_estimate_buffer")} />
+                  <SettingsSelect value={form.billing_estimate_buffer} options={MULTIPLIER_OPTIONS} onChange={(v) => patchField("billing_estimate_buffer", v)} />
                 </LabeledControl>
                 {ESTIMATE_FIELDS.map((field) => <LabeledControl key={field.key} label={`${field.label} 缺省用量`} required={form.billing_enabled} hint={`${field.unit}；上游未返回 usage 时使用。`}>
-                  <input className="settings-input" type="number" min={1} step={1} {...numericControl(field.key)} />
+                  <SettingsSelect value={form[field.key]} options={ESTIMATE_TOKEN_OPTIONS[field.key]} onChange={(v) => patchField(field.key, v)} />
                 </LabeledControl>)}
               </div>
             </fieldset>
@@ -173,7 +182,7 @@ export function PaymentSettingsPanel() {
         </div>
         <div className="settings-field-grid mt-5">
           <LabeledControl label="消费提醒间隔（分）" required={form.billing_enabled && form.billing_user_alert_enabled} hint={form.billing_enabled ? moneyHint("billing_user_alert_interval_fen") : "需先启用余额计费；原提醒设置保留。"}>
-            <input className="settings-input" type="number" min={1} step={1} disabled={!form.billing_enabled || !form.billing_user_alert_enabled} {...numericControl("billing_user_alert_interval_fen")} />
+            <SettingsSelect value={form.billing_user_alert_interval_fen} options={ALERT_INTERVAL_OPTIONS} disabled={!form.billing_enabled || !form.billing_user_alert_enabled} onChange={(v) => patchField("billing_user_alert_interval_fen", v)} />
           </LabeledControl>
         </div>
       </SettingsPanel>
@@ -186,11 +195,11 @@ export function PaymentSettingsPanel() {
             <Switch aria-label="启用 SMTP 邮件发送" checked={form.smtp_enabled} onCheckedChange={(value) => patchField("smtp_enabled", value)} />
           </div>
           <div className="settings-field-grid mt-5">
-            <LabeledControl label="SMTP 服务器" required={form.smtp_enabled} hint="仅填写主机名，不含 https://，例如 smtp.example.com。">
-              <input className="settings-input" disabled={!form.smtp_enabled} placeholder="smtp.example.com" value={form.smtp_host} onChange={(event) => patchField("smtp_host", event.target.value)} autoCapitalize="none" spellCheck={false} pattern="[^/:\s]+" />
+            <LabeledControl label="SMTP 服务器" required={form.smtp_enabled} hint="按发件邮箱所在服务商选择。">
+              <SettingsSelect value={form.smtp_host} options={[{ value: "", label: "请选择邮件服务商" }, ...SMTP_HOST_OPTIONS]} disabled={!form.smtp_enabled} onChange={(v) => patchField("smtp_host", v)} />
             </LabeledControl>
-            <LabeledControl label="SMTP 端口" required={form.smtp_enabled} hint="1–65535；587 常用于 STARTTLS，465 使用隐式 SSL。">
-              <input className="settings-input" type="number" disabled={!form.smtp_enabled} min={1} max={65535} step={1} placeholder="587" {...numericControl("smtp_port")} />
+            <LabeledControl label="SMTP 端口" required={form.smtp_enabled} hint="587 用 STARTTLS，465 用 SSL。">
+              <SettingsSelect value={form.smtp_port} options={SMTP_PORT_OPTIONS} disabled={!form.smtp_enabled} onChange={(v) => patchField("smtp_port", v)} />
             </LabeledControl>
             <LabeledControl label="发件人地址" required={form.smtp_enabled} hint="收件人看到的邮箱地址，例如 notice@example.com。">
               <input className="settings-input" type="email" disabled={!form.smtp_enabled} placeholder="notice@example.com" value={form.smtp_from} onChange={(event) => patchField("smtp_from", event.target.value)} autoCapitalize="none" spellCheck={false} />

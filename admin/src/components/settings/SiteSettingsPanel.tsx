@@ -7,6 +7,8 @@ import {
 } from "@/components/settings/SettingsPanel";
 import { Switch } from "@/components/ui/switch";
 import { useAdminModelSettings } from "@/hooks/useAdminModelSettings";
+import { SettingsSelect } from "@/components/settings/SettingsSelect";
+import { FFMPEG_OPTIONS, FFPROBE_OPTIONS } from "@/lib/settingsOptions";
 
 /** 站点公网地址与媒体工具路径 */
 export function SiteSettingsPanel() {
@@ -103,21 +105,11 @@ export function SiteSettingsPanel() {
           description="视频合成与抽帧使用服务器上的工具。已加入服务器 PATH 时，可保持默认名称。"
         >
           <div className="settings-field-grid">
-            <LabeledControl label="视频处理工具（ffmpeg）" hint="可填写命令名或服务器上的完整路径。" optional>
-              <input
-                className="settings-input"
-                placeholder="ffmpeg"
-                value={form.ffmpeg_path}
-                onChange={(e) => patchField("ffmpeg_path", e.target.value)}
-              />
+            <LabeledControl label="视频处理工具（ffmpeg）" hint="已加入 PATH 时选第一项即可。" optional>
+              <SettingsSelect value={form.ffmpeg_path} options={FFMPEG_OPTIONS} onChange={(v) => patchField("ffmpeg_path", v)} />
             </LabeledControl>
             <LabeledControl label="媒体信息工具（ffprobe）" hint="与 ffmpeg 使用同一安装目录。" optional>
-              <input
-                className="settings-input"
-                placeholder="ffprobe"
-                value={form.ffprobe_path}
-                onChange={(e) => patchField("ffprobe_path", e.target.value)}
-              />
+              <SettingsSelect value={form.ffprobe_path} options={FFPROBE_OPTIONS} onChange={(v) => patchField("ffprobe_path", v)} />
             </LabeledControl>
           </div>
         </SettingsPanel>
