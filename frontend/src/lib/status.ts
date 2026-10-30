@@ -1,5 +1,6 @@
 import { getActiveLocale } from '../i18n/detect'
 import { messages } from '../i18n/messages'
+import { IMAGE_TEXT_STEPS, imageTextBoardStep } from './imageTextStoryboard'
 
 export const RUNNING = new Set([
   'SCRIPTING',
@@ -212,7 +213,7 @@ export const KEPU_STEPS = [
   { key: 'topic', label: '选题' },
   { key: 'style', label: '风格' },
   { key: 'confirm', label: '确认分镜' },
-  { key: 'assets', label: '画面与配音' },
+  { key: 'assets', label: '参考图画面' },
   { key: 'videos', label: '镜头视频' },
   { key: 'compose', label: '合成预览' },
 ]
@@ -230,7 +231,7 @@ export function pipelineModeLabel(mode?: string | null) {
 /** 静图成片跳过「镜头视频」步；数字人口播改两步的名称 */
 export function kepuSteps(pipelineMode?: string | null) {
   if (pipelineMode === 'image_text') {
-    return KEPU_STEPS.filter((s) => s.key !== 'videos')
+    return IMAGE_TEXT_STEPS
   }
   if (pipelineMode === 'avatar') {
     return KEPU_STEPS.map((s) =>
@@ -277,6 +278,10 @@ export function kepuStepIndex(
     shots?: Array<{ image_url?: string | null; audio_url?: string | null; video_url?: string | null }>
   } | null,
 ): number {
+  if (project?.pipeline_mode === 'image_text') {
+    if (page === 'create' || page === 'style') return 0
+    return imageTextBoardStep(project)
+  }
   const steps = kepuSteps(project?.pipeline_mode)
   const idx = (key: string) => {
     const n = steps.findIndex((s) => s.key === key)
@@ -307,6 +312,13 @@ export function kepuPhaseHint(project: {
   pipeline_mode?: string | null
   shots?: Array<{ image_url?: string | null; audio_url?: string | null; video_url?: string | null }>
 }): string {
+  if (project.pipeline_mode === 'image_text') {
+    if (isRunning(effectiveStatus(project))) return '当前步骤正在制作，完成后可查看结果并继续下一步。'
+    const phase = kepuBillingPhase(project)
+    if (phase === 'script') return '保存文案后生成分镜，确认每张卡片里的旁白和画面。'
+    if (phase === 'assets') return '确认分镜后生成图片与配音；已完成的素材会继续保留。'
+    return '图片与配音已齐，可以试听后合成带运镜和字幕的成片。'
+  }
   if (isRunning(effectiveStatus(project))) {
     return '生成进行中，可在右侧查看各阶段进度。'
   }
@@ -318,7 +330,7 @@ export function kepuPhaseHint(project: {
     return '数字人视频已齐。合成时加标题条与逐句字幕。'
   }
   if (phase === 'script') return '先在风格页点「生成故事板」，本步只拆分镜脚本（预扣文字模型）。'
-  if (phase === 'assets') return '确认旁白与画面后开始生成：按镜头依次出图（后镜参考上一镜）+ 整片配音。'
-  if (phase === 'videos') return '画面与配音已齐。下一步按镜头依次出视频，后镜参考上一镜尾帧。'
-  return '素材已齐。拼接成片走后期合成（叠旁白字幕与配乐，扣费很少）。'
+  if (phase === 'assets') return '确认分镜后，使用画风参考图逐镜生成图片，并参考前镜画面保持角色与风格一致。'
+  if (phase === 'videos') return '图片已齐。使用每镜图片生成视频与声音，后镜参考上一镜尾帧延续画面。'
+  return '镜头视频已齐。检查各镜头画面与声音后，即可合成成片。'
 }

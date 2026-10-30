@@ -84,14 +84,13 @@ async def _usage_window_totals(
     since: datetime | None = None,
     scope_filters: list[Any] | None = None,
 ) -> dict[str, int]:
-    """聚合 usage_events：calls / charge / cost。"""
+    """聚合 usage_events：calls / charge。"""
     filters: list[Any] = list(scope_filters or [])
     if since is not None:
         filters.append(UsageEvent.created_at >= since)
     stmt = select(
         func.count(UsageEvent.id),
         func.coalesce(func.sum(UsageEvent.charge_fen), 0),
-        func.coalesce(func.sum(UsageEvent.cost_fen), 0),
     )
     for clause in filters:
         stmt = stmt.where(clause)
@@ -99,7 +98,6 @@ async def _usage_window_totals(
     return {
         "calls": int(row[0] or 0),
         "charge_fen": int(row[1] or 0),
-        "cost_fen": int(row[2] or 0),
     }
 
 
@@ -118,7 +116,6 @@ async def _group_usage(
             key.label("key"),
             func.count(UsageEvent.id).label("calls"),
             func.coalesce(func.sum(UsageEvent.charge_fen), 0).label("charge_fen"),
-            func.coalesce(func.sum(UsageEvent.cost_fen), 0).label("cost_fen"),
         )
         .group_by(key)
         .order_by(func.coalesce(func.sum(UsageEvent.charge_fen), 0).desc())
@@ -136,7 +133,6 @@ async def _group_usage(
             "key": str(r.key or "unknown"),
             "calls": int(r.calls or 0),
             "charge_fen": int(r.charge_fen or 0),
-            "cost_fen": int(r.cost_fen or 0),
         }
         for r in rows
     ]
@@ -206,7 +202,6 @@ async def build_admin_dashboard_stats(
             day_expr.label("day"),
             func.count(UsageEvent.id).label("calls"),
             func.coalesce(func.sum(UsageEvent.charge_fen), 0).label("charge_fen"),
-            func.coalesce(func.sum(UsageEvent.cost_fen), 0).label("cost_fen"),
         )
         .where(UsageEvent.created_at >= range_start)
         .group_by(day_expr)
@@ -220,18 +215,16 @@ async def build_admin_dashboard_stats(
         daily_map[_day_key(r.day)] = {
             "calls": int(r.calls or 0),
             "charge_fen": int(r.charge_fen or 0),
-            "cost_fen": int(r.cost_fen or 0),
         }
     daily_usage: list[dict[str, Any]] = []
     for i in range(window_days):
         key = (range_start + timedelta(days=i)).date().isoformat()
-        hit = daily_map.get(key) or {"calls": 0, "charge_fen": 0, "cost_fen": 0}
+        hit = daily_map.get(key) or {"calls": 0, "charge_fen": 0}
         daily_usage.append(
             {
                 "date": key,
                 "calls": hit["calls"],
                 "charge_fen": hit["charge_fen"],
-                "cost_fen": hit["cost_fen"],
             }
         )
 
@@ -239,9 +232,7 @@ async def build_admin_dashboard_stats(
     owner = aliased(User)
     metric_key = (top_metric or "charge").strip().lower()
     order_col = func.coalesce(func.sum(UsageEvent.charge_fen), 0)
-    if metric_key == "cost":
-        order_col = func.coalesce(func.sum(UsageEvent.cost_fen), 0)
-    elif metric_key == "calls":
+    if metric_key == "calls":
         order_col = func.count(UsageEvent.id)
     top_stmt = (
         select(
@@ -249,7 +240,6 @@ async def build_admin_dashboard_stats(
             owner.email,
             func.count(UsageEvent.id).label("calls"),
             func.coalesce(func.sum(UsageEvent.charge_fen), 0).label("charge_fen"),
-            func.coalesce(func.sum(UsageEvent.cost_fen), 0).label("cost_fen"),
         )
         .outerjoin(owner, owner.id == UsageEvent.user_id)
         .where(UsageEvent.created_at >= range_start)
@@ -266,7 +256,6 @@ async def build_admin_dashboard_stats(
             "email": r.email,
             "calls": int(r.calls or 0),
             "charge_fen": int(r.charge_fen or 0),
-            "cost_fen": int(r.cost_fen or 0),
         }
         for r in top_rows
     ]
@@ -283,9 +272,6 @@ async def build_admin_dashboard_stats(
         "usage_charge_today_fen": today_u["charge_fen"],
         "usage_charge_month_fen": month_u["charge_fen"],
         "usage_charge_total_fen": total_u["charge_fen"],
-        "usage_cost_today_fen": today_u["cost_fen"],
-        "usage_cost_month_fen": month_u["cost_fen"],
-        "usage_cost_total_fen": total_u["cost_fen"],
         "usage_by_capability": by_capability,
         "usage_by_domain": by_domain,
         "daily_usage": daily_usage,
@@ -306,7 +292,6 @@ def _usage_billing_cases():
 def _empty_usage_summary() -> dict[str, int]:
     return {
         "charge_fen": 0,
-        "cost_fen": 0,
         "tokens": 0,
         "calls": 0,
         "image_gens": 0,
@@ -319,13 +304,12 @@ def _empty_usage_summary() -> dict[str, int]:
 def _row_to_usage_summary(row: Any) -> dict[str, int]:
     return {
         "charge_fen": int(row[0] or 0),
-        "cost_fen": int(row[1] or 0),
-        "tokens": int(row[2] or 0),
-        "calls": int(row[3] or 0),
-        "image_gens": int(row[4] or 0),
-        "video_gens": int(row[5] or 0),
-        "llm_calls": int(row[6] or 0),
-        "tts_gens": int(row[7] or 0),
+        "tokens": int(row[1] or 0),
+        "calls": int(row[2] or 0),
+        "image_gens": int(row[3] or 0),
+        "video_gens": int(row[4] or 0),
+        "llm_calls": int(row[5] or 0),
+        "tts_gens": int(row[6] or 0),
     }
 
 
@@ -446,7 +430,6 @@ async def _aggregate_usage_by_scope(
         select(
             scope_col,
             func.coalesce(func.sum(UsageEvent.charge_fen), 0),
-            func.coalesce(func.sum(UsageEvent.cost_fen), 0),
             func.coalesce(func.sum(UsageEvent.total_tokens), 0),
             func.count(UsageEvent.id),
             func.coalesce(func.sum(image_case), 0),
@@ -483,7 +466,7 @@ async def aggregate_usage_summary(
     项目级用量汇总。
     - 单项目：传 project_id 或 drama_project_id，返回一条 dict
     - 批量：传 project_ids 或 drama_project_ids，返回 {id: dict}
-    扣费 = TaskRun 实扣 + 无任务孤儿用量；调用/成本按去重后的 usage 行统计。
+    扣费 = TaskRun 实扣 + 无任务孤儿用量；调用与 token 按去重后的 usage 行统计。
     """
     empty = _empty_usage_summary()
 

@@ -29,6 +29,7 @@ class LogicalModel(BaseModel):
     id: str
     name: str = ""
     capability: LogicalModelCapability
+    strategy_id: str | None = None
     enabled: bool = True
     bindings: list[LogicalModelBinding] = Field(default_factory=list)
 
@@ -88,12 +89,23 @@ class SystemModelChannelIn(BaseModel):
     advanced_config: SystemChannelAdvancedConfig | None = None
 
 
+class MediaReferenceLimits(BaseModel):
+    """每个媒体模型的参考素材数量上限；0 表示不支持。"""
+
+    images: int = Field(ge=0, le=100, strict=True)
+    videos: int = Field(ge=0, le=100, strict=True)
+    audios: int = Field(ge=0, le=100, strict=True)
+
+    model_config = {"extra": "forbid"}
+
+
 class AdminRoutingSettingsOut(BaseModel):
     """Full routing configuration for admin UI."""
 
     system_channels: list[SystemModelChannel] = Field(default_factory=list)
     logical_models: list[LogicalModel] = Field(default_factory=list)
     default_models: DefaultModels = Field(default_factory=DefaultModels)
+    media_reference_limits: dict[str, MediaReferenceLimits] = Field(default_factory=dict)
     validation_errors: list[str] = Field(default_factory=list)
     updated_at: datetime | None = None
 
@@ -104,6 +116,7 @@ class AdminRoutingSettingsPatch(BaseModel):
     system_channels: list[SystemModelChannelIn] | None = None
     logical_models: list[LogicalModel] | None = None
     default_models: DefaultModels | None = None
+    media_reference_limits: dict[str, MediaReferenceLimits] | None = None
 
 
 class AdminRoutingSettingsSaveOut(BaseModel):

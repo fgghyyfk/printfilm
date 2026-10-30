@@ -1,5 +1,5 @@
 import { ImageOff, Loader2, Save } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { AdminTemplate } from "@/api/client";
 import { AdminField } from "@/components/admin/AdminField";
 import { AdminModal } from "@/components/admin/AdminModal";
@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { validateTemplateDraft } from "@/lib/templateForm";
 
 export type TemplateFormState = {
   id: string;
@@ -76,9 +77,29 @@ export function TemplateEditorDialog({
   onSave,
 }: TemplateEditorDialogProps) {
   const [tab, setTab] = useState<EditorTab>("basic");
+  const [attempted, setAttempted] = useState(false);
+  const editorRef = useRef<HTMLDivElement>(null);
+  const errors = validateTemplateDraft(form, !editing);
   const previewSrc = useMemo(() => coverPreviewSrc(form.preview_cover), [form.preview_cover]);
+  useEffect(() => { if (open) { setTab("basic"); setAttempted(false); } }, [open]);
+
+  function requestSave() {
+    if (saving) return;
+    setAttempted(true);
+    if (Object.keys(errors).length) {
+      setTab("basic");
+      requestAnimationFrame(() => {
+        const invalid = editorRef.current?.querySelector<HTMLElement>("[aria-invalid='true']");
+        invalid?.focus({ preventScroll: true });
+        invalid?.closest(".admin-form-field")?.scrollIntoView({ block: "center" });
+      });
+      return;
+    }
+    onSave();
+  }
 
   const handleOpenChange = (next: boolean) => {
+    if (saving) return;
     if (!next) setTab("basic");
     onOpenChange(next);
   };
@@ -91,20 +112,20 @@ export function TemplateEditorDialog({
       className="template-editor-dialog max-h-[92vh] overflow-hidden"
       bodyClassName="p-0 overflow-hidden"
       title={editing ? `编辑模板 · ${editing.name}` : "新建模板"}
-      subtitle={editing ? editing.id : "填写基础信息与提示词，保存后立即生效"}
+      subtitle={editing ? editing.id : "先填写展示信息与生成默认值，再按需配置提示词和上架状态"}
       footer={
         <>
-          <Button variant="outline" onClick={() => handleOpenChange(false)}>
+          <Button variant="outline" disabled={saving} onClick={() => handleOpenChange(false)}>
             取消
           </Button>
-          <Button disabled={saving} onClick={onSave}>
+          <Button disabled={saving} onClick={requestSave}>
             {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
             {saving ? "保存中…" : "保存模板"}
           </Button>
         </>
       }
     >
-      <div className="template-editor-layout">
+      <div ref={editorRef} className="template-editor-layout" inert={saving}>
         <aside className="template-editor-preview">
           <div className="template-editor-preview-frame">
             {previewSrc ? (
@@ -116,6 +137,7 @@ export function TemplateEditorDialog({
               </div>
             )}
           </div>
+          <div className="settings-price-note"><strong>{form.name || "未命名模板"}</strong><br />{form.default_ratio} · {form.shot_duration_min}–{form.shot_duration_max} 秒 / 镜<br />{form.is_active ? "保存后上架展示" : "保存为下架状态"}</div>
           <AdminField label="封面 URL" hint="支持相对路径（/static）或 HTTPS；建议 16:9 横图。">
             <Input
               className="admin-input h-9"
@@ -143,26 +165,30 @@ export function TemplateEditorDialog({
           </div>
 
           <div className="template-editor-panel">
+            {attempted && Object.keys(errors).length ? <div role="alert" className="template-editor-validation">请先完善基础信息：{Object.values(errors).join("；")}。</div> : null}
             {tab === "basic" ? (
               <div className="template-editor-grid">
+                <h3 className="template-editor-section-title">展示信息</h3>
                 {!editing ? (
-                  <AdminField label="模板 ID" className="template-editor-field--full">
+                  <AdminField label="模板 ID" required error={attempted ? errors.id : undefined} hint="模板的唯一标识，创建后不可修改。" className="template-editor-field--full">
                     <Input
                       className="admin-input h-9"
                       placeholder="例如 live_street_interview"
+                      maxLength={64}
                       value={form.id}
                       onChange={(e) => onChange({ id: e.target.value })}
                     />
                   </AdminField>
                 ) : null}
-                <AdminField label="名称" className="template-editor-field--full">
+                <AdminField label="模板名称" required error={attempted ? errors.name : undefined} hint="显示在用户选择模板的列表中。" className="template-editor-field--full">
                   <Input
                     className="admin-input h-9"
+                    maxLength={128}
                     value={form.name}
                     onChange={(e) => onChange({ name: e.target.value })}
                   />
                 </AdminField>
-                <AdminField label="描述" className="template-editor-field--full">
+                <AdminField label="模板简介" optional hint="简要说明适合的题材与视觉效果。" className="template-editor-field--full">
                   <Textarea
                     value={form.description}
                     onChange={(e) => onChange({ description: e.target.value })}
@@ -170,11 +196,11 @@ export function TemplateEditorDialog({
                   />
                 </AdminField>
                 <AdminField
-                  label="分类（逗号分隔）"
+                  label="分类标签"
                   hint={
                     categorySuggestions.length
                       ? `常用：${categorySuggestions.slice(0, 8).join("、")}${categorySuggestions.length > 8 ? "…" : ""}`
-                      : undefined
+                      : "多个标签用英文逗号分隔。"
                   }
                 >
                   <Input
@@ -183,14 +209,19 @@ export function TemplateEditorDialog({
                     value={form.category}
                     onChange={(e) => onChange({ category: e.target.value })}
                   />
+                  {categorySuggestions.length ? <div className="template-category-suggestions">{categorySuggestions.slice(0, 8).map((category) => <button type="button" key={category} onClick={() => {
+                    const current = form.category.split(/[,，]/).map((item) => item.trim()).filter(Boolean);
+                    if (!current.includes(category)) onChange({ category: [...current, category].join(",") });
+                  }}>+ {category}</button>)}</div> : null}
                 </AdminField>
+                <h3 className="template-editor-section-title">生成默认值</h3>
                 <AdminSelect
                   label="默认画幅"
                   value={form.default_ratio}
                   options={RATIO_OPTIONS}
                   onChange={(v) => onChange({ default_ratio: v })}
                 />
-                <AdminField label="排序">
+                <AdminField label="展示排序" error={attempted ? errors.sort_order : undefined} hint="数值越小越靠前，可使用负数。">
                   <Input
                     className="admin-input h-9"
                     type="number"
@@ -198,18 +229,22 @@ export function TemplateEditorDialog({
                     onChange={(e) => onChange({ sort_order: Number(e.target.value) })}
                   />
                 </AdminField>
-                <AdminField label="镜头时长 min（秒）">
+                <AdminField label="最短镜头时长（秒）" required error={attempted ? errors.shot_duration_min : undefined}>
                   <Input
                     className="admin-input h-9"
                     type="number"
+                    min={1}
+                    step={1}
                     value={form.shot_duration_min}
                     onChange={(e) => onChange({ shot_duration_min: Number(e.target.value) })}
                   />
                 </AdminField>
-                <AdminField label="镜头时长 max（秒）">
+                <AdminField label="最长镜头时长（秒）" required error={attempted ? errors.shot_duration_max : undefined} hint="不得小于最短时长。">
                   <Input
                     className="admin-input h-9"
                     type="number"
+                    min={form.shot_duration_min || 1}
+                    step={1}
                     value={form.shot_duration_max}
                     onChange={(e) => onChange({ shot_duration_max: Number(e.target.value) })}
                   />
@@ -219,35 +254,35 @@ export function TemplateEditorDialog({
 
             {tab === "prompts" ? (
               <div className="template-editor-grid template-editor-grid--prompts">
-                <AdminField label="风格提示词" className="template-editor-field--full">
+                <AdminField label="风格提示词" optional hint="描述画面风格、光线与色彩，会作为生成的基础风格。" className="template-editor-field--full">
                   <Textarea
                     value={form.style_prefix}
                     onChange={(e) => onChange({ style_prefix: e.target.value })}
                     className="min-h-[100px] font-mono text-[13px]"
                   />
                 </AdminField>
-                <AdminField label="角色提示词" className="template-editor-field--full">
+                <AdminField label="角色提示词" optional hint="用于角色图像的外观与服饰要求。" className="template-editor-field--full">
                   <Textarea
                     value={form.character_prompt}
                     onChange={(e) => onChange({ character_prompt: e.target.value })}
                     className="min-h-[88px] font-mono text-[13px]"
                   />
                 </AdminField>
-                <AdminField label="额外提示词" className="template-editor-field--full">
+                <AdminField label="额外提示词" optional hint="补充图片生成的统一要求。" className="template-editor-field--full">
                   <Textarea
                     value={form.extra_prompt}
                     onChange={(e) => onChange({ extra_prompt: e.target.value })}
                     className="min-h-[88px] font-mono text-[13px]"
                   />
                 </AdminField>
-                <AdminField label="LLM 系统附加说明" className="template-editor-field--full">
+                <AdminField label="文本模型附加说明" optional hint="追加给文本模型的脚本与规划说明。" className="template-editor-field--full">
                   <Textarea
                     value={form.llm_system_addon}
                     onChange={(e) => onChange({ llm_system_addon: e.target.value })}
                     className="min-h-[88px] font-mono text-[13px]"
                   />
                 </AdminField>
-                <AdminField label="负面提示词" className="template-editor-field--full">
+                <AdminField label="负面提示词" optional hint="列出希望避免出现的画面内容或效果。" className="template-editor-field--full">
                   <Textarea
                     value={form.negative_prompt}
                     onChange={(e) => onChange({ negative_prompt: e.target.value })}

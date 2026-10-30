@@ -20,6 +20,7 @@ import { DramaImageGenOptionsBar } from './DramaImageGenOptionsBar'
 import { DramaSkillOptionsBar } from './DramaSkillOptionsBar'
 import { DramaVideoGenOptionsBar } from './DramaVideoGenOptionsBar'
 import { CanvasPromptEditor } from './CanvasPromptEditor'
+import { useMediaModelsCatalog } from '../../../../hooks/useMediaModelsCatalog'
 
 type CanvasNodeGeneratePanelProps = {
   nodeId: string
@@ -89,6 +90,7 @@ export function CanvasNodeGeneratePanel({
   imageOptions: savedImageOptions,
 }: CanvasNodeGeneratePanelProps) {
   const {
+    projectId,
     generateNodeImage,
     generateNodeVideo,
     setErrorMessage,
@@ -130,6 +132,9 @@ export function CanvasNodeGeneratePanel({
   const copy = panelCopy(kind, hasMedia)
   const allowMention = kind === 'video' || kind === 'image'
   const isVideo = kind === 'video'
+  const mediaCatalog = useMediaModelsCatalog()
+  const selectedModelId = isVideo ? videoOpts.model_id || mediaCatalog?.defaults.video_model : imageOptions.model_id || mediaCatalog?.defaults.image_model
+  const referenceLimits = (isVideo ? mediaCatalog?.video_models : mediaCatalog?.image_models)?.find(model => model.id === selectedModelId)?.reference_limits
 
   /* 可引用：仅已连线邻居（双向），并排除自身 */
   const mentionItems = useMemo(() => {
@@ -219,6 +224,7 @@ export function CanvasNodeGeneratePanel({
     setOptimizing(true)
     try {
       const result = await optimizePromptWithSkills({
+        project_id: projectId,
         prompt,
         skill_ids: selectedIds,
         task: isVideo ? 'video_prompt' : 'image_prompt',
@@ -252,7 +258,7 @@ export function CanvasNodeGeneratePanel({
       }}
     >
       <div className="fc-generate-head">
-        <Sparkles size={14} strokeWidth={1.8} />
+        <span className="fc-generate-head-icon" aria-hidden="true"><Sparkles size={15} strokeWidth={1.8} /></span>
         <span>{copy.title}</span>
         {hasMedia ? <em className="fc-generate-tag">可再次生成</em> : null}
         {isVideo ? (
@@ -268,6 +274,10 @@ export function CanvasNodeGeneratePanel({
           </button>
         ) : null}
       </div>
+      <div className="fc-generate-prompt-meta">
+        <span>提示词{allowMention ? <span className="fc-generate-mention-hint"> · @ 引用连线节点</span> : null}</span>
+        <span className="fc-generate-count">{Array.from(prompt).length.toLocaleString()} 字</span>
+      </div>
       <CanvasPromptEditor
         value={prompt}
         placeholder={copy.placeholder}
@@ -279,38 +289,48 @@ export function CanvasNodeGeneratePanel({
         }}
         onSubmit={() => void submit()}
       />
-      {isVideo ? (
-        <DramaVideoGenOptionsBar
-          value={videoOpts}
+      <div className="fc-generate-settings">
+        {isVideo ? (
+          <DramaVideoGenOptionsBar
+            value={videoOpts}
+            disabled={isBusy}
+            onChange={(next) => {
+              setVideoOpts(next)
+              updateNodeVideoOptions(nodeId, next)
+            }}
+          />
+        ) : (
+          <DramaImageGenOptionsBar
+            value={imageOptions}
+            disabled={isBusy}
+            onChange={(next) => {
+              setImageOptions(next)
+              updateNodeImageOptions(nodeId, next)
+            }}
+          />
+        )}
+        <DramaSkillOptionsBar
+          skills={skills}
+          selectedIds={selectedIds}
           disabled={isBusy}
-          onChange={(next) => {
-            setVideoOpts(next)
-            updateNodeVideoOptions(nodeId, next)
-          }}
+          onToggle={toggleSkill}
+          onSelectAll={selectAll}
+          onSelectNone={selectNone}
+          onUpload={(file) => void uploadSkill(file)}
+          uploading={uploading}
+          uploadError={uploadError}
         />
-      ) : (
-        <DramaImageGenOptionsBar
-          value={imageOptions}
-          disabled={isBusy}
-          onChange={(next) => {
-            setImageOptions(next)
-            updateNodeImageOptions(nodeId, next)
-          }}
-        />
-      )}
-      <DramaSkillOptionsBar
-        skills={skills}
-        selectedIds={selectedIds}
-        disabled={isBusy}
-        onToggle={toggleSkill}
-        onSelectAll={selectAll}
-        onSelectNone={selectNone}
-        onUpload={(file) => void uploadSkill(file)}
-        uploading={uploading}
-        uploadError={uploadError}
-      />
+        {referenceLimits ? (
+          <span className="fc-generate-reference-limits" title="首尾帧和画风板计入参考图片数量；0 表示模型不支持此类参考。">
+            参考上限：图片 {referenceLimits.images} · 视频 {referenceLimits.videos} · 音频 {referenceLimits.audios}
+          </span>
+        ) : null}
+      </div>
       <div className="fc-generate-actions">
-        <span className="fc-generate-hint">{copy.hint}</span>
+        <span className="fc-generate-hint" title={copy.hint}>
+          <span><kbd>Enter</kbd> 生成</span>
+          <span><kbd>Shift + Enter</kbd> 换行</span>
+        </span>
         <div className="fc-generate-action-btns">
           <button
             type="button"
@@ -326,7 +346,8 @@ export function CanvasNodeGeneratePanel({
             {optimizing ? <Loader2 size={14} className="fc-spin" /> : <Wand2 size={14} strokeWidth={1.8} />}
             描述优化
           </button>
-          <button type="submit" className="fc-generate-submit" disabled={!canSubmit} aria-label="生成">
+          <button type="submit" className="fc-generate-submit" disabled={!canSubmit} aria-label={generating || busy ? '生成中' : '生成'}>
+            <span>{generating || busy ? '生成中' : '生成'}</span>
             {isBusy && !optimizing ? (
               <Loader2 size={16} className="fc-spin" />
             ) : (

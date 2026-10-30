@@ -37,7 +37,11 @@ DATABASE_URL_SYNC=postgresql+psycopg2://printfilm:<密码>@127.0.0.1:5432/printf
 REDIS_URL=redis://127.0.0.1:6379/0
 TASK_RUNTIME_MAX_CONCURRENCY=4
 TASK_USER_MAX_CONCURRENCY=4
+DB_POOL_SIZE=50
+DB_MAX_OVERFLOW=20
 ```
+
+连接池按需建立连接，每个 API 进程最多使用 `50 + 20 = 70` 条；PostgreSQL `max_connections=100` 时保留 30 条给其他应用、迁移、调试和管理连接。增加进程或实例时，各自有独立连接池，须按所有进程的最大连接数之和重新核对数据库预算。修改连接池环境变量后，宿主服务重启 API；Docker 部署重建 API 容器以重新加载环境变量。连接池扩容仍需配合长任务在等待上游前释放数据库事务。
 
 需本机已安装：Python 3.12、FFmpeg（PATH）、Node.js。
 
@@ -50,6 +54,23 @@ sudo apt-get install -y fonts-wqy-zenhei fonts-wqy-microhei fontconfig
 ```
 
 缺字体时字幕会显示为「方框」（□），需装字体后**重新合成**该项目成片。
+
+## 升级前必须检查数据库结构
+
+2026-10-24 本地升级漏跑媒体计费迁移，分集列表因缺少 `task_runs.billing_snapshot` 返回 500。`DATABASE_BOOTSTRAP_ENABLED=false` 会跳过启动建表和补列；重启、未发布价格或健康检查成功都不能代替迁移。
+
+升级现有数据库时，先备份目标库，再用新版本代码及目标环境的数据库配置执行：
+
+```bash
+cd backend
+# 使用该环境的虚拟环境 Python；团队结构等其他迁移仍按对应发布说明执行。
+python scripts/prepare_media_schema.py
+python scripts/prepare_media_schema.py --check
+```
+
+两条命令都必须返回 0 才能重启 API 与任务执行节点。`--check` 在只读事务中校验媒体必需表、列和交付唯一索引，缺失时返回 1；发布脚本或 CI 必须传播该退出码并中止，不能忽略错误继续重启。迁移命令完成后也会校验结构，失败回滚。
+
+重启后除 `/api/health` 外，还须以有权限的登录用户读取目标环境现有项目的分集列表和任务列表，确认返回 200。价格发布另行操作；先完成结构迁移，不要求自动启用新价格。详见 [媒体迁移与故障记录](../docs/MEDIA_MODEL_STRATEGIES.md#发布与兼容)。
 
 ## 3. 启动 API 与任务平台
 
@@ -89,7 +110,7 @@ docker compose -f deploy/docker-compose.yml --env-file deploy/.env.prod down -v
 
 任务并发：通过 `backend/.env` 中的 `TASK_RUNTIME_MAX_CONCURRENCY`、`TASK_USER_MAX_CONCURRENCY` 调整统一任务平台并发。
 
-测试环境由 Jenkins 轮询 **GitHub 仓库 `yi1108/printfilm` 的 `dev` 分支**自动发布；日常测试发版提交并推送代码即可，不需要手动上传补丁或更新服务器容器。本仓库的 `origin` 指向 GitCC，单独 `git push origin dev` 不会触发测试发版；提交后还需 `git push github dev`，再核对 Jenkins 构建版本与运行中的镜像标签一致。
+测试环境由 Jenkins 轮询 **GitHub 仓库 `yi1108/printfilm` 的 `dev` 分支**自动发布；日常测试发版提交并推送代码即可，不需要手动上传补丁或更新服务器容器。推送前用 `git remote -v` 确认目标；`origin` 指向该 GitHub 仓库时执行 `git push origin dev`，若 `origin` 指向 GitCC，则还需推送到对应 GitHub remote（例如 `git push github dev`）。推送后核对 Jenkins 构建版本与运行中的镜像标签一致。
 
 本地 API 联调连接共享测试数据库时，设置 `TASK_RUNTIME_ENABLED=false`，只保留测试服务器执行调度、轮询和孤儿恢复。已由服务器初始化的共享数据库还可设 `DATABASE_BOOTSTRAP_ENABLED=false`，本机只读取模型缓存，不再重复建表、补列、seed 或提升管理员。本地仍能创建和查询任务，执行与产物存储由测试服务器负责；本地页面应能访问服务器返回的媒体地址。独立本地数据库或实际执行节点保持两个开关为 `true`（默认）。不要让多个调试实例同时恢复同一队列。
 

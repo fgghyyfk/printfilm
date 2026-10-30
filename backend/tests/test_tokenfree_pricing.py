@@ -1,12 +1,10 @@
-"""TokenFree 官方价目解析、推荐名单与预估。"""
+"""TokenFree 官方价目解析与计费预估。"""
 
 from __future__ import annotations
 
 from app.config import get_settings
 from app.services.tokenfree_pricing import (
     OfficialRate,
-    RECOMMENDED_MODELS,
-    build_official_rate_rows,
     charge_fen_official_image,
     charge_fen_official_llm,
     charge_fen_official_video,
@@ -179,27 +177,6 @@ def test_openai_protocol_channel_sync_heals_minimax_h3_to_video() -> None:
         assert by_id["kimi-k2.6"].capability == "text"
     finally:
         set_cached_rates(None)
-
-
-def test_recommended_models_cover_text_image_video_audio() -> None:
-    """短名单覆盖文字/图/视频/语音；图含 Seedream + GPT Image，语音仅 Qwen TTS。"""
-    caps = {row["capability"] for row in RECOMMENDED_MODELS}
-    assert caps == {"text", "image", "video", "audio"}
-    ids = {row["id"] for row in RECOMMENDED_MODELS}
-    assert {
-        "kimi-k2.6",
-        "seedream-5.0-pro",
-        "gpt-image-2",
-        "gpt-image-2.5",
-        "seedance-2.5",
-        "seedance-2.0",
-        "MiniMax-H3",
-        "qwen-tts-2025-05-22",
-    } <= ids
-    assert "gemini-3.1-flash-tts" not in ids
-    assert "elevenlabs-tts" not in ids
-    assert any(row["recommended"] and row["id"] == "kimi-k2.6" for row in RECOMMENDED_MODELS)
-    assert any(row["recommended"] and row["id"] == "seedream-5.0-pro" for row in RECOMMENDED_MODELS)
 
 
 def test_charge_official_image_uses_per_call() -> None:
@@ -405,25 +382,6 @@ def test_charge_official_llm_uses_in_out_split() -> None:
         assert lookup_rate("kimi-k2.6") is not None
     finally:
         set_cached_rates(None)
-
-
-def test_build_official_rate_rows_marks_video_vendor() -> None:
-    """费率表视频行标 vendor_sec，结算参考含多清晰度。"""
-    settings = get_settings()
-    settings.billing_usd_cny = 7.0
-    settings.billing_markup = 1.5
-    rates = parse_pricing_payload(_sample_payload(), settings)
-    rows = build_official_rate_rows(rates, settings)
-    by_id = {row["id"]: row for row in rows}
-    assert "gpt-image-2" in by_id
-    assert "gpt-image-2.5" in by_id
-    assert by_id["seedream-5.0-pro"]["capability"] == "image"
-    assert by_id["seedance-2.5"]["basis"] == "vendor_sec"
-    assert "结算参考" in by_id["seedance-2.5"]["rate_label"]
-    assert "1080p" in by_id["seedance-2.5"]["rate_label"]
-    assert "火山" not in by_id["seedance-2.5"]["rate_label"]
-    assert "720p" in by_id["seedance-2.0"]["rate_label"]
-    assert "seedance-2.0-mini" not in by_id
 
 
 def test_parse_pricing_item_skips_bad_row() -> None:

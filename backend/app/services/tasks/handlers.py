@@ -161,20 +161,85 @@ async def _await_kepu(task: TaskRun, aw: Awaitable[Any], **extra: Any) -> dict[s
         if task.cancel_requested:
             return {"cancelled": True, "project_id": task.project_id, **extra}
         raise
-    return {"ok": True, "project_id": task.project_id, **extra}
+    result = {"ok": True, "project_id": task.project_id, **extra}
+    result.update(await _kepu_output_snapshot(task, extra.get("phase")))
+    return result
+
+
+async def _kepu_output_snapshot(task: TaskRun, phase: str | None) -> dict[str, Any]:
+    """Freeze the completed generation's outputs before later edits replace them."""
+    from sqlalchemy import select
+    from app.database import AsyncSessionLocal
+    from app.models import Project, Shot
+
+    if task.task_type == "shot_regen_image" or phase == "assets":
+        kind, field = "image", "image_url"
+    elif task.task_type in {"shot_regen_audio", "project_regen_audio"} or phase == "audio":
+        kind, field = "audio", "audio_url"
+    elif task.task_type == "shot_regen_video" or phase == "videos":
+        kind, field = "video", "video_url"
+    elif task.task_type in {"project_compose_only", "project_pipeline"} and phase not in {"script", "storyboard"}:
+        kind, field = "video", "final_video_url"
+    else:
+        kind, field = "text", None
+    async with AsyncSessionLocal() as db:
+        project = await db.get(Project, task.project_id)
+        if project is None:
+            return {"kind": kind, "urls": []}
+        if field == "final_video_url":
+            urls = [project.final_video_url] if project.final_video_url else []
+        else:
+            query = select(Shot).where(Shot.project_id == task.project_id).order_by(Shot.shot_no)
+            if task.shot_id:
+                query = query.where(Shot.id == task.shot_id)
+            shots = list((await db.execute(query)).scalars().all())
+            if field:
+                urls = list(dict.fromkeys(getattr(shot, field) for shot in shots if getattr(shot, field)))
+            else:
+                return {"kind": "text", "text_content": "\n\n".join(
+                    shot.narration or shot.segment_script or "" for shot in shots
+                )}
+        result = {"kind": kind, "urls": urls}
+        if project.cover_url:
+            result["preview_url"] = project.cover_url
+        return result
 
 
 # 执行科普分阶段流水线（严格按 payload.phase 预扣对应阶段）。
 async def _run_kepu_project_pipeline(task: TaskRun) -> dict[str, Any] | None:
-    from app.services.pipeline import run_pipeline
+    from app.services.pipeline import clear_pipeline_cancellation, run_pipeline
 
     payload = task.payload if isinstance(task.payload, dict) else {}
-    phase = payload.get("phase")
+    if task.cancel_requested:
+        return {"cancelled": True, "project_id": task.project_id}
+    project_id = _require_int(task.project_id, "project_id")
+    raw_phase = payload.get("phase")
+    phase = str(raw_phase).strip().lower() if raw_phase is not None else None
+    if phase not in {"script", "assets", "videos", "compose"}:
+        from sqlalchemy import select
+        from sqlalchemy.orm import selectinload
+        from app.database import AsyncSessionLocal
+        from app.models import Project
+        from app.services.kepu_stages import normalize_kepu_pipeline_phase
+
+        async with AsyncSessionLocal() as db:
+            project = (await db.execute(
+                select(Project).where(Project.id == project_id).options(selectinload(Project.shots))
+            )).scalar_one_or_none()
+            if project is not None:
+                # Resolve legacy auto/produce before generation changes readiness.
+                # Use the pipeline's shared rules for both execution and its saved output.
+                phase = normalize_kepu_pipeline_phase(phase, project)
+        # The read transaction is closed before awaiting external generation.
+    # The previous task can have been cancelled before its pipeline ever ran,
+    # leaving a process-local marker. Clear it in the executing worker only for
+    # this fresh task; persistent CANCELLED checks still catch a new cancellation.
+    clear_pipeline_cancellation(project_id)
     return await _await_kepu(
         task,
         run_pipeline(
-            _require_int(task.project_id, "project_id"),
-            phase=str(phase) if phase is not None else None,
+            project_id,
+            phase=phase,
         ),
         phase=phase,
     )
@@ -241,8 +306,11 @@ async def _run_kepu_project_audio(task: TaskRun) -> dict[str, Any] | None:
 
 # 执行科普仅合成任务。
 async def _run_kepu_compose(task: TaskRun) -> dict[str, Any] | None:
-    from app.services.pipeline import compose_only
+    from app.services.pipeline import clear_pipeline_cancellation, compose_only
 
+    if task.cancel_requested:
+        return {"cancelled": True, "project_id": task.project_id}
+    clear_pipeline_cancellation(_require_int(task.project_id, "project_id"))
     return await _await_kepu(
         task,
         compose_only(_require_int(task.project_id, "project_id")),
@@ -278,6 +346,16 @@ async def _noop_ephemeral(task: TaskRun) -> dict[str, Any] | None:
     return {"ok": True, "ephemeral": True}
 
 
+async def _run_studio_generation(task: TaskRun) -> dict[str, Any] | None:
+    from app.services.studio_generation import execute_generation
+    return await execute_generation(task)
+
+
+async def _run_creation_turn(task: TaskRun) -> dict[str, Any] | None:
+    from app.services.creation import execute_creation_turn
+    return await execute_creation_turn(task)
+
+
 # 确保关键主键字段存在。
 def _require_int(value: int | None, field_name: str) -> int:
     if isinstance(value, int) and value > 0:
@@ -286,6 +364,7 @@ def _require_int(value: int | None, field_name: str) -> int:
 
 
 TASK_HANDLERS: dict[tuple[str, str], TaskHandler] = {
+    ("kepu", "creation_turn"): TaskHandler("kepu", "creation_turn", _run_creation_turn),
     ("drama", "script_summary"): TaskHandler("drama", "script_summary", _run_drama_script_summary),
     ("drama", "episode_script"): TaskHandler("drama", "episode_script", _run_drama_episode_script),
     ("drama", "fragment_plan"): TaskHandler("drama", "fragment_plan", _run_drama_fragment_plan),
@@ -297,12 +376,12 @@ TASK_HANDLERS: dict[tuple[str, str], TaskHandler] = {
     ("drama", "skill_optimize"): TaskHandler("drama", "skill_optimize", _noop_ephemeral),
     ("drama", "voice_prompt"): TaskHandler("drama", "voice_prompt", _noop_ephemeral),
     ("drama", "voice_synthesis"): TaskHandler("drama", "voice_synthesis", _noop_ephemeral),
+    ("drama", "episode_compose"): TaskHandler("drama", "episode_compose", _noop_ephemeral),
     ("kepu", "content_expand"): TaskHandler("kepu", "content_expand", _noop_ephemeral),
-    ("api", "v1_image"): TaskHandler("api", "v1_image", _noop_ephemeral),
-    ("api", "v1_video"): TaskHandler("api", "v1_video", _noop_ephemeral),
-    ("api", "v1_seedance"): TaskHandler("api", "v1_seedance", _noop_ephemeral),
-    ("studio", "tool_image"): TaskHandler("studio", "tool_image", _noop_ephemeral),
-    ("studio", "tool_video"): TaskHandler("studio", "tool_video", _noop_ephemeral),
+    ("kepu", "voice_preview"): TaskHandler("kepu", "voice_preview", _noop_ephemeral),
+    ("studio", "tool_image"): TaskHandler("studio", "tool_image", _run_studio_generation),
+    ("studio", "tool_video"): TaskHandler("studio", "tool_video", _run_studio_generation),
+    ("studio", "tool_audio"): TaskHandler("studio", "tool_audio", _run_studio_generation),
     ("kepu", "project_pipeline"): TaskHandler("kepu", "project_pipeline", _run_kepu_project_pipeline),
     ("kepu", "shot_regen_image"): TaskHandler("kepu", "shot_regen_image", _run_kepu_shot_image),
     ("kepu", "shot_regen_video"): TaskHandler("kepu", "shot_regen_video", _run_kepu_shot_video),

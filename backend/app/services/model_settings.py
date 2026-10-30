@@ -5,7 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -52,6 +52,7 @@ class RoutingSnapshot:
     channels: list[SystemModelChannel]
     logical_models: list[LogicalModel]
     default_models: DefaultModels
+    media_reference_limits: dict[str, dict[str, int]] = field(default_factory=dict)
 
 
 _routing_snapshot = RoutingSnapshot(channels=[], logical_models=[], default_models=DefaultModels())
@@ -113,12 +114,14 @@ def _refresh_routing_snapshot(
     channels: list[SystemModelChannel],
     logical_models: list[LogicalModel],
     default_models: DefaultModels,
+    media_reference_limits: dict | None = None,
 ) -> None:
     global _routing_snapshot
     _routing_snapshot = RoutingSnapshot(
         channels=channels,
         logical_models=logical_models,
         default_models=default_models,
+        media_reference_limits=media_reference_limits or {},
     )
 
 
@@ -214,8 +217,8 @@ def _merge_friendly_alias_models(
 
 # TokenFree 价目真实 id（兼容旧前端别名 → 同名逻辑模型，不做换绑）
 _TOKENFREE_IMAGE_IDS: dict[str, str] = {
-    "seedream-5.0": "seedream-5-0-pro",
-    "seedream-5": "seedream-5-0-pro",
+    "seedream-5.0": "seedream-5.0",
+    "seedream-5": "seedream-5.0",
     "5.0": "seedream-5-0-pro",
     "seedream-4.5": "seedream-4-5",
     "seedream-4": "seedream-4-5",
@@ -453,7 +456,9 @@ async def load_model_settings_cache(db: AsyncSession) -> None:
         config["flat"] = _encrypt_flat_config(flat_cfg) if flat_cfg else config.get("flat")
         app_row.config_json = config
         await db.commit()
-    _refresh_routing_snapshot(channels, logical_models, default_models)
+    from app.services.media_models.reference_limits import reference_limit_settings
+    _refresh_routing_snapshot(channels, logical_models, default_models,
+                              reference_limit_settings(config.get("media_reference_limits")))
     _refresh_overlay({"flat": flat})
     reload_settings()
 
@@ -505,6 +510,8 @@ async def get_admin_model_settings(db: AsyncSession) -> AdminModelSettingsOut:
 
 
 async def get_admin_routing_settings(db: AsyncSession) -> AdminRoutingSettingsOut:
+    from app.services.media_models.reference_limits import reference_limit_settings
+
     channels, logical_models, defaults, _, app_row = await _compose_runtime_state(db)
     admin_channels = await _load_channels(db, runtime=False)
     errors = model_routing_validation_errors(logical_models, admin_channels or channels, defaults)
@@ -512,6 +519,7 @@ async def get_admin_routing_settings(db: AsyncSession) -> AdminRoutingSettingsOu
         system_channels=admin_channels,
         logical_models=logical_models,
         default_models=defaults,
+        media_reference_limits=reference_limit_settings((app_row.config_json or {}).get("media_reference_limits")),
         validation_errors=errors,
         updated_at=app_row.updated_at,
     )
@@ -548,6 +556,9 @@ async def patch_admin_model_settings(
     app_row.config_json = config
     await db.commit()
     await load_model_settings_cache(db)
+    if "marketplace_enabled" in applied:
+        from app.marketplace.bootstrap import apply_marketplace_switch
+        await apply_marketplace_switch()
     channels, logical_models, defaults, flat, app_row = await _compose_runtime_state(db)
     admin_channels = await _load_channels(db, runtime=False)
     return _to_admin_flat_out(flat, source="db", updated_at=app_row.updated_at, channels=admin_channels, logical_models=logical_models, defaults=defaults), applied
@@ -604,6 +615,10 @@ async def patch_admin_routing_settings(
     from app.models_tasks import TaskRun
     from app.services.tasks.service import TERMINAL_TASK_STATUSES
     from app.services.provider_profiles import normalize_profiles, profile_state
+    from app.services.media_models.reference_limits import reference_limit_settings
+
+    limits = {key: value.model_dump() for key, value in body.media_reference_limits.items()} if body.media_reference_limits is not None else None
+    reference_limit_settings(limits)
 
     # 先校验整份请求，错误配置不能留下部分写入。
     if body.logical_models is not None:
@@ -646,7 +661,11 @@ async def patch_admin_routing_settings(
     logical, defaults = profile_state(channels, body.default_models or default_models_from_dict(config.get("default_models")))
     config["logical_models"] = [model.model_dump() for model in logical]
     config["default_models"] = default_models_to_dict(defaults)
+    applied = ["system_channels", "default_models"]
+    if limits is not None:
+        config["media_reference_limits"] = reference_limit_settings({**(config.get("media_reference_limits") or {}), **limits})
+        applied.append("media_reference_limits")
     app_row.config_json = config
     await db.commit()
     await load_model_settings_cache(db)
-    return await get_admin_routing_settings(db), ["system_channels", "default_models"]
+    return await get_admin_routing_settings(db), applied

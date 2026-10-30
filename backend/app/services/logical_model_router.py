@@ -9,6 +9,10 @@ from app.services.model_routing_config import (
     infer_model_capability,
 )
 from app.services.model_settings import get_routing_snapshot
+from app.services.model_availability import (
+    canonical_model_key, direct_binding_enabled, has_managed_models,
+    is_managed_model, is_model_enabled,
+)
 
 
 # 解析某逻辑模型的可用路由
@@ -19,6 +23,8 @@ def _routes_for_logical_model(
     *,
     preferred_channel_id: str = "",
 ) -> list[ResolvedModelRoute]:
+    if not logical.enabled:
+        return []
     bindings = sorted(
         [binding for binding in logical.bindings if binding.enabled],
         key=lambda binding: (
@@ -53,6 +59,10 @@ def resolve_logical_model_candidates(
     requested = (requested_model_id or "").strip()
     if not requested:
         requested = _default_model_id(snapshot.default_models, capability)
+        if not requested and has_managed_models(capability, snapshot.logical_models):
+            return []
+    if requested and not is_model_enabled(capability, requested, snapshot.logical_models):
+        return []
 
     if requested:
         logical = next(
@@ -61,7 +71,7 @@ def resolve_logical_model_candidates(
                 for model in snapshot.logical_models
                 if model.enabled
                 and model.capability == capability
-                and model.id.lower() == requested.lower()
+                and canonical_model_key(capability, model.id) == canonical_model_key(capability, requested)
             ),
             None,
         )
@@ -74,6 +84,21 @@ def resolve_logical_model_candidates(
             )
             if routes:
                 return routes
+        else:
+            # Custom logical names may bind a known upstream alias (for example Qwen/Omni).
+            key = canonical_model_key(capability, requested)
+            routes = []
+            for model in snapshot.logical_models:
+                if not model.enabled or model.capability != capability:
+                    continue
+                if not any(binding.enabled and canonical_model_key(capability, binding.upstream_model) == key
+                           for binding in model.bindings):
+                    continue
+                routes.extend(route for route in _routes_for_logical_model(
+                    model, capability, snapshot.channels, preferred_channel_id=preferred_channel_id,
+                ) if canonical_model_key(capability, route.upstream_model) == key)
+            if routes:
+                return routes
 
     # 用户点名的上游模型在渠道清单里时，不要静默换成同能力的另一个逻辑模型
     if requested:
@@ -81,12 +106,19 @@ def resolve_logical_model_candidates(
             capability,
             requested,
             snapshot.channels,
+            logical_models=snapshot.logical_models,
             preferred_channel_id=preferred_channel_id,
         )
         if direct:
             return direct
 
+    if requested and is_managed_model(capability, requested, snapshot.logical_models):
+        return []
+
     # 默认/请求模型失效时，回落到同能力第一个可解析模型（DeepSeek / Kimi / 其它兼容均可）
+    if capability in {"image", "video"}:
+        # Media requests never switch model, including when the requested route is unavailable.
+        return []
     for model in snapshot.logical_models:
         if not model.enabled or model.capability != capability:
             continue
@@ -110,6 +142,7 @@ def resolve_logical_model_candidates(
         capability,
         requested,
         snapshot.channels,
+        logical_models=snapshot.logical_models,
         preferred_channel_id=preferred_channel_id,
     )
 
@@ -119,6 +152,7 @@ def _direct_channel_routes(
     requested: str,
     channels: list[SystemModelChannel],
     *,
+    logical_models: list[LogicalModel] | None = None,
     preferred_channel_id: str = "",
 ) -> list[ResolvedModelRoute]:
     """按渠道 models 清单精确匹配用户点名的上游模型。"""
@@ -130,6 +164,8 @@ def _direct_channel_routes(
         ]
     routes: list[ResolvedModelRoute] = []
     for channel in ordered:
+        if not direct_binding_enabled(capability, requested, channel.id, logical_models or []):
+            continue
         if not channel.enabled or not channel_connection_ready(channel):
             continue
         if not channel_supports_model(channel, requested):
@@ -176,11 +212,26 @@ def resolve_upstream_model(
     capability: LogicalModelCapability,
     model_id: str | None,
 ) -> str:
+    if capability in {"image", "video"}:
+        from app.services.media_models.runtime import current_snapshot, operation_for, restore_route
+
+        if current_snapshot.get():
+            operation = operation_for(capability, model=model_id)
+            if operation:
+                return restore_route(operation["route"]).upstream_model
+    snapshot = get_routing_snapshot()
+    if model_id and not is_model_enabled(capability, model_id, snapshot.logical_models):
+        raise ValueError(f"model: {model_id} 已停用")
     logical_id = resolve_logical_model_id(capability, model_id)
+    if not logical_id and has_managed_models(capability, snapshot.logical_models):
+        raise ValueError(f"model: 未配置可用的默认{capability}模型")
+    if logical_id and not is_model_enabled(capability, logical_id, snapshot.logical_models):
+        raise ValueError(f"model: {logical_id} 已停用")
     route = resolve_logical_model(capability, logical_id)
     if route:
         return route.upstream_model
-    snapshot = get_routing_snapshot()
+    if is_managed_model(capability, logical_id, snapshot.logical_models):
+        raise ValueError(f"model: {logical_id} 没有启用的可用渠道绑定")
     fallback = _legacy_upstream_fallback(capability, model_id, snapshot.default_models)
     if fallback:
         return fallback
@@ -242,8 +293,8 @@ def _capability_aliases(capability: LogicalModelCapability) -> dict[str, str]:
     if capability == "image":
         # 旧 UI 别名 → TokenFree 价目真实 id（逻辑模型与上游同名，不做换绑）
         return {
-            "seedream-5.0": "seedream-5-0-pro",
-            "seedream-5": "seedream-5-0-pro",
+            "seedream-5.0": "seedream-5.0",
+            "seedream-5": "seedream-5.0",
             "5.0": "seedream-5-0-pro",
             "seedream-4.5": "seedream-4-5",
             "seedream-4": "seedream-4-5",
@@ -278,9 +329,12 @@ def _legacy_upstream_fallback(
     raw = (model_id or "").strip()
     if capability == "image":
         mid = raw.lower()
-        if mid in {"", "seedream-5.0", "seedream-5", "5.0"}:
+        if mid in {"", "5.0"}:
             route = resolve_logical_model("image", defaults.image_model or "seedream-5-0-pro")
             return route.upstream_model if route else settings.model_image
+        if mid in {"seedream-5.0", "seedream-5"}:
+            route = resolve_logical_model("image", "seedream-5.0")
+            return route.upstream_model if route else "seedream-5.0"
         if mid in {"seedream-4.5", "seedream-4", "4.5"}:
             route = resolve_logical_model("image", "seedream-4-5")
             return route.upstream_model if route else ((settings.model_image_45 or "").strip() or settings.model_image)

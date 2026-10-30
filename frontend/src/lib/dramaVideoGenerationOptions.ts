@@ -120,7 +120,8 @@ export function resolutionsForModel(
   videoModels?: MediaModelOption[],
 ): VideoResolution[] {
   const row = findVideoModelRow(modelId, catalog, videoModels)
-  const raw = row?.allowed_resolutions
+  const raw = row?.available_resolutions ?? row?.allowed_resolutions
+  if (Array.isArray(raw) && raw.length === 0) return []
   if (Array.isArray(raw) && raw.length > 0) {
     const filtered = raw.filter((r): r is VideoResolution =>
       VIDEO_RESOLUTION_OPTIONS.includes(r as VideoResolution),

@@ -1,6 +1,9 @@
+import { readEpisodeJob } from '../../lib/dramaEpisodeJobs'
+import { isRequestAborted } from '../../api/http'
+import { TeamEditingBoundary } from '../../features/teams/TeamEditingBoundary'
 /** 剧情大纲：左栏分集目录 + 右栏本集梗概/剧本与可选创作备注 */
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import {
   BookOpen,
   Check,
@@ -19,7 +22,6 @@ import { dramaApi, resolveDramaMediaUrl, type DramaEpisode, type DramaEpisodeBod
 import { FragmentPlanSkillModal } from '../../components/drama/FragmentPlanSkillModal'
 import { dialog } from '../../lib/dialog'
 import {
-  buildEpisodeContentUpdate,
   buildOutlineDirectory,
   episodeBodyCharLen,
   isSubstantialEpisodeBody,
@@ -31,8 +33,17 @@ import {
 } from './dramaWorkspaceUtils'
 import { sumFragmentContentDuration } from './dramaEpisodeEditUtils'
 import { OutlineScriptParseModal, OutlineScriptPreview } from './outlineScriptPreview'
+import DramaStatusNotice, { DramaErrorNotice } from './DramaStatusNotice'
 
 type SectionKey = 'creative' | 'summary' | 'body'
+
+const GENERATION_TITLES: Record<string, string> = {
+  creative: '正在生成本集创作思路',
+  summary: '正在生成本集梗概',
+  brief: '正在提取本集梗概',
+  body: '正在生成拍摄剧本',
+  full: '正在重新生成整集',
+}
 
 /** 分集目录用的镜头合计文案 */
 function formatOutlineShotDuration(sec: number): string {
@@ -216,8 +227,7 @@ export function OutlineEpisodePanel({
   const [titleDraft, setTitleDraft] = useState('')
   const [saving, setSaving] = useState(false)
   const [adding, setAdding] = useState(false)
-  const [generatingMode, setGeneratingMode] = useState<string | null>(null)
-  const [generatingEpisodeNumber, setGeneratingEpisodeNumber] = useState<number | null>(null)
+  const [localJobs, setLocalJobs] = useState<Record<number, string>>({})
   const [confirming, setConfirming] = useState(false)
   const [enterSkillOpen, setEnterSkillOpen] = useState(false)
   const [localError, setLocalError] = useState('')
@@ -226,7 +236,7 @@ export function OutlineEpisodePanel({
   const [sceneEditing, setSceneEditing] = useState(false)
   const [episodeCovers, setEpisodeCovers] = useState<Record<number, string>>({})
   const [episodeShotStats, setEpisodeShotStats] = useState<
-    Record<number, { fragmentCount: number; totalSec: number; planStatus: string; scriptChanged: boolean }>
+    Record<number, { episodeId: number; fragmentCount: number; totalSec: number; planStatus: string; scriptChanged: boolean }>
   >({})
 
   const episodeBodies = parseEpisodeBodies(script)
@@ -234,6 +244,10 @@ export function OutlineEpisodePanel({
   const displayEpisodes = mergeDirectoryEpisodeBodies(directoryEpisodes, episodeBodies)
   const selected =
     displayEpisodes.find((ep) => ep.episodeNumber === activeEpisodeNumber) || displayEpisodes[0] || null
+
+  const selectedJob = readEpisodeJob(script, selected?.episodeNumber || 0)
+  const generatingMode = selected ? localJobs[selected.episodeNumber || 0] || selectedJob.mode || null : null
+  const generatingEpisodeNumber = Number(Object.keys(localJobs).find((number) => Number(number) !== selected?.episodeNumber) || 0) || null
 
   useEffect(() => {
     if (!selected) return
@@ -273,7 +287,7 @@ export function OutlineEpisodePanel({
   // 从分集列表刷新封面 / 镜数 / 分镜状态
   function applyEpisodeRows(rows: DramaEpisode[]) {
     const map: Record<number, string> = {}
-    const shotMap: Record<number, { fragmentCount: number; totalSec: number; planStatus: string; scriptChanged: boolean }> =
+    const shotMap: Record<number, { episodeId: number; fragmentCount: number; totalSec: number; planStatus: string; scriptChanged: boolean }> =
       {}
     for (const ep of rows) {
       const epNo = Number(ep.params?.episodeNumber) || 0
@@ -291,6 +305,7 @@ export function OutlineEpisodePanel({
             }, 0)
           : 0
       shotMap[epNo] = {
+        episodeId: ep.id,
         fragmentCount: frags.length,
         totalSec,
         planStatus,
@@ -337,9 +352,8 @@ export function OutlineEpisodePanel({
     }
   }, [projectId, script?.id, script?.episode_content, episodeCount, episodeGenerating, generatingMode])
 
-  const selectedGenerating =
-    Boolean(generatingMode) && generatingEpisodeNumber === (selected?.episodeNumber ?? null)
-  const anyEpisodeGenerating = Boolean(generatingMode)
+  const selectedGenerating = Boolean(selected && localJobs[selected.episodeNumber || 0]) || ['queued', 'generating', 'running'].includes(selectedJob.status)
+  const anyEpisodeGenerating = Object.keys(localJobs).length > 0
   const effectiveCreative =
     editingSection === 'creative' ? sectionDraft : selected?.creative || ''
   const effectiveSummary =
@@ -357,7 +371,7 @@ export function OutlineEpisodePanel({
     directoryEpisodes.length < 120
 
   // 整剧批量生成时：已写完正文的集可编辑 / 进分镜 / 重生成；未完成集仍锁生成
-  // 单集手动生成全局串行，故 anyEpisodeGenerating 时禁止再点生成
+  // 单集任务按集号独立；只禁用当前正在生成的一集
   const selectedBodyReady = isSubstantialEpisodeBody(selected?.body)
   const summaryGenerateMode = selectedBodyReady
     ? 'brief'
@@ -365,7 +379,7 @@ export function OutlineEpisodePanel({
   const batchLocksThisEpisode = episodeGenerating && !selectedBodyReady
   const busy = selectedGenerating || confirming || saving || adding
   const generateBusy =
-    anyEpisodeGenerating || batchLocksThisEpisode || confirming || saving || adding
+    selectedGenerating || batchLocksThisEpisode || confirming || saving || adding
   const enterBusy = busy || !selectedBodyReady
 
   async function pollOptimize(tokenEpisode: number) {
@@ -373,29 +387,25 @@ export function OutlineEpisodePanel({
     let lastErr: Error | null = null
     while (Date.now() - started < 8 * 60 * 1000) {
       await new Promise((r) => setTimeout(r, 2000))
-      try {
-        const cur = await dramaApi.getScript(projectId)
-        onScriptChange(cur)
-        lastErr = null
-        const st = String((cur.params || {}).episode_optimize_status || '')
-        const num = Number((cur.params || {}).episode_optimize_number || 0)
-        if (num === tokenEpisode && st === 'completed') return cur
-        if (num === tokenEpisode && st === 'failed') {
-          throw new Error(String((cur.params || {}).episode_optimize_error || '生成失败'))
-        }
-        if (st !== 'generating') return cur
-      } catch (err) {
-        // 瞬时网络失败不中断轮询，避免 Failed to fetch 把界面卡在「生成中」
-        lastErr = err instanceof Error ? err : new Error('轮询失败')
-      }
+      let cur: DramaScript
+      try { cur = await dramaApi.getScript(projectId) }
+      catch (err) { if (isRequestAborted(err)) throw err; lastErr = err instanceof Error ? err : new Error('轮询失败'); continue }
+      onScriptChange(cur)
+      lastErr = null
+      const job = readEpisodeJob(cur, tokenEpisode)
+      if (job.status === 'completed') return cur
+      if (job.status === 'failed' || job.status === 'cancelled') throw new Error(job.error || '本集生成失败或已取消')
+
     }
     throw lastErr || new Error('生成超时，请稍后刷新')
   }
 
   async function saveBodies(nextBodies: DramaEpisodeBody[]) {
-    const updated = await dramaApi.updateScript(projectId, {
-      episode_content: buildEpisodeContentUpdate(script, nextBodies),
-    })
+    if (!selected?.episodeNumber) throw new Error('请先选择分集')
+    const current = nextBodies.find((item) => item.episodeNumber === selected.episodeNumber)
+    if (!current) throw new Error('分集不存在，请刷新')
+    await dramaApi.updateScriptEpisode(projectId, selected.episodeNumber, { title: current.title, creative: current.creative, summary: current.summary, body: current.body, version: Number((script?.params?.episode_versions as Record<string, number> | undefined)?.[String(selected.episodeNumber)] ?? 0) })
+    const updated = await dramaApi.getScript(projectId)
     onScriptChange(updated)
     return updated
   }
@@ -415,6 +425,7 @@ export function OutlineEpisodePanel({
       setOpenSections((prev) => new Set(prev).add('summary'))
       onOpenEpisodes()
     } catch (err) {
+      if (isRequestAborted(err)) return
       const msg = err instanceof Error ? err.message : '加集失败'
       setLocalError(msg)
       onError(msg)
@@ -438,6 +449,7 @@ export function OutlineEpisodePanel({
       await saveBodies(next)
       setEditingSection(null)
     } catch (err) {
+      if (isRequestAborted(err)) return
       const msg = err instanceof Error ? err.message : '保存失败'
       setLocalError(msg)
       onError(msg)
@@ -482,8 +494,7 @@ export function OutlineEpisodePanel({
       if (!ok) return
     }
     const targetEpisode = selected.episodeNumber
-    setGeneratingMode(mode)
-    setGeneratingEpisodeNumber(targetEpisode)
+    setLocalJobs((jobs) => ({ ...jobs, [targetEpisode]: mode }))
     setLocalError('')
     setLocalNotice('')
     try {
@@ -495,17 +506,17 @@ export function OutlineEpisodePanel({
         title: selected.title,
       })
       const cur = await pollOptimize(targetEpisode)
-      const created = Number((cur.params || {}).episode_optimize_assets_created || 0)
+      const created = readEpisodeJob(cur, targetEpisode).assetsCreated
       if ((mode === 'body' || mode === 'full') && created > 0) {
         setLocalNotice(`新建 ${created} 个角色/场景，已进资产库`)
       }
     } catch (err) {
+      if (isRequestAborted(err)) return
       const msg = err instanceof Error ? err.message : '生成失败'
       setLocalError(msg)
       onError(msg)
     } finally {
-      setGeneratingMode(null)
-      setGeneratingEpisodeNumber(null)
+      setLocalJobs((jobs) => { const next = { ...jobs }; delete next[targetEpisode]; return next })
     }
   }
 
@@ -539,6 +550,7 @@ export function OutlineEpisodePanel({
       }
       setEnterSkillOpen(true)
     } catch (err) {
+      if (isRequestAborted(err)) return
       const msg = err instanceof Error ? err.message : '进入分镜失败'
       setLocalError(msg)
       onError(msg)
@@ -566,10 +578,12 @@ export function OutlineEpisodePanel({
           skill_ids: skillIds,
         })
       } catch (planErr) {
-        onError(planErr instanceof Error ? planErr.message : 'AI 分镜入队失败，已进入规则分镜')
+        if (isRequestAborted(planErr)) return
+        onError(planErr instanceof Error ? planErr.message : 'AI 分镜启动失败')
       }
       navigate(`/drama/projects/${projectId}/episodes/${episodeId}`)
     } catch (err) {
+      if (isRequestAborted(err)) return
       const msg = err instanceof Error ? err.message : '进入分镜失败'
       setLocalError(msg)
       onError(msg)
@@ -589,6 +603,7 @@ export function OutlineEpisodePanel({
       )
       await saveBodies(next)
     } catch (err) {
+      if (isRequestAborted(err)) return
       const msg = err instanceof Error ? err.message : '保存失败'
       setLocalError(msg)
       onError(msg)
@@ -832,6 +847,11 @@ export function OutlineEpisodePanel({
             <RefreshCw size={15} strokeWidth={2.25} />
             {selectedGenerating && generatingMode === 'full' ? '生成中…' : '重新生成整集'}
           </button>
+          {selectedShot?.episodeId && !editingSection && !sceneEditing ? (
+            <Link className="drama-btn-primary" to={`/drama/projects/${projectId}/episodes/${selectedShot.episodeId}`}>
+              进入分镜
+            </Link>
+          ) : (
           <button
             type="button"
             className="drama-btn-primary"
@@ -841,44 +861,59 @@ export function OutlineEpisodePanel({
           >
             {confirming ? '进入中…' : '进入分镜'}
           </button>
+          )}
         </div>
       </header>
 
-      {localError ? <p className="drama-error">{localError}</p> : null}
-      {localNotice ? <p className="drama-outline-notice">{localNotice}</p> : null}
-      {selectedShot?.scriptChanged ? (
-        <p className="drama-outline-notice">剧本已修改，当前分镜仍为旧稿；进入后请重新分镜。</p>
-      ) : null}
-      {summaryGenerating ? (
-        <p className="drama-loader">全剧摘要生成中…完成后抽取资产，再生成各集剧本</p>
-      ) : null}
-      {assetsSeeding ? (
-        <p className="drama-loader">抽取资产中…角色/场景写入资产库后开始分集</p>
-      ) : null}
-      {episodeGenerating ? (
-        <p className="drama-loader">
-          {episodeProgress.total > 0
-            ? `整剧进度 ${episodeProgress.done}/${episodeProgress.total} · 可先浏览已完成的集`
-            : '全集剧本生成中，可先浏览已完成的集…'}
-        </p>
-      ) : null}
-      {selectedGenerating ? (
-        <p className="drama-loader">本集生成中（{generatingMode}）…</p>
-      ) : anyEpisodeGenerating && generatingEpisodeNumber ? (
-        <p className="drama-loader">
-          第 {generatingEpisodeNumber} 集生成中，可先浏览/编辑本集（生成请等该集完成）
-        </p>
-      ) : null}
-      {selected && episodeShotStats[selected.episodeNumber || 0]?.planStatus === 'generating' ? (
-        <p className="drama-loader">本集 AI 分镜中…</p>
-      ) : null}
-      {selected &&
-      isSubstantialEpisodeBody(selected.body) &&
-      !episodeShotStats[selected.episodeNumber || 0]?.planStatus &&
-      !summaryGenerating &&
-      !assetsSeeding ? (
-        <p className="drama-loader">本集正文已就绪，等待入队 AI 分镜…</p>
-      ) : null}
+      <div className="drama-outline-status-list">
+        {localError ? <DramaErrorNotice message={localError} onDismiss={() => setLocalError('')} /> : null}
+        {localNotice ? <DramaStatusNotice tone="success" title={localNotice} onDismiss={() => setLocalNotice('')} /> : null}
+        {selectedShot?.scriptChanged ? (
+          <DramaStatusNotice tone="warning" title="剧本已更新，分镜待同步">
+            现有分镜仍为旧稿，进入分镜后请重新分镜。
+          </DramaStatusNotice>
+        ) : null}
+        {summaryGenerating ? (
+          <DramaStatusNotice tone="busy" title="正在生成全剧摘要">
+            完成后将抽取角色与场景资产，再生成各集剧本。
+          </DramaStatusNotice>
+        ) : null}
+        {assetsSeeding ? (
+          <DramaStatusNotice tone="busy" title="正在抽取角色与场景资产">
+            写入资产库后，将开始生成分集剧本。
+          </DramaStatusNotice>
+        ) : null}
+        {episodeGenerating ? (
+          <DramaStatusNotice tone="busy" title="正在生成分集剧本">
+            {episodeProgress.total > 0
+              ? `已完成 ${episodeProgress.done} / ${episodeProgress.total} 集，可先浏览已完成的内容。`
+              : '可先浏览已完成的分集内容。'}
+          </DramaStatusNotice>
+        ) : null}
+        {selectedGenerating ? (
+          <DramaStatusNotice tone="busy" title={GENERATION_TITLES[generatingMode || ''] || '正在生成本集内容'}>
+            内容生成后将自动更新，请稍候。
+          </DramaStatusNotice>
+        ) : anyEpisodeGenerating && generatingEpisodeNumber ? (
+          <DramaStatusNotice tone="busy" title={`第 ${generatingEpisodeNumber} 集正在生成`}>
+            可继续创作当前分集。
+          </DramaStatusNotice>
+        ) : null}
+        {selected && episodeShotStats[selected.episodeNumber || 0]?.planStatus === 'generating' ? (
+          <DramaStatusNotice tone="busy" title="正在生成本集 AI 分镜">
+            分镜完成后，可进入查看与编辑。
+          </DramaStatusNotice>
+        ) : null}
+        {selected &&
+        isSubstantialEpisodeBody(selected.body) &&
+        !episodeShotStats[selected.episodeNumber || 0]?.planStatus &&
+        !selectedGenerating &&
+        !episodeGenerating &&
+        !summaryGenerating &&
+        !assetsSeeding ? (
+          <DramaStatusNotice tone="busy" title="本集剧本已就绪，正在准备 AI 分镜" />
+        ) : null}
+      </div>
 
       <div className="drama-outline-sections">
         <SectionCard
@@ -971,10 +1006,12 @@ export function OutlineEpisodePanel({
     </section>
   )
 
+  const editableBodies = <TeamEditingBoundary projectId={projectId} type="episode" resourceId={selected?.episodeNumber || 0} enabled={Boolean(selected)} showReadOnlyNotice={false} allowReadOnlyNavigation onAcquired={async (isCurrent) => { const fresh = await dramaApi.getScript(projectId); if (isCurrent()) onScriptChange(fresh) }}>{bodies}</TeamEditingBoundary>
+
   if (children) {
     return (
       <>
-        {children({ directory, bodies })}
+        {children({ directory, bodies: editableBodies })}
         <FragmentPlanSkillModal
           open={enterSkillOpen}
           title="进入分镜"
@@ -991,7 +1028,7 @@ export function OutlineEpisodePanel({
   return (
     <div className="drama-outline drama-outline-v2">
       {directory}
-      <div className="drama-outline-main">{bodies}</div>
+      <div className="drama-outline-main">{editableBodies}</div>
       <FragmentPlanSkillModal
         open={enterSkillOpen}
         title="进入分镜"

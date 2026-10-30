@@ -11,7 +11,11 @@ from app.schemas import AdminUserListOut, AdminUserOut, AdminUserPatch, PageMeta
 router = APIRouter()
 
 
-@router.get("/users", response_model=AdminUserListOut)
+@router.get("/users", response_model=AdminUserListOut,
+    summary="分页查询用户",
+    description="管理员按邮箱、昵称或用户编号搜索用户，可按套餐和角色筛选；结果按用户编号倒序返回。",
+    response_description="操作成功，返回结果详见响应结构",
+)
 async def list_users(
     q: str | None = None,
     plan: str | None = None,
@@ -53,7 +57,11 @@ async def list_users(
     )
 
 
-@router.patch("/users/{user_id}", response_model=AdminUserOut)
+@router.patch("/users/{user_id}", response_model=AdminUserOut,
+    summary="更新用户套餐、角色或余额",
+    description="管理员局部更新用户套餐、角色或个人钱包余额。balance_delta_fen 为增减金额，balance_fen 为目标余额，两者不能同时传入，金额单位为分；余额变化会记录钱包流水。不能将余额减为负数，也不能降低自己的管理员权限。",
+    response_description="操作成功，返回结果详见响应结构",
+)
 async def patch_user(
     user_id: int,
     body: AdminUserPatch,
@@ -61,7 +69,7 @@ async def patch_user(
     db: AsyncSession = Depends(get_db),
 ) -> AdminUserOut:
     # Update plan / role; balance changes write WalletLedger
-    user = await db.get(User, user_id)
+    user = (await db.execute(select(User).where(User.id == user_id).with_for_update().execution_options(populate_existing=True))).scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
 

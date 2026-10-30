@@ -1,3 +1,4 @@
+import { MediaCostNotice } from '../../../../components/billing/MediaCostNotice'
 /** 漫剧生图：风格 / 模型 / 画幅选择条（内置风格，无手填） */
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import { BarChart3, ChevronDown, RectangleVertical, Smile } from 'lucide-react'
@@ -22,6 +23,7 @@ import {
 import {
   catalogImageModels,
   catalogModelLabel,
+  resolveCatalogModelSelection,
   useMediaModelsCatalog,
 } from '../../../../hooks/useMediaModelsCatalog'
 import './dramaImageGenOptions.css'
@@ -45,6 +47,7 @@ export function DramaImageGenOptionsBar({
 }: DramaImageGenOptionsBarProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState<OpenPanel>(null)
+  const [adjustment, setAdjustment] = useState('')
   const catalog = useMediaModelsCatalog()
   const imageModels = catalogImageModels(catalog)
 
@@ -52,10 +55,12 @@ export function DramaImageGenOptionsBar({
     // 仅在模型为空/不在目录时补默认；用户已选合法模型时绝不覆盖。
     // 注意：不要依赖 disabled——发送后 busy 翻转会误触发，把选项打回 Seedream/3:4。
     if (!catalog) return
-    const ids = imageModels.map((m) => m.id)
-    if (!ids.length) return
-    if (value.model_id && ids.includes(value.model_id)) return
-    const nextModel = catalog.defaults.image_model || ids[0]
+    const nextModel = resolveCatalogModelSelection(catalog, 'image', value.model_id)
+    if (nextModel === value.model_id) return
+    if (!nextModel) {
+      onChange({ ...value, model_id: '' })
+      return
+    }
     const nextRatio = clampImageAspectRatioForModel(
       nextModel,
       value.aspect_ratio,
@@ -87,6 +92,7 @@ export function DramaImageGenOptionsBar({
       imageModels,
     )
     if (nextRatio !== value.aspect_ratio || nextRes !== value.resolution) {
+      setAdjustment('所选模型不支持原参数，已调整画幅或分辨率，请核对报价后生成。')
       onChange({ ...value, aspect_ratio: nextRatio, resolution: nextRes })
     }
   }, [value.model_id, catalog])
@@ -117,6 +123,8 @@ export function DramaImageGenOptionsBar({
 
   return (
     <div ref={rootRef} className="fc-gen-opts" onMouseDown={stop} onPointerDown={stop}>
+      {adjustment && <span className="media-cost-notice" role="status">{adjustment}</span>}
+      <MediaCostNotice modelId={value.model_id} resolution={value.resolution} />
       <div className="fc-gen-opts-triggers">
         <button
           type="button"

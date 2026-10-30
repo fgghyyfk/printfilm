@@ -25,9 +25,9 @@ class Settings(BaseSettings):
     database_url_sync: str = "postgresql+psycopg2://printfilm:change-me-strong-db-password@127.0.0.1:15432/printfilm"
     # 连接已初始化的共享库时可关闭建表/补列/种子数据；仍加载数据库中的模型配置。
     database_bootstrap_enabled: bool = True
-    # Postgres 连接池（统一任务平台 / API 共用）
-    db_pool_size: int = 5
-    db_max_overflow: int = 5
+    # 每个 API 进程与任务平台共用；默认最多 70，PG 上限 100 时保留 30 给其他连接。
+    db_pool_size: int = 50
+    db_max_overflow: int = 20
     db_pool_recycle_sec: int = 1800
     db_pool_timeout_sec: int = 30
     redis_url: str = "redis://127.0.0.1:6379/0"
@@ -66,6 +66,8 @@ class Settings(BaseSettings):
     drama_user_video_job_limit: int = 12
     # 单个分镜视频最大尝试次数；超过后直接失败，避免长时间卡在同一镜
     drama_fragment_max_attempts: int = 3
+    # 角色新音色设计暂未开放；已有音色和普通项目配音继续可用。
+    drama_voice_generation_enabled: bool = False
     # 科普 full：Seedance 视频内置口播+环境音，后期不再叠外部 TTS
     kepu_seedance_native_audio: bool = True
     # 仅当 native_audio=false 时生效：Seedance 只要操作音效，口播改后期 TTS（默认开）
@@ -94,16 +96,24 @@ class Settings(BaseSettings):
     avatar_text_model: str = "qwen3.6-plus"
 
     ark_mock: bool = False
+    # 本地媒体联调：文字仍请求真实 LLM，图片/视频/语音仅留痕并返回默认素材。
+    local_media_mock: bool = False
     # 本地连接共享测试库时关闭，避免本机和服务器同时消费、恢复同一队列。
     task_runtime_enabled: bool = True
-    # 内置任务平台的进程内并发上限（全站 Worker 槽位）。
+    # 未单独配置队列时，每个队列使用的并发上限。
     task_runtime_max_concurrency: int = 4
-    # 单用户同时进行中的 Worker 槽位（不含 awaiting_poll 注册项）。
+    # 三个独立队列；None 沿用 task_runtime_max_concurrency 作为各队列容量。
+    task_queue_text_concurrency: int | None = None
+    task_queue_image_concurrency: int | None = None
+    task_queue_video_concurrency: int | None = None
+    # 单用户在每个队列的并发上限；视频包含等待上游完成的任务。
     task_user_max_concurrency: int = 4
     # 数字人对口型这类长时 GPU 任务单独一个槽位池，不占上面的全站槽位（单条要跑 1–3 小时）。
     task_gpu_max_concurrency: int = 2
     # 单用户同时进行中的 GPU 长任务数；各用户的分段轮流进 GPU 队列，一人批量不会堵住别人。
     task_gpu_user_max_concurrency: int = 1
+    # 团队共用生成槽位，不取代单用户与全站上限。
+    task_team_max_concurrency: int = 4
     # Selector 每轮并发非阻塞查询上游的上限（类似 NIO select 就绪 channel 批处理）。
     task_poll_max_concurrency: int = 20
     # 孤儿恢复：leased/running 超过该秒数无更新、且本进程无执行协程时重排队。
@@ -152,15 +162,7 @@ class Settings(BaseSettings):
     billing_user_alert_enabled: bool = True
     billing_user_alert_interval_fen: int = 10000
 
-    # 平台总费用邮件告警（按上游 cost_fen 聚合）
-    billing_admin_cost_alert_enabled: bool = False
-    billing_admin_cost_alert_threshold_fen: int = 0
-    billing_admin_cost_alert_emails: str = ""
-    billing_admin_cost_alert_period: str = "monthly"
-    billing_admin_cost_alert_last_period_key: str = ""
-    billing_admin_cost_alert_last_level: int = 0
-
-    # SMTP（管理员费用告警邮件）
+    # SMTP（密码重置与团队邀请邮件）
     smtp_enabled: bool = False
     smtp_host: str = ""
     smtp_port: int = 587
@@ -179,6 +181,8 @@ class Settings(BaseSettings):
     public_base_url: str = "http://127.0.0.1:8000"
     ffmpeg_path: str = "ffmpeg"
     ffprobe_path: str = "ffprobe"
+    # 数字资产市场。环境变量 MARKETPLACE_ENABLED；管理端保存后以数据库为准。
+    marketplace_enabled: bool = False
 
     tos_endpoint: str = ""
     tos_bucket: str = ""

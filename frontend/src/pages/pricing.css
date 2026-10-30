@@ -1,0 +1,207 @@
+/* 定价页独立样式：以创作账户、支付方式、真实 SKU 和计费说明组成清晰的充值流程。 */
+.pf-pricing-page {
+  --pricing-line: #e6e8e2;
+  --pricing-muted: #666f61;
+  width: 100%;
+  max-width: 1200px;
+  margin-inline: auto;
+  padding-bottom: 8px;
+  text-align: left;
+}
+
+.pf-pricing-hero-band { padding: 18px 0 36px; }
+.pf-pricing-hero-inner { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 388px); align-items: center; gap: clamp(28px, 5vw, 76px); }
+.pf-pricing-hero-copy { min-width: 0; }
+.pf-pricing-eyebrow { display: flex; align-items: center; gap: 9px; margin: 0 0 18px; color: #6c7467; font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.pf-pricing-eyebrow > span { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: var(--pf-lime); box-shadow: 0 0 0 4px #f2e0da; }
+.pf-pricing-hero-copy h1 { margin: 0 0 16px; font-size: clamp(30px, 3.5vw, 46px); font-weight: 800; letter-spacing: -.045em; line-height: 1.22; text-wrap: balance; overflow-wrap: anywhere; }
+.pf-pricing-lead { max-width: 36rem; margin: 0; color: var(--pricing-muted); font-size: 14px; line-height: 1.85; }
+.pf-pricing-hero-features { display: flex; flex-wrap: wrap; gap: 12px 20px; padding: 0; margin: 23px 0 0; list-style: none; }
+.pf-pricing-hero-features li { display: flex; align-items: center; gap: 7px; max-width: 100%; font-size: 12px; color: #535b4c; line-height: 1.55; }
+.pf-pricing-hero-feature-icon { display: inline-flex; color: #875140; flex: 0 0 auto; }
+.pf-pricing-guest-tip { display: flex; flex-wrap: wrap; align-items: center; gap: 0 3px; margin: 20px 0 0; color: var(--pricing-muted); font-size: 12px; line-height: 1.7; }
+.pf-pricing-guest-tip a { color: var(--pf-ink); font-weight: 700; text-underline-offset: 3px; }
+.pf-pricing-guest-tip svg { margin-left: 3px; flex: 0 0 auto; }
+
+/* 账户卡避免将加载中或匿名账户显示成零余额。 */
+.pf-pricing-wallet-dark { position: relative; isolation: isolate; min-width: 0; overflow: hidden; padding: 23px 25px 19px; border: 1px solid #292e27; border-radius: 20px; background: #171c16; color: #fff; box-shadow: 0 12px 24px #1a201312; }
+.pf-pricing-wallet-dark::before { content: ''; position: absolute; z-index: -1; width: 215px; height: 215px; top: -126px; right: -49px; border: 1px solid #c5ed8730; border-radius: 50%; box-shadow: 0 0 0 25px #c5ed8706, 0 0 0 51px #c5ed8704; pointer-events: none; }
+.pf-pricing-wallet-dark-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.pf-pricing-wallet-dark-label { display: inline-flex; align-items: center; gap: 8px; color: #dcd1cd; font-size: 12px; }
+.pf-pricing-wallet-dark-label svg { color: #dfa08c; flex-shrink: 0; }
+.pf-pricing-wallet-dark-actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 5px; }
+.pf-pricing-wallet-eye, .pf-pricing-wallet-history { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 32px; appearance: none; padding: 6px 8px; border: 1px solid #ffffff16; border-radius: 7px; background: #ffffff08; color: #dcd1cd; font: inherit; font-size: 11px; cursor: pointer; }
+.pf-pricing-wallet-eye { width: 32px; padding: 0; flex: 0 0 auto; }
+.pf-pricing-wallet-eye:hover:not(:disabled), .pf-pricing-wallet-history:hover:not(:disabled) { background: #ffffff18; color: #fff; }
+.pf-pricing-wallet-eye:disabled, .pf-pricing-wallet-history:disabled { opacity: .4; cursor: default; }
+.pf-pricing-wallet-dark-balance { display: block; min-height: 59px; margin: 21px 0 23px; font-family: 'Bahnschrift', 'DIN Alternate', sans-serif; font-size: clamp(30px, 3.4vw, 43px); font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -.025em; line-height: 1.3; overflow-wrap: anywhere; }
+.pf-pricing-wallet-dark-balance > span { margin-right: 5px; font-size: .62em; font-weight: 400; color: #c2b4af; }
+.pf-pricing-wallet-dark-balance.is-loading { color: #59634f; animation: pf-pricing-pulse 1.6s ease-in-out infinite; }
+.pf-pricing-wallet-dark-meta { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; padding-top: 17px; margin: 0; border-top: 1px solid #ffffff16; }
+.pf-pricing-wallet-dark-meta > div + div { padding-left: 20px; border-left: 1px solid #ffffff16; }
+.pf-pricing-wallet-dark-meta dt { margin-bottom: 6px; color: #9aa78f; font-size: 11px; }
+.pf-pricing-wallet-dark-meta dd { margin: 0; color: #eee6e3; font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.pf-pricing-wallet-dark-updated { display: flex; align-items: center; gap: 6px; margin: 17px 0 0; color: #9aa78f; font-size: 10px; line-height: 1.6; }
+.pf-pricing-wallet-dark-updated > span { width: 5px; height: 5px; border-radius: 50%; background: #c78c7a; flex: 0 0 auto; }
+.pf-pricing-wallet-dark-updated > span.is-loading { animation: pf-pricing-pulse 1.6s ease-in-out infinite; }
+.pf-pricing-wallet-login { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 17px 0 0; color: #f2bead; font-size: 11px; text-decoration: none; line-height: 1.6; }
+.pf-pricing-wallet-login:hover { color: #fff; }
+.pf-pricing-wallet-error { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px; margin: 15px 0 0; color: #ebc591; font-size: 10px; line-height: 1.6; }
+.pf-pricing-wallet-error button { display: inline-flex; align-items: center; gap: 4px; padding: 3px 0 3px 5px; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+
+.pf-pricing-body { min-width: 0; }
+.pf-pricing-hint, .pf-pricing-error { display: flex; align-items: center; gap: 9px; padding: 13px 16px; margin: 0 0 16px; border: 1px solid #e7cdc5; border-radius: 10px; background: #f9ede9; font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
+.pf-pricing-hint > svg { color: #854d3b; flex: 0 0 auto; }
+.pf-pricing-error { border-color: #f0d8d2; background: #fff5f2; color: #a53e2c; }
+.pf-pricing-topup-panel { padding: clamp(18px, 2.7vw, 32px); border: 1px solid var(--pricing-line); border-radius: 22px; background: #fff; }
+.pf-pricing-section-head { margin-bottom: 21px; }
+.pf-pricing-section-head.is-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px 20px; }
+.pf-pricing-section-head h2 { display: flex; align-items: center; gap: 11px; min-width: 0; margin: 0; font-size: 16px; font-weight: 750; letter-spacing: -.02em; line-height: 1.6; }
+.pf-pricing-step { display: inline-grid; place-items: center; width: 26px; height: 26px; flex: 0 0 auto; border: 1px solid #e9e1df; border-radius: 7px; background: #f8f3f2; color: #836d66; font-size: 10px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: .03em; }
+.pf-pricing-section-head > p { margin: 0; color: var(--pricing-muted); font-size: 11px; line-height: 1.7; }
+.pf-pricing-pay-section { padding-bottom: 28px; margin-bottom: 27px; border-bottom: 1px solid #f0eceb; }
+.pf-pricing-pay-trust { display: inline-flex; align-items: center; gap: 6px; color: var(--pricing-muted); font-size: 11px; line-height: 1.6; }
+.pf-pricing-pay-trust > svg { color: #97817a; flex: 0 0 auto; }
+.pf-pricing-pay-tip { padding: 9px 12px; margin: -7px 0 13px; border-radius: 7px; background: #fff9ed; color: #966a24; font-size: 12px; line-height: 1.6; }
+.pf-pricing-pay-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.pf-pricing-pay-tile { position: relative; display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-width: 0; min-height: 64px; appearance: none; padding: 14px; border: 1px solid var(--pricing-line); border-radius: 12px; background: #fff; color: var(--pf-ink); font: inherit; text-align: left; cursor: pointer; transition: border-color .15s ease, background .15s ease; }
+.pf-pricing-pay-tile:hover { border-color: #b5a19b; background: #fcfaf9; }
+.pf-pricing-pay-tile.is-active { border-color: #ae5c42; background: #fbf2ef; box-shadow: inset 0 0 0 1px #8cae4225; }
+.pf-pricing-pay-tile.is-disabled { background: #fbf9f9; color: #858d7f; }
+.pf-pricing-pay-tile-label { min-width: 0; font-size: 12px; font-weight: 650; line-height: 1.5; overflow-wrap: anywhere; }
+.pf-pricing-pay-tile-soon, .pf-pricing-pay-tile-sub { grid-column: 2 / -1; color: #7e8875; font-size: 10px; line-height: 1.5; }
+.pf-pricing-pay-tile.is-disabled .pf-pricing-pay-tile-label { align-self: end; }
+.pf-pricing-pay-tile.is-disabled > .pf-pay-brand-icon, .pf-pricing-pay-tile.is-disabled > .pf-pricing-pay-tile-icon { grid-row: 1 / 3; opacity: .65; }
+.pf-pricing-pay-tile.is-disabled { row-gap: 0; }
+.pf-pricing-pay-tile-check { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--pf-lime); color: #4a2e25; }
+.pf-pricing-pay-tile-icon { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 7px; background: #f0ebe9; color: #768367; }
+
+/* 自动分配任意数量的真实 SKU；宽屏最多四列，窄屏自然收至单列。 */
+.pf-pricing-sku-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); align-items: stretch; gap: 14px; }
+.pf-pricing-sku-card { display: flex; flex-direction: column; min-width: 0; padding: 21px 19px 19px; border: 1px solid var(--pricing-line); border-radius: 14px; background: #fff; scroll-margin-top: 100px; transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
+.pf-pricing-sku-card:hover { border-color: #c5b4af; box-shadow: 0 6px 16px #1a201309; transform: translateY(-2px); }
+.pf-pricing-sku-card.is-recommended { border-color: #c8816a; background: linear-gradient(180deg, #faede9, #fff 66%); box-shadow: inset 0 0 0 1px #b5d17720; }
+.pf-pricing-sku-card-head { display: flex; align-items: center; flex-wrap: wrap; gap: 7px 9px; margin-bottom: 6px; }
+.pf-pricing-sku-tier { margin: 0; font-size: 14px; line-height: 1.5; font-weight: 750; overflow-wrap: anywhere; }
+.pf-pricing-rec-badge { display: inline-flex; flex: 0 0 auto; align-items: center; padding: 3px 7px; border-radius: 5px; background: #f7beac; color: #642b19; font-size: 9px; font-weight: 750; line-height: 1.4; }
+.pf-pricing-sku-hint { min-height: 20px; margin: 0 0 27px; color: var(--pricing-muted); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.pf-pricing-sku-price { display: flex; align-items: baseline; gap: 3px; margin: 0 0 23px; font-variant-numeric: tabular-nums; }
+.pf-pricing-sku-price .yen { font-size: 18px; font-weight: 500; }
+.pf-pricing-sku-price strong { min-width: 0; font-family: 'Bahnschrift', 'DIN Alternate', sans-serif; font-size: 43px; font-weight: 600; line-height: 1; letter-spacing: -.05em; overflow-wrap: anywhere; }
+.pf-pricing-sku-credit { display: flex; align-items: baseline; flex-wrap: wrap; justify-content: space-between; gap: 4px 8px; margin: 0; padding-top: 15px; border-top: 1px solid #ece6e4; color: var(--pricing-muted); font-size: 12px; line-height: 1.7; }
+.pf-pricing-sku-credit em { font-style: normal; font-weight: 650; font-variant-numeric: tabular-nums; color: #4b3a34; overflow-wrap: anywhere; }
+.pf-pricing-sku-bonus { display: flex; align-items: center; gap: 4px; min-height: 20px; margin: 8px 0 19px; color: #7f4431; font-size: 12px; font-weight: 600; line-height: 1.6; }
+.pf-pricing-sku-bonus > svg { flex: 0 0 auto; }
+.pf-pricing-sku-bonus.is-empty { visibility: hidden; }
+.pf-pricing-sku-cta { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 44px; appearance: none; padding: 10px 12px; margin-top: auto; border: 1px solid #e1d9d6; border-radius: 8px; background: #f7f2f1; color: #40312c; font: inherit; font-size: 13px; font-weight: 750; line-height: 1.6; cursor: pointer; transition: background .15s ease, border-color .15s ease; }
+.pf-pricing-sku-cta > svg { flex: 0 0 auto; }
+.pf-pricing-sku-cta:hover:not(:disabled) { border-color: #a7918a; background: #f0e6e3; }
+.pf-pricing-sku-cta.is-primary { border-color: var(--pf-lime); background: var(--pf-lime); color: #32140b; }
+.pf-pricing-sku-cta.is-primary:hover:not(:disabled) { border-color: #e93800; background: #e93800; }
+.pf-pricing-sku-cta:disabled { opacity: .55; cursor: wait; }
+.pf-pricing-spinner { animation: pf-pricing-spin .8s linear infinite; }
+.pf-pricing-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.pf-pricing-state { display: flex; flex-direction: column; align-items: center; padding: 38px 20px; border: 1px dashed #e5dad7; border-radius: 14px; background: #fcfaf9; text-align: center; }
+.pf-pricing-state > svg { margin-bottom: 12px; color: #9d7c72; }
+.pf-pricing-state h3 { margin: 0 0 8px; font-size: 15px; font-weight: 700; line-height: 1.7; }
+.pf-pricing-state p { margin: 0; color: var(--pricing-muted); font-size: 12px; line-height: 1.7; }
+.pf-pricing-state a, .pf-pricing-retry { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 38px; margin-top: 18px; padding: 8px 18px; border: 1px solid #e3d5d0; border-radius: 7px; background: #fff; color: #563a31; font: inherit; font-size: 12px; font-weight: 600; text-decoration: none; cursor: pointer; }
+.pf-pricing-state a:hover, .pf-pricing-retry:hover { border-color: #af8e83; }
+.pf-pricing-sku-skeleton { min-width: 0; min-height: 280px; padding: 22px 19px; border: 1px solid #f0eae8; border-radius: 14px; }
+.pf-pricing-sku-skeleton i { display: block; width: 55%; height: 12px; margin-bottom: 12px; border-radius: 4px; background: #f3edeb; animation: pf-pricing-pulse 1.6s ease-in-out infinite; }
+.pf-pricing-sku-skeleton i:nth-child(2) { width: 75%; height: 9px; }
+.pf-pricing-sku-skeleton i:nth-child(3) { width: 65%; height: 44px; margin: 30px 0 55px; }
+.pf-pricing-sku-skeleton i:nth-child(4) { width: 100%; height: 42px; margin: 0; }
+
+.pf-pricing-info { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 30px 52px; padding: 32px 4px; }
+.pf-pricing-info-card { display: grid; grid-template-columns: 33px minmax(0, 1fr); align-items: start; gap: 12px; min-width: 0; }
+.pf-pricing-info-visual { display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid #e8dfdc; border-radius: 9px; background: #f3e9e6; color: #906c60; }
+.pf-pricing-info-visual > svg { width: 17px; height: 17px; }
+.pf-pricing-info-card h3 { margin: 6px 0 13px; font-size: 13px; font-weight: 750; line-height: 1.5; }
+.pf-pricing-info-card ul { display: grid; gap: 8px; margin: 0; padding: 0; color: var(--pricing-muted); font-size: 12px; line-height: 1.85; list-style: none; }
+.pf-pricing-info-card li { position: relative; padding-left: 12px; overflow-wrap: anywhere; }
+.pf-pricing-info-card li::before { content: ''; position: absolute; left: 0; top: .74em; width: 3px; height: 3px; border-radius: 50%; background: #a7b19c; }
+.pf-pricing-site-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px 24px; padding-top: 23px; border-top: 1px solid var(--pricing-line); color: #858d7c; font-size: 10px; line-height: 1.7; }
+.pf-pricing-site-brand { margin: 0; }
+.pf-pricing-site-brand a { color: #725b54; font-size: 11px; font-weight: 800; letter-spacing: .07em; text-decoration: none; }
+.pf-pricing-site-links { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 20px; }
+.pf-pricing-site-links a { color: inherit; text-decoration: none; }
+.pf-pricing-site-links a:hover { color: var(--pf-ink); }
+.pf-pricing-site-copy { flex-basis: 100%; margin: -4px 0 0; color: #92998c; font-size: 9px; }
+.pf-pricing-page :is(button, a):focus-visible { outline: 2px solid #9b4b32; outline-offset: 4px; }
+.pf-pricing-wallet-dark :is(button, a):focus-visible { outline-color: var(--pf-lime); }
+
+@keyframes pf-pricing-pulse { 50% { opacity: .45; } }
+@keyframes pf-pricing-spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 1100px) {
+  .pf-pricing-hero-inner { gap: 32px; grid-template-columns: minmax(0, 1fr) minmax(300px, 350px); }
+  .pf-pricing-pay-tile { gap: 8px; padding: 11px; }
+  .pf-pricing-sku-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 800px) {
+  .pf-pricing-hero-band { padding: 8px 0 28px; }
+  .pf-pricing-hero-inner { grid-template-columns: minmax(0, 1fr) minmax(270px, .9fr); gap: 24px; }
+  .pf-pricing-hero-copy h1 { font-size: 31px; }
+  .pf-pricing-hero-features { gap: 10px; margin-top: 18px; }
+  .pf-pricing-hero-features li { font-size: 11px; }
+  .pf-pricing-wallet-dark { padding: 19px; }
+  .pf-pricing-wallet-dark-balance { font-size: 35px; margin-top: 16px; margin-bottom: 20px; }
+  .pf-pricing-pay-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pf-pricing-pay-tile { padding: 13px; }
+  .pf-pricing-info { gap: 26px; }
+}
+
+@media (max-width: 640px) {
+  .pf-pricing-hero-band { padding-top: 3px; }
+  .pf-pricing-hero-inner { grid-template-columns: minmax(0, 1fr); gap: 25px; }
+  .pf-pricing-hero-copy h1 { max-width: none; margin-bottom: 12px; font-size: clamp(28px, 7vw, 36px); }
+  .pf-pricing-eyebrow { margin-bottom: 13px; font-size: 10px; }
+  .pf-pricing-lead { font-size: 13px; }
+  .pf-pricing-hero-features { gap: 10px 15px; margin-top: 17px; }
+  .pf-pricing-guest-tip { margin-top: 15px; font-size: 11px; }
+  .pf-pricing-wallet-dark { padding: 20px; border-radius: 16px; }
+  .pf-pricing-wallet-dark-head { align-items: center; }
+  .pf-pricing-wallet-dark-label { padding: 0; }
+  .pf-pricing-wallet-dark-actions { max-width: none; }
+  .pf-pricing-wallet-dark-balance { min-height: 46px; margin-top: 16px; margin-bottom: 18px; font-size: 36px; }
+  .pf-pricing-topup-panel { padding: 19px 17px; border-radius: 16px; }
+  .pf-pricing-section-head { margin-bottom: 17px; }
+  .pf-pricing-section-head h2 { gap: 8px; font-size: 15px; }
+  .pf-pricing-section-head.is-row { gap: 8px; }
+  .pf-pricing-pay-trust { font-size: 10px; }
+  .pf-pricing-pay-section { padding-bottom: 23px; margin-bottom: 23px; }
+  .pf-pricing-pay-grid { gap: 9px; }
+  .pf-pricing-pay-tile { grid-template-columns: 24px minmax(0, 1fr) 15px; gap: 7px; min-height: 62px; padding: 11px 9px; border-radius: 9px; }
+  .pf-pricing-pay-tile .pf-pay-brand-icon, .pf-pricing-pay-tile-icon { width: 24px; height: 24px; }
+  .pf-pricing-pay-tile-label { font-size: 11px; }
+  .pf-pricing-pay-tile-check { width: 15px; height: 15px; }
+  .pf-pricing-pay-tile-check > svg { width: 11px; height: 11px; }
+  .pf-pricing-pay-tile-soon, .pf-pricing-pay-tile-sub { font-size: 9px; }
+  .pf-pricing-sku-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .pf-pricing-sku-card { padding: 19px; border-radius: 11px; }
+  .pf-pricing-sku-card-head { justify-content: space-between; }
+  .pf-pricing-sku-hint { margin-bottom: 19px; }
+  .pf-pricing-sku-price { margin-bottom: 19px; }
+  .pf-pricing-sku-price strong { font-size: 40px; }
+  .pf-pricing-sku-bonus { margin-bottom: 15px; }
+  .pf-pricing-info { grid-template-columns: minmax(0, 1fr); gap: 24px; padding: 27px 2px; }
+  .pf-pricing-site-foot { justify-content: flex-start; padding-top: 19px; gap: 13px; }
+  .pf-pricing-site-copy { margin: 0; }
+}
+
+@media (max-width: 359px) {
+  .pf-pricing-wallet-dark { padding: 17px; }
+  .pf-pricing-wallet-dark-head { flex-wrap: wrap; gap: 9px; }
+  .pf-pricing-wallet-dark-actions { margin-left: auto; }
+  .pf-pricing-topup-panel { padding: 17px 13px; }
+  .pf-pricing-pay-grid { grid-template-columns: minmax(0, 1fr); }
+  .pf-pricing-pay-tile { min-height: 54px; }
+  .pf-pricing-sku-card { padding: 17px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pf-pricing-page *, .pf-pricing-page *::before { animation: none !important; transition: none !important; }
+  .pf-pricing-sku-card:hover { transform: none; }
+}

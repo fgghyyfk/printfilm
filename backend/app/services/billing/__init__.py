@@ -6,7 +6,6 @@ from app.services.billing.context import billing_scope, get_current_task_run_id,
 from app.services.billing.ephemeral import (
     create_ephemeral_task_row,
     run_billed_ephemeral,
-    run_billed_ephemeral_deferred,
     settle_deferred_video_poll,
 )
 from app.services.billing.estimates import estimate_phase_fen, estimate_task_fen
@@ -32,7 +31,6 @@ from app.services.billing.settlement import (
     get_task_usage_lines,
     pending_task_commitment_fen,
     settle_task,
-    settle_usage_charge,
 )
 from app.services.billing.usage import record_line, record_llm_chat_line, record_usage
 
@@ -63,10 +61,8 @@ __all__ = [
     "record_llm_chat_line",
     "record_usage",
     "run_billed_ephemeral",
-    "run_billed_ephemeral_deferred",
     "settle_deferred_video_poll",
     "set_current_task_run_id",
     "settle_task",
-    "settle_usage_charge",
     "sku_by_id",
 ]

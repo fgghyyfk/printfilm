@@ -87,7 +87,11 @@ def _asset_generation_status(asset: DramaAsset) -> str | None:
     return None
 
 
-@router.get("/drama-projects", response_model=AdminDramaProjectListOut)
+@router.get("/drama-projects", response_model=AdminDramaProjectListOut,
+    summary="分页查询全站漫剧项目",
+    description="管理员分页查看漫剧项目，支持用户、标题或简介关键词、剧本摘要生成状态及资产抽取状态筛选，返回关联资产与分集数量和费用汇总。",
+    response_description="操作成功，返回结果详见响应结构",
+)
 async def list_drama_projects(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -167,7 +171,11 @@ async def list_drama_projects(
     )
 
 
-@router.get("/drama-projects/{project_id}", response_model=AdminDramaProjectDetailOut)
+@router.get("/drama-projects/{project_id}", response_model=AdminDramaProjectDetailOut,
+    summary="查看漫剧项目运维详情",
+    description="管理员查看指定漫剧项目的生成状态、用量统计、关联资产和分集摘要及最近 20 条任务记录。项目不存在时返回 404。",
+    response_description="操作成功，返回结果详见响应结构",
+)
 async def get_drama_project(
     project_id: int,
     _admin: User = Depends(get_current_admin),

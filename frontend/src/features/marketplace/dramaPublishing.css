@@ -1,0 +1,24 @@
+.pf-drama-publish { color:var(--pf-ink); }
+.drama-project-row-menu.has-publish { min-width:184px; white-space:nowrap; }
+.pf-drama-publish-intro { margin:0 0 20px; color:var(--pf-muted); font-size:13px; line-height:1.8; }
+.pf-drama-publish-project { display:flex; align-items:center; gap:12px; padding-bottom:18px; }
+.pf-drama-publish-project svg { color:var(--pf-ink); }
+.pf-drama-publish-project div { display:grid; gap:5px; }
+.pf-drama-publish-project span,.pf-drama-publish-episode small { color:var(--pf-muted); font-size:12px; }
+.pf-drama-publish-episodes { display:grid; gap:8px; max-height:300px; overflow:auto; margin:0 0 20px; }
+.pf-drama-publish-episode { padding:14px; border:1px solid var(--pf-line); border-radius:12px; background:var(--pf-bg); }
+.pf-drama-publish-episode>label { display:flex; align-items:center; gap:12px; cursor:pointer; }
+.pf-drama-publish-episode input { width:16px; height:16px; flex:0 0 auto; accent-color:var(--pf-ink); }
+.pf-drama-publish-episode span { display:grid; gap:6px; }
+.pf-drama-publish-episode strong { font-size:14px; }
+.pf-drama-publish-episode.is-disabled { opacity:.6; }
+.pf-drama-publish-episode label.pf-drama-publish-update { margin:12px 0 0 28px; font-size:12px; color:#946323; }
+.pf-drama-publish-field { display:grid; gap:8px; font-size:13px; margin:16px 0; }
+.pf-drama-publish-field input,.pf-drama-publish-field select { width:100%; min-height:42px; border:1px solid var(--pf-line); border-radius:10px; padding:9px 12px; background:var(--pf-bg); color:var(--pf-ink); font:inherit; }
+.pf-drama-publish-warning { border:1px solid #dfbd7470; border-radius:10px; padding:12px 14px; color:#946323; background:#dfbd7412; font-size:12px; line-height:1.8; }
+.pf-drama-publish-hint { display:flex; align-items:flex-start; gap:7px; font-size:12px; color:var(--pf-muted); line-height:1.8; }
+.pf-drama-publish-hint svg { flex:0 0 auto; margin-top:3px; }
+.pf-drama-publish-error { font-size:13px; color:var(--pf-error,#c3473a); }
+.pf-drama-publish-error button { color:inherit; text-decoration:underline; border:0; background:none; cursor:pointer; }
+.pf-drama-publish-spin { animation:pf-drama-publish-spin 1s linear infinite; }
+@keyframes pf-drama-publish-spin { to { transform:rotate(360deg); } }

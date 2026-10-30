@@ -1,3 +1,4 @@
+import { MediaCostNotice } from '../../../../components/billing/MediaCostNotice'
 /** 画布视频节点：风格 / Seedance 模型 / 时长 / 比例清晰度 */
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import { BarChart3, ChevronDown, RectangleVertical, Smile, Timer } from 'lucide-react'
@@ -24,6 +25,7 @@ import {
 import {
   catalogModelLabel,
   catalogVideoModels,
+  resolveCatalogModelSelection,
   useMediaModelsCatalog,
 } from '../../../../hooks/useMediaModelsCatalog'
 import './dramaImageGenOptions.css'
@@ -44,6 +46,7 @@ export function DramaVideoGenOptionsBar({
 }: DramaVideoGenOptionsBarProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState<OpenPanel>(null)
+  const [adjustment, setAdjustment] = useState('')
   // 自定义时长草稿：输入过程不立刻 clamp，避免打「24」时中间的「2」被夹成 min
   const [durationDraft, setDurationDraft] = useState<string | null>(null)
   const durationDraftRef = useRef<string | null>(null)
@@ -57,11 +60,13 @@ export function DramaVideoGenOptionsBar({
   useEffect(() => {
     // 目录到达后，把旧 Kie/方舟 id 换成后台默认视频模型
     if (!catalog || disabled) return
-    const ids = videoModels.map((m) => m.id)
-    if (!ids.length) return
-    if (value.model_id && ids.includes(value.model_id)) return
-    const next = catalog.defaults.video_model || ids[0]
-    if (next && next !== value.model_id) {
+    const next = resolveCatalogModelSelection(catalog, 'video', value.model_id)
+    if (next === value.model_id) return
+    if (!next) {
+      onChange({ ...value, model_id: '' })
+      return
+    }
+    if (next !== value.model_id) {
       onChange({
         ...value,
         model_id: next,
@@ -70,7 +75,7 @@ export function DramaVideoGenOptionsBar({
         duration_sec: clampVideoDuration(value.duration_sec, next, catalog, videoModels),
       })
     }
-  }, [catalog, disabled])
+  }, [catalog, disabled, value.model_id])
 
   useEffect(() => {
     // 换模型后：清晰度 / 比例 / 时长钳到允许范围（须已知目录行，避免 SAFE 误写）
@@ -94,6 +99,7 @@ export function DramaVideoGenOptionsBar({
       nextAspect !== value.aspect_ratio ||
       nextDur !== value.duration_sec
     ) {
+      setAdjustment('所选模型不支持原参数，已调整规格，请核对时长和报价后生成。')
       onChange({
         ...value,
         resolution: nextRes,
@@ -150,6 +156,8 @@ export function DramaVideoGenOptionsBar({
 
   return (
     <div ref={rootRef} className="fc-gen-opts" onMouseDown={stop} onPointerDown={stop}>
+      {adjustment && <span className="media-cost-notice" role="status">{adjustment}</span>}
+      <MediaCostNotice modelId={value.model_id} resolution={value.resolution} seconds={value.duration_sec} />
       <div className="fc-gen-opts-triggers">
         <button
           type="button"

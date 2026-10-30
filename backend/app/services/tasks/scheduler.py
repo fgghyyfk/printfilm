@@ -8,18 +8,20 @@ import time
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import and_, func, or_, select, update
+from sqlalchemy import and_, func, or_, select, text, update
 from sqlalchemy.orm import aliased
 
 from app.config import get_settings
 from app.database import AsyncSessionLocal
 from app.models_tasks import TaskRun
+from app.services.tasks.queues import QUEUE_TYPES, queue_capacity, queue_user_limit
+from app.services.tasks.execution_policy import llm_task_condition
 from app.services.billing.settlement import reconcile_terminal_frozen_tasks
 from app.services.tasks.executor import _mark_cancelled, execute_task_run
-from app.services.tasks.gpu_pool import gpu_task_clause, pool_limits
 from app.services.tasks.service import (
     FINALIZING_UNTIL_KEY,
     append_task_event,
+    count_user_active_runtime_tasks,
     get_task_for_runtime,
     reconcile_sequential_batches,
     reconcile_stale_pending_tasks,
@@ -31,8 +33,7 @@ logger = logging.getLogger("app.tasks.scheduler")
 # 调度循环句柄、进程内执行槽、停机信号、心跳与孤儿扫描时间戳
 _scheduler_task: asyncio.Task | None = None
 _running_jobs: dict[int, asyncio.Task] = {}
-# 在 GPU 长任务池里运行的任务 id
-_gpu_job_ids: set[int] = set()
+_running_queues: dict[int, str] = {}
 _cancel_jobs: dict[int, asyncio.Task] = {}
 _maintenance_task: asyncio.Task | None = None
 _stop_event = asyncio.Event()
@@ -85,6 +86,7 @@ async def stop_scheduler() -> None:
     if running_jobs:
         await asyncio.gather(*running_jobs, return_exceptions=True)
     _running_jobs.clear()
+    _running_queues.clear()
     _cancel_jobs.clear()
 
 
@@ -109,12 +111,12 @@ async def restart_scheduler_loop(*, reason: str = "watchdog") -> None:
 
 # 返回当前运行中的平台任务数量。
 def running_count() -> int:
-    return sum(1 for task in _running_jobs.values() if not task.done())
+    return sum(1 for ident, task in _running_jobs.items() if not task.done() and _running_queues.get(ident) != "direct")
 
 
-# 某个槽位池（普通 / GPU 长任务）当前运行中的任务数量。
-def pool_running_count(gpu: bool) -> int:
-    return sum(1 for task_id, task in _running_jobs.items() if not task.done() and (task_id in _gpu_job_ids) == gpu)
+# 某条队列（text / image / video / gpu）在本进程内运行中的任务数量。
+def queue_running_count(queue: str) -> int:
+    return sum(1 for tid, job in _running_jobs.items() if not job.done() and _running_queues.get(tid, "text") == queue)
 
 
 # 调度循环是否存活。
@@ -223,114 +225,145 @@ async def _tick() -> None:
     for task_id, job in list(_running_jobs.items()):
         if job.done():
             _running_jobs.pop(task_id, None)
-            _gpu_job_ids.discard(task_id)
+            _running_queues.pop(task_id, None)
     for task_id, job in list(_cancel_jobs.items()):
         if job.done():
             _cancel_jobs.pop(task_id, None)
     await _claim_cancel_requests()
+    # Conversations advance from persisted, settled stage results, including after restarts.
+    try:
+        from app.services.creation import reconcile_creation_sessions
+        async with AsyncSessionLocal() as db:
+            await reconcile_creation_sessions(db)
+    except Exception:
+        logger.exception("creation workflow reconciliation failed")
+    await _claim_direct_llm_tasks(now)
 
-    claimed: list[tuple[int, bool]] = []
+    # Each lane owns its capacity; a blocked image/video lane never blocks text.
+    for queue in QUEUE_TYPES:
+        await _claim_queue(queue, now)
+
+
+async def _claim_queue(queue: str, now: datetime) -> None:
+    capacity = queue_capacity(get_settings(), queue)
+    user_limit = queue_user_limit(get_settings(), queue)
+    team_limit = max(1, int(getattr(get_settings(), "task_team_max_concurrency", 4)))
+    local_active = sum(
+        1 for tid, job in _running_jobs.items()
+        if not job.done() and _running_queues.get(tid, "text") == queue
+    )
+    available_slots = max(0, capacity - local_active)
+    if not available_slots:
+        return
+
+    claimed_ids: list[int] = []
+    claimed_tokens: dict[int, str] = {}
     async with AsyncSessionLocal() as db:
-        for gpu in (False, True):
-            capacity, user_limit = pool_limits(gpu)
-            available = max(0, capacity - pool_running_count(gpu))
-            if available > 0:
-                claimed += [(tid, gpu) for tid in await _claim_pool(db, now, available, user_limit, gpu=gpu)]
-        if claimed:
+        # Serialize claims per lane across API processes, without blocking other lanes.
+        bind = getattr(db, "bind", None)
+        if bind is not None and bind.dialect.name == "postgresql":
+            locked = await db.scalar(text("SELECT pg_try_advisory_xact_lock(:key)"), {"key": 842100 + QUEUE_TYPES.index(queue)})
+            if not locked:
+                return
+        active_states = ("leased", "running", "awaiting_poll") if queue == "video" else ("leased", "running")
+        occupied = int(await db.scalar(select(func.count()).select_from(TaskRun).where(
+            TaskRun.queue_type == queue, TaskRun.status.in_(active_states),
+            ~llm_task_condition(TaskRun),
+        )) or 0)
+        available_slots = min(available_slots, max(0, capacity - occupied))
+        if not available_slots:
+            return
+        user_active_cache: dict[int, int] = {}
+        team_active_cache: dict[int, int] = {}
+        seen_ids: set[int] = set()
+        full_users: set[int] = set()
+        active = aliased(TaskRun)
+        active_count = (
+            select(func.count(active.id))
+            .where(active.requested_by == TaskRun.requested_by, active.status.in_(active_states), active.queue_type == queue, ~llm_task_condition(active))
+            .correlate(TaskRun)
+            .scalar_subquery()
+        )
+        team_active = aliased(TaskRun)
+        team_active_count = (select(func.count(team_active.id)).where(team_active.team_id == TaskRun.team_id, team_active.status.in_(("leased", "running", "awaiting_poll")), ~llm_task_condition(team_active)).correlate(TaskRun).scalar_subquery())
+        for _ in range(_MAX_CLAIM_PAGES):
+            remaining = available_slots - len(claimed_ids)
+            if remaining <= 0:
+                break
+            stmt = (
+                select(TaskRun.id, TaskRun.status, TaskRun.requested_by, TaskRun.team_id)
+                .where(
+                    TaskRun.status == "pending",
+                    TaskRun.queue_type == queue,
+                    ~llm_task_condition(TaskRun),
+                    TaskRun.cancel_requested.is_(False),
+                    TaskRun.next_action_at.is_not(None),
+                    TaskRun.next_action_at <= now,
+                    active_count < user_limit,
+                    or_(TaskRun.team_id.is_(None), team_active_count < team_limit),
+                )
+                .order_by(TaskRun.priority.asc(), TaskRun.created_at.asc(), TaskRun.id.asc())
+                .limit(min(_MAX_CANDIDATES_PER_PAGE, max(remaining * 4, remaining)))
+                .with_for_update(skip_locked=True, of=TaskRun)
+            )
+            if seen_ids:
+                stmt = stmt.where(TaskRun.id.not_in(sorted(seen_ids)))
+            if full_users:
+                stmt = stmt.where(TaskRun.requested_by.not_in(sorted(full_users)))
+            candidates = list((await db.execute(stmt)).all())
+            if not candidates:
+                break
+            for row in candidates:
+                if len(claimed_ids) >= available_slots:
+                    break
+                task_id = int(row.id)
+                seen_ids.add(task_id)
+                user_id = int(row.requested_by)
+                if _job_alive(task_id):
+                    continue
+                if user_id not in user_active_cache:
+                    user_active_cache[user_id] = await count_user_active_runtime_tasks(db, user_id, queue_type=queue)
+                if user_active_cache[user_id] >= user_limit:
+                    full_users.add(user_id)
+                    continue
+                team_id = getattr(row, "team_id", None)
+                if team_id is not None:
+                    if bind is not None and bind.dialect.name == "postgresql":
+                        team_claimed = await db.scalar(text("SELECT pg_try_advisory_xact_lock(:key)"), {"key": 942100000 + int(team_id)})
+                        if not team_claimed:
+                            continue
+                    if team_id not in team_active_cache:
+                        team_active_cache[team_id] = int((await db.execute(select(func.count()).select_from(TaskRun).where(TaskRun.team_id == team_id, TaskRun.status.in_(("leased", "running", "awaiting_poll")), ~llm_task_condition(TaskRun)))).scalar_one() or 0)
+                    if team_active_cache[team_id] >= team_limit:
+                        continue
+                lease_token = uuid.uuid4().hex
+                result = await db.execute(
+                    update(TaskRun)
+                    .where(TaskRun.id == task_id, TaskRun.status == "pending", TaskRun.cancel_requested.is_(False))
+                    .values(status="leased", lease_token=lease_token, lease_until=now + timedelta(minutes=10))
+                )
+                if int(result.rowcount or 0) != 1:
+                    continue
+                task = await db.get(TaskRun, task_id)
+                await append_task_event(
+                    db, task_id, event_type="task.leased", status="leased",
+                    phase=getattr(task, "current_step_key", None), message="任务已被调度器领取",
+                )
+                claimed_ids.append(task_id)
+                claimed_tokens[task_id] = lease_token
+                user_active_cache[user_id] += 1
+                if team_id is not None:
+                    team_active_cache[team_id] += 1
+                if user_active_cache[user_id] >= user_limit:
+                    full_users.add(user_id)
+        if claimed_ids:
             await db.commit()
 
-    claimed_ids = [tid for tid, _ in claimed]
-    for task_id, gpu in claimed:
-        if gpu:
-            _gpu_job_ids.add(task_id)
-        else:
-            _gpu_job_ids.discard(task_id)
     for task_id in claimed_ids:
         if task_id in _running_jobs and not _running_jobs[task_id].done():
             continue
-        _running_jobs[task_id] = asyncio.create_task(_run_one(task_id))
-
-
-# 统计用户在某个槽位池里已领取/运行中的任务数。
-async def _count_user_active(db, user_id: int, *, gpu: bool) -> int:
-    pool = gpu_task_clause() if gpu else ~gpu_task_clause()
-    stmt = select(func.count()).select_from(TaskRun).where(
-        TaskRun.requested_by == int(user_id), TaskRun.status.in_(("leased", "running")), pool,
-    )
-    return int((await db.execute(stmt)).scalar_one() or 0)
-
-
-# 在一个槽位池（普通 / GPU 长任务）里按优先级领取到期任务，返回领取到的任务 id。
-async def _claim_pool(db, now: datetime, available_slots: int, user_limit: int, *, gpu: bool) -> list[int]:
-    claimed_ids: list[int] = []
-    user_active_cache: dict[int, int] = {}
-    seen_ids: set[int] = set()
-    full_users: set[int] = set()
-    active = aliased(TaskRun)
-    active_pool = gpu_task_clause(active) if gpu else ~gpu_task_clause(active)
-    active_count = (
-        select(func.count(active.id))
-        .where(active.requested_by == TaskRun.requested_by, active.status.in_(("leased", "running")), active_pool)
-        .correlate(TaskRun)
-        .scalar_subquery()
-    )
-    pool = gpu_task_clause() if gpu else ~gpu_task_clause()
-    for _ in range(_MAX_CLAIM_PAGES):
-        remaining = available_slots - len(claimed_ids)
-        if remaining <= 0:
-            break
-        stmt = (
-            select(TaskRun.id, TaskRun.status, TaskRun.requested_by)
-            .where(
-                TaskRun.status == "pending",
-                TaskRun.cancel_requested.is_(False),
-                TaskRun.next_action_at.is_not(None),
-                TaskRun.next_action_at <= now,
-                pool,
-                active_count < user_limit,
-            )
-            .order_by(TaskRun.priority.asc(), TaskRun.created_at.asc(), TaskRun.id.asc())
-            .limit(min(_MAX_CANDIDATES_PER_PAGE, max(remaining * 4, remaining)))
-            .with_for_update(skip_locked=True, of=TaskRun)
-        )
-        if seen_ids:
-            stmt = stmt.where(TaskRun.id.not_in(sorted(seen_ids)))
-        if full_users:
-            stmt = stmt.where(TaskRun.requested_by.not_in(sorted(full_users)))
-        candidates = list((await db.execute(stmt)).all())
-        if not candidates:
-            break
-        for row in candidates:
-            if len(claimed_ids) >= available_slots:
-                break
-            task_id = int(row.id)
-            seen_ids.add(task_id)
-            user_id = int(row.requested_by)
-            if _job_alive(task_id):
-                continue
-            if user_id not in user_active_cache:
-                user_active_cache[user_id] = await _count_user_active(db, user_id, gpu=gpu)
-            if user_active_cache[user_id] >= user_limit:
-                full_users.add(user_id)
-                continue
-            result = await db.execute(
-                update(TaskRun)
-                .where(TaskRun.id == task_id, TaskRun.status == "pending", TaskRun.cancel_requested.is_(False))
-                .values(status="leased", lease_token=uuid.uuid4().hex, lease_until=now + timedelta(minutes=10))
-            )
-            if int(result.rowcount or 0) != 1:
-                continue
-            task = await db.get(TaskRun, task_id)
-            await append_task_event(
-                db, task_id, event_type="task.leased", status="leased",
-                phase=getattr(task, "current_step_key", None),
-                message="任务已被调度器领取（GPU 长任务池）" if gpu else "任务已被调度器领取",
-            )
-            claimed_ids.append(task_id)
-            user_active_cache[user_id] += 1
-            if user_active_cache[user_id] >= user_limit:
-                full_users.add(user_id)
-    return claimed_ids
+        _running_queues[task_id] = queue
+        _running_jobs[task_id] = asyncio.create_task(_run_one(task_id, claimed_tokens[task_id]), name=f"task-{queue}-{task_id}")
 
 
 # 取消使用独立且有上限的槽位，满额用户或普通队列积压不能阻挡取消。
@@ -372,6 +405,14 @@ async def _run_cancel_request(task_id: int) -> None:
                     task.next_action_at = until if until.tzinfo else until.replace(tzinfo=UTC)
                     await db.commit()
                     return
+                lease_until = getattr(task, "lease_until", None)
+                if lease_until is not None and lease_until.tzinfo is None:
+                    lease_until = lease_until.replace(tzinfo=UTC)
+                if lease_until and lease_until > datetime.now(UTC):
+                    # Any live executor may still be writing media/usage in another
+                    # process. Its heartbeat observes cancel_requested and cancels
+                    # the owner coroutine; only that owner may settle until expiry.
+                    return
                 await _mark_cancelled(db, task)
     except Exception:  # noqa: BLE001
         logger.exception("task cancellation failed task_id=%s", task_id)
@@ -379,13 +420,91 @@ async def _run_cancel_request(task_id: int) -> None:
         _cancel_jobs.pop(task_id, None)
 
 
+def start_direct_task(task_id: int, lease_token: str) -> None:
+    """显式提交的文字任务立即启动，不占调度队列槽位；保留取消和租约。"""
+    if _job_alive(task_id):
+        return
+    _running_queues[task_id] = "direct"
+    job = asyncio.create_task(_run_one(task_id, lease_token), name=f"llm-direct-{task_id}")
+    _running_jobs[task_id] = job
+
+    def completed(result):
+        """取出异常，避免后台协程异常无人处理。"""
+        if not result.cancelled() and result.exception():
+            logger.error("direct LLM task failed task_id=%s", task_id, exc_info=result.exception())
+
+    job.add_done_callback(completed)
+
+
+async def _claim_direct_llm_tasks(now: datetime) -> None:
+    """旧版待执行任务、定时任务及中断恢复直接启动，不等待媒体容量。"""
+    claimed = []
+    async with AsyncSessionLocal() as db:
+        rows = list((await db.execute(select(TaskRun).where(
+            llm_task_condition(TaskRun, runnable_only=True), TaskRun.status == "pending",
+            TaskRun.cancel_requested.is_(False), TaskRun.next_action_at.is_not(None), TaskRun.next_action_at <= now,
+        ).order_by(TaskRun.id).limit(128).with_for_update(skip_locked=True))).scalars().all())
+        for task in rows:
+            if _job_alive(task.id):
+                continue
+            task.status = "running"
+            task.started_at = task.started_at or now
+            task.next_action_at = None
+            task.lease_token = uuid.uuid4().hex
+            task.lease_until = now + timedelta(minutes=10)
+            claimed.append((task.id, task.lease_token))
+        if claimed:
+            await db.commit()
+    for task_id, token in claimed:
+        start_direct_task(task_id, token)
+
+
 # 包装执行器并在结束后释放运行槽位。
-async def _run_one(task_id: int) -> None:
+async def _run_one(task_id: int, lease_token: str | None = None) -> None:
+    heartbeat = asyncio.create_task(_renew_lease(task_id, lease_token)) if lease_token else None
     try:
         await execute_task_run(task_id)
+    except asyncio.CancelledError:
+        # 直接执行可能在预扣阶段被取消，此时执行器尚未进入 handler 的取消收尾。
+        if _running_queues.get(task_id) == "direct":
+            from app.services.tasks.executor import _requeue_interrupted_task
+            async with AsyncSessionLocal() as db:
+                task = await get_task_for_runtime(db, task_id)
+                if task and task.status not in {"succeeded", "failed", "cancelled"}:
+                    if task.cancel_requested:
+                        await _mark_cancelled(db, task)
+                    else:
+                        await _requeue_interrupted_task(db, task)
+        raise
     finally:
+        if heartbeat:
+            heartbeat.cancel()
+            await asyncio.gather(heartbeat, return_exceptions=True)
         _running_jobs.pop(task_id, None)
-        _gpu_job_ids.discard(task_id)
+        _running_queues.pop(task_id, None)
+
+
+async def _renew_lease(task_id: int, lease_token: str) -> None:
+    while True:
+        await asyncio.sleep(10)
+        try:
+            async with AsyncSessionLocal() as db:
+                result = await db.execute(update(TaskRun).where(
+                    TaskRun.id == task_id, TaskRun.lease_token == lease_token,
+                    TaskRun.status.in_(("leased", "running")),
+                ).values(lease_until=datetime.now(UTC) + timedelta(minutes=10)))
+                await db.commit()
+                if not result.rowcount:
+                    cancelled = await db.scalar(select(TaskRun.cancel_requested).where(
+                        TaskRun.id == task_id, TaskRun.lease_token == lease_token,
+                    ))
+                    if cancelled:
+                        await cancel_running_task(task_id)
+                    return
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("task lease heartbeat failed task_id=%s", task_id)
 
 
 # 取消指定任务的本地执行协程。
@@ -408,7 +527,7 @@ async def recover_orphaned_tasks() -> int:
                 and_(
                     TaskRun.status == "leased",
                     or_(
-                        and_(TaskRun.updated_at.is_not(None), TaskRun.updated_at < stale_before),
+                        and_(TaskRun.lease_until.is_(None), TaskRun.updated_at < stale_before),
                         and_(TaskRun.lease_until.is_not(None), TaskRun.lease_until < now),
                     ),
                 ),
@@ -416,13 +535,34 @@ async def recover_orphaned_tasks() -> int:
                     TaskRun.status == "running",
                     TaskRun.updated_at.is_not(None),
                     TaskRun.updated_at < stale_before,
+                    or_(TaskRun.lease_until.is_(None), TaskRun.lease_until < now),
                 ),
             )
         )
-        rows = list((await db.execute(stmt)).scalars().all())
+        rows = list((await db.execute(stmt.with_for_update(skip_locked=True))).scalars().all())
         changed = 0
         for task in rows:
             if _job_alive(int(task.id)):
+                continue
+            from app.services.tasks.inline import INLINE_LEASE_PREFIX
+            if str(task.lease_token or "").startswith(INLINE_LEASE_PREFIX):
+                # HTTP inline executors have no replayable job. A restarted
+                # process must not queue their noop handler or resubmit a POST.
+                from app.services.billing.settlement import settle_task
+                task.status = "cancelled" if task.cancel_requested else "failed"
+                task.error_code = "inline_execution_interrupted"
+                task.error_message = "生成请求执行中断，请重新发起"
+                task.finished_at = now
+                task.next_action_at = None
+                task.lease_token = None
+                task.lease_until = None
+                await append_task_event(
+                    db, task.id, event_type=f"task.{task.status}", status=task.status,
+                    phase=task.current_step_key, message=task.error_message,
+                )
+                if task.billing_status in {"frozen", "reserved"}:
+                    await settle_task(db, task.id)
+                changed += 1
                 continue
             task.status = "cancel_requested" if task.cancel_requested else "pending"
             task.next_action_at = now

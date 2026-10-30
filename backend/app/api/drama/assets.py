@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from typing import Annotated
+
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, Path as APIPath
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,7 +24,9 @@ from app.schemas_drama import (
     DramaAssetUpdate,
     SeedAssetsFromScriptOut,
 )
-from app.services.drama.access import get_owned_drama_project
+from app.services.drama.access import get_owned_asset, get_owned_drama_project
+from app.services.drama.asset_reference_views import asset_reference_view
+from app.services.teams.write_access import workspace_team
 from app.services.billing import run_billed_ephemeral
 from app.services.billing.http import http_exception_for_value_error
 from app.services.drama.billing_util import record_seed_assets_llm_usage
@@ -37,30 +41,33 @@ from app.services.drama.seed import (
 router = APIRouter()
 
 
-@router.get("/assets", response_model=list[DramaAssetOut])
+@router.get(
+    "/assets", response_model=list[DramaAssetOut],
+    summary="查询项目或当前空间资产",
+    description="按更新时间倒序返回可编辑资产。指定 project_id 时按项目实际归属校验访问权限；否则查询 team_id 查询参数或 X-Team-Id 请求头选中的团队空间，未选团队时仅查询本人个人项目。此接口不分页，资产引用信息按当前权限返回。",
+    response_description="包含媒体地址、配置和引用信息的资产列表",
+)
 async def list_assets(
-    project_id: int | None = None,
-    library_only: bool = False,
+    project_id: Annotated[int | None, Query(description="项目编号；指定后只查询该项目，省略时查询当前个人或团队空间")] = None,
+    library_only: Annotated[bool, Query(description="为 true 时排除 type 为 video、audio、text 或 asset_type 为 video 的画布资产")] = False,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
+    scope_team_id: int | None = Depends(workspace_team),
 ) -> list[DramaAssetOut]:
     # Global library = all assets of user's drama projects; optional project filter
-    from app.services.drama.seed import merge_duplicate_library_assets
-
+    projects = {}
     q = (
         select(DramaAsset)
         .join(DramaProject, DramaAsset.project_id == DramaProject.id)
-        .where(DramaProject.user_id == user.id)
         .order_by(DramaAsset.updated_at.desc())
     )
     if project_id is not None:
-        await get_owned_drama_project(db, project_id, user)
-        # 进入资产库时顺带合并同名重复，并清掉误入角色的音色名
-        removed = await merge_duplicate_library_assets(db, int(project_id))
-        purged = await purge_voice_like_character_assets(db, int(project_id))
-        if removed or purged:
-            await db.commit()
+        projects[project_id] = await get_owned_drama_project(db, project_id, user)
         q = q.where(DramaAsset.project_id == project_id)
+    elif isinstance(scope_team_id, int):
+        q = q.where(DramaProject.team_id == scope_team_id)
+    else:
+        q = q.where(DramaProject.user_id == user.id, DramaProject.team_id.is_(None))
     rows = list((await db.execute(q)).scalars().all())
     if library_only:
         canvas_only_types = {"video", "audio", "text"}
@@ -70,16 +77,26 @@ async def list_assets(
             if (asset.type or "").lower() not in canvas_only_types
             and (asset.asset_type or "").lower() != "video"
         ]
-    return [DramaAssetOut.model_validate(a) for a in rows]
+    views = []
+    for asset in rows:
+        if asset.project_id not in projects:
+            projects[asset.project_id] = await get_owned_drama_project(db, asset.project_id, user)
+        views.append(await asset_reference_view(db, asset, user_id=user.id, project=projects[asset.project_id]))
+    return views
 
 
-@router.post("/assets", response_model=DramaAssetOut)
+@router.post(
+    "/assets", response_model=DramaAssetOut,
+    summary="创建项目资产",
+    description="在可访问项目内创建资产；同类型且规范化名称相同的资产已存在时直接返回已有记录。团队项目需持有资产创建资源的编辑租约。",
+    response_description="新建或已存在的同名同类型资产，包含可见引用信息",
+)
 async def create_asset(
     body: DramaAssetCreate,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> DramaAssetOut:
-    await get_owned_drama_project(db, body.project_id, user)
+    project = await get_owned_drama_project(db, body.project_id, user)
     # 同类型同名已存在则直接返回，避免手动/并发再造重复卡
     want_name = _normalize_asset_name(body.name or "")
     if want_name:
@@ -96,7 +113,7 @@ async def create_asset(
         for row in existing_rows:
             key = _asset_dedupe_key(row.type or "", _normalize_asset_name(row.name or ""))
             if key == want_key:
-                return DramaAssetOut.model_validate(row)
+                return await asset_reference_view(db, row, user_id=user.id, project=project)
     asset = DramaAsset(
         project_id=body.project_id,
         type=body.type,
@@ -109,7 +126,7 @@ async def create_asset(
     db.add(asset)
     await db.commit()
     await db.refresh(asset)
-    return DramaAssetOut.model_validate(asset)
+    return await asset_reference_view(db, asset, user_id=user.id, project=project)
 
 
 def _merge_asset_params(prev: dict | None, incoming: dict | None) -> dict:
@@ -117,6 +134,11 @@ def _merge_asset_params(prev: dict | None, incoming: dict | None) -> dict:
     base = dict(prev or {}) if isinstance(prev, dict) else {}
     patch = dict(incoming or {}) if isinstance(incoming, dict) else {}
     out = {**base, **patch}
+    # 当前媒体快照只由生成/上传/还原路径更新，客户端编辑不能覆盖。
+    if "media_metadata" in base:
+        out["media_metadata"] = base["media_metadata"]
+    else:
+        out.pop("media_metadata", None)
 
     prev_gen = base.get("generation") if isinstance(base.get("generation"), dict) else None
     prev_status = str((prev_gen or {}).get("status") or "").lower()
@@ -145,23 +167,35 @@ def _merge_asset_params(prev: dict | None, incoming: dict | None) -> dict:
     return out
 
 
-@router.patch("/assets/{asset_id}", response_model=DramaAssetOut)
+@router.patch(
+    "/assets/{asset_id}", response_model=DramaAssetOut,
+    summary="更新资产信息与配置",
+    description="按资产编号 asset_id 更新非 null 字段。params 做浅合并，并保护服务器维护的媒体快照、进行中的生成状态及图片版本历史；切换媒体地址时重新确定媒体来源信息。团队项目需持有该资产的编辑租约。",
+    response_description="保存后的资产及当前用户可见的引用信息",
+)
 async def update_asset(
-    asset_id: int,
+    asset_id: Annotated[int, APIPath(description="项目资产编号，需有其所属项目的访问权限")],
     body: DramaAssetUpdate,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> DramaAssetOut:
-    from app.models_drama import DramaProject
+    asset = await get_owned_asset(db, asset_id, user)
+    from app.services.drama.asset_metadata import current_media_metadata
 
-    result = await db.execute(
-        select(DramaAsset)
-        .join(DramaProject, DramaAsset.project_id == DramaProject.id)
-        .where(DramaAsset.id == asset_id, DramaProject.user_id == user.id)
+    # Freeze legacy media details before changing the next generation's form options.
+    if (asset.url or asset.cover) and not isinstance((asset.params or {}).get("media_metadata"), dict):
+        asset.params = {**(asset.params or {}), "media_metadata": current_media_metadata(asset.params)}
+    media_changed = (body.url is not None and body.url != asset.url) or (
+        not (body.url or asset.url) and body.cover is not None and body.cover != asset.cover
     )
-    asset = result.scalar_one_or_none()
-    if not asset:
-        raise HTTPException(status_code=404, detail="资产不存在")
+    media_metadata = None
+    if media_changed:
+        media_metadata = {"source": "unknown"}
+        source_id = (body.params or {}).get("importedFromAssetId")
+        if isinstance(source_id, int) and source_id > 0:
+            source = await get_owned_asset(db, source_id, user)
+            if (body.url or body.cover) == (source.url or source.cover):
+                media_metadata = current_media_metadata(source.params)
     for field in ("type", "asset_type", "name", "cover", "url", "params"):
         val = getattr(body, field)
         if val is None:
@@ -173,15 +207,22 @@ async def update_asset(
             )
         else:
             setattr(asset, field, val)
+    if media_metadata is not None:
+        asset.params = {**(asset.params or {}), "media_metadata": media_metadata}
     await db.commit()
     await db.refresh(asset)
-    return DramaAssetOut.model_validate(asset)
+    return await asset_reference_view(db, asset, user_id=user.id)
 
 
-@router.post("/assets/{asset_id}/upload", response_model=DramaAssetOut)
+@router.post(
+    "/assets/{asset_id}/upload", response_model=DramaAssetOut,
+    summary="上传资产图片或音频",
+    description="通过 multipart/form-data 为 asset_id 指定的资产上传媒体到 OSS，需启用 OSS。支持 JPG、PNG、WebP、GIF 图片（最大 20MB）及 MP3、WAV、M4A、AAC、OGG、WebM 音频（最大 30MB）。图片替换前归档当前版本，音频不写入图片封面；生成进行中返回 409，团队项目需持有该资产的编辑租约。",
+    response_description="上传完成后的资产，包含媒体地址、媒体元数据和 done 生成状态",
+)
 async def upload_asset_media(
-    asset_id: int,
-    file: UploadFile = File(...),
+    asset_id: Annotated[int, APIPath(description="项目资产编号，需有其所属项目的访问权限")],
+    file: UploadFile = File(..., description="资产图片或音频文件；图片最大 20MB，音频最大 30MB，不接受空文件"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> DramaAssetOut:
@@ -192,14 +233,7 @@ async def upload_asset_media(
     if not oss_svc.oss_enabled():
         raise HTTPException(status_code=503, detail="OSS 未启用，无法上传资产媒体")
 
-    result = await db.execute(
-        select(DramaAsset)
-        .join(DramaProject, DramaAsset.project_id == DramaProject.id)
-        .where(DramaAsset.id == asset_id, DramaProject.user_id == user.id)
-    )
-    asset = result.scalar_one_or_none()
-    if not asset:
-        raise HTTPException(status_code=404, detail="资产不存在")
+    asset = await get_owned_asset(db, asset_id, user)
 
     gen = (asset.params or {}).get("generation") if isinstance(asset.params, dict) else None
     status = str((gen or {}).get("status") or "").lower() if isinstance(gen, dict) else ""
@@ -302,20 +336,23 @@ async def upload_asset_media(
         if not asset.asset_type or asset.asset_type == "none":
             asset.asset_type = "image"
     params = dict(asset.params or {})
-    gen = params.get("generation")
-    if isinstance(gen, dict):
-        params["generation"] = {**gen, "status": "done", "source": "upload"}
-    else:
-        params["generation"] = {"status": "done", "source": "upload"}
+    from app.services.drama.asset_metadata import uploaded_media_metadata
+    params["media_metadata"] = uploaded_media_metadata(filename=file.filename, size=size, content_type=content_type)
+    params["generation"] = {"status": "done", "source": "upload", "finished_at": params["media_metadata"]["created_at"]}
     asset.params = params
     await db.commit()
     await db.refresh(asset)
-    return DramaAssetOut.model_validate(asset)
+    return await asset_reference_view(db, asset, user_id=user.id)
 
 
-@router.post("/assets/{asset_id}/activate_image_version", response_model=DramaAssetOut)
+@router.post(
+    "/assets/{asset_id}/activate_image_version", response_model=DramaAssetOut,
+    summary="切换资产图片历史版本",
+    description="将资产编号 asset_id 对应资产的指定历史图片版本设为当前版本，恢复对应媒体信息。生成排队或进行中不允许切换，版本无效时返回 400；团队项目需持有该资产的编辑租约。",
+    response_description="切换历史版本后的当前资产",
+)
 async def activate_image_version(
-    asset_id: int,
+    asset_id: Annotated[int, APIPath(description="项目资产编号，需有其所属项目的访问权限")],
     body: DramaActivateImageVersionRequest,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -323,14 +360,7 @@ async def activate_image_version(
     """将资产形象历史版本设为当前。"""
     from app.services.drama.generation import activate_asset_image_version
 
-    result = await db.execute(
-        select(DramaAsset)
-        .join(DramaProject, DramaAsset.project_id == DramaProject.id)
-        .where(DramaAsset.id == asset_id, DramaProject.user_id == user.id)
-    )
-    asset = result.scalar_one_or_none()
-    if not asset:
-        raise HTTPException(status_code=404, detail="资产不存在")
+    asset = await get_owned_asset(db, asset_id, user)
 
     gen = (asset.params or {}).get("generation") if isinstance(asset.params, dict) else None
     status = str((gen or {}).get("status") or "").lower() if isinstance(gen, dict) else ""
@@ -344,35 +374,38 @@ async def activate_image_version(
 
     await db.commit()
     await db.refresh(asset)
-    return DramaAssetOut.model_validate(asset)
+    return await asset_reference_view(db, asset, user_id=user.id)
 
 
-@router.delete("/assets/{asset_id}")
+@router.delete(
+    "/assets/{asset_id}",
+    summary="删除项目资产",
+    description="按资产编号 asset_id 删除可访问项目中的资产记录；团队项目需持有该资产的编辑租约，存在冲突任务时无法写入。",
+    response_description="删除成功标记，ok 为 true",
+)
 async def delete_asset(
-    asset_id: int,
+    asset_id: Annotated[int, APIPath(description="项目资产编号，需有其所属项目的访问权限")],
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
     from app.models_drama import DramaProject
 
-    result = await db.execute(
-        select(DramaAsset)
-        .join(DramaProject, DramaAsset.project_id == DramaProject.id)
-        .where(DramaAsset.id == asset_id, DramaProject.user_id == user.id)
-    )
-    asset = result.scalar_one_or_none()
-    if not asset:
-        raise HTTPException(status_code=404, detail="资产不存在")
+    asset = await get_owned_asset(db, asset_id, user)
     await db.delete(asset)
     await db.commit()
     return {"ok": True}
 
 
-@router.post("/assets/seed_from_script", response_model=SeedAssetsFromScriptOut)
+@router.post(
+    "/assets/seed_from_script", response_model=SeedAssetsFromScriptOut,
+    summary="从剧本抽取或刷新项目资产",
+    description="从可访问项目的剧本提取资产。默认在本次请求中同步执行并返回统计；开启 refresh_prompts 或 reextract_props 时改为异步任务，立即返回 generating，可轮询项目 params.assets_seed_status 与资产列表。已有抽取任务进行中时返回当前资产且不重复提交。团队项目需持有结构资源的编辑租约。",
+    response_description="当前资产列表、抽取统计及 done 或 generating 状态；异步结果需后续刷新获取",
+)
 async def seed_assets(
-    project_id: int,
-    refresh_prompts: bool = False,
-    reextract_props: bool = False,
+    project_id: Annotated[int, Query(description="待抽取资产的项目编号")],
+    refresh_prompts: Annotated[bool, Query(description="是否刷新资产提示词；为 true 时异步执行")] = False,
+    reextract_props: Annotated[bool, Query(description="是否重新提取道具；为 true 时异步执行")] = False,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> SeedAssetsFromScriptOut:
@@ -393,7 +426,7 @@ async def seed_assets(
             .all()
         )
         return SeedAssetsFromScriptOut(
-            assets=[DramaAssetOut.model_validate(a) for a in existing],
+            assets=[await asset_reference_view(db, a, user_id=user.id, project=project) for a in existing],
             status="generating",
             message="资产抽取进行中，请稍候刷新",
         )
@@ -420,7 +453,7 @@ async def seed_assets(
             .all()
         )
         return SeedAssetsFromScriptOut(
-            assets=[DramaAssetOut.model_validate(a) for a in existing],
+            assets=[await asset_reference_view(db, a, user_id=user.id, project=project) for a in existing],
             status="generating",
             message="资产抽取任务已提交，请稍候刷新",
         )
@@ -489,7 +522,7 @@ async def seed_assets(
         await db.commit()
         raise
     return SeedAssetsFromScriptOut(
-        assets=[DramaAssetOut.model_validate(a) for a in result.assets],
+        assets=[await asset_reference_view(db, a, user_id=user.id, project=project) for a in result.assets],
         created_count=result.created_count,
         prompts_refreshed=result.prompts_refreshed,
         props_updated=result.props_updated,

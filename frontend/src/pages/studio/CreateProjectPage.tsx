@@ -1,516 +1,295 @@
-import { useEffect, useMemo, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
-import { api, defaultsFromTemplate } from '../../api'
-import type { Template } from '../../api'
-import BillingErrorNotice from '../../components/billing/BillingErrorNotice'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { ArrowLeft, ArrowRight, Check, Clapperboard, Clock3, LoaderCircle, Save, Sparkles } from 'lucide-react'
+import { api, type PipelineMode, type Project, type Template, type VoicePreset } from '../../api'
 import AppShell from '../../components/layout/AppShell'
+import BillingErrorNotice from '../../components/billing/BillingErrorNotice'
+import Button from '../../components/ui/Button'
 import Stepper from '../../components/ui/Stepper'
-import PillTabs from '../../components/ui/PillTabs'
-import { IconChevronLeft, IconRefresh, IconSparkles } from '../../components/ui/Icons'
-import { CATEGORY_ORDER } from '../../lib/categories'
-import { kepuStepIndex, kepuSteps } from '../../lib/status'
+import { MediaCostNotice } from '../../components/billing/MediaCostNotice'
+import { useMediaModelsCatalog } from '../../hooks/useMediaModelsCatalog'
+import { creationTemplateId } from '../../lib/creationTemplates'
+import { resolveShortVideoMediaSettings, shortVideoPipelineMode } from '../../lib/shortVideoSettings'
+import { isRunning, kepuSteps } from '../../lib/status'
+import { dialog } from '../../lib/dialog'
+import './shortVideoCreate.css'
+import AvatarCreateProjectPage from './AvatarCreateProjectPage'
 
-type Inspiration = {
-  title: string
-  theme: string
-  script: string
-}
+const EXAMPLES = ['给小学生讲讲为什么天空是蓝色的', '一只胆小的小猫在雨天遇见新朋友', '用轻松的方式介绍二十四节气里的霜降']
 
-const INSPIRATION_POOL: Inspiration[] = [
-  {
-    title: '到店打卡怎么拍',
-    theme: '把一家本地店的卖点做成抖音获客口播：前3秒钩子、场景、1-2个体验、到店号召。只写已知事实。',
-    script:
-      '路过这条街十次，这次才走进去。\n\n' +
-      '店面不大，招牌清楚，位置就在地铁口附近。\n\n' +
-      '我点了他们家主打那一项，口感按我自己的感受来：味道正、上桌快。\n\n' +
-      '想试的话，按店里现有套餐自己看，别听绝对化承诺。',
-  },
-  {
-    title: '闺蜜安利一篇笔记',
-    theme: '小红书获客安利：钩子标题、第一印象、分点真实体验、推荐给谁。卖点只作客观陈述。',
-    script:
-      '本来只是路过，结果在店里坐了很久。\n\n' +
-      '第一印象是光线干净、座位不挤。\n\n' +
-      '我点了招牌，份量如实说；环境安静，适合聊天。\n\n' +
-      '更适合想慢慢坐的人；赶时间的可以先看套餐再决定。',
-  },
-  {
-    title: '口碑拆解给决策',
-    theme: '点评式获客讲解：总体评价、环境服务、推荐项带理由、性价比、适合谁。没写的价格不要猜。',
-    script:
-      '总体感受：干净、流程清楚，适合第一次来的人。\n\n' +
-      '环境通透，服务员会主动说明怎么选。\n\n' +
-      '推荐他们家主打项目，理由是我当场体验过、步骤好懂。\n\n' +
-      '人均以店内公示为准。带朋友来比一个人更合适。',
-  },
-  {
-    title: '熟人圈轻推荐',
-    theme: '朋友圈获客短片：一句真实感受、一个具体细节、一句轻推荐。克制，不像广告。',
-    script:
-      '今天路过顺路坐了一会儿，比想象中安静。\n\n' +
-      '窗边那张桌子有自然光，适合歇脚。\n\n' +
-      '你们要是附近，可以自己去看看。',
-  },
-  {
-    title: '黑洞是如何形成的',
-    theme: '黑洞是如何形成的？用通俗方式讲清恒星坍缩、事件视界与时空弯曲，面向中学生。',
-    script:
-      '夜空里最神秘的天体之一，就是黑洞。\n\n' +
-      '当一颗足够大的恒星燃料烧尽，核心会在引力下剧烈坍缩，密度高到连光都逃不出去，事件视界就此诞生。\n\n' +
-      '它不是宇宙吸尘器，而是时空被严重弯曲的区域。靠近它，时间流逝也会变得奇怪。\n\n' +
-      '记住：质量够大、坍缩够猛，黑洞就会出现。下一次看科普新闻，你就能分清传说与科学。',
-  },
-  {
-    title: '为什么天空是蓝色的',
-    theme: '为什么天空是蓝色的？用瑞利散射解释阳光、空气分子与傍晚火烧云，适合科普入门。',
-    script:
-      '抬头一看，白天的天空常常是蓝的，这是巧合吗？\n\n' +
-      '阳光看起来发白，其实包含多种颜色。空气分子对蓝光散射更强，蓝光更容易被「弹」向四面八方，于是我们眼里的天空偏蓝。\n\n' +
-      '早晚太阳更低，光穿过更厚大气，蓝光散得更干净，剩下的红橙光就染红了天边。\n\n' +
-      '所以天空的颜色，是光与空气的一场合作。',
-  },
-  {
-    title: 'AI 如何改变生活',
-    theme: 'AI 如何改变生活：从推荐、语音助手到医疗影像，讲清便利与需要警惕的偏见。',
-    script:
-      '打开手机，推荐视频、导航路线、语音助手——人工智能已经悄悄进了日常。\n\n' +
-      '它擅长从海量数据里找规律：帮医生看影像线索，帮工厂预判故障，也帮你把搜索变成对话。\n\n' +
-      '但 AI 不是魔法。数据有偏见，模型会犯错，隐私也需要边界。真正有用的，是把 AI 当工具，而不是当权威。\n\n' +
-      '理解它能做什么、不能做什么，你才能用得更聪明。',
-  },
-  {
-    title: '火星上的一天',
-    theme: '火星上的一天长什么样？对比地球日长、气温、沙尘与人类基地想象，做成场景化科普。',
-    script:
-      '想象你在火星醒来：太阳更远更小，天空偏奶油色，一天大约 24 小时 39 分钟。\n\n' +
-      '白天可能「温暖」到零下，夜晚更冷。薄薄的二氧化碳大气留不住热量，沙尘暴偶尔遮天。\n\n' +
-      '科学家仍在规划基地：要防辐射、造氧气、种食物。火星不是第二地球，却是最近的外太空课堂。\n\n' +
-      '了解火星的一天，就是在预习人类下一次远行。',
-  },
-  {
-    title: '梦的力量',
-    theme: '梦的力量：睡眠周期、快速眼动与记忆整理，用故事讲清做梦如何帮助大脑「复盘」。',
-    script:
-      '你睡着以后，大脑并没有下班。\n\n' +
-      '进入快速眼动睡眠时，大脑像在回放白天的片段，拼接成奇幻的梦。科学家认为，这有助于整理记忆、调节情绪。\n\n' +
-      '睡不够，注意力和创造力都会打折；规律睡眠，则像给大脑做夜间维护。\n\n' +
-      '下次做怪梦，别只觉得荒唐——那可能是大脑在加班学习。',
-  },
-  {
-    title: '一只流浪猫的春天',
-    theme: '一只流浪猫的春天：用拟人旁白讲城市生态、投喂边界与人宠共处，温暖向科普叙事。',
-    script:
-      '春天来了，巷口的橘猫开始换毛，也开始寻找更安全的角落。\n\n' +
-      '城市里的流浪动物，靠的是残存野性与人类不经意的善意。科学投喂、绝育与尊重距离，比冲动更重要。\n\n' +
-      '它们不是风景，也不是麻烦，而是城市生态的一部分。\n\n' +
-      '这个春天，愿每一只猫，都能遇见更稳妥的明天。',
-  },
-  {
-    title: '光合作用的秘密',
-    theme: '光合作用的秘密：叶子如何把阳光变成糖，讲清叶绿体、能量转化与地球氧气来源。',
-    script:
-      '绿叶不只是装饰，它们是地球上最安静的化工厂。\n\n' +
-      '叶绿体抓住阳光，把水和二氧化碳做成糖，并释放氧气。没有这个过程，绝大多数食物链都会断裂。\n\n' +
-      '你呼吸的氧气、餐桌上的米饭和蔬菜，都间接来自这场光的魔法。\n\n' +
-      '看懂光合作用，就看懂了生命运转的底层账本。',
-  },
-  {
-    title: '地震来了怎么办',
-    theme: '地震来了怎么办：用场景教学讲清震前准备、避险姿势与谣言辨别，实用安全科普。',
-    script:
-      '地面突然晃起来，第一反应往往是慌。\n\n' +
-      '正确做法是就近伏地、掩护、抓稳，远离窗户与高架物；不要一窝蜂挤电梯。提前准备应急包，比临时抱佛脚更管用。\n\n' +
-      '震后还要警惕余震和谣言。权威信息、互助秩序，才是真正的安全感。\n\n' +
-      '懂一点地震知识，关键时刻就能多一分从容。',
-  },
-  {
-    title: '咖啡因如何提神',
-    theme: '咖啡因如何提神：腺苷受体、耐受与睡眠代价，帮上班族科学喝咖啡。',
-    script:
-      '困的时候来杯咖啡，真的是「叫醒大脑」吗？\n\n' +
-      '咖啡因会抢占腺苷的位置，让你暂时感觉不困。但它不能替代睡眠，下午喝太多，夜里更容易翻来覆去。\n\n' +
-      '逐渐耐受后，同样一杯效果会变弱。更聪明的用法是：需要专注时再用，并给睡眠留窗口。\n\n' +
-      '提神可以靠咖啡，恢复还是得靠睡。',
-  },
-  {
-    title: '塑料去哪了',
-    theme: '塑料去哪了：微塑料、海洋环流与可替代材料，做成环保主题科普短片。',
-    script:
-      '扔掉的塑料袋，真的消失了吗？\n\n' +
-      '多数只是被撕成更小的碎片。微塑料进入河流与海洋，再进入食物链，最终可能回到我们的餐桌。\n\n' +
-      '减少一次性塑料、做好分类、推动更好的材料，比事后清理便宜得多。\n\n' +
-      '问「塑料去哪了」，其实是在问：我们愿为未来留什么。',
-  },
-  {
-    title: '疫苗为什么有效',
-    theme: '疫苗为什么有效：用「预演」比喻讲清抗原、抗体与群体免疫，澄清常见误解。',
-    script:
-      '疫苗不是药，更像给免疫系统发的预告片。\n\n' +
-      '它让身体提前认识病原体的关键特征，真正遇到时能更快调动抗体。这不是改写基因，而是训练记忆。\n\n' +
-      '足够多人获得保护，传播链会被削弱，这就是群体免疫的意义。\n\n' +
-      '科学接种，是把自己和身边人一起放进更安全的网络。',
-  },
-  {
-    title: '潮汐的涨落',
-    theme: '潮汐为何涨落：月球引力、离心效应与大潮小潮，海边场景化讲解。',
-    script:
-      '海边的人最懂：水位会按时涨、按时退。\n\n' +
-      '主要推手是月球的引力，太阳也来凑热闹。地球、月球、太阳排成一线时，潮差更大，就是大潮。\n\n' +
-      '潮汐还影响航行、发电甚至生物节律。抬头看月亮，脚下的海也在回应。\n\n' +
-      '涨落之间，是天地引力的可见痕迹。',
-  },
-]
-
-const PAGE_SIZE = 6
-
-function isDefaultTitle(value: string) {
-  const t = value.trim()
-  return !t || t === '未命名作品'
-}
-
-function deriveTitle(text: string) {
-  const line = text
-    .trim()
-    .split(/\n/)[0]
-    .replace(/["""'']/g, '')
-    .replace(/[。！？!?：:].*$/, '')
-    .trim()
-  if (!line) return '未命名作品'
-  return line.slice(0, 18)
-}
-
-export default function CreateProjectPage() {
+function ShortVideoCreatePage() {
   const nav = useNavigate()
   const [params] = useSearchParams()
+  const editId = Number(params.get('project')) || null
+  const requestedTemplate = creationTemplateId(params.get('template'))
+  const requestedPipelineMode = shortVideoPipelineMode(params.get('mode'))
+  const returnPath = `/studio/new${params.size ? `?${params}` : ''}`
   const [templates, setTemplates] = useState<Template[]>([])
-  const [templateId, setTemplateId] = useState(params.get('template') || '')
-  const [category, setCategory] = useState('全部')
-  const [q, setQ] = useState('')
-  const [inputTab, setInputTab] = useState('一句话主题')
-  const [sourceText, setSourceText] = useState(INSPIRATION_POOL[0].theme)
-  const [title, setTitle] = useState(INSPIRATION_POOL[0].title)
-  const [titleTouched, setTitleTouched] = useState(false)
-  const [inspPage, setInspPage] = useState(0)
-  const [busy, setBusy] = useState(false)
-  const [aiBusy, setAiBusy] = useState(false)
+  const [voices, setVoices] = useState<VoicePreset[]>([])
+  const [project, setProject] = useState<Project | null>(null)
+  const [templateId, setTemplateId] = useState(requestedTemplate)
+  const [ratio, setRatio] = useState('9:16')
+  const [pipelineMode, setPipelineMode] = useState<PipelineMode>(requestedPipelineMode)
+  const [imageModel, setImageModel] = useState('')
+  const [videoModel, setVideoModel] = useState('')
+  const [imageResolution, setImageResolution] = useState('')
+  const [videoResolution, setVideoResolution] = useState('')
+  const mediaCatalog = useMediaModelsCatalog()
+  const [duration, setDuration] = useState(60)
+  const [voice, setVoice] = useState('')
+  const [mode, setMode] = useState<'idea' | 'copy'>('idea')
+  const [idea, setIdea] = useState('')
+  const [copy, setCopy] = useState('')
+  const [title, setTitle] = useState('')
+  const [step, setStep] = useState(0)
+  const [loading, setLoading] = useState(Boolean(editId))
+  const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
+  const [voiceError, setVoiceError] = useState(false)
+  const working = useRef(false)
+  const savedProject = useRef<Project | null>(null)
+  const mounted = useRef(true)
 
   useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
+  useEffect(() => {
+    let disposed = false
     if (!localStorage.getItem('token')) {
-      nav('/auth')
+      nav(`/auth?next=${encodeURIComponent(returnPath)}`, { replace: true })
       return
     }
-    api.me().catch(() => nav('/auth'))
-    api.templates().then((list) => {
-      setTemplates(list)
-      const fromUrl = params.get('template') || ''
-      setTemplateId((prev) => prev || fromUrl || list[0]?.id || '')
-    })
-  }, [nav, params])
-
-  const categories = useMemo(() => {
-    const found = new Set<string>()
-    for (const t of templates) {
-      for (const c of t.category || []) {
-        if (CATEGORY_ORDER.includes(c)) found.add(c)
-      }
-    }
-    return ['全部', '热门推荐', ...CATEGORY_ORDER.filter((c) => found.has(c))]
-  }, [templates])
-
-  const filtered = useMemo(() => {
-    let list = templates
-    if (category === '热门推荐') list = [...templates].sort((a, b) => a.sort_order - b.sort_order).slice(0, 8)
-    else if (category !== '全部') list = list.filter((t) => (t.category || []).includes(category))
-    if (q.trim()) {
-      const s = q.trim().toLowerCase()
-      list = list.filter((t) => t.name.toLowerCase().includes(s))
-    }
-    return list
-  }, [templates, category, q])
-
-  const selected = templates.find((t) => t.id === templateId)
-  const sourceType = inputTab === '粘贴完整文案' ? 'script' : 'theme'
-  const inspTotal = Math.ceil(INSPIRATION_POOL.length / PAGE_SIZE)
-  const inspirations = INSPIRATION_POOL.slice(inspPage * PAGE_SIZE, inspPage * PAGE_SIZE + PAGE_SIZE)
-
-  // 把灵感示例填进主题/文案，并同步短标题
-  function applyInspiration(item: Inspiration) {
-    if (sourceType === 'script') {
-      setInputTab('粘贴完整文案')
-      setSourceText(item.script.slice(0, 8000))
-    } else {
-      setInputTab('一句话主题')
-      setSourceText(item.theme.slice(0, 100))
-    }
-    setTitle(item.title.slice(0, 24))
-    setTitleTouched(false)
-    setError('')
-  }
-
-  function shuffleInspirations() {
-    setInspPage((p) => (p + 1) % inspTotal)
-  }
-
-  async function aiExpand() {
-    const seed = sourceText.trim() || title.trim() || '人工智能如何改变生活'
-    setAiBusy(true)
-    setError('')
-    try {
-      const mode = sourceType === 'script' ? 'script' : 'theme'
-      const result = await api.expandContent(seed, mode)
-      setSourceText(result.content.slice(0, mode === 'theme' ? 100 : 8000))
-      if (!titleTouched || isDefaultTitle(title)) {
-        setTitle(result.title.slice(0, 24))
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'AI 生成失败')
-    } finally {
-      setAiBusy(false)
-    }
-  }
-
-  async function next() {
-    if (!templateId || !sourceText.trim()) {
-      setError('请选择模板并填写主题内容')
+    api.templates().then(rows => { if (!disposed) setTemplates(rows) }).catch(cause => { if (!disposed) setError(cause.message || '模板加载失败') })
+    api.voices().then(rows => { if (!disposed) setVoices(rows) }).catch(() => { if (!disposed) setVoiceError(true) })
+    return () => { disposed = true }
+  }, [nav, editId, returnPath])
+  useEffect(() => {
+    let disposed = false
+    if (!editId) {
+      savedProject.current = null
+      setProject(null)
+      setLoading(false)
+      setTemplateId(requestedTemplate)
+      setRatio('9:16')
+      setPipelineMode(requestedPipelineMode)
+      setImageModel('')
+      setVideoModel('')
+      setImageResolution('')
+      setVideoResolution('')
+      setDuration(60)
+      setVoice('')
+      setMode('idea')
+      setIdea('')
+      setCopy('')
+      setTitle('')
+      setStep(0)
       return
     }
-    setBusy(true)
+    // 新建后更新 URL 时，保留当前输入与文案。
+    if (savedProject.current?.id === editId) return
+    setLoading(true)
+    api.getProject(editId).then(value => {
+      if (disposed) return
+      if (value.creation_session_id) {
+        nav(`/studio/sessions/${value.creation_session_id}?project=${value.id}`, { replace: true })
+        return
+      }
+      savedProject.current = value
+      setProject(value)
+      setTemplateId(creationTemplateId(value.template_id))
+      setRatio(value.output_ratio || '9:16')
+      setPipelineMode(shortVideoPipelineMode(value.pipeline_mode))
+      setImageModel(value.image_model || '')
+      setVideoModel(value.video_model || '')
+      setImageResolution(value.image_resolution || '')
+      setVideoResolution(value.video_resolution || '')
+      setDuration(value.target_duration_sec || 60)
+      setVoice(value.voice_id || '')
+      setTitle(value.title)
+      setIdea(value.source_text)
+      if (value.source_type === 'script') {
+        setCopy(value.source_text)
+        setMode('copy')
+        setStep(1)
+      } else setStep(0)
+    }).catch(cause => { if (!disposed) setError(cause.message || '项目加载失败') })
+      .finally(() => { if (!disposed) setLoading(false) })
+    return () => { disposed = true }
+  }, [editId, requestedTemplate, requestedPipelineMode, nav])
+
+  const selectedTemplate = templates.find(item => item.id === templateId)
+  const mediaSettings = resolveShortVideoMediaSettings(mediaCatalog, pipelineMode, { imageModel, videoModel, imageResolution, videoResolution, ratio }, project?.ref_image_url ? 3 : 2)
+  const running = Boolean(project && (isRunning(project.status) || project.active_tasks?.some(task => ['pending', 'leased', 'running', 'awaiting_poll', 'awaiting_review', 'cancel_requested'].includes(task.status))))
+  const disabled = Boolean(busy || loading || running)
+  function payload(text: string, name: string) {
+    return {
+      template_id: templateId, title: name.trim().slice(0, 200) || text.trim().slice(0, 30),
+      source_type: 'script' as const, source_text: text.trim(),
+      pipeline_mode: pipelineMode, resolution_mode: 'hd' as const,
+      output_ratio: mediaSettings.ratio || ratio, target_duration_sec: duration, voice_id: voice,
+      image_model: mediaSettings.imageModel, video_model: mediaSettings.videoModel,
+      image_resolution: mediaSettings.imageResolution, video_resolution: mediaSettings.videoResolution,
+    }
+  }
+  const draftFields = payload(copy, title)
+  const draftChanged = Boolean(project && (
+    project.title !== draftFields.title || project.source_text !== draftFields.source_text ||
+    project.template_id !== templateId || project.output_ratio !== draftFields.output_ratio ||
+    shortVideoPipelineMode(project.pipeline_mode) !== pipelineMode ||
+    (project.target_duration_sec || 60) !== duration || (project.voice_id || '') !== voice ||
+    (project.image_model || '') !== draftFields.image_model || (project.video_model || '') !== draftFields.video_model ||
+    (project.image_resolution || '') !== draftFields.image_resolution || (project.video_resolution || '') !== draftFields.video_resolution
+  ))
+  const canSaveDraft = !project?.shots.length && !project?.final_video_url
+  async function createDraft(text: string, name: string) {
+    if (savedProject.current) return savedProject.current
+    const value = await api.createProject(payload(text, name))
+    savedProject.current = value
+    if (mounted.current) {
+      setProject(value)
+      nav(`/studio/new?project=${value.id}`, { replace: true })
+    }
+    return value
+  }
+  async function saveDraft(text: string, name: string) {
+    const old = savedProject.current
+    if (!old) return createDraft(text, name)
+    // Existing generated assets are changed only after the explicit restart confirmation.
+    if (old.shots.length || old.final_video_url) return old
+    const value = await api.updateProject(old.id, payload(text, name))
+    savedProject.current = value
+    if (mounted.current) setProject(value)
+    return value
+  }
+  async function saveCopyDraft() {
+    if (!copy.trim() || disabled || working.current || !selectedTemplate || !canSaveDraft) return
+    working.current = true
+    setBusy('正在保存草稿…')
     setError('')
     try {
-      const tpl = templates.find((t) => t.id === templateId)
-      const d = tpl ? defaultsFromTemplate(tpl) : undefined
-      const modeParam = params.get('mode')
-      const pipeline_mode: 'full' | 'image_text' | 'avatar' =
-        modeParam === 'image_text' || modeParam === 'full' || modeParam === 'avatar' ? modeParam : 'full'
-      const finalTitle =
-        title.trim() || deriveTitle(sourceText) || sourceText.trim().slice(0, 24) || '未命名作品'
-      const project = await api.createProject({
-        template_id: templateId,
-        title: finalTitle,
-        source_type: sourceType,
-        source_text: sourceText.trim(),
-        resolution_mode: 'preview',
-        pipeline_mode,
-        output_ratio: d?.output_ratio || '16:9',
-        voice_id: d?.voice_id,
-      })
-      nav(`/studio/${project.id}/style`)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '创建失败')
+      await saveDraft(copy, title)
+    } catch (cause) {
+      if (mounted.current) setError(cause instanceof Error ? cause.message : '草稿保存失败，请重试')
     } finally {
-      setBusy(false)
+      working.current = false
+      if (mounted.current) setBusy('')
+    }
+  }
+  async function prepareCopy(event: FormEvent) {
+    event.preventDefault()
+    if (!idea.trim() || disabled || working.current || !selectedTemplate) return
+    working.current = true
+    setError('')
+    setBusy(mode === 'idea' ? '正在生成文案…' : '正在保存文案…')
+    try {
+      const result = mode === 'copy'
+        ? { title: title || idea.trim().slice(0, 30), content: idea.trim() }
+        : await api.expandContent(`${idea.trim()}\n\n创作要求：约 ${duration} 秒，${selectedTemplate.name} 风格，普通话旁白。请写可直接配音的完整文案，保持内容与时长匹配。`, 'script')
+      if (!mounted.current) return
+      setCopy(result.content)
+      setTitle(result.title)
+      setStep(1)
+      await saveDraft(result.content, result.title)
+    } catch (cause) {
+      if (mounted.current) setError(cause instanceof Error ? cause.message : '文案生成失败，请重试')
+    } finally {
+      working.current = false
+      if (mounted.current) setBusy('')
+    }
+  }
+  async function generateStoryboard() {
+    if (!copy.trim() || disabled || working.current || !selectedTemplate) return
+    if (!mediaSettings.ready) {
+      setError('当前模型不可用或参考图数量不足，请重新选择图片和视频模型、清晰度与画面比例。')
+      return
+    }
+    working.current = true
+    try {
+      const old = savedProject.current
+      if (old?.shots.length) {
+        const confirmed = await dialog.confirm({ title: '重新生成分镜', message: '新的文案与设置将重新生成分镜，并替换本项目已有的图片、镜头视频、配音和成片。', confirmText: '重新生成', tone: 'danger' })
+        if (!confirmed || !mounted.current) return
+      }
+      setBusy('正在保存并生成分镜…')
+      setError('')
+      let value = await createDraft(copy, title)
+      value = await api.updateProject(value.id, payload(copy, title))
+      savedProject.current = value
+      setProject(value)
+      await api.generate(value.id, { restart: Boolean(value.shots.length) })
+      if (mounted.current) nav(`/studio/${value.id}`)
+    } catch (cause) {
+      if (mounted.current) setError(cause instanceof Error ? cause.message : '分镜生成失败，请重试')
+    } finally {
+      working.current = false
+      if (mounted.current) setBusy('')
     }
   }
 
-  return (
-    <AppShell active="studio" wide>
-      <header className="pf-page-head">
-        <div className="pf-page-head-row">
-          <div>
-            <button type="button" className="pf-back" onClick={() => nav('/')}>
-              <IconChevronLeft size={18} />
-              新建项目 / 开始创作
-            </button>
-            <h1 className="pf-page-title">创建项目</h1>
-          </div>
-          <Stepper steps={kepuSteps()} current={kepuStepIndex('create')} doneThrough={-1} />
-        </div>
+  return <AppShell active="studio">
+    <div className="sv-create-page">
+      <header className="sv-create-header">
+        <div><Link className="sv-back" to="/history"><ArrowLeft size={16} /> 我的短片</Link><h1>{editId ? '编辑短片' : '创建短片'}</h1><p>从一个想法开始，每一步都可以查看和调整。</p></div>
+        <Stepper steps={kepuSteps(pipelineMode)} current={pipelineMode === 'full' && step === 1 ? 2 : step} />
       </header>
-
-      <div className="pf-create">
-        <aside className="pf-create-col">
-          <h3>选择模板</h3>
-          <div className="pf-search">
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索模板…" />
-          </div>
-          <PillTabs items={categories.slice(0, 6)} value={category} onChange={setCategory} ariaLabel="模板分类" />
-          <div className="pf-tpl-list" style={{ marginTop: '0.75rem' }}>
-            {filtered.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                className={templateId === t.id ? 'pf-tpl-mini selected' : 'pf-tpl-mini'}
-                onClick={() => setTemplateId(t.id)}
-              >
-                <img src={api.assetUrl(t.preview_cover)} alt="" />
-                <div>
-                  <strong>{t.name}</strong>
-                  <span>
-                    {t.default_ratio} · {(t.category || [])[0] || '通用'}
-                  </span>
+      {error && <BillingErrorNotice message={error} />}
+      {loading ? <div className="sv-loading"><LoaderCircle className="sv-spin" size={20} /> 正在加载项目…</div> : <>
+        {running && <div className="sv-running-note">项目正在制作中，请在工作台查看进度或停止任务。<Link to={`/studio/${project!.id}`}>查看工作台 <ArrowRight size={15} /></Link></div>}
+        <div className="sv-create-grid">
+          <main>
+            {step === 0 ? <form onSubmit={prepareCopy}>
+              <section className="sv-panel">
+                <div className="sv-section-heading"><span>01</span><div><h2>选择画面风格</h2><p>四种动画与插画风格，生图时使用画风参考图，逐镜延续角色与视觉风格。</p></div></div>
+                <div className="sv-style-grid" role="group" aria-label="画面风格">
+                  {templates.map(item => <button key={item.id} type="button" className={`sv-style-card${item.id === templateId ? ' is-selected' : ''}`} disabled={disabled} aria-pressed={item.id === templateId} onClick={() => setTemplateId(item.id)}>
+                    <img src={api.assetUrl(item.preview_cover)} alt="" /><div><strong>{item.name}</strong><p>{item.description}</p></div>
+                    {item.id === templateId && <span className="sv-style-check"><Check size={14} /></span>}
+                  </button>)}
                 </div>
-              </button>
-            ))}
-          </div>
-        </aside>
+              </section>
+              <section className="sv-panel">
+                <div className="sv-section-heading"><span>02</span><div><h2>写下你想表达的内容</h2><p>描述主题、受众和重点，或直接粘贴已有文案。</p></div></div>
+                <div className="sv-input-tabs"><button type="button" className={mode === 'idea' ? 'is-active' : ''} onClick={() => setMode('idea')} disabled={disabled}>输入想法</button><button type="button" className={mode === 'copy' ? 'is-active' : ''} onClick={() => setMode('copy')} disabled={disabled}>已有文案</button></div>
+                <label className="sv-field"><span>{mode === 'idea' ? '短片想法' : '完整文案'}</span><textarea aria-label={mode === 'idea' ? '短片想法' : '完整文案'} value={idea} onChange={event => setIdea(event.target.value)} rows={6} maxLength={20000} disabled={disabled} placeholder={mode === 'idea' ? '例如：用 3D 动画给小学生解释天空为什么是蓝色，语言轻松，约 60 秒。' : '粘贴可以直接配音的文案，下一步可以继续编辑。'} required /></label>
+                {mode === 'idea' && <div className="sv-examples">{EXAMPLES.map(example => <button type="button" key={example} onClick={() => setIdea(example)} disabled={disabled}>{example}</button>)}</div>}
+                <div className="sv-actions"><span>文案生成后可修改，再继续生成分镜。</span><div className="sv-action-buttons">{copy.trim() && <Button variant="outline" disabled={disabled} onClick={() => setStep(1)}>编辑已有文案</Button>}<Button type="submit" variant="lime" disabled={disabled || !idea.trim() || !selectedTemplate}>{busy ? <LoaderCircle size={16} className="sv-spin" /> : <Sparkles size={16} />}{busy || (mode === 'idea' ? '生成文案' : '下一步：检查文案')}<ArrowRight size={16} /></Button></div></div>
+              </section>
+            </form> : <section className="sv-panel">
+              <div className="sv-section-heading"><span>02</span><div><h2>检查文案，再生成分镜</h2><p>这份文案将作为旁白。确认内容后，再拆分画面与镜头。</p></div></div>
+              <label className="sv-field"><span>短片名称</span><input value={title} onChange={event => setTitle(event.target.value)} maxLength={200} disabled={disabled} /></label>
+              <label className="sv-field"><span>配音文案 <small>{copy.length} 字</small></span><textarea aria-label="配音文案" value={copy} onChange={event => setCopy(event.target.value)} rows={13} maxLength={20000} disabled={disabled} /></label>
+              <div className="sv-actions"><Button variant="outline" disabled={disabled} onClick={() => setStep(0)}><ArrowLeft size={15} /> 返回调整</Button><div className="sv-action-buttons">{canSaveDraft && <Button variant="outline" disabled={disabled || !copy.trim() || !selectedTemplate || Boolean(project && !draftChanged)} onClick={() => { void saveCopyDraft() }}><Save size={15} />保存草稿</Button>}<Button variant="lime" disabled={disabled || !copy.trim() || !selectedTemplate} onClick={() => { void generateStoryboard() }}>{busy ? <LoaderCircle size={16} className="sv-spin" /> : <Clapperboard size={16} />}{busy || '生成分镜脚本'}<ArrowRight size={16} /></Button></div></div>
+              {project && <p className="sv-saved-note">{draftChanged ? canSaveDraft ? '有未保存的修改，可先保存草稿，或生成分镜时一并保存。' : '修改将在重新生成分镜时保存。' : canSaveDraft ? '草稿已保存。' : '已载入项目文案。'}<Link to={`/studio/${project.id}`}>打开项目工作台</Link></p>}
+            </section>}
+          </main>
+          <aside className="sv-panel sv-settings">
+            <h2>短片设置</h2><p>先用默认设置，也可以按需要调整。</p>
+            <div className="sv-field"><span>成片方式</span><div className="sv-output-modes" role="group" aria-label="成片方式">{([{ id: 'full', label: 'AI 视频', desc: '参考图生图 → 图生视频 → 合成' }, { id: 'image_text', label: '静图成片', desc: '参考图生图 → 图片运镜与配音' }] as const).map(item => <button key={item.id} type="button" className={pipelineMode === item.id ? 'is-selected' : ''} aria-pressed={pipelineMode === item.id} disabled={disabled} onClick={() => setPipelineMode(item.id)}><strong>{item.label}</strong><span>{item.desc}</span>{pipelineMode === item.id && <Check size={14} />}</button>)}</div></div>
+            <label className="sv-field"><span>画面比例</span><select value={mediaSettings.ratio} onChange={event => setRatio(event.target.value)} disabled={disabled || !mediaSettings.ratios.length}>{!mediaSettings.ratios.length && <option value="">暂无共同支持的画幅</option>}{mediaSettings.ratios.map(value => <option key={value} value={value}>{value}{value === '9:16' ? ' 竖屏' : value === '16:9' ? ' 横屏' : value === '1:1' ? ' 方形' : ''}</option>)}</select></label>
+            <label className="sv-field"><span>目标时长</span><select value={duration} onChange={event => setDuration(Number(event.target.value))} disabled={disabled}>{[...new Set([30, 60, 90, 120, 180, duration])].sort((a, b) => a - b).map(value => <option key={value} value={value}>约 {value} 秒</option>)}</select></label>
+            {pipelineMode === 'image_text' ? <>
+              <label className="sv-field"><span>旁白音色</span><select value={voice} onChange={event => setVoice(event.target.value)} disabled={disabled}><option value="">默认普通话音色</option>{voice && !voices.some(item => (item.speaker || item.id) === voice) && <option value={voice}>项目原有音色</option>}{voices.map(item => <option key={item.id} value={item.speaker || item.id}>{item.label}</option>)}</select></label>
+              {voiceError && <p className="sv-saved-note">音色列表暂未加载，仍可使用默认配音。</p>}
+            </> : <p className="sv-saved-note">视频模型生成旁白与声音。</p>}
+            <details className="sv-model-settings" open={pipelineMode === 'full'}><summary>生成模型与清晰度</summary>
+              <label className="sv-field"><span>参考图生图模型</span><select value={mediaSettings.imageModel} disabled={disabled || !mediaSettings.imageOptions.length} onChange={event => setImageModel(event.target.value)}>{mediaSettings.imageSelectionUnavailable && <option value={mediaSettings.imageModel} disabled>{mediaSettings.imageModel}（当前不可用）</option>}{!mediaSettings.imageOptions.length && !mediaSettings.imageSelectionUnavailable && <option value="">{mediaCatalog ? '暂无可用参考图模型' : '正在加载模型…'}</option>}{mediaSettings.imageOptions.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
+              <label className="sv-field"><span>图片清晰度</span><select value={mediaSettings.imageResolution} disabled={disabled || !mediaSettings.imageResolutions.length} onChange={event => setImageResolution(event.target.value)}>{!mediaSettings.imageResolutions.length && <option value={mediaSettings.imageResolution}>{mediaSettings.imageResolution || '请选择可用模型'}</option>}{mediaSettings.imageResolutions.map(value => <option key={value} value={value}>{value}</option>)}</select><MediaCostNotice modelId={mediaSettings.imageModel} resolution={mediaSettings.imageResolution} /></label>
+              {pipelineMode === 'full' && <><label className="sv-field"><span>图生视频模型</span><select value={mediaSettings.videoModel} disabled={disabled || !mediaSettings.videoOptions.length} onChange={event => setVideoModel(event.target.value)}>{mediaSettings.videoSelectionUnavailable && <option value={mediaSettings.videoModel} disabled>{mediaSettings.videoModel}（当前不可用）</option>}{!mediaSettings.videoOptions.length && !mediaSettings.videoSelectionUnavailable && <option value="">{mediaCatalog ? '暂无可用图生视频模型' : '正在加载模型…'}</option>}{mediaSettings.videoOptions.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
+                <label className="sv-field"><span>视频清晰度</span><select value={mediaSettings.videoResolution} disabled={disabled || !mediaSettings.videoResolutions.length} onChange={event => setVideoResolution(event.target.value)}>{!mediaSettings.videoResolutions.length && <option value={mediaSettings.videoResolution}>{mediaSettings.videoResolution || '请选择可用模型'}</option>}{mediaSettings.videoResolutions.map(value => <option key={value} value={value}>{value}</option>)}</select><MediaCostNotice modelId={mediaSettings.videoModel} resolution={mediaSettings.videoResolution} seconds={1} /></label></>}
+              {mediaCatalog && !mediaSettings.ready && <p className="sv-model-error" role="status">请重新选择可用模型，生图需支持 {project?.ref_image_url ? 3 : 2} 张参考图{pipelineMode === 'full' ? '，视频需支持 2 张参考图' : ''}，并确认清晰度和画幅。</p>}
+            </details>
+            <div className="sv-setting-summary"><Clapperboard size={17} /><div><strong>{selectedTemplate?.name || '3D 动画'}</strong><span>{pipelineMode === 'full' ? '图生视频' : '图片运镜'} · 普通话旁白 · 中文字幕</span><span>使用画风参考图，并参考前镜画面保持一致。</span></div></div>
+            <div className="sv-workflow-hint"><Clock3 size={17} /><p>{pipelineMode === 'full' ? '确认分镜后先生成参考图画面，再将图片逐镜生成为视频，检查镜头后合成成片。' : '检查分镜后生成图片和配音，素材准备好后再合成视频。'}</p></div>
+          </aside>
+        </div>
+      </>}
+    </div>
+  </AppShell>
+}
 
-        <section className="pf-create-col">
-          <h3>输入内容</h3>
-          <div className="pf-input-tabs">
-            {['一句话主题', '粘贴完整文案'].map((tab) => (
-              <button
-                key={tab}
-                type="button"
-                className={['pf-pill', inputTab === tab ? 'lime active' : ''].join(' ')}
-                onClick={() => setInputTab(tab)}
-              >
-                {tab}
-              </button>
-            ))}
-          </div>
-
-          <label className="pf-field">
-            <span className="pf-field-label">项目名称</span>
-            <input
-              className="pf-field-input"
-              value={title}
-              onChange={(e) => {
-                setTitle(e.target.value)
-                setTitleTouched(true)
-              }}
-              onBlur={() => {
-                if (isDefaultTitle(title) && sourceText.trim()) {
-                  setTitle(deriveTitle(sourceText))
-                  setTitleTouched(false)
-                }
-              }}
-              placeholder="将根据内容自动填充"
-            />
-          </label>
-
-          <div className="pf-textarea-wrap">
-            <div className="pf-textarea-toolbar">
-              <button
-                type="button"
-                className="pf-btn pf-btn-ai pf-btn-sm pf-btn-icon"
-                disabled={aiBusy || busy}
-                onClick={aiExpand}
-              >
-                <IconSparkles size={14} />
-                {aiBusy ? '生成中…' : sourceType === 'script' ? 'AI 扩写文案' : 'AI 生成主题'}
-              </button>
-              <span className="pf-muted" style={{ fontSize: '0.75rem' }}>
-                {sourceType === 'script' ? '可从一句话扩成完整口播' : '补全受众与知识点'}
-              </span>
-            </div>
-            <textarea
-              value={sourceText}
-              onChange={(e) => {
-                const next = e.target.value.slice(0, sourceType === 'theme' ? 100 : 8000)
-                setSourceText(next)
-                if (!titleTouched || isDefaultTitle(title)) {
-                  setTitle(deriveTitle(next))
-                }
-              }}
-              placeholder={
-                sourceType === 'theme'
-                  ? '例如：黑洞是如何形成的？用通俗方式讲清引力与时空'
-                  : '粘贴或 AI 生成完整口播文案…'
-              }
-            />
-            {sourceType === 'theme' ? (
-              <span className="pf-char-count">{sourceText.length}/100</span>
-            ) : (
-              <span className="pf-char-count">{sourceText.length} 字</span>
-            )}
-          </div>
-
-          <div className="pf-inspire">
-            <div className="pf-inspire-head">
-              <strong>灵感示例</strong>
-              <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm pf-btn-icon" onClick={shuffleInspirations}>
-                <IconRefresh size={14} />
-                换一批
-              </button>
-            </div>
-            <div className="pf-chips">
-              {inspirations.map((item) => (
-                <button
-                  key={item.title}
-                  type="button"
-                  className="pf-chip"
-                  title={sourceType === 'script' ? item.script.slice(0, 80) : item.theme}
-                  onClick={() => applyInspiration(item)}
-                >
-                  {item.title}
-                </button>
-              ))}
-            </div>
-            <p className="pf-muted" style={{ fontSize: '0.78rem', margin: '0.55rem 0 0' }}>
-              点击示例会填充完整{sourceType === 'script' ? '文案' : '主题'}并自动写入项目名称
-            </p>
-          </div>
-
-          <div className="pf-hint" style={{ marginTop: '1rem' }}>
-            主题越具体，AI 越容易生成准确的科普分镜与旁白。可写清受众与核心知识点。
-          </div>
-          {error ? <BillingErrorNotice message={error} /> : null}
-        </section>
-
-        <aside className="pf-create-col">
-          <h3>创作摘要</h3>
-          {selected ? (
-            <div style={{ marginBottom: '0.85rem' }}>
-              <img
-                src={api.assetUrl(selected.preview_cover)}
-                alt=""
-                style={{ width: '100%', borderRadius: 12, aspectRatio: '16/9', objectFit: 'cover' }}
-              />
-              <strong style={{ display: 'block', marginTop: '0.5rem' }}>{selected.name}</strong>
-              <p className="pf-muted" style={{ margin: '0.25rem 0 0', fontSize: '0.85rem' }}>
-                {selected.description}
-              </p>
-            </div>
-          ) : (
-            <p className="pf-muted">请选择模板</p>
-          )}
-          <div className="pf-summary-row">
-            <span>作品名称</span>
-            <span>{title.trim() || '未命名作品'}</span>
-          </div>
-          <div className="pf-summary-row">
-            <span>输出模式</span>
-            <span>{selected?.default_ratio === '9:16' ? '视频 · 9:16' : '视频 · 16:9'}</span>
-          </div>
-          <div className="pf-summary-row">
-            <span>预估时长</span>
-            <span>~1–3 分钟</span>
-          </div>
-          <div className="pf-summary-row">
-            <span>语言</span>
-            <span>中文（普通话）</span>
-          </div>
-          <div className="pf-summary-row">
-            <span>输入方式</span>
-            <span>{inputTab}</span>
-          </div>
-          <button
-            type="button"
-            className="pf-btn pf-btn-lime pf-btn-block pf-btn-lg pf-btn-icon"
-            style={{ marginTop: '1.25rem' }}
-            disabled={busy || aiBusy || !templateId || !sourceText.trim()}
-            onClick={next}
-          >
-            {busy ? '创建中…' : '下一步：风格配置'}
-            {!busy ? <span aria-hidden>→</span> : null}
-          </button>
-          <button
-            type="button"
-            className="pf-btn pf-btn-ghost pf-btn-block pf-btn-sm pf-btn-icon"
-            style={{ marginTop: '0.55rem' }}
-            disabled={aiBusy || busy}
-            onClick={aiExpand}
-          >
-            <IconSparkles size={14} />
-            {aiBusy ? 'AI 生成中…' : '不够完整？让 AI 帮你写'}
-          </button>
-          <p className="pf-muted" style={{ fontSize: '0.78rem', marginTop: '0.5rem' }}>
-            画风已随模板带上。下一步确认配音与成片方式。
-          </p>
-        </aside>
-      </div>
-    </AppShell>
-  )
+/** /studio/new 入口：?mode=avatar 走数字人口播创建页，其余走分步创作。 */
+export default function CreateProjectPage() {
+  const [params] = useSearchParams()
+  return params.get('mode') === 'avatar' ? <AvatarCreateProjectPage /> : <ShortVideoCreatePage />
 }

@@ -58,6 +58,7 @@ from app.services.tokenfree_video import (
     is_tokenfree_content_url,
     normalize_video_task_status,
     prepare_video_create_body,
+    post_video_create,
     remap_video_path,
     resolve_tokenfree_media_download_url,
     tokenfree_video_content_url,
@@ -65,6 +66,10 @@ from app.services.tokenfree_video import (
     uses_tokenfree_video,
 )
 from app.services import storage
+from app.services import local_media_mock
+from app.services.media_models.runtime import (
+    current_snapshot, current_operation, execution_params, operation_for, restore_route, stamp_usage,
+)
 from app.services.drama.seedance_i2v_role import resolve_seedance_i2v_image_role
 from app.services.ffmpeg_compose import is_near_silent_audio
 from app.services.drama.llm import _extract_json
@@ -540,6 +545,8 @@ class ArkGateway:
 
     @property
     def mock(self) -> bool:
+        if getattr(self.settings, "local_media_mock", False):
+            return False  # Media has its own branches; storyboard/expansion must use real LLM.
         if self.settings.ark_mock:
             return True
         if not self._ark_api_key():
@@ -562,14 +569,38 @@ class ArkGateway:
 
     # 按逻辑路由解析 ARK 渠道凭证
     def _resolve_ark_route(self, capability: str, model_id: str | None) -> ResolvedModelRoute | None:
+        operation = current_operation.get()
+        snapshot = current_snapshot.get()
+        if snapshot and (capability in {"image", "video"} or any(
+            item["capability"] == capability for item in snapshot.get("items", [])
+        )):
+            if not operation or operation["capability"] != capability:
+                operation = operation_for(capability, model=model_id)
+            if operation:
+                return restore_route(operation["route"])
         from app.services.provider_profiles import is_byteplus
 
-        byteplus = is_byteplus(self.settings.ark_base_url)
-        # BytePlus 每种能力由当前配置指定一个实际模型，不使用 TokenFree 别名直连。
-        route = resolve_logical_model(capability, "" if byteplus else resolve_logical_model_id(capability, model_id))
-        if route is None and byteplus:
-            raise RuntimeError(f"当前 BytePlus 配置未填写 {capability} 模型或 API Key")
+        if is_byteplus(self.settings.ark_base_url):
+            # BytePlus 每种能力由当前配置指定一个实际模型，不使用 TokenFree 别名直连。
+            route = resolve_logical_model(capability, "")
+            if route is None:
+                raise RuntimeError(f"当前 BytePlus 配置未填写 {capability} 模型或 API Key")
+            return route
+        resolve_upstream_model(capability, model_id)
+        logical_id = resolve_logical_model_id(capability, model_id)
+        route = resolve_logical_model(capability, logical_id)
+        if route is None:
+            from app.services.model_settings import get_routing_snapshot
+            if get_routing_snapshot().channels:
+                raise RuntimeError(f"固定模型 {logical_id} 没有可用渠道，不会自动切换路由")
         return route
+
+    def _poll_route(self) -> ResolvedModelRoute | None:
+        operation = operation_for("video") if current_snapshot.get() else None
+        if operation:
+            current_operation.set(operation)
+            return restore_route(operation["route"])
+        return None
 
     def _route_headers(self, route: ResolvedModelRoute | None = None) -> dict[str, str]:
         if route and route.api_key:
@@ -601,7 +632,10 @@ class ArkGateway:
         """TokenFree 上把 Seedance 方舟 body 包装成 POST /v1/videos 请求体。"""
         base = (route.base_url if route and route.base_url else self.settings.ark_base_url) or ""
         channel_id = (route.channel_id if route else "") or ""
-        return prepare_video_create_body(body, base_url=base, channel_id=channel_id)
+        request = prepare_video_create_body(body, base_url=base, channel_id=channel_id)
+        if route is not None:
+            request["model"] = route.upstream_model
+        return request
 
     def _finalize_video_result(self, result: TaskResult, task_id: str) -> TaskResult:
         """TokenFree 成功但无公网 URL 时，改用 GET /videos/{id}/content。"""
@@ -609,8 +643,14 @@ class ArkGateway:
         if result.status == "succeeded" and not result.url and uses_tokenfree_video(
             base_url=self.settings.ark_base_url
         ):
-            result.url = tokenfree_video_content_url(self.settings.ark_base_url, task_id)
+            route = self._poll_route()
+            result.url = tokenfree_video_content_url(route.base_url if route else self.settings.ark_base_url, task_id)
         return result
+
+    async def _request_media(self, client: Any, method: str, endpoint: str, **kwargs: Any) -> Any:
+        if getattr(self.settings, "local_media_mock", False):
+            return await local_media_mock.simulate_http_request(method, endpoint, **kwargs)
+        return await observed_request(client, method, endpoint, **kwargs)
 
     async def download_result_media(self, url: str, dest: Path) -> None:
         """下载生成媒体；每次重试都重新解析 TokenFree 直链，避免沿用已断开的连接。"""
@@ -622,13 +662,17 @@ class ArkGateway:
             headers: dict[str, str] | None = None
             timeout: float | httpx.Timeout = 300.0
             download_url = source
-            from app.services.tokenfree_gateway import tokenfree_media_headers
+            if is_tokenfree_content_url(download_url) or is_tokenfree_image_url(download_url):
+                from app.services.tokenfree_gateway import tokenfree_media_headers
 
-            headers = tokenfree_media_headers(download_url) if (
-                is_tokenfree_content_url(download_url) or is_tokenfree_image_url(download_url)
-            ) else None
-            if headers:
-                api_key = headers["Authorization"].removeprefix("Bearer ")
+                route = self._poll_route() if is_tokenfree_content_url(download_url) else None
+                if route and route.api_key:
+                    api_key = route.api_key
+                    headers = {"Authorization": f"Bearer {api_key}"}
+                else:
+                    # 只对 TokenFree 官方 origin 带 Key，CDN 不带凭据
+                    headers = tokenfree_media_headers(download_url)
+                    api_key = headers["Authorization"].removeprefix("Bearer ") if headers else self._ark_api_key()
                 timeout = httpx.Timeout(connect=30.0, read=600.0, write=60.0, pool=30.0)
                 if is_tokenfree_content_url(download_url):
                     resolved = await resolve_tokenfree_media_download_url(download_url, api_key=api_key)
@@ -682,6 +726,7 @@ class ArkGateway:
         allow_source_names: bool = False,
     ) -> StoryboardResult:
         if self.mock:
+            resolve_upstream_model("text", None)
             return await asyncio.to_thread(
                 self._mock_storyboard,
                 source_text,
@@ -912,6 +957,7 @@ class ArkGateway:
             ark_model = resolved
 
         if self.mock:
+            self._resolve_ark_route("image", ark_model)
             local = await asyncio.to_thread(self._write_mock_image, prompt, size)
             # _write_mock_image returns /static/...; publish to OSS when enabled
             path = storage.local_path_from_url(local)
@@ -998,44 +1044,18 @@ class ArkGateway:
         style_ref_urls: list[str] | None = None,
     ) -> ImageResult:
         """单次 Seedream 请求并落盘（文件名含 uuid，避免重生成覆盖）。"""
-        route = self._resolve_ark_route("image", model)
-        upstream_model = route.upstream_model if route else ((model or "").strip() or self.settings.model_image)
-        from app.services.drama.seedream_options import (
-            clamp_seedream_pixel_size,
-            is_seedream_pro_model,
-        )
-
-        resolved_size = size or self.settings.ark_image_size
-        if is_seedream_pro_model(upstream_model):
-            # Pro：3K/4K 档位非法；超大 WxH 等比钳到 4624220
-            tier = str(resolved_size or "").strip().upper()
-            if tier in {"3K", "4K"}:
-                resolved_size = "2K"
-            else:
-                resolved_size = clamp_seedream_pixel_size(str(resolved_size))
-        from app.services.style_lock import split_seedream_subject_style_refs
-
-        subject_refs, style_refs = split_seedream_subject_style_refs(ref_urls, style_ref_urls)
-        # TokenFree 按逻辑路由解析出的上游模型原样发送，不硬改模型名
-        chosen = (upstream_model or "").strip()
-        if "gpt-image" in chosen.lower():
-            from app.services.tokenfree_image import gpt_image_caps_at_2k
-
-            # GPT Image 2 只吃 1K/2K；2.5 保留 4K。画幅靠 aspect_ratio 自然语言约束。
-            raw_size = str(resolved_size or "").strip()
-            upper = raw_size.upper()
-            if gpt_image_caps_at_2k(chosen):
-                if upper in {"3K", "4K"}:
-                    resolved_size = "2K"
-                elif "x" in raw_size.lower() and str(aspect_ratio or "").strip():
-                    try:
-                        w_s, _, h_s = raw_size.lower().partition("x")
-                        area = int(w_s) * int(h_s)
-                        resolved_size = "2K" if area >= 1500 * 1500 else "1K"
-                    except ValueError:
-                        resolved_size = "2K"
-            elif upper in {"3K", "4K"} or "x" in raw_size.lower():
-                resolved_size = raw_size
+        strategy, normalized, pinned_route = execution_params("image", {
+            "prompt": full_prompt, "size": size or self.settings.ark_image_size,
+            "aspect_ratio": aspect_ratio or "auto", "ref_urls": ref_urls or [],
+            "style_ref_urls": style_ref_urls or [],
+        }, shot_no=shot_no, model=model)
+        route = pinned_route or self._resolve_ark_route("image", model)
+        upstream_model = route.upstream_model if route else strategy.model_id
+        request = strategy.build_provider_request(normalized, {"upstream_model": upstream_model})
+        resolved_size = request["size"]
+        subject_refs, style_refs = request["ref_urls"], request["style_ref_urls"]
+        chosen = upstream_model
+        aspect_ratio = normalized["aspect_ratio"]
         from app.services.tokenfree_image import (
             build_tokenfree_openai_image_body,
             is_gpt_image_25,
@@ -1071,6 +1091,7 @@ class ArkGateway:
                 ref_urls=subject_refs,
                 style_ref_urls=style_refs,
             )
+            body["resolution"] = normalized["resolution"]
         else:
             path = "/responses"
             body = build_tokenfree_image_body(
@@ -1086,7 +1107,7 @@ class ArkGateway:
             async with httpx.AsyncClient(timeout=_upstream_timeout(IMAGE_GEN_READ_SEC)) as client:
                 async def _post():
                     # 单次上游 POST，限流重试由外层包住
-                    return await observed_request(client, "POST",
+                    return await self._request_media(client, "POST",
                         self._route_url(path, route),
                         headers=self._route_headers(route),
                         json=body,
@@ -1107,6 +1128,9 @@ class ArkGateway:
                 data = resp.json()
         except httpx.TimeoutException as exc:
             reraise_upstream_timeout(exc, kind="生图", read_sec=IMAGE_GEN_READ_SEC)
+
+        if getattr(self.settings, "local_media_mock", False):
+            return ImageResult(local_url=local_media_mock.media_url("default.jpg"), raw_usage={"simulated": True}, upstream_cost_fen=0)
 
         raise_tokenfree_image_if_failed(data)
 
@@ -1133,9 +1157,12 @@ class ArkGateway:
         dest = dest_dir / name
         dl_headers = None
         if is_tokenfree_image_url(remote) or is_tokenfree_content_url(remote):
-            from app.services.tokenfree_gateway import tokenfree_media_headers
+            if route and route.api_key:
+                dl_headers = self._route_headers(route)
+            else:
+                from app.services.tokenfree_gateway import tokenfree_media_headers
 
-            dl_headers = tokenfree_media_headers(remote)
+                dl_headers = tokenfree_media_headers(remote)
         await storage.download_to(remote, dest, headers=dl_headers)
         merged_usage = dict(raw_usage or {})
         if resolved_size:
@@ -1146,7 +1173,7 @@ class ArkGateway:
             total_tokens=int(usage_parsed.get("total_tokens") or 0),
             prompt_tokens=int(usage_parsed.get("prompt_tokens") or 0),
             completion_tokens=int(usage_parsed.get("completion_tokens") or 0),
-            raw_usage=merged_usage or None,
+            raw_usage=stamp_usage(merged_usage, delivery=str(dest)),
             upstream_cost_fen=upstream_cost_fen,
         )
 
@@ -1314,11 +1341,22 @@ class ArkGateway:
         character_consistency: bool = True,
         resolution: str = "480p",
         ratio: str | None = None,
-        prompt_as_json: bool = True,
+        prompt_as_json: bool = False,
         return_last_frame: bool = True,
         generate_audio: bool = False,
         extra_image_urls: list[str] | None = None,
+        model: str | None = None,
     ) -> str:
+        strategy, normalized, pinned_route = execution_params("video", {
+            "duration": duration, "resolution": resolution, "aspect_ratio": ratio or "9:16",
+            "generate_audio": generate_audio,
+            "reference_images": [image_url, *(extra_image_urls or [])],
+        }, model=model)
+        duration, resolution, ratio = normalized["duration"], normalized["resolution"], normalized["aspect_ratio"]
+        from app.services.media_models.runtime import existing_provider_task
+        existing = await existing_provider_task()
+        if existing:
+            return existing
         if self.mock:
             digest = hashlib.md5(f"{image_url}:{prompt}".encode()).hexdigest()[:10]
             return f"mock-task-{digest}"
@@ -1329,7 +1367,17 @@ class ArkGateway:
         safe_image_url = await ensure_seedance_compatible_image_url(image_url)
         # Seedance needs a publicly reachable https image (data URI often rejected / odd errors)
         image_ref = await self._resolve_image_ref(safe_image_url, prefer_https=True)
-        # Prefer plain timed script for Seedance 2.5; JSON caption kept as fallback
+        route = pinned_route or self._resolve_ark_route("video", model or strategy.model_id)
+        from app.services.tokenfree_pricing import canonicalize_channel_model_id
+
+        from app.services.provider_profiles import is_byteplus
+
+        raw_model = route.upstream_model if route else self.settings.model_video
+        # BytePlus 用配置里的实际模型名，不做 TokenFree 别名归一
+        video_model = raw_model if is_byteplus(route.base_url if route else self.settings.ark_base_url) else canonicalize_channel_model_id(raw_model)
+        # Plain text is the default. Legacy JSON captions are opt-in for Seedance 2.0 only.
+        legacy_caption_model = "seedance" in video_model.lower() and bool(re.search(r"2[._-]0(?:[._-]|$)", video_model.lower()))
+        prompt_as_json = prompt_as_json and legacy_caption_model
         plain = (prompt or "").strip() or "画面轻微动态，保持主体外形稳定"
         text = plain if not prompt_as_json else self._seedance_prompt_text(prompt)
         # If prompt looks like manju-style script, always send plain text
@@ -1347,8 +1395,8 @@ class ArkGateway:
             try:
                 safe_extra = await ensure_seedance_compatible_image_url(text_url)
                 extra_refs.append(await self._resolve_image_ref(safe_extra, prefer_https=True))
-            except Exception:  # noqa: BLE001
-                logger.warning("Seedance extra ref resolve failed url=%s", text_url[:120])
+            except Exception as exc:
+                raise ValueError("reference_images: 参考图无法处理，请修正后重新提交") from exc
         if extra_refs:
             # 多图只能走 reference_image，不能与 first_frame 混用
             image_role = "reference_image"
@@ -1362,7 +1410,7 @@ class ArkGateway:
                 "role": image_role,
             },
         ]
-        for extra in extra_refs[:2]:
+        for extra in extra_refs:
             content.append(
                 {
                     "type": "image_url",
@@ -1370,17 +1418,10 @@ class ArkGateway:
                     "role": "reference_image",
                 }
             )
-        route = self._resolve_ark_route("video", self.settings.model_video)
-        from app.services.tokenfree_pricing import canonicalize_channel_model_id
-
-        from app.services.provider_profiles import is_byteplus
-
-        raw_model = route.upstream_model if route else self.settings.model_video
-        video_model = raw_model if is_byteplus(route.base_url if route else self.settings.ark_base_url) else canonicalize_channel_model_id(raw_model)
         body: dict[str, Any] = {
             "model": video_model,
             "content": content,
-            "duration": self._seedance_duration(duration, model=video_model),
+            "duration": duration,
             "resolution": resolution,
             "watermark": False,
             "generate_audio": bool(generate_audio),
@@ -1401,16 +1442,19 @@ class ArkGateway:
 
         try:
             async with httpx.AsyncClient(timeout=_upstream_timeout(VIDEO_CREATE_READ_SEC)) as client:
-                resp = await observed_request(client, "POST",
-                    self._route_url("/contents/generations/tasks", route),
+                resp = await post_video_create(client, "POST",
+                    self._route_url("/contents/generations/tasks", route), request_call=self._request_media,
                     headers=self._route_headers(route),
                     json=self._video_json(body, route),
                 )
+                # 枚举兼容已在提交层尝试一次，不能继续走文案/画幅回退重复发送。
+                if resp.status_code == 400 and '"plugin_usage_invalid"' in resp.text:
+                    raise RuntimeError(_format_seedance_create_error(resp.status_code, resp.text))
                 if resp.status_code >= 400 and prompt_as_json:
                     # Fallback: plain text prompt
                     body["content"][0]["text"] = plain
-                    resp = await observed_request(client, "POST",
-                        self._route_url("/contents/generations/tasks", route),
+                    resp = await post_video_create(client, "POST",
+                        self._route_url("/contents/generations/tasks", route), request_call=self._request_media,
                         headers=self._route_headers(route),
                         json=self._video_json(body, route),
                     )
@@ -1424,8 +1468,8 @@ class ArkGateway:
                         if cg_content is not None:
                             logger.warning("Seedance i2v text policy hit; retrying with CG style")
                             body = {**body, "content": cg_content}
-                            resp = await observed_request(client, "POST",
-                                self._route_url("/contents/generations/tasks", route),
+                            resp = await post_video_create(client, "POST",
+                                self._route_url("/contents/generations/tasks", route), request_call=self._request_media,
                                 headers=self._route_headers(route),
                                 json=self._video_json(body, route),
                             )
@@ -1442,8 +1486,8 @@ class ArkGateway:
                         and "ratio" in body
                     ):
                         body.pop("ratio", None)
-                        resp = await observed_request(client, "POST",
-                            self._route_url("/contents/generations/tasks", route),
+                        resp = await post_video_create(client, "POST",
+                            self._route_url("/contents/generations/tasks", route), request_call=self._request_media,
                             headers=self._route_headers(route),
                             json=self._video_json(body, route),
                         )
@@ -1451,8 +1495,8 @@ class ArkGateway:
                     # 无目标画幅时的兼容回退；有竖屏目标时禁止 adaptive，避免再次出横屏
                     body["content"][1].pop("role", None)
                     body["ratio"] = "adaptive"
-                    resp = await observed_request(client, "POST",
-                        self._route_url("/contents/generations/tasks", route),
+                    resp = await post_video_create(client, "POST",
+                        self._route_url("/contents/generations/tasks", route), request_call=self._request_media,
                         headers=self._route_headers(route),
                         json=self._video_json(body, route),
                     )
@@ -1488,9 +1532,10 @@ class ArkGateway:
                 copy["image_url"] = {
                     "url": await self._resolve_media_ref(safe_url, prefer_https=True)
                 }
-            elif item.get("type") == "audio_url":
-                raw_url = (item.get("audio_url") or {}).get("url") or ""
-                copy["audio_url"] = {
+            elif item.get("type") in {"audio_url", "video_url"}:
+                media_key = item["type"]
+                raw_url = (item.get(media_key) or {}).get("url") or ""
+                copy[media_key] = {
                     "url": await self._resolve_media_ref(str(raw_url), prefer_https=True)
                 }
             resolved.append(copy)
@@ -1507,6 +1552,16 @@ class ArkGateway:
 
         文案/策略拦截时追加 CG 厚涂提示词重试一次；参考图真人隐私拦截不重试。
         """
+        strategy, normalized, pinned_route = execution_params("video", {
+            **{key: body[key] for key in ("duration", "resolution", "generate_audio", "watermark", "return_last_frame", "content") if key in body},
+            "aspect_ratio": body.get("ratio") or "9:16",
+        }, model=str(body.get("model") or ""))
+        route = pinned_route or self._resolve_ark_route("video", str(body.get("model") or ""))
+        body = {**body, **strategy.build_provider_request(normalized, {"upstream_model": route.upstream_model if route else strategy.model_id})}
+        from app.services.media_models.runtime import existing_provider_task
+        existing = await existing_provider_task()
+        if existing:
+            return existing
         if self.mock:
             digest = hashlib.md5(json.dumps(body, sort_keys=True, default=str).encode()).hexdigest()[
                 :10
@@ -1530,13 +1585,6 @@ class ArkGateway:
             content_labels=content_labels,
             project_id=project_id,
         )
-        payload["duration"] = self._seedance_duration(
-            payload.get("duration", 8),
-            model=str(payload.get("model") or ""),
-        )
-        route = self._resolve_ark_route("video", str(payload.get("model") or ""))
-        if route:
-            payload["model"] = route.upstream_model
 
         logger.info(
             "Seedance multimodal create model=%s duration=%s items=%s",
@@ -1547,8 +1595,8 @@ class ArkGateway:
 
         try:
             async with httpx.AsyncClient(timeout=_upstream_timeout(VIDEO_CREATE_READ_SEC)) as client:
-                resp = await observed_request(client, "POST",
-                    self._route_url("/contents/generations/tasks", route),
+                resp = await post_video_create(client, "POST",
+                    self._route_url("/contents/generations/tasks", route), request_call=self._request_media,
                     headers=self._route_headers(route),
                     json=self._video_json(payload, route),
                 )
@@ -1572,8 +1620,8 @@ class ArkGateway:
                             project_id,
                         )
                         payload = {**payload, "content": cg_content}
-                        resp = await observed_request(client, "POST",
-                            self._route_url("/contents/generations/tasks", route),
+                        resp = await post_video_create(client, "POST",
+                            self._route_url("/contents/generations/tasks", route), request_call=self._request_media,
                             headers=self._route_headers(route),
                             json=self._video_json(payload, route),
                         )
@@ -1604,114 +1652,31 @@ class ArkGateway:
         content_labels: list[str] | None = None,
         on_task_created: Any | None = None,
     ) -> tuple[str, str | None, TaskResult]:
-        """创建 Seedance 多模态任务并等待完成；返回 (本地视频 URL, 可选本地尾帧 URL, 任务结果)。"""
-        def _is_audio_download_error(err: Exception) -> bool:
-            msg = str(err)
-            return "audio_url" in msg and "resource download failed" in msg
-
-        def _strip_reference_audio(src: dict[str, Any]) -> dict[str, Any] | None:
-            content = src.get("content")
-            if not isinstance(content, list):
-                return None
-            filtered: list[dict[str, Any]] = []
-            removed = False
-            for item in content:
-                if not isinstance(item, dict):
-                    filtered.append(item)
-                    continue
-                if item.get("type") == "audio_url" and item.get("role") == "reference_audio":
-                    removed = True
-                    continue
-                if item.get("type") == "text":
-                    text = str(item.get("text") or "")
-                    cleaned_lines = [
-                        line
-                        for line in text.splitlines()
-                        if "参考音频" not in line
-                        and "角色音色" not in line
-                        and "旁白音色" not in line
-                    ]
-                    filtered.append({**item, "text": "\n".join(cleaned_lines).strip()})
-                    continue
-                filtered.append(item)
-            if not removed:
-                return None
-            return {**src, "content": filtered}
-
-        last_err: Exception | None = None
-        fallback_body = body
-        audio_fallback_used = False
-
-        def _audio_fallback(exc: Exception, *, accepted: bool) -> bool:
-            """仅"参考音频下载失败"允许去掉参考音频重提一次；其他错误一律不重建任务。
-
-            上游接受任务后的重提会产生第二个计费任务，故必须严格白名单，
-            隐私拦截/失败/轮询超时等异常必须立即上抛，避免重复扣费。
-            """
-            nonlocal fallback_body, audio_fallback_used, last_err
-            last_err = exc
-            if audio_fallback_used or not _is_audio_download_error(exc):
-                return False
-            stripped = _strip_reference_audio(fallback_body)
-            if not stripped:
-                return False
-            logger.warning(
-                "Seedance reference_audio download failed (%s); retry once without audio refs project=%s shot=%s",
-                "after accept" if accepted else "at submit",
-                project_id,
-                shot_no,
-            )
-            fallback_body = stripped
-            audio_fallback_used = True
-            return True
-
-        for _attempt in range(max_attempts):
-            # 提交阶段失败：除参考音频错误外立即上抛，绝不盲目重新建单
+        """Submit once; retries only fetch/download the original provider task."""
+        task_id = await self.gen_video_seedance_body(body, project_id=project_id, content_labels=content_labels)
+        if on_task_created is not None:
             try:
-                task_id = await self.gen_video_seedance_body(
-                    fallback_body,
-                    project_id=project_id,
-                    content_labels=content_labels,
-                )
-            except Exception as exc:  # noqa: BLE001
-                if _audio_fallback(exc, accepted=False):
-                    continue
+                await on_task_created(task_id)
+            except Exception as exc:
+                from app.services.storage import RetryableMediaDownloadError
+                raise RetryableMediaDownloadError(
+                    f"记录上游任务号失败: {exc}", provider_task_id=task_id, counts_attempt=False,
+                ) from exc
+        try:
+            return await self.wait_video_assets(task_id, project_id=project_id, shot_no=shot_no)
+        except Exception as exc:
+            from app.services.storage import RetryableMediaDownloadError, is_retryable_download_error
+            if isinstance(exc, RetryableMediaDownloadError):
+                if not exc.provider_task_id:
+                    exc.provider_task_id = task_id
                 raise
-            if on_task_created is not None:
-                try:
-                    await on_task_created(task_id)
-                except Exception as exc:  # noqa: BLE001
-                    from app.services.storage import RetryableMediaDownloadError
-
-                    raise RetryableMediaDownloadError(
-                        f"记录上游任务号失败: {exc}",
-                        provider_task_id=task_id,
-                        counts_attempt=False,
-                    ) from exc
-            # 等待阶段失败：隐私/任务失败/超时等立即上抛；仅参考音频下载失败重提一次
-            try:
-                return await self.wait_video_assets(
-                    task_id, project_id=project_id, shot_no=shot_no
-                )
-            except Exception as exc:  # noqa: BLE001
-                if _audio_fallback(exc, accepted=True):
-                    continue
-                # 成片已在上游生成：只标记可重试下载，禁止外层再建一条视频任务
-                from app.services.storage import (
-                    RetryableMediaDownloadError,
-                    is_retryable_download_error,
-                )
-
-                if isinstance(exc, RetryableMediaDownloadError):
-                    if not exc.provider_task_id:
-                        exc.provider_task_id = task_id
-                    raise
-                if is_retryable_download_error(exc):
-                    raise RetryableMediaDownloadError(str(exc), provider_task_id=task_id) from exc
-                raise
-        raise RuntimeError(str(last_err) if last_err else "Seedance multimodal failed")
+            if is_retryable_download_error(exc):
+                raise RetryableMediaDownloadError(str(exc), provider_task_id=task_id) from exc
+            raise
 
     async def poll_task(self, task_id: str) -> TaskResult:
+        if getattr(self.settings, "local_media_mock", False) or task_id.startswith(local_media_mock.VIDEO_PREFIX):
+            return self._local_media_result(task_id)
         if self.mock or task_id.startswith("mock-task-"):
             return TaskResult(
                 status="succeeded",
@@ -1724,8 +1689,8 @@ class ArkGateway:
             while time.monotonic() < deadline:
                 try:
                     resp = await observed_request(client, "GET",
-                        self._url(f"/contents/generations/tasks/{task_id}"),
-                        headers=self._headers(),
+                        self._route_url(f"/contents/generations/tasks/{task_id}", self._poll_route()),
+                        headers=self._route_headers(self._poll_route()),
                     )
                 except httpx.HTTPError as exc:
                     # 单次网络抖动：退避后继续轮询，由 deadline 收敛，不直接判失败
@@ -1773,6 +1738,8 @@ class ArkGateway:
 
     async def fetch_task_once(self, task_id: str) -> TaskResult:
         """单次查询 Seedance 任务，不阻塞等待。"""
+        if getattr(self.settings, "local_media_mock", False) or task_id.startswith(local_media_mock.VIDEO_PREFIX):
+            return self._local_media_result(task_id)
         if self.mock or task_id.startswith("mock-task-"):
             return TaskResult(
                 status="succeeded",
@@ -1782,8 +1749,8 @@ class ArkGateway:
         try:
             async with httpx.AsyncClient(timeout=_upstream_timeout(VIDEO_FETCH_READ_SEC, connect=15.0)) as client:
                 resp = await observed_request(client, "GET",
-                    self._url(f"/contents/generations/tasks/{task_id}"),
-                    headers=self._headers(),
+                    self._route_url(f"/contents/generations/tasks/{task_id}", self._poll_route()),
+                    headers=self._route_headers(self._poll_route()),
                 )
         except httpx.HTTPError as exc:
             # 网络抖动对 poller 是下轮重试、对同步端点是继续转圈，均优于 500/误判失败
@@ -1799,6 +1766,11 @@ class ArkGateway:
                 return TaskResult(status="running", provider_task_id=task_id)
             return TaskResult(status="failed", error=resp.text[:500], provider_task_id=task_id)
         return self._finalize_video_result(_build_task_result_from_payload(resp.json()), task_id)
+
+    def _local_media_result(self, task_id: str) -> TaskResult:
+        return TaskResult(status="succeeded", url=local_media_mock.media_url("default.mp4"),
+                          last_frame_url=local_media_mock.media_url("default.jpg"),
+                          provider_task_id=task_id, raw_usage={"simulated": True}, upstream_cost_fen=0)
 
     async def save_video_assets_from_result(
         self,
@@ -1885,9 +1857,11 @@ class ArkGateway:
         extra_image_urls: list[str] | None = None,
     ) -> tuple[str, TaskResult]:
         """Create i2v task and wait；开源版只走 TokenFree（不直连 Kie / 火山）。"""
+        if current_snapshot.get():
+            current_operation.set(operation_for("video", shot_no=shot_no, model=model))
         last_err: Exception | None = None
+        use_json = False
         for attempt in range(max_attempts):
-            use_json = attempt != 1  # attempt0 json, attempt1 plain, attempt2 json again
             try:
                 task_id = await self.gen_video_i2v(
                     image_url,
@@ -1899,35 +1873,16 @@ class ArkGateway:
                     prompt_as_json=use_json,
                     generate_audio=generate_audio,
                     extra_image_urls=extra_image_urls,
+                    model=model,
                 )
                 return await self.wait_video(
                     task_id,
                     project_id=project_id,
                     shot_no=shot_no,
                 )
-            except Exception as exc:  # noqa: BLE001
-                last_err = exc
-                msg = str(exc)
-                retryable = any(
-                    k in msg
-                    for k in (
-                        "summary_caption",
-                        "BodyFormat",
-                        "InvalidParameter",
-                        "poll timeout",
-                    )
-                )
-                logger.warning(
-                    "Seedance attempt %s/%s shot=%s failed: %s",
-                    attempt + 1,
-                    max_attempts,
-                    shot_no,
-                    msg[:300],
-                )
-                if not retryable or attempt >= max_attempts - 1:
-                    break
-                await asyncio.sleep(1.5 * (attempt + 1))
-        raise RuntimeError(str(last_err) if last_err else "video generation failed")
+            except Exception:
+                raise
+        raise RuntimeError("视频生成失败")
 
     def _resolved_audio_model(self) -> str:
         from app.services.provider_profiles import is_byteplus
@@ -1947,20 +1902,22 @@ class ArkGateway:
         model: str | None = None,
     ) -> bool:
         """TokenFree 上 Qwen-TTS 的 /audio/speech 未实现，改走 Omni/Gemini chat。"""
-        base = (self.settings.ark_base_url or "").rstrip("/")
-        key = (self.settings.ark_api_key or "").strip()
-        if not base or not key:
+        requested = (model or self._resolved_audio_model()).strip()
+        route = self._resolve_ark_route("audio", requested)
+        base = (route.base_url if route else self.settings.ark_base_url or "").rstrip("/")
+        key = (route.api_key if route else self.settings.ark_api_key or "").strip()
+        if not base or (not key and not getattr(self.settings, "local_media_mock", False)):
             return False
         model_id = tokenfree_tts_chat_model(
-            resolve_tokenfree_tts_model((model or self._resolved_audio_model()).strip())
+            resolve_tokenfree_tts_model(route.upstream_model if route else requested)
         )
         voice = tokenfree_speech_voice(voice, model_id)
         if tokenfree_tts_uses_chat_audio(model_id):
             return await self._tts_openai_chat_audio(text, voice, dest, model=model_id)
         async with httpx.AsyncClient(timeout=120.0) as client:
-            resp = await observed_request(client, "POST",
+            resp = await self._request_media(client, "POST",
                 f"{base}/audio/speech",
-                headers=self._headers(),
+                headers=self._route_headers(route),
                 json={
                     "model": model_id,
                     "input": text,
@@ -1989,7 +1946,9 @@ class ArkGateway:
         model: str,
     ) -> bool:
         """Gemini 非流式 chat 出音频；Qwen-Omni 必须 SSE 流式。"""
-        base = (self.settings.ark_base_url or "").rstrip("/")
+        route = self._resolve_ark_route("audio", model)
+        model = tokenfree_tts_chat_model(resolve_tokenfree_tts_model(route.upstream_model if route else model))
+        base = (route.base_url if route else self.settings.ark_base_url or "").rstrip("/")
         if not base:
             return False
         omni = tokenfree_tts_uses_omni_stream(model)
@@ -2004,7 +1963,7 @@ class ArkGateway:
             }
         )
         async with httpx.AsyncClient(timeout=120.0) as client:
-            resp = await observed_request(client, "POST", f"{base}/chat/completions", headers=self._headers(), json=body)
+            resp = await self._request_media(client, "POST", f"{base}/chat/completions", headers=self._route_headers(route), json=body)
         if resp.status_code >= 400:
             logger.warning(
                 "OpenAI chat-audio HTTP %s model=%s: %s",
@@ -2013,6 +1972,10 @@ class ArkGateway:
                 (resp.text or "")[:300],
             )
             return False
+        if getattr(self.settings, "local_media_mock", False):
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(resp.content)
+            return True
         audio: bytes | None = extract_sse_audio_bytes(resp.text or "") if omni else None
         if not audio:
             try:
@@ -2037,8 +2000,17 @@ class ArkGateway:
         project_id: int | None = None,
         shot_no: int | None = None,
         duration_hint: float = 4.0,
+        result_metadata: dict | None = None,
     ) -> str:
         """整片/单镜配音：TokenFree 多 TTS → edge-tts；失败则抛错，不写静音。"""
+        if result_metadata is not None:
+            result_metadata.clear()
+        try:
+            # 已停用的配音模型抛 ValueError，直接拒绝；渠道没有独立配音（如 BytePlus）抛 RuntimeError，走下面的兜底
+            audio_model: str | None = self._resolved_audio_model()
+        except RuntimeError as exc:
+            logger.info("upstream TTS unavailable, fallback to edge-tts: %s", exc)
+            audio_model = None
         voice_map = {
             "narrator_calm": "zh_female_cancan_uranus_bigtts",
             "warm_storyteller": "zh_female_tianmeixiaoyuan_uranus_bigtts",
@@ -2056,6 +2028,8 @@ class ArkGateway:
             dest.parent.mkdir(parents=True, exist_ok=True)
             if not dest.exists() or dest.stat().st_size < 1000:
                 await self._tts_edge(clean, dest)
+            if result_metadata is not None:
+                result_metadata.update(model_id="edge-tts", speaker=edge_tts_voice_for_speaker(""), simulated=True)
             return f"/static/mock/audio_{digest}.mp3"
 
         dest_dir = storage.project_dir(project_id or 0)
@@ -2083,20 +2057,23 @@ class ArkGateway:
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("openai speech failed voice=%s: %s", oa_voice, exc)
 
-        try:
-            audio_model = self._resolved_audio_model()
-        except RuntimeError as exc:
-            # 当前渠道（如 BytePlus）没有独立配音：跳过上游 TTS，直接走 edge-tts 兜底
-            logger.info("upstream TTS unavailable, fallback to edge-tts: %s", exc)
-            audio_model = None
-
         # TokenFree：默认模型 + Gemini / ElevenLabs / Qwen 其它 TTS 依次试
         for model_id in (iter_tokenfree_tts_models(audio_model) if audio_model else []):
             try:
+                resolve_upstream_model("audio", model_id)
+            except ValueError:
+                continue
+            try:
                 ok = await self._tts_openai_speech(clean, speaker, dest, model=model_id)
                 if ok:
+                    if getattr(self.settings, "local_media_mock", False):
+                        if result_metadata is not None:
+                            result_metadata.update(model_id=model_id, speaker=speaker, simulated=True)
+                        return local_media_mock.media_url("default.mp3")
                     url = await _accept_if_audible("tokenfree-speech")
                     if url:
+                        if result_metadata is not None:
+                            result_metadata.update(model_id=model_id, speaker=speaker)
                         logger.info(
                             "TTS tokenfree ok shot=%s model=%s bytes=%s",
                             shot_no,
@@ -2106,12 +2083,18 @@ class ArkGateway:
                         return url
             except Exception as exc:  # noqa: BLE001
                 logger.warning("tokenfree speech failed model=%s: %s", model_id, exc)
+                if getattr(self.settings, "local_media_mock", False):
+                    raise RuntimeError("模拟语音请求组装失败，请检查模型配置和参数") from exc
 
+        if getattr(self.settings, "local_media_mock", False):
+            raise RuntimeError("模拟语音请求组装失败，未调用备用语音服务")
         # edge-tts：按 speaker 映射不同 neural，上游都失败时仍能分出角色声线
         try:
             await self._tts_edge(clean, dest, voice_hint=speaker)
             url = await _accept_if_audible("edge-tts")
             if url:
+                if result_metadata is not None:
+                    result_metadata.update(model_id="edge-tts", speaker=edge_tts_voice_for_speaker(speaker))
                 logger.info("TTS edge-tts ok shot=%s speaker=%s bytes=%s", shot_no, speaker, dest.stat().st_size)
                 return url
         except Exception as exc:  # noqa: BLE001
@@ -2236,11 +2219,13 @@ class ArkGateway:
             # Seedance 2.0: 需要公网 https；本地 /static 先同步上 OSS
             local = storage.local_path_from_url(raw)
             if local and local.exists():
-                public = storage.republish_url(raw, sync=True)
+                from app.services.kepu_image_references import public_image_reference
+
+                public = await asyncio.to_thread(public_image_reference, raw)
                 if public and str(public).startswith("https://"):
                     return str(public)
                 raise RuntimeError(
-                    "Seedance 需要公网可访问的图片 URL（请启用 OSS 并确保参考图已上传），"
+                    "Seedance 需要公网可访问的图片 URL（请配置 HTTPS 公网访问地址或启用 OSS 并上传参考图），"
                     "本地 /static 图无法被方舟拉取"
                 )
             if raw.startswith("data:"):
@@ -2449,6 +2434,7 @@ class ArkGateway:
         topic = (topic or "").strip() or "人工智能如何改变日常生活"
         mode = "script" if mode == "script" else "theme"
         if self.mock:
+            resolve_upstream_model("text", None)
             return self._mock_expand_content(topic, mode)
 
         if mode == "script":

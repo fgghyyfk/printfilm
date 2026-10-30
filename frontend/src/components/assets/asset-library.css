@@ -1,0 +1,108 @@
+/* 共享资产的唯一视觉实现，供个人、团队、项目与选择器共同使用。 */
+.pf-library-panel { min-width: 0; padding: clamp(18px, 2.5vw, 30px); background: #fff; border: 1px solid #e9e4e2; border-radius: 16px; }
+.pf-library-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
+.pf-library-heading h1, .pf-library-heading h2 { margin: 0; font-size: 20px; font-weight: 650; color: #2b2320; }
+.pf-library-heading p { margin: 9px 0 0; font-size: 12px; line-height: 1.8; color: #9e8983; }
+.pf-library-count { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid #e9e4e2; border-radius: 5px; color: #97817a; background: #f9f6f5; font-size: 11px; }
+.pf-library-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px; padding: 22px 0; }
+.pf-library-toolbar-end { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.pf-library-filters { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
+.pf-library-toolbar--hierarchical { align-items: flex-start; }
+.pf-library-filter-stack { display: grid; gap: 14px; min-width: 0; }
+.pf-library-media-tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+.pf-library-media-tabs .pf-library-pill { gap: 7px; min-height: 42px; padding: 10px 18px; font-size: 13px; font-weight: 600; }
+.pf-library-image-categories, .pf-library-generation-status { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.pf-library-image-categories > span, .pf-library-generation-status > span { color: #949e89; font-size: 11px; }
+.pf-library-image-categories .pf-library-pill, .pf-library-generation-status .pf-library-pill { min-height: 30px; padding: 6px 10px; font-size: 11px; }
+.pf-library-pill { display: inline-flex; align-items: center; justify-content: center; min-height: 35px; padding: 8px 12px; border: 1px solid #e9e4e2; border-radius: 7px; background: #fff; color: #89917f; font: inherit; font-size: 12px; cursor: pointer; transition: background .18s, border-color .18s; }
+.pf-library-pill:hover { border-color: #c68f7d; color: #513f39; }
+.pf-library-pill:disabled { opacity: .55; cursor: not-allowed; }
+.pf-library-pill.is-active { color: #301006; background: #f5cabc; border-color: #e5b1a0; }
+.pf-library-search { display: flex; align-items: center; gap: 9px; width: 280px; max-width: 100%; padding: 11px 13px; border: 1px solid #e9e4e2; border-radius: 9px; color: #a1a795; background: #fbf9f8; box-sizing: border-box; }
+.pf-library-search svg { flex-shrink: 0; }
+.pf-library-search input { min-width: 0; width: 100%; padding: 0; border: 0; outline: none; background: transparent; font: inherit; font-size: 12px; color: #382d2a; }
+.pf-library-search input::placeholder { color: #a3a99a; }
+.pf-library-search:focus-within { border-color: #ca836c; box-shadow: 0 0 0 3px #dcf19d38; }
+.pf-library-banner { display: flex; align-items: center; gap: 15px; padding: 19px 22px; border: 1px solid #eadcd7; border-radius: 12px; background: #f8f1ef; }
+.pf-library-banner-icon { display: grid; place-items: center; width: 43px; height: 43px; flex-shrink: 0; border-radius: 11px; background: #efd7cf; color: #985a46; }
+.pf-library-banner strong { font-weight: 550; color: #634b44; font-size: 13px; }
+.pf-library-banner p { color: #9e8881; font-size: 12px; line-height: 1.8; margin: 5px 0 0; }
+.pf-library-collection { container-type: inline-size; min-width: 0; width: 100%; }
+.pf-library-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: start; gap: 18px; }
+.pf-library-card { min-width: 0; display: flex; flex-direction: column; padding: 0; border: 1px solid #eae2df; border-radius: 11px; overflow: hidden; background: #fff; transition: transform .2s, border-color .2s; }
+.pf-library-card:hover { transform: translateY(-3px); border-color: #c68f7d; }
+.pf-library-card.is-selected { border-color: #bb6f57; box-shadow: 0 0 0 2px #c5df8b60; }
+.pf-library-cover { position: relative; display: block; width: 100%; padding: 0; border: 0; aspect-ratio: 1; overflow: hidden; background: #363e31; color: #fff; text-align: left; font: inherit; }
+button.pf-library-cover { cursor: pointer; }
+.pf-library-cover:focus-visible, .pf-library-pill:focus-visible { outline: 3px solid #ca694b; outline-offset: -3px; }
+.pf-library-cover > img { width: 100%; height: 100%; position: absolute; inset: 0; object-fit: cover; display: block; transition: transform .35s; }
+.pf-library-card:hover .pf-library-cover > img { transform: scale(1.035); }
+.pf-library-art { display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 10px; width: 100%; height: 100%; aspect-ratio: 1; background: radial-gradient(ellipse at 50% 35%, #664e46, #273627 80%); color: #e7ae9c; border-radius: inherit; }
+.pf-library-art small { font-size: 10px; letter-spacing: .15em; color: #cbb0a7; }
+.pf-library-shade { position: absolute; inset: 0; background: linear-gradient(180deg, #151a1b14 0%, #12181700 28%, #111713e8 100%); pointer-events: none; }
+.pf-library-type { position: absolute; top: 11px; left: 11px; padding: 4px 7px; border: 1px solid #ffffff48; border-radius: 4px; font-size: 10px; color: #fff; background: #13241445; backdrop-filter: blur(7px); }
+.pf-library-name { position: absolute; display: grid; gap: 6px; left: 14px; right: 28px; bottom: 16px; color: #fff; }
+.pf-library-name strong { font-size: 16px; font-weight: 550; line-height: 1.4; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.pf-library-name small { font-size: 10px; color: #e3d3ce; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
+.pf-library-open { position: absolute; bottom: 16px; right: 10px; color: #eee0dc; }
+.pf-library-status { position: absolute; top: 10px; right: 10px; display: inline-flex; align-items: center; gap: 4px; max-width: calc(100% - 68px); padding: 4px 6px; border-radius: 5px; color: #ffe8e1; background: #344d27e8; font-size: 10px; }
+.pf-library-card-foot { display: flex; gap: 8px; justify-content: space-between; padding: 12px 13px; font-size: 10px; color: #9e8983; }
+.pf-library-card-foot > span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.pf-library-card-foot time { flex-shrink: 0; }
+.pf-library-card-body { padding: 0 13px 13px; color: #7f8d70; font-size: 12px; }
+.pf-library-card-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-top: auto; padding: 10px 12px; border-top: 1px solid #f0ebe9; }
+.pf-library-card-actions .pf-btn { font-size: 11px; padding: 6px 9px; }
+.pf-library-empty { display: grid; place-items: center; gap: 12px; min-height: 190px; padding: 30px 16px; text-align: center; color: #9b827a; }
+.pf-library-empty strong { color: #634b44; font-size: 14px; }
+.pf-library-empty p { max-width: 400px; margin: 0; font-size: 12px; line-height: 1.8; }
+.pf-library-grid > .pf-library-empty { grid-column: 1 / -1; }
+.pf-library-meta { padding: 0 0 18px; font-size: 12px; }
+.drama-ep-asset-filters { padding: 0 12px 12px; }
+.drama-ep-asset-filters .pf-library-pill { min-height: 29px; padding: 6px 8px; font-size: 11px; }
+.drama-ep-asset-list { flex: 1; min-height: 0; overflow: auto; padding: 0 12px 16px; }
+.pf-team-asset-panel > .pf-library-banner { margin-top: 22px; }
+.pf-library-grid.is-picker { grid-template-columns: repeat(auto-fill, minmax(min(100%, 155px), 1fr)); max-height: min(48vh, 440px); overflow: auto; padding: 4px 3px 8px; }
+.pf-library-grid.is-compact { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+.pf-library-card.is-compact .pf-library-type { top: 6px; left: 6px; padding: 3px 4px; font-size: 9px; }
+.pf-library-card.is-compact .pf-library-status { top: 6px; right: 6px; max-width: calc(100% - 45px); font-size: 9px; }
+.pf-library-card.is-compact .pf-library-name { left: 8px; right: 21px; bottom: 10px; gap: 3px; }
+.pf-library-card.is-compact .pf-library-name strong { font-size: 12px; }
+.pf-library-card.is-compact .pf-library-name small { font-size: 9px; }
+.pf-library-card.is-compact .pf-library-open { bottom: 8px; right: 5px; }
+.pf-library-card.is-compact .pf-library-art svg { width: 28px; height: 28px; }
+.pf-library-card.is-compact .pf-library-art small { display: none; }
+.pf-library-card.is-compact .pf-library-card-actions { gap: 5px; padding: 7px; }
+.pf-library-spinner { animation: pf-library-spin 1s linear infinite; }
+.pf-library-voice-field { display: grid; gap: 7px; font-size: 11px; }
+.pf-library-voice-field textarea { box-sizing: border-box; width: 100%; resize: vertical; min-height: 76px; border: 1px solid #e9dfdc; border-radius: 7px; padding: 9px; color: #513f39; background: #fbf9f8; font: inherit; line-height: 1.6; }
+.pf-library-voice-field textarea:focus { outline: 2px solid #dfac9c; }
+.pf-library-audio { width: 100%; max-width: 100%; height: 32px; margin-top: 12px; }
+@keyframes pf-library-spin { to { transform: rotate(360deg); } }
+@container (min-width: 1150px) {
+  .pf-library-grid:not(.is-picker):not(.is-compact) { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+}
+@container (max-width: 850px) {
+  .pf-library-grid:not(.is-picker):not(.is-compact) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@container (max-width: 590px) {
+  .pf-library-grid:not(.is-picker):not(.is-compact) { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
+}
+@container (max-width: 270px) {
+  .pf-library-grid:not(.is-picker):not(.is-compact) { grid-template-columns: 1fr; }
+}
+@media (max-width: 760px) {
+  .pf-library-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
+  .pf-library-toolbar-end, .pf-library-search { width: 100%; }
+  .pf-library-banner { padding: 16px; gap: 11px; }
+}
+@media (max-width: 480px) {
+  .pf-library-panel { padding: 14px; }
+  .pf-library-name { left: 10px; bottom: 12px; }
+  .pf-library-name strong { font-size: 14px; }
+  .pf-library-card-foot { padding: 10px 9px; font-size: 9px; }
+  .pf-library-pill { padding: 7px 9px; font-size: 11px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pf-library-card, .pf-library-cover > img, .pf-library-pill { transition: none; }
+  .pf-library-spinner { animation: none; }
+}

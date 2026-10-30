@@ -22,6 +22,16 @@ class AppSettings(Base):
     )
 
 
+class MediaPriceVersion(Base):
+    """Published price books are append-only; the active pointer lives in AppSettings."""
+
+    __tablename__ = "media_price_versions"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    prices: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_by: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class SystemModelChannelRow(Base):
     """Physical upstream provider channel."""
 

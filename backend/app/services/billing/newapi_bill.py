@@ -59,14 +59,16 @@ def apply_log_quota(event: UsageEvent, log: dict[str, Any]) -> bool:
     if fen <= 0:
         return False
     event.cost_fen = fen
-    event.charge_fen = fen
+    if not (getattr(event, "billing_detail", None) or {}).get("mode") == "fixed_media":
+        event.charge_fen = fen
+    event.cost_status = "verified"
     event.estimated = False
     raw = _load_raw(event)
     usage = raw.get("usage") if isinstance(raw.get("usage"), dict) else {}
     usage = dict(usage)
     usage["quota"] = quota
     raw["usage"] = usage
-    raw["billing_basis"] = "newapi_log"
+    raw["billing_basis"] = "fixed_media" if (getattr(event, "billing_detail", None) or {}).get("mode") == "fixed_media" else "newapi_log"
     if log.get("id") is not None:
         raw["newapi_log_id"] = log.get("id")
     event.raw_usage_json = json.dumps(raw, ensure_ascii=False)[:4000]
@@ -75,7 +77,7 @@ def apply_log_quota(event: UsageEvent, log: dict[str, Any]) -> bool:
 
 async def apply_newapi_bills(events: list[UsageEvent]) -> int:
     """结算前按时间窗拉消费日志，能唯一对上的改成账单 quota。"""
-    pending = [event for event in events if not _already_billed(event)]
+    pending = [event for event in events if not _already_billed(event) and not _load_raw(event).get("simulated")]
     if not pending:
         return 0
     start, end = _window(pending)

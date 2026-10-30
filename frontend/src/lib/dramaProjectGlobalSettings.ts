@@ -3,7 +3,7 @@ import {
   readEpisodeCharacterIntroMode,
   type DramaCharacterIntroMode,
 } from './dramaCharacterIntro'
-import { readEpisodeSubtitleMode, type DramaSubtitleMode } from './dramaSubtitleBoard'
+import { readEpisodeSubtitleMode, type DramaSubtitleMode } from './dramaSubtitleSettings'
 
 /** 有效字幕方式：项目全局优先，再回退分集历史值 */
 export function readEffectiveSubtitleMode(

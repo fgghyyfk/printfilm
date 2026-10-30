@@ -1,0 +1,2 @@
+# 市场额外说明。PDF 组件已列入 requirements.txt，常规后端镜像会一并安装。
+-r requirements.txt

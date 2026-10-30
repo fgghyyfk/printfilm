@@ -1,7 +1,8 @@
 /** 资产库步骤：首次无资产时自动 seed，分类 Tab + 生图队列 + 角色音色绑定 */
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Boxes, Sparkles } from 'lucide-react'
+import { Boxes } from 'lucide-react'
+import { AssetBanner, AssetCard, AssetEmpty, AssetGrid, AssetTypeFilter } from '../../components/assets/AssetLibrary'
 import { dramaApi, resolveDramaAssetPreviewUrl, type DramaAsset, type DramaProject } from '../../api/drama'
 import { api, type BillingPreflight } from '../../api'
 import { useDramaImageGenQueue } from '../../hooks/useDramaImageGenQueue'
@@ -20,8 +21,8 @@ import {
 import { CharacterVoicePreviewButton } from '../../components/drama/CharacterVoicePreviewButton'
 import { generateAndBindCharacterVoice } from '../../lib/characterVoiceGenerate'
 import { NarratorVoiceBindModal } from './NarratorVoiceBindModal'
-import { DramaAssetDetailModal } from './DramaAssetDetailModal'
-import { DramaImageLightbox } from './DramaImageLightbox'
+import { EditableAssetDetailDialog } from '../../components/assets/EditableAssetDetailDialog'
+import { AssetDetailDialog } from '../../components/assets/AssetDetailDialog'
 import { GlobalAssetPickerModal, importGlobalAssetToProject } from './GlobalAssetPickerModal'
 import { DramaVoiceAssetCard } from './DramaVoiceAssetCard'
 import Pagination from '../../components/ui/Pagination'
@@ -32,6 +33,8 @@ import { pageCountOf } from '../../lib/pagination'
 import { readVisualPrompt } from '../../lib/dramaVisualPrompt'
 import { filterDramaLibraryAssets } from '../../lib/dramaLibraryAssets'
 import { DRAMA_VOICE_BINDING_ENABLED } from '../../lib/dramaVoiceBinding'
+import { useCharacterVoiceGenerationEnabled } from '../../hooks/usePublicCapabilities'
+import { VOICE_GENERATION_DISABLED_MESSAGE } from '../../lib/publicCapabilities'
 import {
   dramaAssetImageGenButtonLabel,
   dramaAssetNeedsImageGeneration,
@@ -69,6 +72,7 @@ function needsImageGeneration(asset: DramaAsset): boolean {
 
 // 渲染资产库步骤
 export function AssetsStep({ projectId, onError }: AssetsStepProps) {
+  const voiceGenerationEnabled = useCharacterVoiceGenerationEnabled()
   /*
    * assets 项目资产
    * tab 当前分类
@@ -94,7 +98,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
   )
   const [voiceAsset, setVoiceAsset] = useState<DramaAsset | null>(null)
   const [detailAsset, setDetailAsset] = useState<DramaAsset | null>(null)
-  const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null)
+  const [previewAsset, setPreviewAsset] = useState<DramaAsset | null>(null)
   const [voiceSynthBusyId, setVoiceSynthBusyId] = useState<number | null>(null)
   const [voicePromptDrafts, setVoicePromptDrafts] = useState<Record<number, string>>({})
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -251,7 +255,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
       })
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err || '')
-      if (isBillingError(message)) return null
+      if (isBillingError(message)) { onError(message); return null }
       if (await handleBillingError(err)) return null
       onError(message || '余额校验失败')
       return null
@@ -260,7 +264,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
 
   async function notifyImageGenFailure(err: unknown) {
     const message = err instanceof Error ? err.message : String(err || '')
-    if (isBillingError(message)) return
+    if (isBillingError(message)) { onError(message); return }
     if (isUpstreamAccountError(message)) {
       await alertDramaGenError(err)
       onError(formatDramaGenError(message).message)
@@ -311,12 +315,13 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
     if (!pre) return
     const unitYuan = pre.unit_estimate_yuan ?? pre.unit_estimate_fen / 100
     const totalYuan = pre.requested_total_yuan ?? pre.requested_total_fen / 100
-    const balanceYuan = pre.balance_yuan ?? pre.balance_fen / 100
+    const balanceYuan = pre.balance_yuan ?? (typeof pre.balance_fen === 'number' ? pre.balance_fen / 100 : undefined)
+    const balanceText = balanceYuan === undefined ? '消费按团队余额与本人额度校验' : `当前余额 ¥${balanceYuan.toFixed(2)}`
     const ok = await dialog.confirm({
       title: '批量生成形象',
       message:
         `将为当前「${ASSET_TABS.find((t) => t.key === tab)?.label || '分类'}」下 ${targets.length} 个未出图资产开始生图（并行提交，不排队）。\n\n` +
-        `每张预扣约 ¥${unitYuan.toFixed(2)}，本次合计约 ¥${totalYuan.toFixed(2)}（当前余额 ¥${balanceYuan.toFixed(2)}；结束后按实际上游用量多退少补）。\n\n是否继续？`,
+        `每张预扣约 ¥${unitYuan.toFixed(2)}，本次合计约 ¥${totalYuan.toFixed(2)}（${balanceText}；结束后按实际上游用量多退少补）。\n\n是否继续？`,
       confirmText: '开始生成',
     })
     if (!ok) return
@@ -366,6 +371,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
 
   // 一键 AI 生成音色并绑定（各角色独立 busy，互不阻塞）
   async function handleGenerateCharacterVoice(asset: DramaAsset) {
+    if (!voiceGenerationEnabled) { onError(VOICE_GENERATION_DISABLED_MESSAGE); return }
     if (characterVoiceBusyIds.has(asset.id) || batchVoiceBusy) return
     setCharacterVoiceBusyIds((prev) => new Set(prev).add(asset.id))
     try {
@@ -385,6 +391,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
 
   // 批量按角色设定生成音色
   async function batchGenerateCharacterVoices() {
+    if (!voiceGenerationEnabled) { onError(VOICE_GENERATION_DISABLED_MESSAGE); return }
     if (batchVoiceBusy || selectedCharacterAssets.length === 0) return
     const ok = await dialog.confirm({
       title: '批量生成音色',
@@ -469,6 +476,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
 
   // 按提示词合成 voice 资产试听
   async function handleSynthVoice(asset: DramaAsset) {
+    if (!voiceGenerationEnabled) { onError(VOICE_GENERATION_DISABLED_MESSAGE); return }
     const prompt = (voicePromptDrafts[asset.id] ?? readVoicePrompt(asset)).trim()
     if (!prompt) {
       onError('请先填写音色描述')
@@ -683,24 +691,10 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
         </div>
       </header>
 
-      <div className="drama-assets-tips" role="note">
-        <Sparkles size={15} strokeWidth={1.75} aria-hidden />
-        <span>随时管理角色、场景与道具。确认分集剧本时会自动抽取本集相关资产，出图可在此补做。</span>
-      </div>
+      <AssetBanner title="让每个角色与场景，成为故事的积累。">随时管理角色、场景与道具。确认分集剧本时会自动抽取本集相关资产，出图可在此补做。</AssetBanner>
 
-      <div className="drama-assets-toolbar">
-        <div className="drama-asset-tabs">
-          {ASSET_TABS.map((t) => (
-            <button
-              key={t.key}
-              type="button"
-              className={tab === t.key ? 'active' : ''}
-              onClick={() => setTab(t.key)}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+      <div className="pf-library-toolbar">
+        <AssetTypeFilter options={ASSET_TABS.map((item) => ({ value: item.key, label: item.label }))} value={tab} onChange={setTab} />
         <div className="drama-actions">
           {tab === 'character' ? (
             <button type="button" className="pf-btn" onClick={() => void handleAddCharacter()}>
@@ -727,7 +721,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
             从资产库选择
           </button>
           <Link className="pf-btn" to="/drama/assets">
-            浏览全部资产
+            浏览数字资产库
           </Link>
           <button
             type="button"
@@ -760,7 +754,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
             </button>
           ) : null}
 
-          {DRAMA_VOICE_BINDING_ENABLED && tab === 'character' ? (
+          {DRAMA_VOICE_BINDING_ENABLED && voiceGenerationEnabled && tab === 'character' ? (
             <button
               type="button"
               className="pf-btn pf-btn-lime"
@@ -798,7 +792,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
         </p>
       ) : null}
 
-      <div className={`drama-asset-grid${tab === 'voice' ? ' is-voice' : ''}`}>
+      <AssetGrid>
         {pageItems.map((asset) => {
           if (tab === 'voice') {
             const promptValue = voicePromptDrafts[asset.id] ?? readVoicePrompt(asset)
@@ -823,7 +817,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
                     )
                   }
                 }}
-                onSynth={() => void handleSynthVoice(asset)}
+                onSynth={voiceGenerationEnabled ? () => void handleSynthVoice(asset) : undefined}
                 onDelete={() => void handleDeleteVoice(asset)}
                 onError={onError}
               />
@@ -835,45 +829,17 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
           const isCharacter = (asset.type || '').toLowerCase() === 'character'
           const busy = busyAssetIds.has(asset.id)
           return (
-            <article
+            <AssetCard
               key={asset.id}
-              className="drama-asset-card drama-asset-card-clickable"
-              role="button"
-              tabIndex={0}
-              onClick={() => setDetailAsset(asset)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault()
-                  setDetailAsset(asset)
-                }
-              }}
-            >
-              {mediaSrc ? (
-                <button
-                  type="button"
-                  className="drama-asset-thumb-btn"
-                  title="点击放大"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setLightbox({ src: mediaSrc, alt: asset.name || '预览' })
-                  }}
-                >
-                  <img key={mediaSrc} src={mediaSrc} alt={asset.name || ''} />
-                </button>
-              ) : (
-                <div className="drama-asset-placeholder">{asset.type || 'asset'}</div>
-              )}
-              <h3>{asset.name || '未命名'}</h3>
-              <p>
-                {asset.type}
-                {isCharacter && voice ? ` · ${voice.label}` : ''}
-              </p>
-              <div
-                className="drama-asset-card-actions"
-                onClick={(e) => e.stopPropagation()}
-                onKeyDown={(e) => e.stopPropagation()}
-              >
-                {tab === 'character' && isCharacter ? (
+              asset={asset}
+              subtitle={isCharacter && voice ? voice.label : `项目 #${projectId}`}
+              footer="项目资产"
+              updatedAt={asset.updated_at}
+              busy={busy}
+              onOpen={() => setDetailAsset(asset)}
+              actions={<>
+                {mediaSrc && <button type="button" className="pf-btn pf-btn-sm" onClick={() => setPreviewAsset(asset)}>查看大图</button>}
+                {voiceGenerationEnabled && tab === 'character' && isCharacter ? (
                   <label
                     className="drama-voice-multi-select"
                     style={{ display: 'inline-flex', gap: 8, alignItems: 'center', marginRight: 8, cursor: 'pointer' }}
@@ -910,7 +876,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
                           label={voice.label}
                           onError={onError}
                         />
-                      ) : (
+                      ) : voiceGenerationEnabled ? (
                         <button
                           type="button"
                           className="pf-btn pf-btn-sm pf-btn-lime"
@@ -923,7 +889,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
                         >
                           {characterVoiceBusyIds.has(asset.id) ? '生成中…' : '生成音色'}
                         </button>
-                      )
+                      ) : null
                     ) : null}
                     <button
                       type="button"
@@ -935,12 +901,12 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
                     </button>
                   </>
                 ) : null}
-              </div>
-            </article>
+              </>}
+            />
           )
         })}
-      </div>
-      {!loading && filtered.length === 0 ? <p className="drama-muted">该分类暂无资产</p> : null}
+      </AssetGrid>
+      {!loading && filtered.length === 0 ? <AssetEmpty /> : null}
 
       {!loading && filtered.length > 0 ? (
         <Pagination
@@ -960,7 +926,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
       ) : null}
 
       {detailAsset && (detailAsset.type || '').toLowerCase() !== 'voice' ? (
-        <DramaAssetDetailModal
+        <EditableAssetDetailDialog
           asset={detailAsset}
           open
           busy={busyAssetIds.has(detailAsset.id)}
@@ -980,13 +946,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
         />
       ) : null}
 
-      {lightbox ? (
-        <DramaImageLightbox
-          src={lightbox.src}
-          alt={lightbox.alt}
-          onClose={() => setLightbox(null)}
-        />
-      ) : null}
+      {previewAsset && <AssetDetailDialog asset={previewAsset} onClose={() => setPreviewAsset(null)} />}
 
       {DRAMA_VOICE_BINDING_ENABLED && voiceAsset ? (
         <CharacterVoiceBindModal

@@ -14,6 +14,7 @@ from app.schemas_tasks import AdminTaskEventListOut, AdminTaskListOut, AdminTask
 from app.services.billing.display import billing_basis_label, resolve_billing_basis
 from app.services.tasks.admin_events import AdminEventSummary, list_admin_task_events, load_admin_event_summaries
 from app.services.tasks.runtime import runtime_summary
+from app.services.tasks.queues import QUEUE_TYPES, queue_capacity, queue_stats, task_queue
 from app.services.tasks.service import cancel_task_admin, get_task_admin, get_task_stats_admin, list_tasks_admin
 
 router = APIRouter()
@@ -29,10 +30,12 @@ def _task_to_admin_out(
     """组装有界响应，不读取或替换 ORM events，避免全历史加载与孤儿删除。"""
     # 单独提取其余字段，Pydantic 不会访问被禁用的 events 懒加载关系。
     fields = {name: getattr(task, name) for name in TaskRunOut.model_fields if name != "events"}
+    fields["queue_type"] = fields.get("queue_type") or task_queue(task.task_type, task.payload)
     summary = event_summary or AdminEventSummary()
     return AdminTaskRunOut(
         **fields,
         user_email=user_email,
+        billing_snapshot=getattr(task, "billing_snapshot", None),
         usage_lines=usage_lines or [],
         events=summary.events,
         events_total=summary.events_total,
@@ -51,16 +54,16 @@ async def _load_usage_lines(db: AsyncSession, task_id: int) -> list[AdminUsageEv
     ).scalars().all()
     items: list[AdminUsageEventBriefOut] = []
     for row in rows:
-        basis = resolve_billing_basis(estimated=bool(row.estimated), raw_usage_json=row.raw_usage_json)
+        basis = "fixed_media" if (row.billing_detail or {}).get("mode") == "fixed_media" else resolve_billing_basis(estimated=bool(row.estimated), raw_usage_json=row.raw_usage_json)
         items.append(
             AdminUsageEventBriefOut(
                 id=row.id,
+                billing_detail=row.billing_detail,
                 billing_key=row.billing_key,
                 capability=row.capability,
                 model=row.model or "",
                 total_tokens=int(row.total_tokens or 0),
                 charge_fen=int(row.charge_fen or 0),
-                cost_fen=int(row.cost_fen or 0),
                 estimated=bool(row.estimated),
                 billing_basis=basis,
                 billing_basis_label=billing_basis_label(basis),
@@ -70,7 +73,11 @@ async def _load_usage_lines(db: AsyncSession, task_id: int) -> list[AdminUsageEv
     return items
 
 
-@router.get("/tasks/stats", response_model=AdminTaskStatsOut)
+@router.get("/tasks/stats", response_model=AdminTaskStatsOut,
+    summary="查看全站任务统计",
+    description="管理员查看全站任务状态分布、队列容量以及调度器、轮询器和看门狗的运行状态与健康摘要。",
+    response_description="操作成功，返回结果详见响应结构",
+)
 async def admin_task_stats(
     _admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
@@ -82,7 +89,8 @@ async def admin_task_stats(
     return AdminTaskStatsOut(
         **stats,
         scheduler_running_jobs=int(runtime.get("scheduler_running_jobs") or 0),
-        max_concurrency=int(settings.task_runtime_max_concurrency),
+        max_concurrency=sum(queue_capacity(settings, queue) for queue in QUEUE_TYPES),
+        queues=await queue_stats(db, settings),
         scheduler=str(runtime.get("scheduler") or "stopped"),
         poller=str(runtime.get("poller") or "stopped"),
         watchdog=str(runtime.get("watchdog") or "stopped"),
@@ -93,7 +101,11 @@ async def admin_task_stats(
     )
 
 
-@router.get("/tasks", response_model=AdminTaskListOut)
+@router.get("/tasks", response_model=AdminTaskListOut,
+    summary="分页查询全站任务",
+    description="管理员按领域、状态、任务类型、发起用户、关键词及是否进行中筛选任务。返回分页信息与有界事件摘要，完整事件历史需单独分页查询。",
+    response_description="操作成功，返回结果详见响应结构",
+)
 async def admin_list_tasks(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -126,7 +138,11 @@ async def admin_list_tasks(
     )
 
 
-@router.get("/tasks/{task_id}", response_model=AdminTaskRunOut)
+@router.get("/tasks/{task_id}", response_model=AdminTaskRunOut,
+    summary="查看全站任务详情",
+    description="管理员查看指定任务的执行信息、计费快照、用量行与近期事件窗口；完整事件历史通过任务事件接口获取。任务不存在时返回 404。",
+    response_description="操作成功，返回结果详见响应结构",
+)
 async def admin_get_task(
     task_id: int,
     _admin: User = Depends(get_current_admin),
@@ -145,7 +161,11 @@ async def admin_get_task(
     return _task_to_admin_out(task, email, usage_lines, event_summary=summary)
 
 
-@router.get("/tasks/{task_id}/events", response_model=AdminTaskEventListOut)
+@router.get("/tasks/{task_id}/events", response_model=AdminTaskEventListOut,
+    summary="分页查询任务事件",
+    description="管理员分页读取指定任务的完整事件历史；event_type_prefix 可筛选事件类型前缀。任务不存在时返回 404。",
+    response_description="操作成功，返回结果详见响应结构",
+)
 async def admin_list_task_events(
     task_id: int,
     page: int = Query(1, ge=1),
@@ -164,7 +184,11 @@ async def admin_list_task_events(
     return AdminTaskEventListOut(items=rows, total=total, page=page, page_size=page_size)
 
 
-@router.post("/tasks/{task_id}/cancel", response_model=AdminTaskRunOut)
+@router.post("/tasks/{task_id}/cancel", response_model=AdminTaskRunOut,
+    summary="取消全站指定任务",
+    description="管理员请求取消指定任务并返回最新任务详情。任务不存在时返回 404，任务当前状态不允许取消时返回 400。",
+    response_description="操作成功，返回结果详见响应结构",
+)
 async def admin_cancel_task(
     task_id: int,
     _admin: User = Depends(get_current_admin),

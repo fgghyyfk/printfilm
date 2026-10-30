@@ -23,7 +23,7 @@ async def test_record_seedream_with_upstream_tokens(db_session: AsyncSession) ->
         db_session,
         user_id=user.id,
         model="seedream-test",
-        domain="api",
+        domain="studio",
         image_result=image,
     )
     await db_session.commit()

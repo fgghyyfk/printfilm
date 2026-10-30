@@ -1,20 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import type { Project } from '../api'
 import BillingErrorNotice from '../components/billing/BillingErrorNotice'
 import AppShell from '../components/layout/AppShell'
 import PillTabs from '../components/ui/PillTabs'
 import Pagination from '../components/ui/Pagination'
-import StatCard from '../components/ui/StatCard'
+import { ProjectCard, ProjectGrid } from '../components/projects/ProjectCard'
 import {
   IconClapper,
-  IconClock,
   IconDownload,
   IconEdit,
   IconEye,
   IconPlus,
-  IconRefresh,
   IconSearch,
   IconSend,
   IconTrash,
@@ -25,9 +23,14 @@ import {
   triggerBlobDownload,
   zipVideosClient,
 } from '../lib/clientDownload'
-import { hasActiveTasks, isRunning, STATUS_CN, statusTone } from '../lib/status'
+import { hasActiveTasks, isRunning, STATUS_CN } from '../lib/status'
 import { pageCountOf } from '../lib/pagination'
+import { SHORT_VIDEO_CREATE_PATH, shortVideoProjectPath } from '../lib/shortVideoRoutes'
+import { withReturn } from '../features/marketplace/ui'
+import { formatGenerationErrorMessage } from '../lib/generationError'
 import { formatDateTime, useI18n } from '../i18n'
+import './drama/project-list.css'
+import './shortVideoList.css'
 
 type HistoryItem = Omit<Project, 'shots'> & {
   published?: boolean
@@ -40,7 +43,8 @@ type HistoryItem = Omit<Project, 'shots'> & {
 
 type HistoryTab = 'all' | 'draft' | 'running' | 'done' | 'published'
 
-const PAGE_SIZE_DEFAULT = 8
+const PAGE_SIZE_DEFAULT = 9
+const PAGE_SIZE_OPTIONS = [6, 9, 18] as const
 
 const TAB_STATUS: Record<HistoryTab, 'all' | 'draft' | 'running' | 'done' | 'published'> = {
   all: 'all',
@@ -56,17 +60,9 @@ function canDownload(p: HistoryItem) {
   return p.status === 'DONE' && Boolean(p.final_video_url)
 }
 
-function statusBadgeClass(status: string) {
-  const tone = statusTone(status)
-  if (tone === 'ok') return 'ok'
-  if (tone === 'run') return 'run'
-  if (tone === 'bad') return 'bad'
-  if (status === 'DRAFT') return 'draft'
-  return ''
-}
-
 export default function HistoryPage() {
   const nav = useNavigate()
+  const location = useLocation()
   const { t, m, locale } = useI18n()
   /*
    * items 当前页项目
@@ -155,7 +151,7 @@ export default function HistoryPage() {
       const map: Record<string, string> = {}
       for (const t of list) map[t.id] = t.name
       setTemplates(map)
-    })
+    }).catch(() => undefined)
   }, [nav])
 
   useEffect(() => {
@@ -278,58 +274,35 @@ export default function HistoryPage() {
   }
 
   function continueEdit(p: HistoryItem) {
-    if (p.status === 'DRAFT') nav(`/studio/${p.id}/style`)
-    else nav(`/studio/${p.id}`)
+    nav(shortVideoProjectPath(p))
   }
 
   return (
-    <AppShell active="kepu" wide>
-      <div className="pf-history-head">
-        <div>
-          <h1>{t('history.title')}</h1>
-          <p>{t('history.lead')}</p>
-        </div>
-        <div className="pf-history-head-actions">
-          <button type="button" className="pf-btn pf-btn-lime pf-btn-icon" onClick={() => nav('/studio/new')}>
-            <IconPlus size={16} />
-            {t('history.newKepu')}
-          </button>
-          <Link to="/drama" className="pf-btn pf-btn-ghost pf-btn-sm">
-            {t('history.goDrama')}
+    <AppShell active="kepu">
+      <div className="pf-project-list-page pf-short-video-list-page">
+        <header className="pf-project-page-header">
+          <div>
+            <span className="pf-project-page-eyebrow">SHORT VIDEO STUDIO</span>
+            <h1>{t('history.title')}</h1>
+            <p>{t('history.lead')}</p>
+          </div>
+          <Link to="/templates" className="pf-btn pf-btn-ghost pf-btn-sm">
+            <IconClapper size={17} />{t('home.templatesTitle')}
           </Link>
-        </div>
-      </div>
+        </header>
 
-      <div className="pf-stats">
-        <StatCard
-          label={t('history.statTotal')}
-          value={stats.total}
-          trend="—"
-          icon={<IconClapper size={18} />}
-        />
-        <StatCard
-          label={t('history.statRunning')}
-          value={stats.generating}
-          trend={stats.generating ? t('history.runningNow') : t('history.noTask')}
-          icon={<IconRefresh size={18} />}
-        />
-        <StatCard
-          label={t('history.statDone')}
-          value={stats.done}
-          trend="—"
-          icon={<IconSend size={18} />}
-        />
-        <StatCard
-          label={t('history.statPublished')}
-          value={stats.published}
-          trend="—"
-          icon={<IconClock size={18} />}
-        />
-      </div>
+        <section className="pf-project-list-panel" aria-label={t('history.projectsHeading')}>
+          <div className="pf-project-list-heading">
+            <div>
+              <h2>{t('history.projectsHeading')}{!loading && <span>{stats.total}</span>}</h2>
+              <p>{t('history.workflowHint')}</p>
+            </div>
+            <button type="button" className="pf-btn pf-btn-lime pf-btn-icon" onClick={() => nav(SHORT_VIDEO_CREATE_PATH)}>
+              <IconPlus size={18} />{t('history.newKepu')}
+            </button>
+          </div>
 
-      <div className="pf-history-layout">
-        <section className="pf-history-main">
-          <div className="pf-history-filters">
+          <div className="pf-project-list-toolbar">
             <PillTabs
               items={HISTORY_TABS.map((id) => m.history.tabs[id])}
               value={m.history.tabs[tab]}
@@ -338,162 +311,75 @@ export default function HistoryPage() {
                 if (next) setTab(next)
               }}
               ariaLabel={t('history.statusAria')}
+              lime
             />
-            <div className="pf-history-filter-right">
-              <select
-                className="pf-type-select"
-                value={typeMode}
-                aria-label={t('history.typeAria')}
-                onChange={(e) => setTypeMode(e.target.value as '' | 'full' | 'image_text' | 'avatar')}
-              >
+            <div className="pf-short-video-filters">
+              <select className="pf-type-select" value={typeMode} aria-label={t('history.typeAria')} onChange={(e) => setTypeMode(e.target.value as '' | 'full' | 'image_text' | 'avatar')}>
                 <option value="">{t('history.typeAll')}</option>
                 <option value="full">{t('history.typeFull')}</option>
                 <option value="image_text">{t('history.typeImageText')}</option>
                 <option value="avatar">{t('history.typeAvatar')}</option>
               </select>
-              <label className="pf-search-field">
-                <IconSearch size={15} />
-                <input
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  placeholder={t('history.searchPlaceholder')}
-                />
+              <label className="pf-project-list-search">
+                <IconSearch size={17} />
+                <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('history.searchPlaceholder')} aria-label={t('history.searchPlaceholder')} />
               </label>
             </div>
           </div>
 
-          <div className="pf-history-batch">
-            <button
-              type="button"
-              className="pf-btn-text"
-              disabled={!selectedDownloadable.length || packing}
-              onClick={packSelected}
-            >
+          {selectedDownloadable.length > 0 ? <div className="pf-short-video-batch">
+            <button type="button" className="pf-btn-text" disabled={packing} onClick={packSelected}>
               <IconDownload size={15} />
-              {packing
-                ? t('history.packing', { progress: packProgress })
-                : t('history.packDownload', { count: selectedDownloadable.length })}
+              {packing ? t('history.packing', { progress: packProgress }) : t('history.packDownload', { count: selectedDownloadable.length })}
             </button>
-          </div>
+            <button type="button" className="pf-btn-text" disabled={packing} onClick={() => setSelected(new Set())}>{t('common.cancel')}</button>
+          </div> : null}
 
           {error ? <BillingErrorNotice message={error} /> : null}
-          {loading ? <p className="pf-muted">{t('common.loading')}</p> : null}
-          {!loading && total === 0 ? (
-            <div className="pf-history-empty">{t('history.empty')}</div>
-          ) : null}
-
-          <div className="pf-project-list">
-            {pageItems.map((p) => {
-              const badge = statusBadgeClass(p.status)
-              const ratio =
-                p.output_ratio || (p.pipeline_mode && p.pipeline_mode !== 'full' ? '9:16' : '16:9')
-              const tplName = templates[p.template_id] || p.template_id
-              return (
-                <article key={p.id} className="pf-project-card">
-                  <label className="pf-project-check">
-                    <input
-                      type="checkbox"
-                      checked={selected.has(p.id)}
-                      disabled={!canDownload(p)}
-                      onChange={() => toggle(p.id)}
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    className="pf-project-thumb"
-                    onClick={() => continueEdit(p)}
-                  >
-                    {p.cover_url ? (
-                      <img src={api.assetUrl(p.cover_url, p.updated_at)} alt="" />
-                    ) : (
-                      <div className="ph">{t('history.noCover')}</div>
-                    )}
-                    {isRunning(p.status) ? (
-                      <span className="pf-thumb-progress">{p.progress}%</span>
-                    ) : null}
-                  </button>
-                  <div className="pf-project-info">
-                    <h3>
-                      {p.title}
-                      {p.published ? <span className="pf-badge ok" style={{ marginLeft: 8 }}>{t('history.published')}</span> : null}
-                    </h3>
-                    <div className="pf-project-meta">
-                      <span className={`pf-badge ${badge}`}>
-                        {STATUS_CN[p.status] || p.status}
-                      </span>
-                      <span className="pf-muted">
-                        {t('history.templateMeta', {
-                          name: tplName,
-                          when: formatDateTime(p.updated_at || p.created_at, locale),
-                        })}
-                      </span>
-                    </div>
-                    {isRunning(p.status) ? (
-                      <div className="pf-inline-meter">
-                        <i style={{ width: `${Math.min(100, p.progress)}%` }} />
-                      </div>
-                    ) : null}
-                    {p.error_msg ? <p className="pf-error pf-project-err">{p.error_msg}</p> : null}
-                  </div>
-                  <div className="pf-project-ratio">{ratio}</div>
-                  <div className="pf-project-actions">
-                    <button type="button" className="pf-btn-text" onClick={() => continueEdit(p)}>
-                      <IconEdit size={14} />
-                      {t('history.continueEdit')}
-                    </button>
-                    <button
-                      type="button"
-                      className="pf-btn-text"
-                      disabled={!p.final_video_url}
-                      onClick={() =>
-                        p.final_video_url &&
-                        setPreview({
-                          url: api.assetUrl(p.final_video_url, p.updated_at),
-                          title: p.title,
-                          projectId: p.id,
-                        })
-                      }
-                    >
-                      <IconEye size={14} />
-                      {t('common.preview')}
-                    </button>
-                    <button
-                      type="button"
-                      className="pf-btn-text"
-                      disabled={!canDownload(p) || busyId === p.id || packing}
-                      onClick={() => downloadOne(p)}
-                    >
-                      <IconDownload size={14} />
-                      {busyId === p.id ? t('common.downloading') : t('common.download')}
-                    </button>
-                    <button
-                      type="button"
-                      className="pf-icon-btn danger"
-                      disabled={busyId === p.id}
-                      title={t('common.delete')}
-                      onClick={() => remove(p.id)}
-                    >
-                      <IconTrash size={16} />
-                    </button>
-                  </div>
-                </article>
-              )
-            })}
-          </div>
-
+          {loading ? (
+            <div aria-busy="true" aria-label={t('common.loading')}><ProjectGrid>{Array.from({ length: 6 }, (_, i) => <div key={i} className="pf-project-list-skeleton" aria-hidden />)}</ProjectGrid></div>
+          ) : total === 0 ? (
+            <div className="pf-empty-state">
+              <div className="pf-empty-illust" aria-hidden><IconClapper size={42} /></div>
+              <p className="pf-muted">{t('history.empty')}</p>
+              <button type="button" className="pf-btn pf-btn-lime" onClick={() => nav(SHORT_VIDEO_CREATE_PATH)}><IconPlus size={17} />{t('history.newKepu')}</button>
+            </div>
+          ) : (
+            <ProjectGrid>
+              {pageItems.map((p) => {
+                const running = isRunning(p.status) || hasActiveTasks(p)
+                const ratio = p.output_ratio || (p.pipeline_mode && p.pipeline_mode !== 'full' ? '9:16' : '16:9')
+                const tplName = templates[p.template_id] || p.template_id
+                return <ProjectCard
+                  key={p.id}
+                  kind="short-video"
+                  title={p.title}
+                  coverUrl={p.cover_url ? api.assetUrl(p.cover_url, p.updated_at) : undefined}
+                  category={`${tplName} · ${ratio}`}
+                  status={{ label: STATUS_CN[p.status] || p.status, tone: p.status === 'DONE' ? 'completed' : running ? 'producing' : p.status === 'DRAFT' ? 'draft' : 'neutral' }}
+                  description={p.source_text || t('history.workflowHint')}
+                  progress={running ? { label: t('history.progress'), value: Math.max(0, Math.min(100, p.progress)), total: 100 } : undefined}
+                  meta={p.error_msg ? <span className="pf-error" role="status">{formatGenerationErrorMessage(p.error_msg)}</span> : undefined}
+                  footer={<>
+                    <span>{p.published ? t('history.published') : (p.pipeline_mode === 'image_text' ? t('history.typeImageText') : p.pipeline_mode === 'avatar' ? t('history.typeAvatar') : t('history.typeFull'))}</span>
+                    <time dateTime={p.updated_at || p.created_at}>{formatDateTime(p.updated_at || p.created_at, locale)}</time>
+                  </>}
+                  selection={canDownload(p) ? { checked: selected.has(p.id), visible: selected.size > 0, onChange: () => toggle(p.id), label: t('history.selectProject', { title: p.title }) } : undefined}
+                  onOpen={() => continueEdit(p)}
+                  openLabel={`${t('history.continueEdit')} ${p.title}`}
+                  menu={<button type="button" className="pf-icon-btn danger" disabled={busyId === p.id} title={t('common.delete')} aria-label={`${t('common.delete')} ${p.title}`} onClick={() => remove(p.id)}><IconTrash size={16} /></button>}
+                  actions={<>
+                    <button type="button" className="pf-btn-text" onClick={() => continueEdit(p)}><IconEdit size={14} />{t('history.continueEdit')}</button>
+                    <button type="button" className="pf-btn-text" disabled={!p.final_video_url} onClick={() => p.final_video_url && setPreview({ url: api.assetUrl(p.final_video_url, p.updated_at), title: p.title, projectId: p.id })}><IconEye size={14} />{t('common.preview')}</button>
+                    <button type="button" className="pf-btn-text" disabled={!canDownload(p) || busyId === p.id || packing} onClick={() => downloadOne(p)}><IconDownload size={14} />{busyId === p.id ? t('common.downloading') : t('common.download')}</button>
+                    <button type="button" className="pf-btn-text" disabled={!p.final_video_url} onClick={() => nav(withReturn(`/marketplace/from-printfilm?project=${p.id}`, `${location.pathname}${location.search}`))}><IconSend size={14} />发布到市场</button>
+                  </>}
+                />
+              })}
+            </ProjectGrid>
+          )}
           {total > 0 ? (
-            <Pagination
-              page={page}
-              pageCount={pageCount}
-              total={total}
-              pageSize={pageSize}
-              onPageSizeChange={(size) => {
-                setPageSize(size)
-                setPage(1)
-              }}
-              onChange={setPage}
-              ariaLabel={t('history.pagination')}
-            />
+            <Pagination page={page} pageCount={pageCount} total={total} pageSize={pageSize} pageSizeOptions={PAGE_SIZE_OPTIONS} onPageSizeChange={(size) => { setPageSize(size); setPage(1) }} onChange={setPage} ariaLabel={t('history.pagination')} />
           ) : null}
         </section>
       </div>

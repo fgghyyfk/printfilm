@@ -1,17 +1,22 @@
 /** 拉取并缓存前台 TokenFree 图/视频模型目录。 */
 import { useEffect, useState } from 'react'
 import { api, type MediaModelOption, type MediaModelsCatalog } from '../api'
+export { resolveCatalogModelSelection } from '../lib/mediaCatalogSelection'
 
 let cached: MediaModelsCatalog | null = null
 let inflight: Promise<MediaModelsCatalog> | null = null
+let fetchedAt = 0
+const listeners = new Set<(value: MediaModelsCatalog) => void>()
 
-function loadCatalog(): Promise<MediaModelsCatalog> {
-  if (cached) return Promise.resolve(cached)
+function loadCatalog(force = false): Promise<MediaModelsCatalog> {
+  if (!force && cached && Date.now() - fetchedAt < 60_000) return Promise.resolve(cached)
   if (!inflight) {
     inflight = api.mediaModels().then((cat) => {
       cached = cat
+      fetchedAt = Date.now()
+      listeners.forEach(listener => listener(cat))
       return cat
-    })
+    }).finally(() => { inflight = null })
   }
   return inflight
 }
@@ -21,6 +26,12 @@ export function useMediaModelsCatalog() {
 
   useEffect(() => {
     let cancelled = false
+    const receive = (value: MediaModelsCatalog) => { if (!cancelled) setCatalog(value) }
+    listeners.add(receive)
+    const refresh = () => { void loadCatalog(true).catch(() => {}) }
+    const timer = setInterval(() => { void loadCatalog().catch(() => {}) }, 60_000)
+    window.addEventListener('focus', refresh)
+    window.addEventListener('media-prices-changed', refresh)
     loadCatalog()
       .then((cat) => {
         if (!cancelled) setCatalog(cat)
@@ -30,6 +41,10 @@ export function useMediaModelsCatalog() {
       })
     return () => {
       cancelled = true
+      listeners.delete(receive)
+      clearInterval(timer)
+      window.removeEventListener('focus', refresh)
+      window.removeEventListener('media-prices-changed', refresh)
     }
   }, [])
 

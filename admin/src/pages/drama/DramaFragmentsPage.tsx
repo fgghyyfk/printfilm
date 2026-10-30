@@ -1,3 +1,4 @@
+import { Select } from "@/components/ui/select";
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -49,13 +50,13 @@ export function DramaFragmentsPage() {
 
   return (
     <div className="admin-list-page">
-      <PageHeader description="全站漫剧分镜：按项目、分集筛选，查看生成状态与资产引用" />
+      <PageHeader title="分镜管理" description="全站漫剧分镜：按项目、分集筛选，查看生成状态与资产引用" />
       <AdminFilterBar>
         <Input placeholder="内容 / 集名 / 项目" value={q} onChange={(e) => setQ(e.target.value)} />
         <AdminUserSearchSelect value={userId} onChange={setUserId} />
         <Input placeholder="项目 ID" value={projectId} onChange={(e) => setProjectId(e.target.value)} />
         <Input placeholder="分集 ID" value={episodeId} onChange={(e) => setEpisodeId(e.target.value)} />
-        <select
+        <Select
           className="admin-native-select"
           value={generationStatus}
           onChange={(e) => setGenerationStatus(e.target.value)}
@@ -66,7 +67,7 @@ export function DramaFragmentsPage() {
               {formatDramaGenerationStatus(s)}
             </option>
           ))}
-        </select>
+        </Select>
         <Button
           size="sm"
           variant="secondary"

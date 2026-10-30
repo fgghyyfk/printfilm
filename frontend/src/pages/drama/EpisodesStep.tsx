@@ -5,7 +5,7 @@ import { Clapperboard, Film, Layers, Sparkles, Wand2 } from 'lucide-react'
 import { dramaApi, resolveDramaMediaUrl, type DramaEpisode } from '../../api/drama'
 import { dialog } from '../../lib/dialog'
 import { loadDramaEpisodes } from '../../lib/dramaStoryboardNav'
-import { readEpisodeSubtitleMode, subtitleModeUsesModelOutput } from '../../lib/dramaSubtitleBoard'
+import { readEpisodeSubtitleMode, subtitleModeUsesModelOutput } from '../../lib/dramaSubtitleSettings'
 import { FragmentPlanSkillModal } from '../../components/drama/FragmentPlanSkillModal'
 import { readFragmentGenerationStatus } from './dramaEpisodeEditUtils'
 

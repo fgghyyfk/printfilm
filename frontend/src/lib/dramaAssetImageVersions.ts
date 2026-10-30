@@ -8,6 +8,7 @@ export type AssetImageVersion = {
   prompt?: string | null
   createdAt?: string
   source?: string
+  mediaMetadata?: Record<string, unknown>
 }
 
 // 从 params.image_versions 读取可展示的历史形象
@@ -28,6 +29,7 @@ export function readAssetImageVersions(asset: DramaAsset | null | undefined): As
       prompt: typeof row.prompt === 'string' ? row.prompt : null,
       createdAt: typeof row.createdAt === 'string' ? row.createdAt : undefined,
       source: typeof row.source === 'string' ? row.source : undefined,
+      mediaMetadata: row.media_metadata && typeof row.media_metadata === 'object' ? row.media_metadata as Record<string, unknown> : undefined,
     })
   }
   return out
@@ -38,10 +40,8 @@ export function resolveAssetImageVersionUrl(version: AssetImageVersion): string 
 }
 
 export function formatAssetImageVersionLabel(version: AssetImageVersion): string {
-  const src = (version.source || '').toLowerCase()
+  const src = String(version.mediaMetadata?.source || '').toLowerCase()
   if (src === 'upload') return '上传'
-  if (src === 'replaced') return '被替换'
-  if (src === 'generate') return '生成'
-  if (src === 'restored') return '还原'
-  return '历史'
+  if (src === 'generated') return 'AI 生成'
+  return '历史版本'
 }

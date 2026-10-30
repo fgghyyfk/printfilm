@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import { ArrowRight, Loader2, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { api, type AdminStats, type AdminUserRow, type PageMeta } from "@/api/client";
 import { AdminField } from "@/components/admin/AdminField";
@@ -18,6 +19,8 @@ import { useAdminDetailQuery } from "@/hooks/useAdminDetailQuery";
 import { formatAccountId } from "@/lib/admin-account";
 import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
 import { fenToYuan } from "@/lib/utils";
+import { yuanInputToFen } from "@/lib/moneyInput";
+import { Switch } from "@/components/ui/switch";
 
 type ListRes = { items: AdminUserRow[]; meta: PageMeta };
 
@@ -41,7 +44,29 @@ export function UsersPage() {
     balance_note: "",
   });
   const [saving, setSaving] = useState(false);
+  const [adjustBalance, setAdjustBalance] = useState(false);
+  const [amountTouched, setAmountTouched] = useState(false);
+  const [submitAttempted, setSubmitAttempted] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const pendingSave = useRef(false);
+  const editFormId = useId();
+  const adjustmentToggleId = useId();
   const userDetail = useAdminDetailQuery("user");
+
+  const amountFen = yuanInputToFen(form.balance_amount_yuan);
+  const balanceAfterFen = editing && adjustBalance && amountFen !== null
+    ? editing.balance_fen + (form.balance_dir === "decrease" ? -amountFen : amountFen)
+    : editing?.balance_fen ?? 0;
+  const amountError = !adjustBalance ? "" : !form.balance_amount_yuan.trim()
+    ? "请输入需要调整的金额"
+    : amountFen === null ? "请输入有效金额，最多保留两位小数"
+    : amountFen === 0 ? "调账金额须大于 0 元"
+    : !Number.isSafeInteger(balanceAfterFen) ? "调整后金额过大，请减少调账金额"
+    : balanceAfterFen < 0 ? "减少金额不能超过当前余额"
+    : "";
+  const visibleAmountError = amountTouched || submitAttempted ? amountError : "";
+  const roleChanged = editing !== null && form.role !== editing.role;
+  const hasChanges = roleChanged || adjustBalance;
 
   async function load(nextPage = page, nextQ = q, nextSize = pageSize) {
     setLoading(true);
@@ -82,7 +107,12 @@ export function UsersPage() {
   }, [userDetail.id, data?.items]);
 
   function openEdit(user: AdminUserRow) {
+    if (pendingSave.current) return;
     setEditing(user);
+    setAdjustBalance(false);
+    setAmountTouched(false);
+    setSubmitAttempted(false);
+    setSaveError("");
     setForm({
       role: user.role || "user",
       balance_dir: "increase",
@@ -92,7 +122,11 @@ export function UsersPage() {
   }
 
   async function saveEdit() {
-    if (!editing) return;
+    if (!editing || pendingSave.current || !hasChanges) return;
+    setSubmitAttempted(true);
+    setSaveError("");
+    if (amountError) return;
+    pendingSave.current = true;
     setSaving(true);
     try {
       const payload: {
@@ -101,21 +135,9 @@ export function UsersPage() {
         balance_note?: string;
       } = { role: form.role };
 
-      const amountRaw = form.balance_amount_yuan.trim();
-      if (amountRaw) {
-        const amountYuan = parseFloat(amountRaw);
-        if (Number.isNaN(amountYuan) || amountYuan < 0) {
-          throw new Error("调账金额须为非负数字");
-        }
-        const amountFen = Math.round(amountYuan * 100);
-        if (amountFen > 0) {
-          const signed = form.balance_dir === "decrease" ? -amountFen : amountFen;
-          if (form.balance_dir === "decrease" && signed + editing.balance_fen < 0) {
-            throw new Error("减少后余额不能为负");
-          }
-          payload.balance_delta_fen = signed;
-          payload.balance_note = form.balance_note || undefined;
-        }
+      if (adjustBalance && amountFen !== null && amountFen > 0) {
+        payload.balance_delta_fen = form.balance_dir === "decrease" ? -amountFen : amountFen;
+        payload.balance_note = form.balance_note.trim() || undefined;
       }
 
       await api(`/api/admin/users/${editing.id}`, {
@@ -126,8 +148,9 @@ export function UsersPage() {
       setEditing(null);
       await load();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "保存失败");
+      setSaveError(err instanceof Error ? err.message : "保存失败，请重试");
     } finally {
+      pendingSave.current = false;
       setSaving(false);
     }
   }
@@ -139,7 +162,7 @@ export function UsersPage() {
 
   return (
     <div className="admin-list-page">
-      <PageHeader description="搜索用户，调整角色与余额" />
+      <PageHeader title="用户管理" description="搜索用户，调整角色与余额" />
 
       <AdminFilterBar>
         <AdminSearchInput
@@ -152,8 +175,8 @@ export function UsersPage() {
         />
         <Select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>
           <option value="">全部角色</option>
-          <option value="user">user</option>
-          <option value="admin">admin</option>
+          <option value="user">普通用户</option>
+          <option value="admin">管理员</option>
         </Select>
         <Button size="sm" className="admin-filter-action" onClick={applyFilters} disabled={loading}>
           {loading ? "加载中…" : "搜索"}
@@ -200,7 +223,7 @@ export function UsersPage() {
                 <TableCell className="tabular-nums">¥{fenToYuan(u.balance_fen)}</TableCell>
                 <TableCell className="tabular-nums">¥{fenToYuan(u.frozen_fen)}</TableCell>
                 <TableCell>
-                  <Badge variant={u.role === "admin" ? "success" : "secondary"}>{u.role}</Badge>
+                  <Badge variant={u.role === "admin" ? "success" : "secondary"}>{u.role === "admin" ? "管理员" : "普通用户"}</Badge>
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground">
                   {u.created_at ? new Date(u.created_at).toLocaleString() : "—"}
@@ -259,68 +282,60 @@ export function UsersPage() {
 
       <AdminModal
         open={!!editing}
-        onOpenChange={(open) => !open && setEditing(null)}
-        size="md"
+        onOpenChange={(open) => { if (!open && !pendingSave.current) setEditing(null); }}
+        size="lg"
         title="编辑用户"
         subtitle={editing?.email}
         footer={
-          <Button className="w-full sm:w-auto" disabled={saving} onClick={() => void saveEdit()}>
-            {saving ? "保存中…" : "保存修改"}
-          </Button>
+          <>
+            <Button type="button" variant="outline" disabled={saving} onClick={() => setEditing(null)}>取消</Button>
+            <Button type="submit" form={editFormId} disabled={saving || !hasChanges} aria-busy={saving}>
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
+              {saving ? "正在保存…" : adjustBalance ? "确认调账并保存" : "保存权限修改"}
+            </Button>
+          </>
         }
       >
-        <div className="admin-form-grid admin-form-grid--2">
-          <AdminField label="角色">
-            <Select value={form.role} onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}>
-              <option value="user">user</option>
-              <option value="admin">admin</option>
-            </Select>
-          </AdminField>
-          <AdminField label="当前余额" hint="只读">
-            <Input value={editing ? `¥${fenToYuan(editing.balance_fen)}` : "—"} disabled readOnly />
-          </AdminField>
-          <AdminField label="调账方向">
-            <Select
-              value={form.balance_dir}
-              onChange={(e) =>
-                setForm((f) => ({
-                  ...f,
-                  balance_dir: e.target.value === "decrease" ? "decrease" : "increase",
-                }))
-              }
-            >
-              <option value="increase">增加</option>
-              <option value="decrease">减少</option>
-            </Select>
-          </AdminField>
-          <AdminField
-            label="调账金额（元）"
-            hint={
-              form.balance_amount_yuan.trim()
-                ? form.balance_dir === "increase"
-                  ? "保存后余额将增加该金额"
-                  : "保存后余额将减少该金额"
-                : "留空则不改余额"
-            }
-          >
-            <Input
-              type="number"
-              min="0"
-              step="0.01"
-              inputMode="decimal"
-              value={form.balance_amount_yuan}
-              onChange={(e) => setForm((f) => ({ ...f, balance_amount_yuan: e.target.value }))}
-              placeholder="例如 100"
-            />
-          </AdminField>
-          <AdminField label="调账备注" hint="可选；仅改余额时写入流水">
-            <Input
-              value={form.balance_note}
-              onChange={(e) => setForm((f) => ({ ...f, balance_note: e.target.value }))}
-              placeholder="管理员备注"
-            />
-          </AdminField>
-        </div>
+        <form id={editFormId} noValidate onSubmit={(event) => { event.preventDefault(); void saveEdit(); }} className="space-y-6">
+          <div className="admin-form-summary grid gap-4 rounded-xl border border-[var(--admin-border)] bg-[#f7f9f4] p-4 sm:grid-cols-2">
+            <div className="admin-form-summary-item"><div className="text-xs text-[var(--admin-muted)]">当前账户余额</div><div className="mt-1.5 text-2xl font-semibold tabular-nums text-[var(--admin-text)]">¥{fenToYuan(editing?.balance_fen ?? 0)}</div></div>
+            <div className="admin-form-summary-item"><div className="text-xs text-[var(--admin-muted)]">已冻结金额</div><div className="mt-1.5 text-lg font-medium tabular-nums text-[var(--admin-text)]">¥{fenToYuan(editing?.frozen_fen ?? 0)}</div><p className="mt-1 text-xs leading-relaxed text-[var(--admin-muted)]">调账不会修改任务已冻结的金额</p></div>
+          </div>
+          <fieldset disabled={saving} className="admin-form-section min-w-0 space-y-4">
+            <legend className="admin-form-section-title mb-1 text-sm font-semibold text-[var(--admin-text)]">账号权限</legend>
+            <AdminField label="账号角色" required hint="管理员可进入管理端，查看和管理全部业务数据。">
+              <Select value={form.role} onChange={(e) => { setSaveError(""); setForm((f) => ({ ...f, role: e.target.value })); }} disabled={saving}>
+                <option value="user">普通用户</option><option value="admin">管理员</option>
+              </Select>
+            </AdminField>
+          </fieldset>
+          <section className="admin-form-section space-y-4 border-t border-[var(--admin-border)] pt-5">
+            <div className="flex items-start justify-between gap-4">
+              <div><label htmlFor={adjustmentToggleId} className="text-sm font-semibold text-[var(--admin-text)]">调整账户余额</label><p className="mt-1 text-xs leading-relaxed text-[var(--admin-muted)]">按需开启；仅修改角色时，账户余额保持不变。</p></div>
+              <Switch id={adjustmentToggleId} checked={adjustBalance} disabled={saving} onCheckedChange={(checked) => { setAdjustBalance(checked); setSaveError(""); }} />
+            </div>
+            {adjustBalance ? <fieldset disabled={saving} className="min-w-0 space-y-4">
+              <div className="admin-form-grid admin-form-grid--2">
+                <AdminField label="调整方向" required>
+                  <Select value={form.balance_dir} disabled={saving} onChange={(e) => { setSaveError(""); setForm((f) => ({ ...f, balance_dir: e.target.value === "decrease" ? "decrease" : "increase" })); }}>
+                    <option value="increase">增加余额</option><option value="decrease">减少余额</option>
+                  </Select>
+                </AdminField>
+                <AdminField label="调整金额（元）" required hint="大于 0，最多两位小数。" error={visibleAmountError}>
+                  <Input inputMode="decimal" value={form.balance_amount_yuan} disabled={saving} placeholder="例如 100.00" onBlur={() => setAmountTouched(true)} onChange={(e) => { setSaveError(""); setForm((f) => ({ ...f, balance_amount_yuan: e.target.value })); }} />
+                </AdminField>
+              </div>
+              <AdminField label="调账备注" optional hint="备注会写入账户流水，便于后续核对。">
+                <Input value={form.balance_note} disabled={saving} onChange={(e) => setForm((f) => ({ ...f, balance_note: e.target.value }))} placeholder="例如：活动奖励补发、退款扣回" />
+              </AdminField>
+              {!amountError && amountFen !== null ? <div className="admin-form-preview rounded-xl border border-[#d5e6d1] bg-[var(--admin-accent-soft)] p-4" aria-live="polite">
+                <div className="mb-2 flex items-center gap-2 text-xs font-medium text-[var(--admin-forest)]"><Wallet className="h-4 w-4" aria-hidden="true" />保存后的账户余额</div>
+                <div className="flex flex-wrap items-center gap-3 text-lg font-semibold tabular-nums text-[var(--admin-text)]"><span className="text-[var(--admin-muted)]">¥{fenToYuan(editing?.balance_fen ?? 0)}</span><ArrowRight className="h-4 w-4 text-[var(--admin-muted)]" aria-hidden="true" /><span>¥{fenToYuan(balanceAfterFen)}</span><span className="text-xs font-medium text-[var(--admin-forest)]">{form.balance_dir === "decrease" ? "减少" : "增加"} ¥{fenToYuan(amountFen)}</span></div>
+              </div> : null}
+            </fieldset> : null}
+          </section>
+          {saveError ? <p role="alert" className="admin-form-error rounded-lg border border-[#f0d9d5] bg-[#fcf0ee] px-3 py-2.5 text-sm leading-relaxed text-[#aa3d37]">{saveError}</p> : null}
+        </form>
       </AdminModal>
     </div>
   );

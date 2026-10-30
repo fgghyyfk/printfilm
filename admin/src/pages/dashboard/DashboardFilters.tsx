@@ -3,9 +3,9 @@ import { AdminFilterBar } from "@/components/admin/AdminFilterBar";
 
 /** 仪表盘筛选维度 */
 export type DashboardDays = "1" | "7" | "14" | "30";
-export type DashboardDomain = "all" | "drama" | "kepu" | "api" | "tools" | "studio";
+export type DashboardDomain = "all" | "drama" | "kepu" | "tools" | "studio";
 export type DashboardCapability = "all" | "llm" | "image" | "video" | "tts";
-export type DashboardMetric = "charge" | "cost" | "calls";
+export type DashboardMetric = "charge" | "calls";
 
 export type DashboardFilterState = {
   days: DashboardDays;
@@ -46,7 +46,6 @@ const DOMAIN_OPTIONS = [
   { value: "all", label: "全部领域" },
   { value: "drama", label: "漫剧" },
   { value: "kepu", label: "AI短视频" },
-  { value: "api", label: "开放 API" },
   { value: "tools", label: "工具" },
   { value: "studio", label: "工作室" },
 ];
@@ -61,7 +60,6 @@ const CAPABILITY_OPTIONS = [
 
 const METRIC_OPTIONS = [
   { value: "charge", label: "扣费" },
-  { value: "cost", label: "成本" },
   { value: "calls", label: "调用" },
 ];
 

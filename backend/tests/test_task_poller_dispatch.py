@@ -24,7 +24,7 @@ async def _same_session(db: AsyncSession):
 async def test_selector_only_dispatches_fragment_video_to_drama_poller(
     db_session: AsyncSession,
 ) -> None:
-    """api/studio deferred 视频任务必须只走 ephemeral 轮询，不能被 drama poller 判失败。"""
+    """studio deferred 视频任务必须只走 ephemeral 轮询，不能被 drama poller 判失败。"""
     user = await make_user(db_session)
     now = datetime.now(UTC)
     # 漫剧分镜视频：唯一允许进入 drama poller 的任务
@@ -36,19 +36,19 @@ async def test_selector_only_dispatches_fragment_video_to_drama_poller(
         status="awaiting_poll",
         provider_task_id="prov-drama-1",
     )
-    # 开放 API / 工具的 deferred 视频：旧实现下会被误送 drama poller 并立即判失败
-    api_task = await make_task(
+    # 工作室工具的 deferred 视频：旧实现下会被误送 drama poller 并立即判失败
+    studio_task = await make_task(
         db_session,
         user,
-        domain="api",
-        task_type="v1_seedance",
+        domain="studio",
+        task_type="tool_video",
         status="awaiting_poll",
-        provider_task_id="prov-api-1",
+        provider_task_id="prov-studio-1",
     )
     drama_task.next_action_at = now - timedelta(seconds=1)
-    api_task.next_action_at = now - timedelta(seconds=1)
+    studio_task.next_action_at = now - timedelta(seconds=1)
     await db_session.commit()
-    api_task_id = int(api_task.id)
+    studio_task_id = int(studio_task.id)
 
     drama_poll = AsyncMock()
     with (
@@ -59,7 +59,7 @@ async def test_selector_only_dispatches_fragment_video_to_drama_poller(
 
     called_ids = {call.args[0] for call in drama_poll.await_args_list}
     assert called_ids == {int(drama_task.id)}
-    assert api_task_id not in called_ids
+    assert studio_task_id not in called_ids
 
 
 @pytest.mark.asyncio
@@ -102,8 +102,8 @@ async def test_ephemeral_poller_respects_next_action_at_gate(
     due_task = await make_task(
         db_session,
         user,
-        domain="api",
-        task_type="v1_video",
+        domain="studio",
+        task_type="tool_video",
         status="awaiting_poll",
         provider_task_id="prov-due",
     )

@@ -4,7 +4,6 @@ import { api, defaultsFromTemplate, resolveVoiceId } from '../../api'
 import type {
   AvatarEngine,
   MediaModelOption,
-  MediaModelsCatalog,
   PipelineMode,
   Project,
   Template,
@@ -12,6 +11,8 @@ import type {
 } from '../../api'
 import AvatarSetupBlock from '../../components/studio/AvatarSetupBlock'
 import AvatarBatchBlock from '../../components/studio/AvatarBatchBlock'
+import { resolveCatalogModelSelection, useMediaModelsCatalog } from '../../hooks/useMediaModelsCatalog'
+import { MediaCostNotice } from '../../components/billing/MediaCostNotice'
 import AppShell from '../../components/layout/AppShell'
 import Stepper from '../../components/ui/Stepper'
 import ComingSoon from '../../components/ui/ComingSoon'
@@ -72,12 +73,20 @@ export default function StyleConfigPage() {
   const [ratio, setRatio] = useState('16:9')
   const [imageModel, setImageModel] = useState('')
   const [videoModel, setVideoModel] = useState('')
-  const [mediaCatalog, setMediaCatalog] = useState<MediaModelsCatalog | null>(null)
+  const mediaCatalog = useMediaModelsCatalog()
+  const [imageResolution, setImageResolution] = useState('2K')
+  const [videoResolution, setVideoResolution] = useState('480p')
   const [busy, setBusy] = useState(false)
   const [previewBusy, setPreviewBusy] = useState<string | null>(null)
   const [playingId, setPlayingId] = useState<string | null>(null)
   const [error, setError] = useState('')
   const audioRef = useRef<HTMLAudioElement | null>(null)
+
+  useEffect(() => {
+    if (!mediaCatalog) return
+    setImageModel(previous => resolveCatalogModelSelection(mediaCatalog, 'image', previous))
+    setVideoModel(previous => resolveCatalogModelSelection(mediaCatalog, 'video', previous))
+  }, [mediaCatalog, imageModel, videoModel])
 
   useEffect(() => {
     if (!localStorage.getItem('token')) {
@@ -87,19 +96,19 @@ export default function StyleConfigPage() {
     if (!projectId) {
       nav('/studio/new')
     }
-    api.templates().then(setTemplates)
     api.voices().then(setVoices)
-    api
-      .mediaModels()
-      .then((cat) => {
-        setMediaCatalog(cat)
-        setImageModel((prev) => prev || cat.defaults.image_model)
-        setVideoModel((prev) => prev || cat.defaults.video_model)
-      })
-      .catch(() => setMediaCatalog(null))
-    api
-      .getProject(projectId)
-      .then((p) => {
+    Promise.all([api.templates(), api.getProject(projectId)])
+      .then(async ([list, p]) => {
+        if (p.pipeline_mode === 'image_text') {
+          nav(`/studio/new?project=${p.id}`, { replace: true })
+          return
+        }
+        // 下架的风格不再展示给新用户，历史项目仍可加载其原模板。
+        if (p.template_id && !list.some((item) => item.id === p.template_id)) {
+          const legacy = await api.getTemplate(p.template_id)
+          list = [...list, legacy]
+        }
+        setTemplates(list)
         setProject(p)
         setStylePrompt(p.style_prompt || '')
         setExtraPrompt(p.extra_prompt || '')
@@ -109,6 +118,8 @@ export default function StyleConfigPage() {
         setRatio(p.output_ratio || (p.pipeline_mode && p.pipeline_mode !== 'full' ? '9:16' : '16:9'))
         if (p.image_model) setImageModel(p.image_model)
         if (p.video_model) setVideoModel(p.video_model)
+        if (p.image_resolution) setImageResolution(p.image_resolution)
+        if (p.video_resolution) setVideoResolution(p.video_resolution)
       })
       .catch((err) => setError(err instanceof Error ? err.message : '加载失败'))
   }, [nav, projectId])
@@ -211,6 +222,14 @@ export default function StyleConfigPage() {
       setError('请先上传数字人半身照')
       return
     }
+    const image = mediaCatalog?.image_models.find(item => item.id === imageModel)
+    const video = mediaCatalog?.video_models.find(item => item.id === videoModel)
+    // 数字人用自己的形象生成与对口型服务，不受图/视频模型目录约束
+    if (pipelineMode !== 'avatar' && (!image || image.available === false || !(image.available_resolutions ?? image.allowed_resolutions ?? []).includes(imageResolution) || !image.allowed_aspect_ratios?.includes(ratio) ||
+        (pipelineMode === 'full' && (!video || video.available === false || !(video.available_resolutions ?? video.allowed_resolutions ?? []).includes(videoResolution) || !video.allowed_aspect_ratios?.includes(ratio))))) {
+      setError('所选模型不支持当前参数或尚未配置价格，请检查模型、分辨率和画幅。')
+      return
+    }
     stopPreview()
     setBusy(true)
     setError('')
@@ -234,6 +253,8 @@ export default function StyleConfigPage() {
         image_model: imageModel,
         video_model: videoModel,
         avatar_engine: avatarEngine,
+        image_resolution: imageResolution,
+        video_resolution: videoResolution,
       })
       const started = await api.generate(project.id)
       nav(`/studio/${started.id}`)
@@ -470,6 +491,10 @@ export default function StyleConfigPage() {
           {mediaCatalog && pipelineMode !== 'avatar' ? (
             <div className="pf-style-block">
               <h3>图片模型</h3>
+              <label>分辨率 <select value={imageResolution} onChange={event => setImageResolution(event.target.value)}>
+                {(mediaCatalog.image_models.find(item => item.id === imageModel)?.available_resolutions ?? mediaCatalog.image_models.find(item => item.id === imageModel)?.allowed_resolutions ?? []).map(value => <option key={value} value={value}>{value}</option>)}
+              </select></label>
+              <MediaCostNotice modelId={imageModel} resolution={imageResolution} />
               <p className="pf-muted" style={{ fontSize: '0.78rem', margin: '0 0 0.65rem' }}>
                 使用管理后台「模型」中已勾选的 TokenFree 模型。
               </p>
@@ -479,6 +504,7 @@ export default function StyleConfigPage() {
                     key={m.id}
                     type="button"
                     className={imageModel === m.id ? 'pf-model-opt selected' : 'pf-model-opt'}
+                    disabled={m.available === false}
                     onClick={() => setImageModel(m.id)}
                   >
                     <div className="pf-model-opt-title">
@@ -486,7 +512,7 @@ export default function StyleConfigPage() {
                       {m.recommended ? <span className="pf-model-badge">推荐</span> : null}
                     </div>
                     <div className="pf-model-opt-desc">{m.description}</div>
-                    <div className="pf-model-opt-provider">TokenFree</div>
+                    <div className="pf-model-opt-provider">{Object.entries(m.prices ?? {}).map(([resolution, price]) => `${resolution} ¥${price}/张`).join(' · ') || m.pricing_hint}</div>
                   </button>
                 ))}
               </div>
@@ -496,6 +522,10 @@ export default function StyleConfigPage() {
           {mediaCatalog && pipelineMode === 'full' ? (
             <div className="pf-style-block">
               <h3>视频模型</h3>
+              <label>分辨率 <select value={videoResolution} onChange={event => setVideoResolution(event.target.value)}>
+                {(mediaCatalog.video_models.find(item => item.id === videoModel)?.available_resolutions ?? mediaCatalog.video_models.find(item => item.id === videoModel)?.allowed_resolutions ?? []).map(value => <option key={value} value={value}>{value}</option>)}
+              </select></label>
+              <MediaCostNotice modelId={videoModel} resolution={videoResolution} seconds={1} />
               <p className="pf-muted" style={{ fontSize: '0.78rem', margin: '0 0 0.65rem' }}>
                 图生视频所用模型；静图成片模式不调用。
               </p>
@@ -505,6 +535,7 @@ export default function StyleConfigPage() {
                     key={m.id}
                     type="button"
                     className={videoModel === m.id ? 'pf-model-opt selected' : 'pf-model-opt'}
+                    disabled={m.available === false}
                     onClick={() => setVideoModel(m.id)}
                   >
                     <div className="pf-model-opt-title">
@@ -512,7 +543,7 @@ export default function StyleConfigPage() {
                       {m.recommended ? <span className="pf-model-badge">推荐</span> : null}
                     </div>
                     <div className="pf-model-opt-desc">{m.description}</div>
-                    <div className="pf-model-opt-provider">TokenFree</div>
+                    <div className="pf-model-opt-provider">{Object.entries(m.prices ?? {}).map(([resolution, price]) => `${resolution} ¥${price}/秒`).join(' · ') || m.pricing_hint}</div>
                   </button>
                 ))}
               </div>

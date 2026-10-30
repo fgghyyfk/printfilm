@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from typing import Annotated
+
 import logging
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, Path
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -41,6 +43,7 @@ from app.services.drama.access import (
     filter_valid_project_asset_ids,
     get_owned_drama_project,
     get_owned_episode,
+    require_drama_project_manager,
     load_episode_fragments,
     replace_fragment_asset_refs,
     match_fragments_for_generate,
@@ -69,6 +72,7 @@ from app.services.drama.seed import (
     _script_body_fingerprint,
     require_confirmable_episode_body,
     seed_assets_from_script,
+    seed_assets_from_episode_body,
     seed_episodes_from_script,
     seed_single_episode_from_script,
 )
@@ -206,19 +210,18 @@ async def _episode_out_with_tasks(
     return _episode_out(ep)
 
 
-@router.get("/episodes", response_model=list[DramaEpisodeOut])
+@router.get(
+    "/episodes", response_model=list[DramaEpisodeOut],
+    summary="查询项目分集及分镜",
+    description="按项目编号 project_id 查询可访问项目的全部分集，按分集序号及编号排序。附带各集分镜和活动任务摘要，剧本正文用于补充分集展示信息；此接口不分页。",
+    response_description="分集列表，每集包含分镜和可见活动任务",
+)
 async def list_episodes(
-    project_id: int,
+    project_id: Annotated[int, Query(description="所属项目编号，返回该项目全部分集及分镜")],
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[DramaEpisodeOut]:
     project = await get_owned_drama_project(db, project_id, user, with_script=True)
-    from app.services.drama.seed import merge_duplicate_episodes_by_number
-
-    # 打开分镜页时顺手合并同号重复行
-    merged = await merge_duplicate_episodes_by_number(db, project_id)
-    if merged:
-        await db.commit()
     result = await db.execute(
         select(DramaEpisode)
         .where(DramaEpisode.project_id == project_id)
@@ -252,10 +255,15 @@ async def list_episodes(
     return [_episode_out(ep, script_bodies=script_bodies) for ep in episodes]
 
 
-@router.post("/episodes/seed_from_script", response_model=list[DramaEpisodeOut])
+@router.post(
+    "/episodes/seed_from_script", response_model=list[DramaEpisodeOut],
+    summary="按剧本建立分集和分镜",
+    description="根据项目编号 project_id 对应的剧本同步建立分集及规则分镜。force 查询参数为 true 时强制重建，可能替换已有分镜；不符合剧本要求时返回 400。团队项目需持有结构资源的编辑租约。",
+    response_description="建立后的分集、分镜及活动任务列表",
+)
 async def seed_episodes(
-    project_id: int,
-    force: bool = False,
+    project_id: Annotated[int, Query(description="已有分集剧本的项目编号")],
+    force: Annotated[bool, Query(description="是否强制重建分镜；为 false 时保留已生成视频或手动编辑的受保护分镜")] = False,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[DramaEpisodeOut]:
@@ -298,7 +306,12 @@ async def seed_episodes(
     return [_episode_out(episode) for episode in episodes]
 
 
-@router.post("/episodes/confirm_from_script", response_model=DramaConfirmEpisodeOut)
+@router.post(
+    "/episodes/confirm_from_script", response_model=DramaConfirmEpisodeOut,
+    summary="确认单集剧本并建立制作分镜",
+    description="同步校验并确认指定集的剧本正文，增量抽取资产，只切分该集分镜，不重建其他集。团队项目仅从该集正文抽取资产，需持有本集编辑租约；已有资产抽取任务进行中时返回 409。等待资产抽取和分镜保存完成后返回。",
+    response_description="确认后的分集详情、资产处理状态及新增资产数量",
+)
 async def confirm_episode_from_script(
     body: DramaConfirmEpisodeRequest,
     db: AsyncSession = Depends(get_db),
@@ -335,8 +348,11 @@ async def confirm_episode_from_script(
             project_inner = await get_owned_drama_project(
                 db, body.project_id, user, with_script=True
             )
-            seed_result = await seed_assets_from_script(db, project_inner)
-            await record_seed_assets_llm_usage(db, user, body.project_id, seed_result)
+            if project_inner.team_id is not None:
+                seed_result = await seed_assets_from_episode_body(db, project_inner, body.episode_number)
+            else:
+                seed_result = await seed_assets_from_script(db, project_inner)
+                await record_seed_assets_llm_usage(db, user, body.project_id, seed_result)
             project_after = await get_owned_drama_project(
                 db, body.project_id, user, with_script=True
             )
@@ -412,9 +428,14 @@ async def confirm_episode_from_script(
     )
 
 
-@router.get("/episodes/{episode_id}", response_model=DramaEpisodeOut)
+@router.get(
+    "/episodes/{episode_id}", response_model=DramaEpisodeOut,
+    summary="获取分集制作详情",
+    description="按分集数据库编号 episode_id 获取分集、全部分镜和活动任务，依据分集实际所属项目校验个人或团队访问权限。",
+    response_description="包含分镜与活动任务摘要的分集详情",
+)
 async def get_episode(
-    episode_id: int,
+    episode_id: Annotated[int, Path(description="分集数据库编号，区别于从 1 开始的分集序号")],
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> DramaEpisodeOut:
@@ -422,9 +443,14 @@ async def get_episode(
     return await _episode_out_with_tasks(db, user, ep)
 
 
-@router.patch("/episodes/{episode_id}", response_model=DramaEpisodeOut)
+@router.patch(
+    "/episodes/{episode_id}", response_model=DramaEpisodeOut,
+    summary="更新分集名称和配置",
+    description="按分集数据库编号 episode_id 更新非 null 的名称与配置。名称去除首尾空白后为空时保留原名；params 整体替换，不做增量合并。团队项目需持有该集的编辑租约。",
+    response_description="更新后的分集详情及活动任务摘要",
+)
 async def update_episode(
-    episode_id: int,
+    episode_id: Annotated[int, Path(description="分集数据库编号，区别于从 1 开始的分集序号")],
     body: DramaEpisodeUpdate,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -438,9 +464,14 @@ async def update_episode(
     return await _episode_out_with_tasks(db, user, ep)
 
 
-@router.post("/episodes/{episode_id}/plan_fragments", response_model=DramaEpisodeOut)
+@router.post(
+    "/episodes/{episode_id}/plan_fragments", response_model=DramaEpisodeOut,
+    summary="提交单集 AI 分镜规划任务",
+    description="按分集数据库编号 episode_id 异步规划分镜，返回当前分集后可轮询 params.fragment_plan_status。默认保护已有视频或手工编辑的分镜，存在此类分镜时返回 409，force=true 才允许重切；已有任务生成中且未强制时直接返回当前分集。请求体可省略，团队项目需持有该集编辑租约。",
+    response_description="当前分集、分镜及活动任务，实际规划结果由后续任务写回",
+)
 async def plan_episode_fragments(
-    episode_id: int,
+    episode_id: Annotated[int, Path(description="分集数据库编号，区别于从 1 开始的分集序号")],
     body: DramaPlanFragmentsRequest | None = None,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -522,9 +553,14 @@ async def plan_episode_fragments(
     return await _episode_out_with_tasks(db, user, ep)
 
 
-@router.post("/episodes/{episode_id}/fragments", response_model=DramaEpisodeOut)
+@router.post(
+    "/episodes/{episode_id}/fragments", response_model=DramaEpisodeOut,
+    summary="保存分集完整分镜列表",
+    description="按分集数据库编号 episode_id 保存整集分镜集合：匹配现有 id 的条目原位更新，无匹配 id 的条目新增，未提交的原有分镜删除并请求取消其旧视频任务。资产引用仅保留当前项目内仍有效的资产。提交空列表会删除该集全部分镜；团队项目需持有该集编辑租约。",
+    response_description="保存后的完整分集分镜列表及活动任务摘要",
+)
 async def save_fragments(
-    episode_id: int,
+    episode_id: Annotated[int, Path(description="分集数据库编号，区别于从 1 开始的分集序号")],
     body: DramaSaveFragmentsRequest,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -585,9 +621,14 @@ async def save_fragments(
     return await _episode_out_with_tasks(db, user, ep)
 
 
-@router.post("/fragments/{fragment_id}/activate_video_version")
+@router.post(
+    "/fragments/{fragment_id}/activate_video_version",
+    summary="切换分镜视频历史版本",
+    description="按分镜编号 fragment_id 将指定历史成片版本设为当前预览和导出所用视频。分镜在排队或生成中时返回 409，版本无效时返回 400；团队项目需持有分镜所属集的编辑租约。",
+    response_description="切换成功标记及当前视频版本信息",
+)
 async def activate_video_version(
-    fragment_id: int,
+    fragment_id: Annotated[int, Path(description="分镜编号，需有其所属项目的访问权限")],
     body: DramaActivateVideoVersionRequest,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -612,9 +653,14 @@ async def activate_video_version(
     return {"ok": True, **payload}
 
 
-@router.post("/episodes/{episode_id}/generate")
+@router.post(
+    "/episodes/{episode_id}/generate",
+    summary="提交分镜视频生成任务",
+    description="按分集数据库编号 episode_id 为指定分镜逐一创建异步视频任务；不传或传空 fragment_ids 时选择本集全部分镜。已排队或生成中的分镜会跳过，全部在生成时返回 409。超出用户并发上限的任务仍会入队等待；开启尾帧衔接时按镜序执行，并校验上一镜可用性。可通过 generate_status 轮询进度，团队项目需持有该集编辑租约。",
+    response_description="已入队分镜、任务编号列表、批次标识、并发上限及延后激活数量",
+)
 async def generate_episode(
-    episode_id: int,
+    episode_id: Annotated[int, Path(description="分集数据库编号，区别于从 1 开始的分集序号")],
     body: DramaGenerateRequest,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -777,13 +823,19 @@ async def generate_episode(
     }
 
 
-@router.get("/episodes/{episode_id}/generate_status")
+@router.get(
+    "/episodes/{episode_id}/generate_status",
+    summary="查询分集视频生成进度",
+    description="按分集数据库编号 episode_id 汇总全部分镜的生成状态和成功、失败、进行中数量，并附带活动任务及最近 40 条终态分镜视频任务。读取时会校正已完成或取消任务遗留的分镜状态，便于前端持续轮询。",
+    response_description="分集生成计数、任务摘要及逐分镜状态列表",
+)
 async def generate_status(
-    episode_id: int,
+    episode_id: Annotated[int, Path(description="分集数据库编号，区别于从 1 开始的分集序号")],
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
     ep = await get_owned_episode(db, episode_id, user)
+    project = await get_owned_drama_project(db, ep.project_id, user)
     active_tasks = await list_active_tasks_for_owner(
         db,
         user.id,
@@ -798,11 +850,6 @@ async def generate_status(
         drama_project_id=ep.project_id,
     )
     episode_tasks = [task for task in active_tasks if task.episode_id == episode_id]
-    await reconcile_orphaned_fragment_generations(
-        db,
-        list(ep.fragments or []),
-        collect_active_fragment_ids_from_tasks(episode_tasks),
-    )
     # 附带本集近期终态分镜视频任务，供队列点开详情（含失败原因）
     from app.models_tasks import TaskRun
     from app.services.tasks.service import TERMINAL_TASK_STATUSES, task_detail_options
@@ -813,7 +860,7 @@ async def generate_status(
                 select(TaskRun)
                 .options(*task_detail_options())
                 .where(
-                    TaskRun.requested_by == user.id,
+                    TaskRun.team_id == project.team_id if project.team_id is not None else ((TaskRun.requested_by == user.id) & TaskRun.team_id.is_(None)),
                     TaskRun.domain == "drama",
                     TaskRun.task_type == "fragment_video",
                     TaskRun.episode_id == episode_id,
@@ -826,6 +873,11 @@ async def generate_status(
         .scalars()
         .unique()
         .all()
+    )
+    # 团队任务同样需要修复取消后残留的 queued；活动集合包含项目中所有成员的任务。
+    await reconcile_orphaned_fragment_generations(
+        db, list(ep.fragments or []), collect_active_fragment_ids_from_tasks(episode_tasks),
+        terminal_tasks=recent_terminal,
     )
     # 分镜 params 可能仍停在 queued，而任务已 awaiting_poll：用任务态校正对外状态
     task_status_by_frag: dict[int, str] = {}
@@ -870,9 +922,14 @@ async def generate_status(
     }
 
 
-@router.post("/episodes/{episode_id}/compose")
+@router.post(
+    "/episodes/{episode_id}/compose",
+    summary="合成分集成片视频",
+    description="按分集数据库编号 episode_id 将所选分镜视频统一画幅重编码后拼接为成片，按镜序合成。请求体可省略，支持 fragment_ids 选择分镜；本请求等待合成完成后返回视频地址。团队项目需持有该集编辑租约。",
+    response_description="合成成功标记、成片 video_url 及分集编号",
+)
 async def compose_episode(
-    episode_id: int,
+    episode_id: Annotated[int, Path(description="分集数据库编号，区别于从 1 开始的分集序号")],
     body: DramaComposeEpisodeRequest | None = None,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -887,11 +944,16 @@ async def compose_episode(
         raise HTTPException(status_code=404, detail="分集不存在")
     req = body or DramaComposeEpisodeRequest()
     try:
-        url = await compose_episode_video(
-            db,
-            episode=episode,
-            project=project,
-            fragment_ids=req.fragment_ids,
+        async def compose_current_episode():
+            """只合成本次受理的分集，系统占用持续到文件完成。"""
+            return await compose_episode_video(db, episode=episode, project=project, fragment_ids=req.fragment_ids)
+
+        _, url = await run_billed_ephemeral(
+            db, user, domain="drama", task_type="episode_compose", executor=compose_current_episode,
+            drama_project_id=project.id, episode_id=episode.id,
+            payload={"fragment_ids": req.fragment_ids},
+            billable=project.team_id is not None,
+            result_payload_factory=lambda result: {"kind": "video", "urls": [result] if result else []},
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -901,15 +963,32 @@ async def compose_episode(
     return {"ok": True, "video_url": url, "episode_id": episode_id}
 
 
-@router.post("/episodes/{episode_id}/cancel_generate")
+@router.post(
+    "/episodes/{episode_id}/cancel_generate",
+    summary="取消分集视频生成任务",
+    description="按分集数据库编号 episode_id 请求取消排队或进行中的分镜视频任务。个人项目所有者可取消本集任务；团队普通成员仅能取消本人发起且可取消的任务，团队所有者或管理员可取消本集范围任务。取消接口不要求内容编辑租约，已提交的上游任务按任务平台的取消流程处理。",
+    response_description="取消处理结果及受影响数量；团队普通成员分支的 fragments 表示本人已请求取消的任务数",
+)
 async def cancel_generate_episode(
-    episode_id: int,
+    episode_id: Annotated[int, Path(description="分集数据库编号，区别于从 1 开始的分集序号")],
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
     """取消本集全部分镜视频生成（排队/进行中）。"""
     ep = await get_owned_episode(db, episode_id, user)
-    await get_owned_drama_project(db, ep.project_id, user)
+    project = await get_owned_drama_project(db, ep.project_id, user)
+    if project.team_id is not None:
+        from app.services.teams.access import get_team, member_role
+        from app.services.tasks.service import cancel_task_for_user
+        team, membership = await get_team(db, project.team_id, user.id)
+        if member_role(team, membership) == "member":
+            # 普通成员仅取消本人任务，不能重置整集队友的生成状态。
+            tasks = await list_active_tasks_for_owner(db, user.id, drama_project_id=project.id)
+            own = [task for task in tasks if task.requested_by == user.id and task.episode_id == episode_id and task.task_type == "fragment_video" and task.cancelable]
+            for task in own:
+                await cancel_task_for_user(db, user, task.id)
+            return {"ok": True, "episode_id": episode_id, "fragments": len(own)}
+        await require_drama_project_manager(db, project, user.id)
     await cancel_tasks_for_scope(
         db,
         user.id,
@@ -928,7 +1007,12 @@ async def cancel_generate_episode(
     return result
 
 
-@router.post("/cancel_video_jobs")
+@router.post(
+    "/cancel_video_jobs",
+    summary="取消本人个人空间的全部分镜视频任务",
+    description="请求取消当前用户个人空间中的全部漫剧分镜视频任务，并重置个人项目内残留的排队或生成状态。团队项目需使用对应分集的 cancel_generate 接口取消。此接口不要求内容编辑租约，已提交的上游任务按任务平台的取消流程处理。",
+    response_description="批量取消处理结果及受影响数量",
+)
 async def cancel_all_video_jobs(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),

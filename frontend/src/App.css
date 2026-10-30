@@ -117,3 +117,8 @@
     animation: none !important;
   }
 }
+
+/* 登录页独立于应用壳，同样避免触屏输入触发浏览器缩放。 */
+@media (hover: none) and (pointer: coarse) {
+  .auth-shell input, .auth-shell textarea, .auth-shell select { font-size: max(1em, 16px); }
+}

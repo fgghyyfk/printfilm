@@ -19,7 +19,10 @@ import { QueuesPage } from "@/pages/QueuesPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { TemplatesPage } from "@/pages/TemplatesPage";
 import { UsersPage } from "@/pages/UsersPage";
+import { TeamsPage } from "@/pages/TeamsPage";
+import { TeamDetailPage } from "@/pages/TeamDetailPage";
 import { WorksPage } from "@/pages/WorksPage";
+import MarketplaceAdmin from "@/features/marketplace/MarketplaceAdmin";
 
 // Guard: require JWT + admin role
 function RequireAdmin() {
@@ -40,6 +43,8 @@ export default function App() {
         <Route element={<AdminLayout />}>
           <Route index element={<DashboardPage />} />
           <Route path="users" element={<UsersPage />} />
+          <Route path="teams" element={<TeamsPage />} />
+          <Route path="teams/:teamId" element={<TeamDetailPage />} />
           <Route path="orders" element={<OrdersPage />} />
           <Route path="adjustments" element={<AdjustRecordsPage />} />
           <Route path="finance" element={<FinanceListPage />} />
@@ -53,6 +58,7 @@ export default function App() {
           <Route path="drama-fragments" element={<DramaFragmentsPage />} />
           <Route path="drama-fragments/:fragmentId" element={<DramaFragmentDetailPage />} />
           <Route path="works" element={<WorksPage />} />
+          <Route path="marketplace" element={<MarketplaceAdmin />} />
           <Route path="templates" element={<TemplatesPage />} />
           <Route path="queues" element={<QueuesPage />} />
           <Route path="settings" element={<SettingsPage />} />

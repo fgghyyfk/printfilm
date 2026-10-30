@@ -7,6 +7,7 @@ from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import Session
 
 from app.models_tasks import TaskEvent, TaskRun, TaskStep, TaskTarget
+import app.models_teams  # noqa: F401 — resolve TaskRun.team_id before isolated table DDL
 from app.services.tasks.service import get_task_for_runtime
 
 
