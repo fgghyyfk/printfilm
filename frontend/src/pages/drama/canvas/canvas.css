@@ -549,7 +549,7 @@
   max-width: 160px;
   height: 22px;
   padding: 0 6px;
-  border: 1px solid rgba(182, 255, 0, 0.75);
+  border: 1px solid rgba(255, 106, 61, 0.75);
   border-radius: 6px;
   background: #fff;
   color: var(--fc-ink);
@@ -557,7 +557,7 @@
   font-size: 12px;
   font-weight: 600;
   outline: none;
-  box-shadow: 0 0 0 2px rgba(182, 255, 0, 0.18);
+  box-shadow: 0 0 0 2px rgba(255, 106, 61, 0.18);
 }
 
 .fc-asset-card {
@@ -591,7 +591,7 @@
 }
 
 .fc-generate-panel.has-media {
-  border-color: rgba(182, 255, 0, 0.45);
+  border-color: rgba(255, 106, 61, 0.45);
 }
 
 .fc-generate-head {
@@ -619,8 +619,8 @@
 }
 
 .fc-generate-help:hover:not(:disabled) {
-  color: #3d6500;
-  background: rgba(182, 255, 0, 0.28);
+  color: #9a3412;
+  background: rgba(255, 106, 61, 0.28);
 }
 
 .fc-generate-help:disabled {
@@ -632,8 +632,8 @@
   margin-left: auto;
   padding: 0.12rem 0.45rem;
   border-radius: 999px;
-  background: rgba(182, 255, 0, 0.35);
-  color: #3d6500;
+  background: rgba(255, 106, 61, 0.35);
+  color: #9a3412;
   font-style: normal;
   font-size: 0.68rem;
   font-weight: 700;
@@ -681,8 +681,8 @@
 
 .fc-generate-input:focus {
   outline: none;
-  border-color: rgba(182, 255, 0, 0.75);
-  box-shadow: 0 0 0 3px rgba(182, 255, 0, 0.18);
+  border-color: rgba(255, 106, 61, 0.75);
+  box-shadow: 0 0 0 3px rgba(255, 106, 61, 0.18);
   background: #fff;
 }
 
@@ -811,7 +811,7 @@
 
 .fc-mention-item.is-active,
 .fc-mention-item:hover {
-  background: rgba(182, 255, 0, 0.22);
+  background: rgba(255, 106, 61, 0.22);
 }
 
 .fc-mention-thumb {
@@ -886,9 +886,9 @@
 }
 
 .fc-generate-optimize:hover:not(:disabled) {
-  border-color: rgba(182, 255, 0, 0.9);
-  background: rgba(182, 255, 0, 0.22);
-  color: #3d6500;
+  border-color: rgba(255, 106, 61, 0.9);
+  background: rgba(255, 106, 61, 0.22);
+  color: #9a3412;
 }
 
 .fc-generate-optimize:disabled {
@@ -1094,7 +1094,7 @@
   padding: 0 14px;
   border: 0;
   border-radius: 999px;
-  background: #b6ff00;
+  background: #ff6a3d;
   color: #111318;
   font-size: 13px;
   font-weight: 650;
@@ -1282,8 +1282,8 @@
 }
 
 .fc-gen-opt-btn.active {
-  background: rgba(182, 255, 0, 0.28);
-  color: #3d6500;
+  background: rgba(255, 106, 61, 0.28);
+  color: #9a3412;
 }
 
 .fc-gen-opt-btn:disabled {
@@ -1415,9 +1415,9 @@
 }
 
 .fc-gen-chip.selected {
-  border-color: rgba(182, 255, 0, 0.85);
-  background: rgba(182, 255, 0, 0.22);
-  color: #3d6500;
+  border-color: rgba(255, 106, 61, 0.85);
+  background: rgba(255, 106, 61, 0.22);
+  color: #9a3412;
 }
 
 .fc-text-editor {

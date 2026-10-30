@@ -1,242 +1,190 @@
-/** PRINTFILM 官网首页：产品主张、漫剧/科普入口、成片流程与工具 */
+/** 开口播官网首页：简洁风，居中主张 + 产品示意窗 + 平台条 + 流程标签页 + 其他出片方式 */
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowRight } from 'lucide-react'
+import { ArrowRight, Clapperboard, Video, Wand2 } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
-import Button from '../components/ui/Button'
-import { IconGithub } from '../components/ui/Icons'
-import ComingSoon from '../components/ui/ComingSoon'
-import CreateChoiceModal from '../components/ui/CreateChoiceModal'
+import BrandMark from '../components/BrandMark'
 import { useI18n } from '../i18n'
-import { getDramaImageStylePreviewUrl } from '../lib/dramaImageStylePreviews'
-import { GITHUB_REPO_URL } from '../lib/siteLinks'
-import { PRODUCT_ICONS, localizeToolDefs } from '../lib/toolsCatalog'
+import { BRAND_NAME, BRAND_NAME_EN } from '../lib/siteLinks'
+import './home/home.css'
+
+const AVATAR_PATH = '/studio/new?mode=avatar'
+const MORE_LINKS = [
+  { path: '/studio/new', icon: Video },
+  { path: '/drama', icon: Clapperboard },
+  { path: '/tools', icon: Wand2 },
+]
 
 export default function HomePage() {
   const nav = useNavigate()
   const { t, m } = useI18n()
   const loggedIn = Boolean(localStorage.getItem('token'))
-  const [createOpen, setCreateOpen] = useState(false)
-  const DramaIcon = PRODUCT_ICONS.drama
-  const KepuIcon = PRODUCT_ICONS.kepu
-  const tools = localizeToolDefs(m)
+  /* flowIdx 流程标签页当前项 */
+  const [flowIdx, setFlowIdx] = useState(0)
+  const flow = m.home.flow[flowIdx]
 
-  // 未登录去登录；已登录弹出产品选择
-  function goCreate() {
-    if (!loggedIn) {
-      nav('/auth?next=/')
-      return
-    }
-    setCreateOpen(true)
-  }
-
-  // 产品入口：未登录带 next 回跳
+  // 未登录先去登录，带 next 回跳
   function goAuthOr(path: string) {
     nav(loggedIn ? path : `/auth?next=${encodeURIComponent(path)}`)
   }
 
   return (
-    <AppShell active="home" hideFooter>
-      <section className="pf-land-hero">
-        <div className="pf-land-hero-copy">
-          <p className="pf-land-kicker">PRINTFILM</p>
-          <h1>
-            {t('home.headlineBefore')}
-            <br />
-            <em>{t('home.headlineEm')}</em>
-          </h1>
-          <p className="pf-land-lede">{t('home.lede')}</p>
-          <div className="pf-land-cta">
-            <Button variant="lime" size="lg" icon onClick={goCreate}>
-              {t('home.startCreate')}
-              <ArrowRight size={16} strokeWidth={2} aria-hidden />
-            </Button>
-            <Button variant="ghost" size="lg" icon to="/tools">
-              {t('home.browseTools')}
-              <ArrowRight size={16} strokeWidth={2} aria-hidden />
-            </Button>
-          </div>
-          <a
-            className="pf-land-github"
-            href={GITHUB_REPO_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <IconGithub size={16} />
-            <span>{t('home.githubCta')}</span>
-            <ArrowRight size={14} strokeWidth={2.2} aria-hidden />
-          </a>
-        </div>
-        <div className="pf-land-frames" aria-hidden>
-          <figure className="pf-land-frame is-drama">
-            <img src={getDramaImageStylePreviewUrl('ancient-chinese-mythology')} alt="" />
-            <figcaption>{t('home.dramaTitle')}</figcaption>
-          </figure>
-          <figure className="pf-land-frame is-kepu">
-            <img src={getDramaImageStylePreviewUrl('neon-cyberpunk-film')} alt="" />
-            <figcaption>{t('home.kepuTitle')}</figcaption>
-          </figure>
-        </div>
-      </section>
-
-      <section className="pf-land-products" id="products" aria-label={t('home.products')}>
-        <button type="button" className="pf-land-product is-drama" onClick={() => goAuthOr('/drama')}>
-          <span className="pf-land-product-icon" aria-hidden>
-            <DramaIcon size={26} strokeWidth={1.6} />
-          </span>
-          <span className="pf-land-product-body">
-            <strong>{t('home.dramaTitle')}</strong>
-            <em>{t('home.dramaFor')}</em>
-            <span>{t('home.dramaDesc')}</span>
-            <span className="pf-land-chips">
-              {m.home.dramaSteps.map((label) => (
-                <span key={label}>{label}</span>
-              ))}
-            </span>
-          </span>
-          <span className="pf-land-product-go" aria-hidden>
-            <ArrowRight size={16} strokeWidth={2} />
-          </span>
-        </button>
-        <button type="button" className="pf-land-product is-kepu" onClick={() => goAuthOr('/studio/new')}>
-          <span className="pf-land-product-icon" aria-hidden>
-            <KepuIcon size={26} strokeWidth={1.6} />
-          </span>
-          <span className="pf-land-product-body">
-            <strong className="pf-land-product-heading">
-              {t('home.kepuTitle')}
-              <span className="pf-land-product-tag">{t('home.kepuTag')}</span>
-            </strong>
-            <em>{t('home.kepuFor')}</em>
-            <span>{t('home.kepuDesc')}</span>
-            <span className="pf-land-chips">
-              {m.home.kepuSteps.map((label) => (
-                <span key={label}>{label}</span>
-              ))}
-            </span>
-          </span>
-          <span className="pf-land-product-go" aria-hidden>
-            <ArrowRight size={16} strokeWidth={2} />
-          </span>
-        </button>
-      </section>
-
-      <section className="pf-land-pipeline" aria-labelledby="pf-land-pipeline-title">
-        <header className="pf-land-section-head">
-          <p className="pf-land-kicker">{t('home.howKicker')}</p>
-          <h2 id="pf-land-pipeline-title">{t('home.howTitle')}</h2>
-        </header>
-        <ol className="pf-land-pipeline-list">
-          {m.home.pipeline.map((item) => (
-            <li key={item.step}>
-              <span className="pf-land-step-no">{item.step}</span>
-              <strong>{item.title}</strong>
-              <span>{item.desc}</span>
-            </li>
-          ))}
-        </ol>
-      </section>
-
-      <section className="pf-land-caps" aria-labelledby="pf-land-caps-title">
-        <header className="pf-land-section-head">
-          <p className="pf-land-kicker">{t('home.capsKicker')}</p>
-          <h2 id="pf-land-caps-title">{t('home.capsTitle')}</h2>
-        </header>
-        <div className="pf-land-cap-grid">
-          {m.home.capabilities.map((item) => (
-            <article key={item.title}>
-              <strong>{item.title}</strong>
-              <p>{item.desc}</p>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="pf-land-tools" id="tools">
-        <header className="pf-land-section-head is-row">
-          <div>
-            <p className="pf-land-kicker">{t('home.toolsKicker')}</p>
-            <h2>{t('home.toolsTitle')}</h2>
-          </div>
-          <Link to="/tools" className="pf-link">
-            {t('home.allTools')}
+    <AppShell active="home" flush>
+      <section className="kk-hero">
+        <h1>
+          <span className="kk-brand">
+            {BRAND_NAME}
+            <i className="kk-cursor" aria-hidden />
+          </span>{' '}
+          {t('home.headline')}
+        </h1>
+        <p className="kk-sub">
+          {t('home.sub1')}
+          <br />
+          {t('home.sub2')}
+        </p>
+        <div className="kk-cta">
+          <button type="button" className="kk-pill is-fill" onClick={() => goAuthOr(AVATAR_PATH)}>
+            {t('home.start')}
+          </button>
+          <Link className="kk-pill is-line" to={loggedIn ? AVATAR_PATH : '/auth?mode=register&next=/'}>
+            {t('home.trial')}
           </Link>
-        </header>
-        <div className="pf-land-tool-grid">
-          {tools.map((tool) => {
-            const Icon = tool.icon
-            return (
-              <Link
-                key={tool.id}
-                to={`/tools/${tool.id}`}
-                className={`pf-land-tool-card${tool.soon ? ' is-soon' : ''}`}
-              >
-                <span className="pf-land-tool-icon" aria-hidden>
-                  <Icon size={20} strokeWidth={1.7} />
+        </div>
+
+        <div className="kk-window" aria-hidden>
+          <div className="kk-window-bar">
+            <span className="kk-lights">
+              <i />
+              <i />
+              <i />
+            </span>
+            <span className="kk-window-title">{t('home.winTitle')}</span>
+            <span className="kk-window-status">{t('home.winStatus')}</span>
+          </div>
+          <div className="kk-window-body">
+            <aside className="kk-window-side">
+              {m.home.winSteps.map((s, i) => (
+                <span key={s} className={i === 3 ? 'is-on' : i < 3 ? 'is-done' : ''}>
+                  <b />
+                  {s}
                 </span>
-                <strong>{tool.title}</strong>
-                <span>{tool.desc}</span>
-                {tool.soon ? <ComingSoon /> : null}
-              </Link>
+              ))}
+            </aside>
+            <div className="kk-window-main">
+              <p className="kk-window-task">{t('home.winTask')}</p>
+              <div className="kk-window-grid">
+                <div className="kk-phone">
+                  <img src="/char-presets/real.jpg" alt="" />
+                  <div className="kk-phone-title">
+                    <span className="is-top">{t('home.winTitleTop')}</span>
+                    <span>{t('home.winTitleBottom')}</span>
+                  </div>
+                </div>
+                <ul className="kk-rows">
+                  {m.home.winRows.map((r, i) => (
+                    <li key={r.label} className={`is-${i < 2 ? 'done' : i === 2 ? 'run' : 'wait'}`}>
+                      <span>{r.label}</span>
+                      <span className="kk-bar">
+                        <i />
+                      </span>
+                      <em>{r.state}</em>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p className="kk-note">{t('home.winNote')}</p>
+      </section>
+
+      <section className="kk-platforms">
+        <p>{t('home.platformsLabel')}</p>
+        <div>
+          {m.home.platforms.map((p) => (
+            <span key={p}>{p}</span>
+          ))}
+        </div>
+      </section>
+
+      <section className="kk-flow" id="how">
+        <h2>
+          <span className="kk-brand-sm">{BRAND_NAME}.</span> {t('home.flowTitle')}
+        </h2>
+        <p className="kk-sub">{t('home.flowSub')}</p>
+        <div className="kk-tabs" role="tablist">
+          {m.home.flow.map((f, i) => (
+            <button
+              key={f.tab}
+              type="button"
+              role="tab"
+              aria-selected={i === flowIdx}
+              className={i === flowIdx ? 'is-on' : ''}
+              onClick={() => setFlowIdx(i)}
+            >
+              {f.tab}
+            </button>
+          ))}
+        </div>
+        <div className="kk-flow-panel">
+          <div>
+            <span className="kk-flow-no">0{flowIdx + 1}</span>
+            <h3>{flow.title}</h3>
+            <p>{flow.desc}</p>
+          </div>
+          <div className="kk-flow-card" aria-hidden>
+            {m.home.flow.map((f, i) => (
+              <span key={f.tab} className={i < flowIdx ? 'is-done' : i === flowIdx ? 'is-on' : ''}>
+                <b>{i + 1}</b>
+                {f.tab}
+              </span>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="kk-more">
+        <h2>{t('home.moreTitle')}</h2>
+        <div className="kk-more-grid">
+          {m.home.more.map((item, i) => {
+            const { path, icon: Icon } = MORE_LINKS[i]
+            return (
+              <button key={item.title} type="button" className="kk-more-card" onClick={() => goAuthOr(path)}>
+                <Icon size={20} strokeWidth={1.7} aria-hidden />
+                <strong>{item.title}</strong>
+                <span>{item.desc}</span>
+                <ArrowRight className="kk-more-go" size={16} strokeWidth={2} aria-hidden />
+              </button>
             )
           })}
         </div>
       </section>
 
-      <section className="pf-land-who" aria-labelledby="pf-land-who-title">
-        <header className="pf-land-section-head">
-          <p className="pf-land-kicker">{t('home.whoKicker')}</p>
-          <h2 id="pf-land-who-title">{t('home.whoTitle')}</h2>
-        </header>
-        <div className="pf-land-who-grid">
-          {m.home.audiences.map((item) => (
-            <article key={item.title}>
-              <strong>{item.title}</strong>
-              <p>{item.desc}</p>
-            </article>
-          ))}
-        </div>
+      <section className="kk-close">
+        <h2>{t('home.closeTitle')}</h2>
+        <p className="kk-sub">{t('home.closeSub')}</p>
+        <button type="button" className="kk-pill is-fill" onClick={() => goAuthOr(AVATAR_PATH)}>
+          {t('home.start')}
+        </button>
       </section>
 
-      <section className="pf-land-close">
-        <div>
-          <h2>{t('home.closeTitle')}</h2>
-          <p>{t('home.closeLead')}</p>
+      <footer className="kk-foot">
+        <div className="kk-foot-brand">
+          <BrandMark />
+          <span>{t('home.footBrand')}</span>
         </div>
-        <div className="pf-land-cta">
-          <Button variant="lime" size="lg" icon onClick={goCreate}>
-            {t('home.startCreate')}
-            <ArrowRight size={16} strokeWidth={2} aria-hidden />
-          </Button>
-          <Button variant="ghost" size="lg" to="/pricing">
-            {t('home.viewPricing')}
-          </Button>
-        </div>
-      </section>
-
-      <footer className="pf-land-foot">
-        <div className="pf-land-foot-brand">
-          <strong>PRINTFILM</strong>
-          <p>{t('home.footBrand')}</p>
-        </div>
-        <nav className="pf-land-foot-nav" aria-label={t('home.footNav')}>
-          <Link to="/drama">{t('nav.drama')}</Link>
-          <Link to="/history">{t('nav.kepu')}</Link>
-          <Link to="/method">{t('home.methodLink')}</Link>
-          <Link to="/tools">{t('nav.tools')}</Link>
+        <nav aria-label={t('home.footNav')}>
           <Link to="/pricing">{t('nav.pricing')}</Link>
-          <Link to="/help">{t('nav.help')}</Link>
+          <Link to="/help">{t('footer.help')}</Link>
+          <Link to="/contact">{t('footer.contact')}</Link>
           <Link to="/terms">{t('footer.terms')}</Link>
           <Link to="/privacy">{t('footer.privacy')}</Link>
-          <Link to="/contact">{t('footer.contact')}</Link>
-          <a href={GITHUB_REPO_URL} target="_blank" rel="noopener noreferrer">
-            {t('footer.github')}
-          </a>
         </nav>
-        <p className="pf-land-copy">© {new Date().getFullYear()} PRINTFILM. All rights reserved.</p>
+        <p>
+          © {new Date().getFullYear()} {BRAND_NAME} {BRAND_NAME_EN}
+        </p>
       </footer>
-
-      <CreateChoiceModal open={createOpen} onClose={() => setCreateOpen(false)} />
     </AppShell>
   )
 }

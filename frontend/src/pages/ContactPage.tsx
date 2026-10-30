@@ -1,11 +1,10 @@
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { HelpCircle, Mail, Building2, GitBranch } from 'lucide-react'
+import { HelpCircle, Mail, Building2 } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import { useI18n } from '../i18n'
-import { GITHUB_REPO_URL } from '../lib/siteLinks'
 
-const CHANNEL_ICONS = [Mail, HelpCircle, Building2, GitBranch] as const
+const CHANNEL_ICONS = [Mail, HelpCircle, Building2] as const
 
 /** 联系我们：渠道说明 + 本地反馈表单（引导发邮件） */
 export default function ContactPage() {
@@ -29,8 +28,8 @@ export default function ContactPage() {
       '',
       message.trim() || t('contact.mailEmpty'),
     ].join('\n')
-    const href = `mailto:support@printfilm.com?subject=${encodeURIComponent(
-      `[PRINTFILM] ${topic}`,
+    const href = `mailto:support@haituike.com?subject=${encodeURIComponent(
+      `[开口播] ${topic}`,
     )}&body=${encodeURIComponent(body)}`
     window.location.href = href
     setSent(true)
@@ -126,7 +125,7 @@ export default function ContactPage() {
             {sent ? (
               <p className="pf-contact-sent pf-muted">
                 {t('contact.sentPrefix')}{' '}
-                <a href="mailto:support@printfilm.com">support@printfilm.com</a>
+                <a href="mailto:support@haituike.com">support@haituike.com</a>
               </p>
             ) : null}
           </form>
@@ -137,9 +136,6 @@ export default function ContactPage() {
           <Link to="/privacy">{t('footer.privacy')}</Link>
           <Link to="/help">{t('footer.help')}</Link>
           <Link to="/pricing">{t('contact.pricing')}</Link>
-          <a href={GITHUB_REPO_URL} target="_blank" rel="noopener noreferrer">
-            {t('footer.github')}
-          </a>
         </nav>
       </div>
     </AppShell>

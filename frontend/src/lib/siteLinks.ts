@@ -1,3 +1,6 @@
-/** 站外固定链接（开源仓库等） */
+/** 品牌与站点固定信息 */
 
-export const GITHUB_REPO_URL = 'https://github.com/yi1108/printfilm'
+export const BRAND_NAME = '开口播'
+export const BRAND_NAME_EN = 'KaiKou'
+export const SITE_ORIGIN = 'https://kaikou.haituike.com'
+export const SUPPORT_EMAIL = 'support@haituike.com'

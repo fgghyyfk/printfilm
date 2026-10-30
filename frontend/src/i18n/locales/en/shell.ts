@@ -2,9 +2,9 @@
 
 export const enShell = {
   meta: {
-    title: 'PRINTFILM · AI short video',
+    title: 'KaiKou · One photo, ready to talk',
     description:
-      'PRINTFILM: turn scripts into episodic AI dramas, or offers into AI short videos.',
+      'KaiKou turns one half-body photo into a vertical talking-head video with voice, lip sync, and a title bar.',
   },
   common: {
     comingSoon: 'Coming soon',
@@ -54,8 +54,7 @@ export const enShell = {
     pricing: 'Pricing',
     help: 'Help',
     helpCenter: 'Help center',
-    github: 'GitHub',
-    githubTitle: 'Open source on GitHub',
+    kaikou: 'Talking head',
     login: 'Sign in',
     startCreate: 'Start creating',
     profile: 'Account',
@@ -72,25 +71,14 @@ export const enShell = {
     privacy: 'Privacy',
     contact: 'Contact',
     help: 'Help',
-    github: 'GitHub',
     links: 'Footer links',
-  },
-  wechatGroup: {
-    short: 'WeChat',
-    open: 'Join WeChat user group',
-    title: 'printfilm user group',
-    lead: 'Short drama tips · deploy help · templates',
-    idLabel: 'WeChat ID',
-    copy: 'Copy',
-    copied: 'Copied',
-    tip: 'Add WeChat ID gitpp88 with note “join group” and we will invite you.',
   },
   auth: {
     loginTitle: 'Back to the studio',
     registerTitle: 'Create a creator account',
     forgotTitle: 'Reset your password',
     resetTitle: 'Choose a new password',
-    lede: 'PRINTFILM · AI drama and AI short video',
+    lede: 'KaiKou · One photo, ready to talk',
     nickname: 'Display name',
     email: 'Email',
     password: 'Password',

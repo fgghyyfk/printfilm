@@ -2,8 +2,8 @@
 
 export const zhShell = {
   meta: {
-    title: 'PRINTFILM · AI短视频平台',
-    description: 'PRINTFILM：AI 漫剧从剧本到分集成片，AI短视频从卖点到分镜成片。',
+    title: '开口播 · 一张照片，开口讲科普',
+    description: '开口播（KaiKou）：上传一张半身照，自动配音、对口型、加标题条，生成竖屏口播视频；也支持科普短视频与 AI 漫剧。',
   },
   common: {
     comingSoon: '即将推出',
@@ -45,7 +45,7 @@ export const zhShell = {
     cancel: '取消',
   },
   nav: {
-    workbench: '工作台',
+    workbench: '首页',
     drama: '漫剧',
     kepu: 'AI短视频',
     tools: '工具',
@@ -53,8 +53,7 @@ export const zhShell = {
     pricing: '定价',
     help: '帮助',
     helpCenter: '帮助中心',
-    github: 'GitHub',
-    githubTitle: '开源仓库 · GitHub',
+    kaikou: '数字人口播',
     login: '登录',
     startCreate: '开始创作',
     profile: '个人中心',
@@ -71,25 +70,14 @@ export const zhShell = {
     privacy: '隐私政策',
     contact: '联系我们',
     help: '帮助中心',
-    github: 'GitHub',
     links: '页脚链接',
-  },
-  wechatGroup: {
-    short: '加群',
-    open: '加入微信用户群',
-    title: 'printfilm 用户群',
-    lead: '学习短剧 · 部署答疑 · 模板交流',
-    idLabel: '微信号',
-    copy: '复制',
-    copied: '已复制',
-    tip: '添加微信号 gitpp88，备注「入群」即可拉你进用户群。',
   },
   auth: {
     loginTitle: '回到工作台',
     registerTitle: '创建创作者账号',
     forgotTitle: '找回密码',
     resetTitle: '设置新密码',
-    lede: 'PRINTFILM · AI 漫剧与 AI短视频创作平台',
+    lede: '开口播 · 一张照片，开口讲科普',
     nickname: '昵称',
     email: '邮箱',
     password: '密码',

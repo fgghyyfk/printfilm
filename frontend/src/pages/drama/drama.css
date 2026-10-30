@@ -1,7 +1,7 @@
-/* Drama module styles ? PRINTFILM tokens (lime #b6ff00, white cards, 14px radius) */
+/* Drama module styles ? PRINTFILM tokens (lime #ff6a3d, white cards, 14px radius) */
 
 .drama-page {
-  --drama-lime: #b6ff00;
+  --drama-lime: #ff6a3d;
   --drama-card: #ffffff;
   --drama-radius: 14px;
   --drama-ink: var(--pf-ink, #111);
@@ -35,12 +35,12 @@
   width: 44px;
   height: 44px;
   border-radius: 14px;
-  background: linear-gradient(145deg, #f4fce8 0%, #e8f9c8 100%);
-  color: #3d5c1f;
+  background: linear-gradient(145deg, #fff6f1 0%, #ffe3d6 100%);
+  color: #9a3412;
   display: grid;
   place-items: center;
   flex-shrink: 0;
-  border: 1px solid rgba(190, 242, 100, 0.45);
+  border: 1px solid rgba(255, 138, 92, 0.45);
 }
 
 .drama-agent-hero h1 {
@@ -284,7 +284,7 @@
 }
 
 .drama-agent-char-count.is-ok {
-  color: #3f5a22;
+  color: #7c2d12;
   border-color: color-mix(in srgb, var(--drama-lime) 40%, transparent);
   background: color-mix(in srgb, var(--drama-lime) 18%, #fff);
   font-weight: 600;
@@ -348,13 +348,13 @@
 
 .drama-agent-opt-trigger:hover:not(:disabled) {
   border-color: color-mix(in srgb, var(--drama-lime) 55%, var(--drama-line));
-  background: #f4fce8;
+  background: #fff6f1;
 }
 
 .drama-agent-opt-trigger.is-active {
-  color: #3d5c1f;
+  color: #9a3412;
   border-color: color-mix(in srgb, var(--drama-lime) 70%, var(--drama-ink));
-  background: #f4fce8;
+  background: #fff6f1;
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--drama-lime) 22%, transparent);
 }
 
@@ -847,8 +847,8 @@
 }
 
 .drama-project-row-tag.is-script {
-  background: #f4fce8;
-  color: #3d5c1f;
+  background: #fff6f1;
+  color: #9a3412;
 }
 
 .drama-project-row-time {
@@ -1096,7 +1096,7 @@
 }
 
 .drama-hero {
-  background: linear-gradient(135deg, #f4ffe6 0%, #ffffff 55%, #f7f7f5 100%);
+  background: linear-gradient(135deg, #fff3ec 0%, #ffffff 55%, #f7f7f5 100%);
   border: 1px solid var(--drama-line);
   border-radius: var(--drama-radius);
   padding: 36px 32px;
@@ -2000,7 +2000,7 @@
 
 /* ?? Workspace ?? */
 .drama-workspace {
-  --drama-lime: #b6ff00;
+  --drama-lime: #ff6a3d;
   --drama-card: #ffffff;
   --drama-radius: 14px;
   --drama-ink: #111;
@@ -2190,7 +2190,7 @@
 .drama-step-bar button.active .drama-step-num {
   background: var(--drama-lime);
   color: #111;
-  box-shadow: 0 0 0 2px rgba(182, 255, 0, 0.35);
+  box-shadow: 0 0 0 2px rgba(255, 106, 61, 0.35);
 }
 
 .drama-step-bar button.done .drama-step-num {
@@ -2263,12 +2263,12 @@
   width: 44px;
   height: 44px;
   border-radius: 14px;
-  background: linear-gradient(145deg, #f4fce8 0%, #e8f9c8 100%);
-  color: #3d5c1f;
+  background: linear-gradient(145deg, #fff6f1 0%, #ffe3d6 100%);
+  color: #9a3412;
   display: grid;
   place-items: center;
   flex-shrink: 0;
-  border: 1px solid rgba(190, 242, 100, 0.45);
+  border: 1px solid rgba(255, 138, 92, 0.45);
 }
 
 .drama-step-hero-sub,
@@ -2474,8 +2474,8 @@
 
 .drama-outline-chip-btn.is-on,
 .drama-outline-chip-btn:hover {
-  border-color: color-mix(in srgb, var(--drama-lime, #b6ff00) 55%, #e5e7eb);
-  background: var(--pf-lime-soft, #eefcc8);
+  border-color: color-mix(in srgb, var(--drama-lime, #ff6a3d) 55%, #e5e7eb);
+  background: var(--pf-lime-soft, #ffede5);
 }
 
 .drama-outline-meta-modal-body {
@@ -2546,7 +2546,7 @@
   gap: 4px;
   height: 30px;
   padding: 0 10px;
-  border: 1px solid color-mix(in srgb, var(--drama-lime, #b6ff00) 70%, #86efac);
+  border: 1px solid color-mix(in srgb, var(--drama-lime, #ff6a3d) 70%, #86efac);
   border-radius: 999px;
   background: #fff;
   color: #166534;
@@ -2558,7 +2558,7 @@
 }
 
 .drama-outline-add-btn:hover:not(:disabled) {
-  background: var(--pf-lime-soft, #eefcc8);
+  background: var(--pf-lime-soft, #ffede5);
 }
 
 .drama-outline-add-btn:disabled {
@@ -2598,9 +2598,9 @@
 }
 
 .drama-outline-ep-card.is-active {
-  border-color: var(--drama-lime, #b6ff00);
-  background: color-mix(in srgb, var(--drama-lime, #b6ff00) 14%, #fff);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--drama-lime, #b6ff00) 35%, transparent);
+  border-color: var(--drama-lime, #ff6a3d);
+  background: color-mix(in srgb, var(--drama-lime, #ff6a3d) 14%, #fff);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--drama-lime, #ff6a3d) 35%, transparent);
 }
 
 .drama-outline-ep-thumb {
@@ -2609,7 +2609,7 @@
   border-radius: 10px;
   display: grid;
   place-items: center;
-  background: linear-gradient(145deg, #eefcc8, #f3f4f6);
+  background: linear-gradient(145deg, #ffede5, #f3f4f6);
   color: #111;
   font-weight: 800;
   font-size: 15px;
@@ -2785,7 +2785,7 @@
   padding: 0 16px;
   border: none;
   border-radius: 12px;
-  background: var(--drama-lime, #b6ff00);
+  background: var(--drama-lime, #ff6a3d);
   color: #111;
   font: inherit;
   font-size: 13px;
@@ -3692,8 +3692,8 @@
 
 .drama-ep-card.is-planning,
 .drama-ep-card.is-generating {
-  border-color: rgba(190, 242, 100, 0.55);
-  box-shadow: 0 0 0 1px rgba(190, 242, 100, 0.25);
+  border-color: rgba(255, 138, 92, 0.55);
+  box-shadow: 0 0 0 1px rgba(255, 138, 92, 0.25);
 }
 
 .drama-ep-card-skeleton {
@@ -3854,7 +3854,7 @@
 .drama-ep-card-progress-bar {
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #bef264 0%, #a3e635 100%);
+  background: linear-gradient(90deg, #ffb08f 0%, #ff8a5c 100%);
   transition: width 0.35s ease;
 }
 
@@ -4409,7 +4409,7 @@
 }
 
 .drama-ep-asset-card.is-linked {
-  outline: 2px solid var(--drama-lime, #b7f34a);
+  outline: 2px solid var(--drama-lime, #ff8a5c);
   outline-offset: -2px;
 }
 
@@ -4533,8 +4533,8 @@
 
 .drama-ep-duration input:focus {
   outline: none;
-  border-color: color-mix(in srgb, var(--ep-lime, #b6ff00) 65%, var(--ep-ink, #111));
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ep-lime, #b6ff00) 28%, transparent);
+  border-color: color-mix(in srgb, var(--ep-lime, #ff6a3d) 65%, var(--ep-ink, #111));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ep-lime, #ff6a3d) 28%, transparent);
 }
 
 .drama-ep-duration input::-webkit-outer-spin-button,
@@ -4719,7 +4719,7 @@
 
 .drama-ep-ref-voice-badge.bound {
   background: rgba(17, 17, 17, 0.82);
-  color: #b7f34a;
+  color: #ff8a5c;
 }
 
 .drama-ep-voice-row {
@@ -4922,7 +4922,7 @@
   padding: 2px 5px;
   border-radius: 999px;
   background: rgba(17, 17, 17, 0.78);
-  color: #b7f34a;
+  color: #ff8a5c;
 }
 
 .drama-ep-asset-voice-btn {
@@ -4962,8 +4962,8 @@
 }
 
 .drama-voice-preview-btn.is-playing {
-  background: var(--pf-lime-soft, #eefcc8);
-  border-color: var(--pf-lime, #b6ff00);
+  background: var(--pf-lime-soft, #ffede5);
+  border-color: var(--pf-lime, #ff6a3d);
 }
 
 .drama-ep-content-view {
@@ -5768,7 +5768,7 @@
   height: 36px;
   border: none;
   border-radius: 999px;
-  background: var(--drama-lime, #b6ff00);
+  background: var(--drama-lime, #ff6a3d);
   color: var(--drama-ink, #111318);
   font: inherit;
   font-size: 13px;
@@ -6370,7 +6370,7 @@
 
 /* legacy episode edit hooks kept for other pages */
 .drama-episode-edit {
-  --drama-lime: #b6ff00;
+  --drama-lime: #ff6a3d;
   --drama-card: #ffffff;
   --drama-radius: 14px;
   --drama-ink: #111;
@@ -6565,7 +6565,7 @@
   height: 22px;
   padding: 0 6px;
   border-radius: 999px;
-  background: #b6ff00;
+  background: #ff6a3d;
   color: #111;
   font-size: 11px;
   font-weight: 700;
@@ -6676,8 +6676,8 @@
 }
 
 .drama-gen-fab-item.is-running {
-  border-color: #b6ff00;
-  background: linear-gradient(180deg, #f8ffe8 0%, #f7f7f5 100%);
+  border-color: #ff6a3d;
+  background: linear-gradient(180deg, #fff6f1 0%, #f7f7f5 100%);
 }
 
 .drama-gen-fab-item.is-failed {
@@ -6926,7 +6926,7 @@
   margin-top: 10px;
   height: 3px;
   border-radius: 999px;
-  background: linear-gradient(90deg, #b6ff00, #dfff80, #b6ff00);
+  background: linear-gradient(90deg, #ff6a3d, #ffc7ae, #ff6a3d);
   background-size: 200% 100%;
   animation: drama-gen-queue-slide 1.2s linear infinite;
 }
@@ -6947,7 +6947,7 @@
   width: 8px;
   height: 8px;
   border-radius: 999px;
-  background: #b6ff00;
+  background: #ff6a3d;
   animation: drama-gen-fab-pulse 1.4s ease-in-out infinite;
 }
 
@@ -7007,7 +7007,7 @@
 
 .drama-global-picker-card.is-selected {
   border-color: #111;
-  box-shadow: 0 0 0 2px rgba(182, 255, 0, 0.45);
+  box-shadow: 0 0 0 2px rgba(255, 106, 61, 0.45);
 }
 
 .drama-global-picker-card img {
@@ -7045,7 +7045,7 @@
   height: 22px;
   border-radius: 999px;
   background: #111;
-  color: #b6ff00;
+  color: #ff6a3d;
   display: grid;
   place-items: center;
   font-size: 12px;

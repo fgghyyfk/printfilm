@@ -15,7 +15,6 @@ import PricingWalletCard from '../components/billing/PricingWalletCard'
 import TopupHistoryModal from '../components/billing/TopupHistoryModal'
 import { api, type BillingSku, type UsageSummary, type Wallet } from '../api'
 import { useI18n } from '../i18n'
-import { GITHUB_REPO_URL } from '../lib/siteLinks'
 
 type PayType = 'alipay' | 'wxpay'
 
@@ -153,7 +152,7 @@ export default function PricingPage() {
               </ul>
               {!loggedIn ? (
                 <p className="pf-pricing-guest-tip">
-                  {t('pricing.guestPrefix')}
+                  {m.pricing.guestPrefix}
                   <Link to="/auth?next=%2Fpricing">{t('pricing.guestLogin')}</Link>
                   {t('pricing.guestSuffix')}
                 </p>
@@ -320,18 +319,15 @@ export default function PricingPage() {
 
           <footer className="pf-pricing-site-foot">
             <p className="pf-pricing-site-brand">
-              <Link to="/">PRINTFILM</Link>
+              <Link to="/">开口播</Link>
               <span> · {t('pricing.footBrand')}</span>
             </p>
             <nav className="pf-pricing-site-links" aria-label={t('footer.links')}>
               <Link to="/terms">{t('footer.terms')}</Link>
               <Link to="/privacy">{t('footer.privacy')}</Link>
               <Link to="/contact">{t('footer.contact')}</Link>
-              <a href={GITHUB_REPO_URL} target="_blank" rel="noopener noreferrer">
-                {t('footer.github')}
-              </a>
             </nav>
-            <p className="pf-pricing-site-copy">© {new Date().getFullYear()} PRINTFILM. All rights reserved.</p>
+            <p className="pf-pricing-site-copy">© {new Date().getFullYear()} 开口播 KaiKou</p>
           </footer>
         </div>
       </div>

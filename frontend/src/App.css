@@ -41,7 +41,7 @@
   position: absolute;
   inset: -20%;
   background:
-    radial-gradient(circle at 30% 40%, rgba(182, 255, 0, 0.35), transparent 42%),
+    radial-gradient(circle at 30% 40%, rgba(255, 106, 61, 0.35), transparent 42%),
     radial-gradient(circle at 72% 58%, rgba(42, 111, 122, 0.35), transparent 38%),
     repeating-linear-gradient(
       -12deg,

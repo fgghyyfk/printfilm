@@ -8,15 +8,15 @@
   --m-txt: #111318;
   --m-soft: #4b5563;
   --m-muted: #6b7280;
-  --m-lime: #b6ff00;
+  --m-lime: #ff6a3d;
   --m-lime-ink: #111318;
-  --m-lime-deep: #5f8f00;
+  --m-lime-deep: #c2410c;
   --m-warn: #c67a12;
   min-height: 100vh;
   min-height: 100dvh;
   background:
-    radial-gradient(900px 420px at 8% -10%, rgba(182, 255, 0, 0.22), transparent 55%),
-    radial-gradient(640px 320px at 100% 0%, rgba(182, 255, 0, 0.12), transparent 50%),
+    radial-gradient(900px 420px at 8% -10%, rgba(255, 106, 61, 0.22), transparent 55%),
+    radial-gradient(640px 320px at 100% 0%, rgba(255, 106, 61, 0.12), transparent 50%),
     var(--m-bg);
   color: var(--m-txt);
   font-family: 'Noto Sans SC', 'PingFang SC', sans-serif;
@@ -130,7 +130,7 @@
 .pf-method-btn.is-lime {
   background: var(--m-lime);
   color: var(--m-lime-ink);
-  box-shadow: 0 8px 24px rgba(182, 255, 0, 0.18);
+  box-shadow: 0 8px 24px rgba(255, 106, 61, 0.18);
 }
 
 .pf-method-btn.is-ghost {
@@ -141,7 +141,7 @@
 
 .pf-method-btn.is-ghost:hover {
   color: var(--m-txt);
-  background: #f4ffd6;
+  background: #fff1ea;
 }
 
 .pf-method-btn.is-lg {
@@ -191,7 +191,7 @@
   font-style: normal;
   color: var(--m-txt);
   font-weight: 650;
-  box-shadow: inset 0 -0.42em 0 rgba(182, 255, 0, 0.28);
+  box-shadow: inset 0 -0.42em 0 rgba(255, 106, 61, 0.28);
 }
 
 .pf-method-notice,
@@ -243,9 +243,9 @@
 }
 
 .pf-method-toc a:hover {
-  border-color: #7ab800;
+  border-color: #e8552a;
   color: var(--m-txt);
-  background: #f4ffd6;
+  background: #fff1ea;
 }
 
 .pf-method-section {
@@ -430,8 +430,8 @@
   gap: 1.4rem;
   padding: 1.6rem 1.5rem;
   border-radius: 22px;
-  border: 1px solid rgba(182, 255, 0, 0.55);
-  background: linear-gradient(135deg, #f4ffd6 0%, #ffffff 70%);
+  border: 1px solid rgba(255, 106, 61, 0.55);
+  background: linear-gradient(135deg, #fff1ea 0%, #ffffff 70%);
 }
 
 .pf-method-close h2 {

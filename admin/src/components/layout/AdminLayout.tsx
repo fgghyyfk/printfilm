@@ -250,7 +250,7 @@ export function AdminLayout() {
 
             <div>
 
-              <div className="admin-brand-name">PRINTFILM</div>
+              <div className="admin-brand-name">开口播</div>
 
               <div className="admin-brand-sub">管理后台</div>
 
@@ -364,7 +364,7 @@ export function AdminLayout() {
 
               <div className="admin-topbar-title">{title}</div>
 
-              <div className="admin-topbar-crumb">PRINTFILM · 运营管理</div>
+              <div className="admin-topbar-crumb">开口播 · 运营管理</div>
 
             </div>
 

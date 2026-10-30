@@ -11,7 +11,7 @@ import {
 } from '../lib/methodLanding'
 import './method/method.css'
 
-const PAGE_URL = 'https://www.printfilm.com/method'
+const PAGE_URL = 'https://kaikou.haituike.com/method'
 
 // 注入本页 title / description；延迟一拍以免被 I18nProvider 的默认 meta 覆盖
 function useMethodMeta(copy: MethodLandingCopy) {
@@ -65,8 +65,8 @@ export default function MethodPage() {
     headline: copy.jsonLdHeadline,
     description: copy.metaDescription,
     inLanguage: locale === 'zh' ? 'zh-CN' : 'en',
-    author: { '@type': 'Organization', name: 'PRINTFILM' },
-    publisher: { '@type': 'Organization', name: 'PRINTFILM' },
+    author: { '@type': 'Organization', name: 'KaiKou' },
+    publisher: { '@type': 'Organization', name: 'KaiKou' },
     mainEntityOfPage: { '@type': 'WebPage', '@id': PAGE_URL },
     about: copy.toc.map((item) => ({ '@type': 'Thing', name: item.label })),
   }
@@ -82,7 +82,7 @@ export default function MethodPage() {
         <a className="pf-method-brand" href={METHOD_START_URL} rel="noopener noreferrer">
           <img src="/logo.svg" alt="" />
           <span className="pf-method-word">
-            <strong>PRINTFILM</strong>
+            <strong>开口播</strong>
             <span>{copy.brandLine}</span>
           </span>
         </a>
