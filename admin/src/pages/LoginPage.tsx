@@ -40,12 +40,9 @@ export function LoginPage() {
             <span key={top} style={{ top }} />
           ))}
         </div>
-        <div className="login-eyebrow">Ops Console</div>
-        <h1 className="login-title">
-          PRINT
-          <br />
-          FILM
-        </h1>
+        <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="" className="login-logo" width={64} height={64} />
+        <div className="login-eyebrow">KaiKou · 运营后台</div>
+        <h1 className="login-title">开口播</h1>
       </section>
 
       <section className="login-panel">

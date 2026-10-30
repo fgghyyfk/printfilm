@@ -244,7 +244,7 @@ export function AdminLayout() {
 
         <div className="admin-brand">
 
-          <div className="admin-brand-mark">PF</div>
+          <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="开口播" className="admin-brand-logo" width={38} height={38} />
 
           {!collapsed && (
 

@@ -122,6 +122,14 @@
   transform: translateX(-50%);
 }
 
+.login-logo {
+  width: 64px;
+  height: 64px;
+  border-radius: 18px;
+  margin-bottom: 1.25rem;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+}
+
 .login-eyebrow {
   font-family: var(--font-sans);
   font-size: 0.75rem;
@@ -347,20 +355,14 @@
   border-bottom: 1px solid var(--admin-sidebar-border);
 }
 
-.admin-brand-mark {
+
+/* 品牌图标：与用户端同一枚 logo（public/logo.svg） */
+.admin-brand-logo {
   width: 38px;
   height: 38px;
   border-radius: 11px;
-  display: grid;
-  place-items: center;
-  background: linear-gradient(145deg, #4caf82 0%, var(--admin-forest) 100%);
-  color: #f4f1ea;
-  font-family: var(--font-display);
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
   flex-shrink: 0;
-  box-shadow: 0 6px 16px rgba(31, 92, 72, 0.35);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
 }
 
 .admin-brand-name {
