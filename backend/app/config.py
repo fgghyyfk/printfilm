@@ -94,6 +94,17 @@ class Settings(BaseSettings):
     avatar_image_size: str = "1024x1536"
     # 写口播分段、场景描述、重点文字的文本模型
     avatar_text_model: str = "qwen3.6-plus"
+    # 火山引擎豆包语音合成（直连）：配了 Key 时豆包音色优先走这里
+    volc_tts_base_url: str = "https://openspeech.bytedance.com"
+    volc_tts_api_key: str = ""
+    # 非 2.0 音色用的资源（2.0 音色自动用 seed-tts-2.0）
+    volc_tts_resource_id: str = "seed-tts-1.0"
+    # 语速 -50~100（0 正常，10 约 1.1 倍）
+    volc_tts_speech_rate: int = 10
+    # 2.0 音色的语气指令（留空则不加）
+    volc_tts_instruction: str = "用热情、有感染力的短视频口播博主语气，自然口语，有情绪起伏"
+    # 计费：每万字符多少分（成本价，用户扣费再按加价倍率）
+    volc_tts_fen_per_10k_chars: int = 500
 
     ark_mock: bool = False
     # 本地媒体联调：文字仍请求真实 LLM，图片/视频/语音仅留痕并返回默认素材。

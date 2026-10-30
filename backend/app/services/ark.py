@@ -2057,6 +2057,20 @@ class ArkGateway:
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("openai speech failed voice=%s: %s", oa_voice, exc)
 
+        # 豆包音色：配了火山引擎 Key 时直连豆包语音合成（比 TokenFree 中转更稳，2.0 音色可加语气指令）
+        from app.services import volc_tts
+
+        if volc_tts.is_configured() and volc_tts.is_volc_speaker(speaker):
+            try:
+                await volc_tts.synthesize(clean, speaker, dest)
+                url = await _accept_if_audible("volc-tts")
+                if url:
+                    if result_metadata is not None:
+                        result_metadata.update(model_id="volc-tts", speaker=speaker)
+                    return url
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("volc tts failed speaker=%s: %s", speaker, exc)
+
         # TokenFree：默认模型 + Gemini / ElevenLabs / Qwen 其它 TTS 依次试
         for model_id in (iter_tokenfree_tts_models(audio_model) if audio_model else []):
             try:

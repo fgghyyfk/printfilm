@@ -68,6 +68,7 @@ async def prepare_assets(project_id: int) -> None:
 
     from app.services import avatar_ai
     from app.services.kepu_avatar_look import ensure_scene_images
+    from app.services import volc_tts
     from app.services.voices import openai_voice
 
     await _set_status(project_id, ProjectStatus.IMAGING, 18, "AVATAR_TTS")
@@ -113,7 +114,8 @@ async def prepare_assets(project_id: int) -> None:
         if not path or not path.exists() or is_near_silent_audio(path):
             raise RuntimeError(f"第 {shot_no} 段配音失败（无声音），请稍后重试")
         seconds = probe_duration(path) or 0.0
-        if not openai_voice(voice):  # OpenAI 音色在 avatar_ai.speech 里已按字记账
+        # OpenAI 音色、火山豆包音色在各自客户端里已按字记账，不再叠加通用 TTS 估算
+        if not (openai_voice(voice) or (volc_tts.is_configured() and volc_tts.is_volc_speaker(voice))):
             await _record_usage_est(project_id, "tts", shot_id=shot_id)
         async with AsyncSessionLocal() as db:
             row = await db.get(Shot, shot_id)
