@@ -18,6 +18,28 @@ class ModelCapabilityReadiness(BaseModel):
 
 
 class AdminModelSettingsOut(BaseModel):
+    openai_api_key: str = Field(default="", description="OpenAI 兼容文本服务的 API 密钥；响应始终为空串，请通过 has_openai_api_key 判断是否已配置")
+    openai_base_url: str = Field(default="", description="OpenAI 兼容文本服务的 API 基础地址，运行时会与当前模型渠道配置统一")
+    model_llm: str = Field(default="", description="当前文本模型标识，运行时以有效默认文本路由为准")
+    has_openai_api_key: bool = Field(default=False, description="是否已配置OpenAI 兼容文本服务的 API 密钥；实际密钥不在响应中返回")
+
+    ark_api_key: str = Field(default="", description="图像、视频及语音服务的 API 密钥；响应始终为空串，请通过 has_ark_api_key 判断是否已配置")
+    ark_base_url: str = Field(default="", description="图像、视频及语音服务的 API 基础地址，运行时会与当前模型渠道配置统一")
+    model_image: str = Field(default="", description="当前默认图像模型标识，运行时以有效默认图像路由为准")
+    model_image_45: str = Field(default="", description="Seedream 4.5 档图像模型标识，运行时会归一化为渠道模型名称")
+    model_video: str = Field(default="", description="当前默认视频模型标识，运行时以有效默认视频路由为准")
+    model_video_2: str = Field(default="", description="可选的 Seedance 2.0 视频模型标识")
+    model_audio: str = Field(default="", description="当前默认语音合成模型标识，运行时以有效默认语音路由为准")
+    has_ark_api_key: bool = Field(default=False, description="是否已配置图像、视频及语音服务的 API 密钥；实际密钥不在响应中返回")
+
+    ark_image_size: str = Field(default="", description="默认生图尺寸，例如 2k、3k、4k 或 WIDTHxHEIGHT；实际支持范围由模型决定")
+    ark_video_resolution: str = Field(default="", description="默认视频分辨率，例如 480p、720p、1080p；实际支持范围由模型决定")
+    ark_video_ratio: str = Field(default="", description="默认视频宽高比，例如 16:9 或 9:16")
+    seedance_duration_min: int = Field(default=4, description="Seedance 视频时长配置下限，单位：秒")
+    seedance_duration_max: int = Field(default=30, description="Seedance 视频时长配置上限，单位：秒")
+    ark_video_poll_interval: float = Field(default=8.0, description="上游视频任务状态轮询间隔，单位：秒")
+    ark_video_poll_timeout: float = Field(default=900.0, description="上游视频任务状态轮询超时时间，单位：秒")
+
     pipeline_image_concurrency: int = Field(default=3, description="单项目流水线的图片生成并发配置")
     pipeline_video_concurrency: int = Field(default=10, description="单项目流水线的视频生成并发配置")
     pipeline_audio_concurrency: int = Field(default=4, description="单项目流水线的语音生成并发配置")
