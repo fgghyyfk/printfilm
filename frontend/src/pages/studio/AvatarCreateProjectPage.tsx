@@ -198,11 +198,13 @@ export default function AvatarCreateProjectPage() {
   const [error, setError] = useState('')
 
   useEffect(() => {
+    // 未登录跳登录页，登录后回到本页（保留 ?mode=avatar 等参数）
+    const authPath = `/auth?next=${encodeURIComponent(`/studio/new${params.size ? `?${params}` : ''}`)}`
     if (!localStorage.getItem('token')) {
-      nav('/auth')
+      nav(authPath, { replace: true })
       return
     }
-    api.me().catch(() => nav('/auth'))
+    api.me().catch(() => nav(authPath, { replace: true }))
     api.templates().then((list) => {
       setTemplates(list)
       const fromUrl = params.get('template') || ''
