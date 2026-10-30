@@ -8,6 +8,18 @@ from typing import Any
 # 接口与项目 voice_id；speaker 是历史音色 id，用来区分男女声线
 VOICE_PRESETS: list[dict[str, Any]] = [
     {
+        "id": "openai_shimmer",
+        "label": "Shimmer · 激情女声",
+        "gender": "female",
+        "speaker": "openai_shimmer",
+    },
+    {
+        "id": "openai_nova",
+        "label": "Nova · 活力女声",
+        "gender": "female",
+        "speaker": "openai_nova",
+    },
+    {
         "id": "zh_female_cancan_uranus_bigtts",
         "label": "灿灿 · 女声旁白",
         "gender": "female",
@@ -155,6 +167,16 @@ EDGE_TTS_BY_SPEAKER: dict[str, str] = {
     "zh_female_xiaohe_uranus_bigtts": "zh-CN-XiaoxiaoNeural",
 }
 
+# OpenAI 音色（经数字人素材服务 promptoll 的 /audio/speech）：speaker 形如 openai_<voice>
+OPENAI_VOICE_PREFIX = "openai_"
+
+
+def openai_voice(speaker: str) -> str | None:
+    """speaker 是 OpenAI 音色时返回音色名（shimmer/nova…），否则 None。"""
+    s = (speaker or "").strip()
+    return s[len(OPENAI_VOICE_PREFIX):] or None if s.startswith(OPENAI_VOICE_PREFIX) else None
+
+
 # Template audio_config.voice_preset aliases → speaker
 VOICE_ALIASES: dict[str, str] = {
     "narrator_calm": "zh_female_cancan_uranus_bigtts",
@@ -175,7 +197,7 @@ def infer_speaker_gender(speaker: str) -> str | None:
     s = (speaker or "").strip().lower()
     if not s:
         return None
-    if s.startswith("zh_female_") or s.startswith("saturn_female"):
+    if s.startswith("zh_female_") or s.startswith("saturn_female") or s in ("openai_shimmer", "openai_nova"):
         return "female"
     if s.startswith("zh_male_") or s.startswith("saturn_male"):
         return "male"

@@ -124,9 +124,15 @@ def _estimate_assets_fen(project: Project, settings: Settings) -> int:
     need_img = 0 if avatar else sum(1 for s in shots if not shot_image_ready(s))
     # 整片 TTS 一次估算；旁白已就绪（整片文件或全部镜头文件）则不再预扣
     need_tts = 0 if project_audio_ready(project) else 1
-    if need_img <= 0 and need_tts <= 0:
+    # 数字人：要画的场景图按改图模型张价
+    scene = 0
+    if avatar:
+        from app.services.kepu_avatar_billing import estimate_scene_images_fen
+
+        scene = estimate_scene_images_fen(project, settings)
+    if need_img <= 0 and need_tts <= 0 and scene <= 0:
         return 1
-    total = 0
+    total = scene
     for _ in range(max(need_img, 0)):
         total += _catalog_image_fen(settings)
     if need_tts > 0:
@@ -228,10 +234,24 @@ async def estimate_task_fen(db: AsyncSession, task: TaskRun, settings: Settings 
         if task_type == "project_compose_only":
             return 1
         if task_type == "avatar_auto":
-            # 全自动出片：写稿 + 配音 + 对口型（按约 60 秒成片 × 数字人单价估）
+            # 全自动出片：写稿 + 场景图 + 配音 + 对口型，按文稿字数估时长
+            from app.services.kepu_avatar_billing import estimate_auto_fen
+
+            project_id = task.project_id or payload.get("project_id")
+            project = None
+            if project_id:
+                project = (await db.execute(select(Project).where(Project.id == int(project_id))
+                                            .options(selectinload(Project.shots)))).scalar_one_or_none()
+            if project is not None:
+                return estimate_auto_fen(project, s)
             llm = charge_fen_official_llm(s.billing_est_llm_tokens, s)
-            _, tts = charge_fen_for_tokens(s.billing_est_tts_tokens * 6, "tts", settings=s)
-            return _buffered_fen(llm + tts, s) + 60 * int(s.avatar_price_fen_per_sec or 0)
+            return _buffered_fen(llm, s) + 60 * int(s.avatar_price_fen_per_sec or 0)
+        if task_type in {"avatar_look", "avatar_scene"}:
+            # 定妆照 / 单段场景重画：按所选改图模型的张价
+            from app.services.billing.pricing import user_charge_fen
+            from app.services.kepu_avatar_billing import image_cost_fen
+
+            return max(1, user_charge_fen(image_cost_fen(payload.get("model") or None, s), s))
 
     if domain == "drama":
         if task_type in {"script_summary", "fragment_plan", "agent_chat"}:

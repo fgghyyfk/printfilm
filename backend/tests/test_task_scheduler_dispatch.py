@@ -28,6 +28,9 @@ async def isolated_scheduler(monkeypatch):
         task_runtime_tick_stale_sec=60,
         task_runtime_orphan_check_sec=30,
     ))
+    # 普通池 4 槽 / 单用户 1；GPU 长任务池 1 槽 / 单用户 1
+    monkeypatch.setattr(scheduler, "pool_limits", lambda gpu: (1, 1) if gpu else (4, 1))
+    monkeypatch.setattr(scheduler, "_gpu_job_ids", set())
     yield
     await scheduler.stop_scheduler()
 
@@ -89,7 +92,7 @@ async def test_claim_pages_past_user_filled_by_this_tick(monkeypatch):
     db = _QueueSession([first_page, [other_user], []])
     monkeypatch.setattr(scheduler, "AsyncSessionLocal", lambda: db)
     monkeypatch.setattr(scheduler, "_claim_cancel_requests", AsyncMock())
-    monkeypatch.setattr(scheduler, "count_user_active_runtime_tasks", AsyncMock(return_value=0))
+    monkeypatch.setattr(scheduler, "_count_user_active", AsyncMock(return_value=0))
     monkeypatch.setattr(scheduler, "append_task_event", AsyncMock())
     monkeypatch.setattr(scheduler, "_run_one", AsyncMock())
     await scheduler._tick()
@@ -110,10 +113,11 @@ async def test_failed_compare_and_swap_never_launches_executor(monkeypatch):
     executor = AsyncMock()
     monkeypatch.setattr(scheduler, "AsyncSessionLocal", lambda: db)
     monkeypatch.setattr(scheduler, "_claim_cancel_requests", AsyncMock())
-    monkeypatch.setattr(scheduler, "count_user_active_runtime_tasks", AsyncMock(return_value=0))
+    monkeypatch.setattr(scheduler, "_count_user_active", AsyncMock(return_value=0))
     monkeypatch.setattr(scheduler, "_run_one", executor)
     await scheduler._tick()
-    assert len(db.selects) == scheduler._MAX_CLAIM_PAGES
+    # 普通池与 GPU 长任务池各自最多扫 _MAX_CLAIM_PAGES 页
+    assert len(db.selects) == 2 * scheduler._MAX_CLAIM_PAGES
     assert db.claimed == []
     executor.assert_not_awaited()
 
@@ -250,3 +254,33 @@ def test_watchdog_restart_grace_does_not_erase_failure_diagnostics(monkeypatch):
     assert scheduler.scheduler_diagnostics() == {
         "scheduler_success_age_sec": 90.0, "scheduler_consecutive_failures": 3,
     }
+
+
+@pytest.mark.asyncio
+async def test_gpu_tasks_claim_in_separate_pool(monkeypatch):
+    """数字人长任务走独立槽位池：普通池 SQL 排除它们，GPU 池只领它们，并登记为 GPU 任务。"""
+    gpu_row = SimpleNamespace(id=42, status="pending", requested_by=7)
+    db = _QueueSession([[], [gpu_row], []])
+    monkeypatch.setattr(scheduler, "AsyncSessionLocal", lambda: db)
+    monkeypatch.setattr(scheduler, "_claim_cancel_requests", AsyncMock())
+    monkeypatch.setattr(scheduler, "_count_user_active", AsyncMock(return_value=0))
+    monkeypatch.setattr(scheduler, "append_task_event", AsyncMock())
+    monkeypatch.setattr(scheduler, "_run_one", AsyncMock())
+    await scheduler._tick()
+    assert db.claimed == [42]
+    assert 42 in scheduler._gpu_job_ids
+    normal_sql = str(db.selects[0].compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
+    gpu_sql = str(db.selects[1].compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
+    assert "NOT (" in normal_sql and "'avatar_auto'" in normal_sql
+    assert "'avatar_auto'" in gpu_sql and "NOT (task_runs.domain" not in gpu_sql.split("WHERE", 1)[1].split("AND (SELECT")[0]
+
+
+def test_is_gpu_task_matches_avatar_long_jobs():
+    """只有全自动出片与数字人视频阶段算 GPU 长任务。"""
+    from app.services.tasks.gpu_pool import is_gpu_task
+
+    assert is_gpu_task("kepu", "avatar_auto", None)
+    assert is_gpu_task("kepu", "project_pipeline", {"pipeline_mode": "avatar", "phase": "videos"})
+    assert not is_gpu_task("kepu", "project_pipeline", {"pipeline_mode": "avatar", "phase": "assets"})
+    assert not is_gpu_task("kepu", "project_pipeline", {"pipeline_mode": "full", "phase": "videos"})
+    assert not is_gpu_task("drama", "fragment_video", {})

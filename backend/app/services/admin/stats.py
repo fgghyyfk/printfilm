@@ -46,9 +46,10 @@ def _derived_capability_expr():
     """能力分桶：优先 billing_key 推导，与 billing_key_to_capability 语义一致。"""
     return case(
         (UsageEvent.billing_key == "llm_chat", "llm"),
-        (UsageEvent.billing_key == "seedream", "image"),
+        (UsageEvent.billing_key.in_(("seedream", "avatar_image")), "image"),
         (UsageEvent.billing_key.like("seedance%"), "video"),
-        (UsageEvent.billing_key == "tts", "tts"),
+        (UsageEvent.billing_key == "avatar_video", "video"),
+        (UsageEvent.billing_key.in_(("tts", "avatar_tts")), "tts"),
         (UsageEvent.billing_key.is_not(None), "other"),
         (UsageEvent.capability.is_not(None), UsageEvent.capability),
         else_="other",

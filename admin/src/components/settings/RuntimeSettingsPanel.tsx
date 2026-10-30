@@ -66,6 +66,8 @@ export function RuntimeSettingsPanel() {
         pipeline_audio_concurrency: form.pipeline_audio_concurrency,
         task_runtime_max_concurrency: form.task_runtime_max_concurrency,
         task_user_max_concurrency: form.task_user_max_concurrency,
+        task_gpu_max_concurrency: form.task_gpu_max_concurrency,
+        task_gpu_user_max_concurrency: form.task_gpu_user_max_concurrency,
         task_poll_max_concurrency: form.task_poll_max_concurrency,
         drama_user_video_job_limit: form.drama_user_video_job_limit,
         drama_fragment_max_attempts: form.drama_fragment_max_attempts,
@@ -218,6 +220,24 @@ export function RuntimeSettingsPanel() {
                 onChange={(e) => patchField("task_user_max_concurrency", Number(e.target.value))}
               />
             </LabeledControl>
+            <LabeledControl label="GPU 长任务槽位（数字人）">
+              <input
+                className="settings-input"
+                type="number"
+                min={1}
+                value={form.task_gpu_max_concurrency}
+                onChange={(e) => patchField("task_gpu_max_concurrency", Number(e.target.value))}
+              />
+            </LabeledControl>
+            <LabeledControl label="单用户 GPU 长任务">
+              <input
+                className="settings-input"
+                type="number"
+                min={1}
+                value={form.task_gpu_user_max_concurrency}
+                onChange={(e) => patchField("task_gpu_user_max_concurrency", Number(e.target.value))}
+              />
+            </LabeledControl>
             <LabeledControl label="Selector 轮询并发">
               <input
                 className="settings-input"
@@ -263,6 +283,13 @@ export function RuntimeSettingsPanel() {
             <span>
               Worker 槽位 <strong>{form.task_runtime_max_concurrency}</strong> · 单用户{" "}
               <strong>{form.task_user_max_concurrency}</strong>
+            </span>
+          </div>
+          <div className="settings-runtime-summary-row">
+            <Activity className="h-4 w-4 text-[var(--admin-forest)]" />
+            <span>
+              GPU 长任务槽位 <strong>{form.task_gpu_max_concurrency}</strong> · 单用户{" "}
+              <strong>{form.task_gpu_user_max_concurrency}</strong>（数字人出片单独排队，不占 Worker 槽位）
             </span>
           </div>
           <p className="settings-runtime-summary-hint">

@@ -17,6 +17,7 @@ from app.services.tasks.poller import (
 )
 from app.services.tasks.scheduler import (
     restart_scheduler_loop,
+    pool_running_count,
     running_count,
     scheduler_status,
     scheduler_tick_age_sec,
@@ -148,6 +149,7 @@ def runtime_summary() -> dict[str, int | str | float | bool]:
         "healthy": healthy,
         "scheduler": sched,
         "scheduler_running_jobs": running_count(),
+        "scheduler_gpu_jobs": pool_running_count(True),
         "scheduler_tick_age_sec": round(scheduler_tick_age_sec(), 1),
         "poller": poll,
         "poller_tick_age_sec": round(poller_tick_age_sec(), 1),

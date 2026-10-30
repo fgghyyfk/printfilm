@@ -310,6 +310,8 @@ TASK_HANDLERS: dict[tuple[str, str], TaskHandler] = {
     ("kepu", "project_regen_audio"): TaskHandler("kepu", "project_regen_audio", _run_kepu_project_audio),
     ("kepu", "project_compose_only"): TaskHandler("kepu", "project_compose_only", _run_kepu_compose),
     ("kepu", "avatar_auto"): TaskHandler("kepu", "avatar_auto", _run_kepu_avatar_auto),
+    ("kepu", "avatar_look"): TaskHandler("kepu", "avatar_look", _noop_ephemeral),
+    ("kepu", "avatar_scene"): TaskHandler("kepu", "avatar_scene", _noop_ephemeral),
     ("tools", "mock_delay"): TaskHandler("tools", "mock_delay", _run_tools_mock_delay),
 }
 

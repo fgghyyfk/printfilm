@@ -47,6 +47,8 @@ class AdminModelSettingsOut(BaseModel):
     pipeline_audio_concurrency: int = 4
     task_runtime_max_concurrency: int = 4
     task_user_max_concurrency: int = 4
+    task_gpu_max_concurrency: int = 2
+    task_gpu_user_max_concurrency: int = 1
     task_poll_max_concurrency: int = 20
     drama_user_video_job_limit: int = 12
     drama_fragment_max_attempts: int = 3
@@ -177,6 +179,8 @@ class AdminModelSettingsPatch(BaseModel):
     pipeline_audio_concurrency: int | None = None
     task_runtime_max_concurrency: int | None = None
     task_user_max_concurrency: int | None = None
+    task_gpu_max_concurrency: int | None = Field(default=None, ge=1, le=64)
+    task_gpu_user_max_concurrency: int | None = Field(default=None, ge=1, le=16)
     task_poll_max_concurrency: int | None = None
     drama_user_video_job_limit: int | None = None
     drama_fragment_max_attempts: int | None = None
@@ -307,6 +311,8 @@ def model_config_field_names() -> tuple[str, ...]:
         "pipeline_audio_concurrency",
         "task_runtime_max_concurrency",
         "task_user_max_concurrency",
+        "task_gpu_max_concurrency",
+        "task_gpu_user_max_concurrency",
         "task_poll_max_concurrency",
         "drama_user_video_job_limit",
         "drama_fragment_max_attempts",

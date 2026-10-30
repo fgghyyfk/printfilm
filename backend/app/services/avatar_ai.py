@@ -2,6 +2,7 @@
 
 - 保脸改图：POST {base}/images/edits（multipart：一张参考图 + 提示词 + 模型），用于定妆照与每段场景图
 - 文本：POST {base}/chat/completions，用于写口播分段、场景描述与重点文字
+- 配音：POST {base}/audio/speech，OpenAI 音色（openai_shimmer 等）
 
 地址、Key、默认模型在管理后台「系统设置 → 数字人」配置（avatar_ai_* / avatar_image_model / avatar_text_model）。
 与主流水线的 TokenFree 渠道相互独立；未配 Key 时 is_configured() 为 False，调用方回退到原有逻辑。
@@ -105,6 +106,29 @@ async def edit_image(ref: Path, prompt: str, dest: Path, *, model: str | None = 
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_bytes(raw)
     logger.info("avatar_ai edit model=%s ref=%s -> %s (%d bytes)", name, ref.name, dest.name, len(raw))
+    from app.services.kepu_avatar_billing import image_cost_fen, record_avatar_ai
+
+    await record_avatar_ai("avatar_image", model=name, cost_fen=image_cost_fen(name), detail={"images": 1})
+    return dest
+
+
+async def speech(text: str, voice: str, dest: Path, *, model: str = "tts-1-hd") -> Path:
+    """OpenAI 兼容配音：POST {base}/audio/speech，mp3 写到 dest。失败抛 RuntimeError。"""
+    base, headers = _base_and_headers()
+    payload = {"model": model, "voice": voice, "input": text[:4000], "response_format": "mp3"}
+    timeout = httpx.Timeout(connect=15.0, read=120.0, write=30.0, pool=30.0)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        resp = await observed_request(client, "POST", f"{base}/audio/speech", provider="avatar_ai",
+                                      headers=headers, json=payload)
+    if resp.status_code >= 400:
+        raise RuntimeError(f"配音失败（{model}/{voice}，HTTP {resp.status_code}）：{_detail(resp)}")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(resp.content)
+    logger.info("avatar_ai speech model=%s voice=%s -> %s (%d bytes)", model, voice, dest.name, len(resp.content))
+    from app.services.kepu_avatar_billing import record_avatar_ai, speech_cost_fen
+
+    await record_avatar_ai("avatar_tts", model=f"{model}/{voice}", cost_fen=speech_cost_fen(len(text)),
+                           detail={"chars": len(text)})
     return dest
 
 
@@ -134,7 +158,12 @@ async def chat_json(system: str, user: str, *, model: str | None = None, max_tok
                                           headers=headers, json=payload)
             if resp.status_code >= 400:
                 raise RuntimeError(f"文案生成失败（{name}，HTTP {resp.status_code}）：{_detail(resp)}")
-            content = ((resp.json().get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+            body = resp.json()
+            content = ((body.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+            usage = body.get("usage") if isinstance(body.get("usage"), dict) else {}
+            from app.services.kepu_avatar_billing import record_avatar_ai
+
+            await record_avatar_ai("llm_chat", model=name, tokens=int(usage.get("total_tokens") or 0))
             try:
                 return parse_json_reply(content)
             except ValueError as exc:  # json.JSONDecodeError 也是 ValueError

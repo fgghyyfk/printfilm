@@ -178,3 +178,14 @@ def test_clean_topics():
 
     assert clean_topics(["  选题一 ", "", "选题一", "x", "选题二"]) == ["选题一", "选题二"]
     assert len(clean_topics([f"选题{i}" for i in range(80)])) == MAX_BATCH
+
+
+def test_openai_voice_presets():
+    """OpenAI 音色 id 解析出音色名，其它音色不受影响。"""
+    from app.services.voices import infer_speaker_gender, openai_voice, resolve_speaker
+
+    assert openai_voice("openai_shimmer") == "shimmer"
+    assert openai_voice("zh_female_cancan_uranus_bigtts") is None
+    assert openai_voice("openai_") is None
+    assert resolve_speaker("openai_shimmer") == "openai_shimmer"
+    assert infer_speaker_gender("openai_nova") == "female"

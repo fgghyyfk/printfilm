@@ -87,7 +87,24 @@ billing_expr USD sell = official_CNY / 7.3 * 1.5
 - 单价在管理后台「系统设置 → 数字人」配置 `avatar_price_fen_per_sec`（分/秒成片），**默认 0 不收费**。
 - 视频阶段预扣 = 未完成段的配音秒数 × 单价；单段重做按该段时长预扣。
 - 每段下载成功后写一行 `billing_key=avatar_video`、`provider=avatar` 的用量，`raw.cost_fen` = 成片秒数 × 单价，结算按实际秒数。
-- 逐段配音仍按 `tts` 估价；数字人模式不出分镜图，素材阶段不预扣生图。
+- 逐段配音：微软/TokenFree 音色按 `tts` 估价；OpenAI 音色（`openai_shimmer` 等）走 promptoll `tts-1-hd`，写 `billing_key=avatar_tts`，按字数 × $30/百万字符。
+- 定妆照、场景图走 promptoll 改图，写 `billing_key=avatar_image`，按张价（`services/kepu_avatar_billing.py` 的 `IMAGE_USD`：gpt-image-2 $0.2625、Gemini Flash Image $0.07035，其余 $0.08）× `billing_usd_cny`。
+- AI 写稿走 promptoll 文本模型，写 `billing_key=llm_chat`（取返回的 total_tokens）。
+- 这些用量只在 TaskRun 计费范围内写入；不在任务里的调用不记账（日志告警）。
+
+预扣：
+
+| 场景 | TaskRun | 预扣 |
+|---|---|---|
+| 生成定妆照 | `kepu/avatar_look`（请求内同步） | 所选模型 1 张图价 |
+| 单段场景重画 | `kepu/avatar_scene`（请求内同步） | 所选模型 1 张图价 |
+| 素材阶段 | `kepu/project_pipeline` phase=assets | 配音 + 待画场景图（全片固定场景只算 1 张） |
+| 全自动出片 | `kepu/avatar_auto` | 按文稿字数估时长（4.5 字/秒，选题按 60 秒）：写稿 + 场景图 + OpenAI 配音 + 秒数 × GPU 单价，乘估价缓冲 |
+| 批量生产 | 每条一个 `avatar_auto` | 提交前按整批估价一次性校验余额（含排队中），不足直接拒绝，不会建到一半 |
+
+限频：定妆照 + 场景重画同一用户同时只能 1 张，每小时最多 30 张，超出返回 429。
+
+排队：`avatar_auto` 与数字人项目的视频阶段走 **GPU 长任务槽位池**（`services/tasks/gpu_pool.py`），不占全站 Worker 槽位；默认全站 2 个、单用户 1 个，可在后台「系统设置 → 运行时」调整（`task_gpu_max_concurrency` / `task_gpu_user_max_concurrency`）。各用户的分段轮流进入 GPU 队列。
 
 ## TaskRun 计费流程
 

@@ -27,12 +27,27 @@ export default function AvatarBatchBlock({ project, disabled }: Props) {
       : text.split(/\n\s*\n/).map((t) => t.trim()).filter((t) => t.length >= 2)
   const ready = Boolean(project.avatar_image_url)
 
-  /** 确认后提交批量任务 */
+  /** 先估价，确认后提交批量任务（余额不足由后端拒绝并给出中文提示） */
   async function submit() {
     if (!topics.length) return
-    if (!window.confirm(`将新建 ${topics.length} 个数字人项目并全自动出片（GPU 排队，单条约 1–3 小时），确定吗？`)) return
     setSubmitting(true)
     setError('')
+    let costLine = ''
+    try {
+      const est = await api.estimateAvatarBatch(project.id, topics, sourceType)
+      if (est.billing_enabled) {
+        costLine = `\n预计费用约 ¥${(est.estimate_fen / 100).toFixed(2)}（按实际用量结算，多退少补），当前余额 ¥${(est.balance_fen / 100).toFixed(2)}。`
+      }
+    } catch {
+      // 估价失败不阻止提交，提交时后端仍会校验余额
+    }
+    const ok = window.confirm(
+      `将新建 ${topics.length} 个数字人项目并全自动出片（GPU 排队，单条约 1–3 小时）。${costLine}\n确定吗？`,
+    )
+    if (!ok) {
+      setSubmitting(false)
+      return
+    }
     try {
       await api.createAvatarBatch(project.id, topics, sourceType)
       navigate('/history')

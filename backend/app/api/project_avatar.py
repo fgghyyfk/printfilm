@@ -13,6 +13,8 @@ from app.deps import get_current_user
 from app.models import Project, ProjectStatus, User
 from app.schemas import ProjectOut
 from app.services import avatar_ai, avatar_video, storage
+from app.services.billing.http import http_exception_for_value_error
+from app.services.kepu_avatar_billing import run_billed_image
 from app.services.kepu_avatar_look import DEFAULT_LOOK_STYLE, LOOK_STYLES
 
 router = APIRouter(tags=["projects"])
@@ -93,11 +95,17 @@ async def generate_avatar_look(
     if body.model:
         project.avatar_image_model = body.model
         await db.commit()
+    model = avatar_ai.resolve_image_model(body.model or project.avatar_image_model)
     try:
-        await generate_look(project_id, body.style, body.model or None)
+        await run_billed_image(db, user, task_type="avatar_look", project_id=project_id, model=model,
+                               executor=lambda: generate_look(project_id, body.style, body.model or None))
+    except ValueError as exc:  # 余额不足 / 限频
+        await db.rollback()
+        raise http_exception_for_value_error(exc) from exc
     except Exception as exc:  # noqa: BLE001
         raise _ai_error(exc) from exc
     db.expire_all()
+    await db.refresh(user)  # 计费任务已提交，user 已过期，异步会话里不能懒加载
     return await _get_owned_project(db, project_id, user)
 
 
@@ -120,11 +128,18 @@ async def regen_avatar_scene(
         raise HTTPException(status_code=404, detail="分镜不存在")
     if not (shot.img_prompt or "").strip():
         raise HTTPException(status_code=400, detail="该段没有场景描述，请先填写")
+    look = await portrait_path(project)
+    model = avatar_ai.resolve_image_model(project.avatar_image_model)
     shot.image_url = project.avatar_image_url
     project.final_video_url = None
     await db.commit()
     try:
-        await ensure_scene_images(project_id, await portrait_path(project), only_shot_ids={shot_id})
+        await run_billed_image(db, user, task_type="avatar_scene", project_id=project_id, model=model,
+                               shot_id=shot_id,
+                               executor=lambda: ensure_scene_images(project_id, look, only_shot_ids={shot_id}))
+    except ValueError as exc:  # 余额不足 / 限频
+        await db.rollback()
+        raise http_exception_for_value_error(exc) from exc
     except Exception as exc:  # noqa: BLE001
         raise _ai_error(exc) from exc
     if project.status in {ProjectStatus.VIDEO_READY, ProjectStatus.AUDITING, ProjectStatus.DONE,
@@ -133,6 +148,7 @@ async def regen_avatar_scene(
 
         await _after_regen(project_id)
     db.expire_all()
+    await db.refresh(user)  # 计费任务已提交，user 已过期，异步会话里不能懒加载
     return await _get_owned_project(db, project_id, user)
 
 
@@ -151,7 +167,6 @@ async def create_avatar_batch(
     user: User = Depends(get_current_user),
 ) -> dict:
     """用这个项目的数字人设置（形象、音色、场景、构图、文案风格）批量出片，每个选题一个新项目，全自动跑完。"""
-    from app.services.billing.http import http_exception_for_value_error
     from app.services.kepu_avatar_batch import clean_topics, create_batch
 
     src = await _get_owned_project(db, project_id, user)
@@ -163,6 +178,24 @@ async def create_avatar_batch(
         await db.rollback()
         raise http_exception_for_value_error(exc) from exc
     return {"count": len(created), "project_ids": [p.id for p in created]}
+
+
+@router.post("/projects/{project_id}/avatar-batch/estimate")
+async def estimate_avatar_batch(
+    project_id: int,
+    body: BatchIn,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """批量生产预计费用（提交前在确认框里展示）；计费关闭时 billing_enabled 为 False。"""
+    from app.services.billing.settlement import billing_active
+    from app.services.kepu_avatar_batch import clean_topics
+    from app.services.kepu_avatar_billing import estimate_batch_fen
+
+    src = await _get_owned_project(db, project_id, user)
+    topics = clean_topics(body.topics)
+    return {"count": len(topics), "estimate_fen": estimate_batch_fen(src, topics, body.source_type),
+            "billing_enabled": billing_active(user), "balance_fen": int(user.balance_fen or 0)}
 
 
 @router.get("/avatar/options")

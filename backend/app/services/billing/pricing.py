@@ -426,8 +426,12 @@ def billing_key_to_capability(billing_key: str) -> str:
     key = (billing_key or "").strip().lower()
     if key == "llm_chat":
         return "llm"
-    if key == "seedream":
+    if key in ("seedream", "avatar_image"):
         return "image"
+    if key == "avatar_video":
+        return "video"
+    if key == "avatar_tts":
+        return "tts"
     if key.startswith("seedance"):
         return "video"
     if key == "tts":

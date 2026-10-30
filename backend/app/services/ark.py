@@ -50,7 +50,7 @@ from app.services.tokenfree_image import (
     tokenfree_image_slot,
     tokenfree_image_user_error,
 )
-from app.services.voices import edge_tts_voice_for_speaker
+from app.services.voices import edge_tts_voice_for_speaker, openai_voice
 from app.services.tokenfree_video import (
     extract_video_result_url,
     extract_video_task_id,
@@ -2068,6 +2068,20 @@ class ArkGateway:
                 logger.warning("%s produced near-silence shot=%s", label, shot_no)
                 return None
             return storage.publish_local(dest)
+
+        # OpenAI 音色（openai_shimmer 等）：走数字人素材服务的 /audio/speech，失败再按下面的顺序兜底
+        oa_voice = openai_voice(speaker)
+        if oa_voice:
+            from app.services import avatar_ai
+
+            if avatar_ai.is_configured():
+                try:
+                    await avatar_ai.speech(clean, oa_voice, dest)
+                    url = await _accept_if_audible("openai-speech")
+                    if url:
+                        return url
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("openai speech failed voice=%s: %s", oa_voice, exc)
 
         try:
             audio_model = self._resolved_audio_model()

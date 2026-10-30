@@ -457,6 +457,13 @@ export const api = {
       body: JSON.stringify({ topics, source_type: sourceType }),
     })
   },
+  /** 批量生产预计费用（分）；计费关闭时 billing_enabled 为 false。 */
+  estimateAvatarBatch(projectId: number, topics: string[], sourceType: 'theme' | 'script') {
+    return request<{ count: number; estimate_fen: number; billing_enabled: boolean; balance_fen: number }>(
+      `/api/projects/${projectId}/avatar-batch/estimate`,
+      { method: 'POST', body: JSON.stringify({ topics, source_type: sourceType }) },
+    )
+  },
   /** 定妆照风格与可选改图模型。 */
   avatarOptions() {
     return request<AvatarOptions>('/api/avatar/options')

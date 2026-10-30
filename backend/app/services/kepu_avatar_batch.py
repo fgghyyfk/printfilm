@@ -75,8 +75,13 @@ async def create_batch(db: AsyncSession, user: User, src: Project, topics: list[
         raise ValueError("只有数字人口播项目可以批量生产")
     if not (src.avatar_image_url or src.avatar_face_url):
         raise ValueError("源项目还没有数字人照片")
+    from app.services.kepu_avatar_billing import ensure_batch_balance
+
+    topics = clean_topics(topics)
+    # 先按整批估价校验余额，避免建到一半才发现钱不够
+    await ensure_batch_balance(db, user, src, topics, source_type)
     created: list[Project] = []
-    for topic in clean_topics(topics):
+    for topic in topics:
         project = await clone_for_topic(db, src, topic, source_type)
         project.status = ProjectStatus.SCRIPTING
         project.progress = 1

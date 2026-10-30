@@ -100,6 +100,10 @@ class Settings(BaseSettings):
     task_runtime_max_concurrency: int = 4
     # 单用户同时进行中的 Worker 槽位（不含 awaiting_poll 注册项）。
     task_user_max_concurrency: int = 4
+    # 数字人对口型这类长时 GPU 任务单独一个槽位池，不占上面的全站槽位（单条要跑 1–3 小时）。
+    task_gpu_max_concurrency: int = 2
+    # 单用户同时进行中的 GPU 长任务数；各用户的分段轮流进 GPU 队列，一人批量不会堵住别人。
+    task_gpu_user_max_concurrency: int = 1
     # Selector 每轮并发非阻塞查询上游的上限（类似 NIO select 就绪 channel 批处理）。
     task_poll_max_concurrency: int = 20
     # 孤儿恢复：leased/running 超过该秒数无更新、且本进程无执行协程时重排队。

@@ -31,6 +31,8 @@ export type AdminModelSettings = {
   pipeline_audio_concurrency: number;
   task_runtime_max_concurrency: number;
   task_user_max_concurrency: number;
+  task_gpu_max_concurrency: number;
+  task_gpu_user_max_concurrency: number;
   task_poll_max_concurrency: number;
   drama_user_video_job_limit: number;
   drama_fragment_max_attempts: number;
