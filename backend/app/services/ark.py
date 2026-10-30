@@ -2069,10 +2069,15 @@ class ArkGateway:
                 return None
             return storage.publish_local(dest)
 
-        audio_model = self._resolved_audio_model()
+        try:
+            audio_model = self._resolved_audio_model()
+        except RuntimeError as exc:
+            # 当前渠道（如 BytePlus）没有独立配音：跳过上游 TTS，直接走 edge-tts 兜底
+            logger.info("upstream TTS unavailable, fallback to edge-tts: %s", exc)
+            audio_model = None
 
         # TokenFree：默认模型 + Gemini / ElevenLabs / Qwen 其它 TTS 依次试
-        for model_id in iter_tokenfree_tts_models(audio_model):
+        for model_id in (iter_tokenfree_tts_models(audio_model) if audio_model else []):
             try:
                 ok = await self._tts_openai_speech(clean, speaker, dest, model=model_id)
                 if ok:

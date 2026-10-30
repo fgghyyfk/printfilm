@@ -180,6 +180,13 @@ async def _run_kepu_project_pipeline(task: TaskRun) -> dict[str, Any] | None:
     )
 
 
+# 执行数字人全自动出片（批量生产用）：写稿 → 素材 → 对口型 → 合成，中途不停顿。
+async def _run_kepu_avatar_auto(task: TaskRun) -> dict[str, Any] | None:
+    from app.services.kepu_avatar_batch import run_avatar_auto
+
+    return await _await_kepu(task, run_avatar_auto(_require_int(task.project_id, "project_id")))
+
+
 # 执行科普单镜生图任务。
 async def _run_kepu_shot_image(task: TaskRun) -> dict[str, Any] | None:
     from app.services.pipeline import regen_shot_image
@@ -302,6 +309,7 @@ TASK_HANDLERS: dict[tuple[str, str], TaskHandler] = {
     ("kepu", "shot_regen_audio"): TaskHandler("kepu", "shot_regen_audio", _run_kepu_shot_audio),
     ("kepu", "project_regen_audio"): TaskHandler("kepu", "project_regen_audio", _run_kepu_project_audio),
     ("kepu", "project_compose_only"): TaskHandler("kepu", "project_compose_only", _run_kepu_compose),
+    ("kepu", "avatar_auto"): TaskHandler("kepu", "avatar_auto", _run_kepu_avatar_auto),
     ("tools", "mock_delay"): TaskHandler("tools", "mock_delay", _run_tools_mock_delay),
 }
 

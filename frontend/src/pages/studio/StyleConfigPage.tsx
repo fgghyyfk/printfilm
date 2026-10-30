@@ -11,6 +11,7 @@ import type {
   VoicePreset,
 } from '../../api'
 import AvatarSetupBlock from '../../components/studio/AvatarSetupBlock'
+import AvatarBatchBlock from '../../components/studio/AvatarBatchBlock'
 import AppShell from '../../components/layout/AppShell'
 import Stepper from '../../components/ui/Stepper'
 import ComingSoon from '../../components/ui/ComingSoon'
@@ -454,13 +455,16 @@ export default function StyleConfigPage() {
           </div>
 
           {pipelineMode === 'avatar' ? (
-            <AvatarSetupBlock
-              project={project}
-              engine={avatarEngine}
-              onEngineChange={setAvatarEngine}
-              onProjectUpdated={setProject}
-              disabled={busy}
-            />
+            <>
+              <AvatarSetupBlock
+                project={project}
+                engine={avatarEngine}
+                onEngineChange={setAvatarEngine}
+                onProjectUpdated={setProject}
+                disabled={busy}
+              />
+              <AvatarBatchBlock project={project} disabled={busy} />
+            </>
           ) : null}
 
           {mediaCatalog && pipelineMode !== 'avatar' ? (

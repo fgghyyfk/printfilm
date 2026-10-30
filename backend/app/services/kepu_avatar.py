@@ -177,10 +177,13 @@ async def _one_segment(project_id: int, shot_id: int, *, engine: str, index: int
         audio = storage.local_path_from_url(shot.audio_url or "") if shot else None
         if not shot or not audio or not audio.exists():
             raise RuntimeError(f"第 {shot.shot_no if shot else '?'} 段缺少配音，请先重新生成配音")
-        image = await shot_image_path(await db.get(Project, project_id), shot)
+        project = await db.get(Project, project_id)
+        image = await shot_image_path(project, shot)
+        resolution = (project.avatar_resolution or "").strip() or None
         shot_no, job_id = shot.shot_no, shot.avatar_job_id
         if not job_id:
-            job_id = await avatar_video.submit(image, audio, engine=engine, prompt=AVATAR_PROMPT)
+            job_id = await avatar_video.submit(image, audio, engine=engine, prompt=AVATAR_PROMPT,
+                                               resolution=resolution)
             shot.avatar_job_id = job_id
             await db.commit()
             logger.info("avatar submit project=%s shot=%s engine=%s job=%s", project_id, shot_no, engine, job_id)

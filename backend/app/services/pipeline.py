@@ -1445,8 +1445,10 @@ async def _compose_stage(project_id: int) -> None:
             # 数字人：标题条第一行固定作品标题（黄），第二行是该段小标题（白）
             from app.services.kepu_avatar_look import split_highlights
 
+            title2 = (getattr(project, "avatar_title2", "") or "").strip()
             for item, shot in zip(media, sorted(project.shots, key=lambda s: s.shot_no)):
-                item.overlay_subtitle = (shot.overlay_title or "").strip()
+                # 第二行：设了固定副标题（观点口播两行钩子）就全片固定，否则显示每段小标题
+                item.overlay_subtitle = title2 or (shot.overlay_title or "").strip()
                 item.overlay_title = (project.title or "").strip()
                 item.highlights = split_highlights(getattr(shot, "highlights", ""))
 

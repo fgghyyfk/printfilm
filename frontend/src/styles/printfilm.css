@@ -7407,6 +7407,31 @@ button.pf-shot-editable:disabled {
   margin-top: 0.8rem;
 }
 
+.pf-avatar-options {
+  margin-top: 0.4rem;
+  padding-top: 0.4rem;
+  border-top: 1px dashed var(--pf-line);
+}
+
+.pf-avatar-input,
+.pf-avatar-batch-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 1px solid var(--pf-line);
+  border-radius: 8px;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.82rem;
+  font-family: inherit;
+  background: #fff;
+}
+
+.pf-avatar-batch-input {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  line-height: 1.6;
+}
+
 @media (max-width: 560px) {
   .pf-avatar-setup {
     flex-wrap: wrap;

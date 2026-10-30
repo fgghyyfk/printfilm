@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { api } from '../../api'
 import type { AvatarEngine, AvatarOptions, AvatarServiceStatus, Project } from '../../api'
+import AvatarProductionOptions from './AvatarProductionOptions'
 
 /** 引擎选项：空串跟随后台默认 */
 const ENGINES: { id: AvatarEngine; label: string; desc: string }[] = [
@@ -30,7 +31,7 @@ export default function AvatarSetupBlock({ project, engine, onEngineChange, onPr
   /* 服务状态与可选项 */
   const [service, setService] = useState<AvatarServiceStatus | null>(null)
   const [options, setOptions] = useState<AvatarOptions | null>(null)
-  const [style, setStyle] = useState(project.avatar_look_style || 'casual')
+  const [style, setStyle] = useState(project.avatar_look_style || 'cartoon3d')
   const fileRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
@@ -193,6 +194,9 @@ export default function AvatarSetupBlock({ project, engine, onEngineChange, onPr
       ) : null}
 
       {error ? <p className="pf-avatar-warn">{error}</p> : null}
+      {aiReady ? (
+        <AvatarProductionOptions project={project} onProjectUpdated={onProjectUpdated} disabled={busy} />
+      ) : null}
       <div className="pf-model-grid" style={{ marginTop: '0.75rem' }}>
         {ENGINES.map((m) => (
           <button

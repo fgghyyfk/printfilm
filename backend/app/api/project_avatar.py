@@ -136,6 +136,35 @@ async def regen_avatar_scene(
     return await _get_owned_project(db, project_id, user)
 
 
+class BatchIn(BaseModel):
+    """批量生产：每行一个选题（theme）或一篇口播稿（script）。"""
+
+    topics: list[str] = Field(min_length=1, max_length=50)
+    source_type: str = Field(default="theme", pattern="^(theme|script)$")
+
+
+@router.post("/projects/{project_id}/avatar-batch")
+async def create_avatar_batch(
+    project_id: int,
+    body: BatchIn,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """用这个项目的数字人设置（形象、音色、场景、构图、文案风格）批量出片，每个选题一个新项目，全自动跑完。"""
+    from app.services.billing.http import http_exception_for_value_error
+    from app.services.kepu_avatar_batch import clean_topics, create_batch
+
+    src = await _get_owned_project(db, project_id, user)
+    if not clean_topics(body.topics):
+        raise HTTPException(status_code=400, detail="请至少填写一个选题")
+    try:
+        created = await create_batch(db, user, src, body.topics, body.source_type)
+    except ValueError as exc:
+        await db.rollback()
+        raise http_exception_for_value_error(exc) from exc
+    return {"count": len(created), "project_ids": [p.id for p in created]}
+
+
 @router.get("/avatar/options")
 async def avatar_options(user: User = Depends(get_current_user)) -> dict:
     """创建/编辑页用：定妆照风格、可选改图模型、后台默认模型、素材服务是否已配置。"""
@@ -144,6 +173,7 @@ async def avatar_options(user: User = Depends(get_current_user)) -> dict:
         "default_image_model": avatar_ai.resolve_image_model(None),
         "image_models": avatar_ai.IMAGE_MODELS,
         "look_styles": [{"id": k, "label": v[0]} for k, v in LOOK_STYLES.items()],
+        "max_batch": 50,
     }
 
 

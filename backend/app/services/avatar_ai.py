@@ -23,8 +23,8 @@ logger = logging.getLogger(__name__)
 
 # 后台/前端下拉里的推荐改图模型（也允许手填其它模型名）
 IMAGE_MODELS: list[dict[str, str]] = [
-    {"id": "gemini-3.1-flash-image", "label": "Gemini Flash Image", "hint": "保脸最稳，推荐"},
-    {"id": "gpt-image-2", "label": "GPT Image 2", "hint": "画质与光影最好，多张之间脸略有漂移"},
+    {"id": "gemini-3.1-flash-image", "label": "Gemini Flash Image", "hint": "卡通化保脸最稳；真人照片常被拒绝改图"},
+    {"id": "gpt-image-2", "label": "GPT Image 2", "hint": "画质最好，真人照片（保持原样）推荐用它"},
     {"id": "qwen-image-edit-plus", "label": "通义千问改图 Plus", "hint": "便宜，中文提示友好"},
 ]
 
@@ -69,7 +69,7 @@ async def _image_bytes_from_response(data: dict, client: httpx.AsyncClient) -> b
     """从 OpenAI 图片响应取第一张图：b64_json 优先，否则下载 url。"""
     items = data.get("data") or []
     if not items:
-        raise RuntimeError("改图服务没有返回图片")
+        raise RuntimeError("改图服务没有返回图片（模型可能拒绝处理真人照片，可换 GPT Image 2 再试）")
     first = items[0] or {}
     if first.get("b64_json"):
         return base64.b64decode(first["b64_json"])

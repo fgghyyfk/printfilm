@@ -179,6 +179,12 @@ class ProjectUpdate(BaseModel):
     cover_url: str | None = Field(default=None, max_length=1024)
     avatar_engine: str | None = Field(default=None, pattern="^(|infinitetalk|longcat)$")
     avatar_image_model: str | None = Field(default=None, pattern=r"^[A-Za-z0-9._:/-]{0,64}$")
+    avatar_look_style: str | None = Field(default=None, max_length=64)
+    avatar_scene_mode: str | None = Field(default=None, pattern="^(per_segment|fixed)$")
+    avatar_framing: str | None = Field(default=None, pattern="^(waist|chest)$")
+    avatar_script_style: str | None = Field(default=None, pattern="^(kepu|opinion)$")
+    avatar_title2: str | None = Field(default=None, max_length=64)
+    avatar_resolution: str | None = Field(default=None, pattern="^(|480p|720p)$")
 
 
 class ProjectOut(BaseModel):
@@ -210,6 +216,11 @@ class ProjectOut(BaseModel):
     avatar_face_url: str | None = None
     avatar_look_style: str = ""
     avatar_image_model: str = ""
+    avatar_scene_mode: str = "per_segment"
+    avatar_framing: str = "waist"
+    avatar_script_style: str = "kepu"
+    avatar_title2: str = ""
+    avatar_resolution: str = ""
     created_at: datetime
     updated_at: datetime
     shots: list[ShotOut] = []

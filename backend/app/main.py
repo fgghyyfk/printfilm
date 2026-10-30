@@ -200,6 +200,16 @@ async def _apply_schema_patches() -> None:
             await conn.execute(text("ALTER TABLE projects ADD COLUMN avatar_look_style VARCHAR(64) DEFAULT ''"))
         if "avatar_image_model" not in pcols:
             await conn.execute(text("ALTER TABLE projects ADD COLUMN avatar_image_model VARCHAR(64) DEFAULT ''"))
+        if "avatar_scene_mode" not in pcols:
+            await conn.execute(text("ALTER TABLE projects ADD COLUMN avatar_scene_mode VARCHAR(16) DEFAULT 'per_segment'"))
+        if "avatar_framing" not in pcols:
+            await conn.execute(text("ALTER TABLE projects ADD COLUMN avatar_framing VARCHAR(16) DEFAULT 'waist'"))
+        if "avatar_script_style" not in pcols:
+            await conn.execute(text("ALTER TABLE projects ADD COLUMN avatar_script_style VARCHAR(16) DEFAULT 'kepu'"))
+        if "avatar_title2" not in pcols:
+            await conn.execute(text("ALTER TABLE projects ADD COLUMN avatar_title2 VARCHAR(64) DEFAULT ''"))
+        if "avatar_resolution" not in pcols:
+            await conn.execute(text("ALTER TABLE projects ADD COLUMN avatar_resolution VARCHAR(8) DEFAULT ''"))
 
         # User billing columns
         ucols = await _pg_columns(conn, "users")

@@ -11,8 +11,10 @@ import pytest
 from app.services import avatar_ai
 from app.services.ffmpeg_compose import _highlight_drawtext, build_video_caption_vf, highlight_windows
 from app.services.kepu_avatar_look import (
+    DEFAULT_LOOK_STYLE,
     LOOK_STYLES,
     look_prompt,
+    look_render,
     needs_scene,
     normalize_segments,
     scene_prompt,
@@ -21,18 +23,23 @@ from app.services.kepu_avatar_look import (
 )
 
 
-def test_look_prompt_keeps_face_and_changes_outfit():
-    """定妆照只保留脸，服装按风格替换；未知风格回退默认。"""
-    p = look_prompt("lab")
-    assert "SAME person" in p and "lab coat" in p and "mouth gently closed" in p
-    assert look_prompt("nope") == look_prompt("casual")
-    assert set(LOOK_STYLES) >= {"casual", "school", "lab", "host", "outdoor"}
+def test_look_prompt_styles_and_beauty():
+    """定妆照：写实保留本人，卡通画成角色；都带美颜瘦脸与对口型构图；未知风格回退默认（3D 卡通）。"""
+    photo = look_prompt("lab")
+    assert "SAME person" in photo and "lab coat" in photo and "photorealistic" in photo
+    cartoon = look_prompt("cartoon3d")
+    assert "cartoon character" in cartoon and "3D animated" in cartoon
+    for p in (photo, cartoon, look_prompt("anime")):
+        assert "slimmer" in p and "mouth gently closed" in p
+    assert look_prompt("nope") == look_prompt(DEFAULT_LOOK_STYLE) == cartoon
+    assert look_render("anime") == "anime" and look_render("") == "photo"
 
 
-def test_scene_prompt_keeps_person():
-    """场景图只换背景，人物不变；空场景有兜底。"""
-    p = scene_prompt("a seaside at sunset")
-    assert "exactly the same" in p and "a seaside at sunset" in p
+def test_scene_prompt_keeps_character_and_style():
+    """场景图只换背景，人物与画风不变；空场景有兜底。"""
+    p = scene_prompt("a seaside at sunset", "3d")
+    assert "exactly the same" in p and "a seaside at sunset" in p and "3D animated" in p
+    assert "photorealistic" in scene_prompt("x")
     assert "educational studio" in scene_prompt("")
 
 
@@ -131,3 +138,43 @@ def test_highlight_filter_runs_in_ffmpeg(tmp_path):
     if "No such filter: 'drawtext'" in proc.stderr:
         pytest.skip("本机 ffmpeg 不带 drawtext")
     assert proc.returncode == 0, proc.stderr
+
+
+def test_original_look_keeps_outfit_and_removes_text():
+    """保持原样：沿用原照片的衣服与场景，去掉字幕标题条，只轻度美颜，按胸像近景重新取景。"""
+    from app.services.kepu_avatar_prompts import ORIGINAL_LOOK
+
+    p = look_prompt(ORIGINAL_LOOK, "chest")
+    assert "same outfit" in p and "title bars" in p and "light, natural beauty" in p
+    assert "Chest-up medium close-up" in p and "one third" in p
+    assert "one quarter" in look_prompt("casual", "waist")
+
+
+def test_script_system_by_style_and_scene_mode():
+    """观点口播要两行钩子标题；固定场景只要全片一个 scene，每段换场景要求段内 scene。"""
+    from app.services.kepu_avatar_prompts import script_system
+
+    opinion_fixed = script_system("opinion", "fixed")
+    assert "title2" in opinion_fixed and "全片只用一个出镜场景" in opinion_fixed
+    assert '"scene": "English background description", "segments"' in opinion_fixed
+    kepu_seg = script_system("kepu", "per_segment")
+    assert "儿童/大众科普" in kepu_seg and '"narration": "口播", "scene"' in kepu_seg
+
+
+def test_normalize_uses_global_scene_and_shot_scene_rules():
+    """段内没场景时用全片场景；「保持原样 + 固定场景」不再画场景图。"""
+    from app.services.kepu_avatar_look import shot_scene
+
+    segs = normalize_segments({"scene": "hotel lobby", "segments": [{"narration": "大家好，今天聊聊平台", "keywords": ["平台"]}]})
+    assert segs[0]["scene"] == "hotel lobby"
+    assert shot_scene("hotel lobby", scene_mode="fixed", look_style="original") == ""
+    assert shot_scene("hotel lobby", scene_mode="fixed", look_style="casual") == "hotel lobby"
+    assert shot_scene("sky", scene_mode="per_segment", look_style="original") == "sky"
+
+
+def test_clean_topics():
+    """批量选题去空去重，最多 50 个。"""
+    from app.services.kepu_avatar_batch import MAX_BATCH, clean_topics
+
+    assert clean_topics(["  选题一 ", "", "选题一", "x", "选题二"]) == ["选题一", "选题二"]
+    assert len(clean_topics([f"选题{i}" for i in range(80)])) == MAX_BATCH

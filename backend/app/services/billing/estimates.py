@@ -227,6 +227,11 @@ async def estimate_task_fen(db: AsyncSession, task: TaskRun, settings: Settings 
             return _buffered_fen(c, s)
         if task_type == "project_compose_only":
             return 1
+        if task_type == "avatar_auto":
+            # 全自动出片：写稿 + 配音 + 对口型（按约 60 秒成片 × 数字人单价估）
+            llm = charge_fen_official_llm(s.billing_est_llm_tokens, s)
+            _, tts = charge_fen_for_tokens(s.billing_est_tts_tokens * 6, "tts", settings=s)
+            return _buffered_fen(llm + tts, s) + 60 * int(s.avatar_price_fen_per_sec or 0)
 
     if domain == "drama":
         if task_type in {"script_summary", "fragment_plan", "agent_chat"}:

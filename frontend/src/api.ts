@@ -25,6 +25,7 @@ export type AvatarOptions = {
   default_image_model: string
   image_models: { id: string; label: string; hint: string }[]
   look_styles: { id: string; label: string }[]
+  max_batch?: number
 }
 
 export type Template = {
@@ -155,6 +156,16 @@ export type Project = {
   avatar_face_url?: string | null
   avatar_look_style?: string
   avatar_image_model?: string
+  /** 数字人：per_segment 每段换场景 | fixed 全片同一场景 */
+  avatar_scene_mode?: 'per_segment' | 'fixed'
+  /** 数字人构图：waist 腰部以上 | chest 胸像近景 */
+  avatar_framing?: 'waist' | 'chest'
+  /** 数字人文案风格：kepu 科普讲解 | opinion 观点口播 */
+  avatar_script_style?: 'kepu' | 'opinion'
+  /** 标题条第二行（全片固定），空则显示每段小标题 */
+  avatar_title2?: string
+  /** 对口型分辨率：空=后台默认 */
+  avatar_resolution?: '' | '480p' | '720p'
   created_at: string
   updated_at: string
   shots: Shot[]
@@ -400,6 +411,12 @@ export const api = {
       cover_url?: string | null
       avatar_engine?: AvatarEngine
       avatar_image_model?: string
+      avatar_look_style?: string
+      avatar_scene_mode?: 'per_segment' | 'fixed'
+      avatar_framing?: 'waist' | 'chest'
+      avatar_script_style?: 'kepu' | 'opinion'
+      avatar_title2?: string
+      avatar_resolution?: '' | '480p' | '720p'
     },
   ) {
     return request<Project>(`/api/projects/${id}`, {
@@ -432,6 +449,13 @@ export const api = {
   /** 按该段场景描述重画场景图（同一个人）。 */
   regenAvatarScene(projectId: number, shotId: number) {
     return request<Project>(`/api/projects/${projectId}/shots/${shotId}/avatar-scene`, { method: 'POST' })
+  },
+  /** 用该项目的数字人设置批量出片：每个选题一个新项目，全自动跑完。 */
+  createAvatarBatch(projectId: number, topics: string[], sourceType: 'theme' | 'script') {
+    return request<{ count: number; project_ids: number[] }>(`/api/projects/${projectId}/avatar-batch`, {
+      method: 'POST',
+      body: JSON.stringify({ topics, source_type: sourceType }),
+    })
   },
   /** 定妆照风格与可选改图模型。 */
   avatarOptions() {

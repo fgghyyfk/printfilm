@@ -121,6 +121,15 @@ class Project(Base):
     # 定妆照风格 id（见 kepu_avatar_look.LOOK_STYLES）与保脸改图模型（空则用后台默认）
     avatar_look_style: Mapped[str] = mapped_column(String(64), default="")
     avatar_image_model: Mapped[str] = mapped_column(String(64), default="")
+    # 场景：per_segment 每段换场景 | fixed 全片同一场景；构图：waist 腰部以上 | chest 胸像近景
+    avatar_scene_mode: Mapped[str] = mapped_column(String(16), default="per_segment")
+    avatar_framing: Mapped[str] = mapped_column(String(16), default="waist")
+    # 文案风格：kepu 科普讲解 | opinion 观点口播（个人 IP）
+    avatar_script_style: Mapped[str] = mapped_column(String(16), default="kepu")
+    # 标题条第二行（全片固定）；空则第二行显示每段小标题
+    avatar_title2: Mapped[str] = mapped_column(String(64), default="")
+    # 对口型分辨率：空=后台默认 | 480p | 720p
+    avatar_resolution: Mapped[str] = mapped_column(String(8), default="")
     # 输出画幅，如 16:9 / 9:16；空则回退模板 default_ratio
     output_ratio: Mapped[str] = mapped_column(String(16), default="")
     # 配音预设 id；空则用模板默认
