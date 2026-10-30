@@ -8,6 +8,12 @@ from typing import Any
 # 接口与项目 voice_id；speaker 是历史音色 id，用来区分男女声线
 VOICE_PRESETS: list[dict[str, Any]] = [
     {
+        "id": "zh_female_xinlingjitang_uranus_bigtts",
+        "label": "心灵鸡汤 · 豆包 2.0 口播女声",
+        "gender": "female",
+        "speaker": "zh_female_xinlingjitang_uranus_bigtts",
+    },
+    {
         "id": "openai_shimmer",
         "label": "Shimmer · 激情女声",
         "gender": "female",

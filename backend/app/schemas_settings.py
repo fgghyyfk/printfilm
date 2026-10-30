@@ -69,6 +69,13 @@ class AdminModelSettingsOut(BaseModel):
     avatar_image_model: str = "gemini-3.1-flash-image"
     avatar_image_size: str = "1024x1536"
     avatar_text_model: str = "qwen3.6-plus"
+    volc_tts_base_url: str = "https://openspeech.bytedance.com"
+    volc_tts_api_key: str = ""
+    has_volc_tts_api_key: bool = False
+    volc_tts_resource_id: str = "seed-tts-1.0"
+    volc_tts_speech_rate: int = 10
+    volc_tts_instruction: str = ""
+    volc_tts_fen_per_10k_chars: int = 500
 
     # Aliyun OSS
     oss_enabled: bool = False
@@ -201,6 +208,13 @@ class AdminModelSettingsPatch(BaseModel):
     avatar_image_model: str | None = Field(default=None, pattern=r"^[A-Za-z0-9._:/-]{1,64}$")
     avatar_image_size: str | None = Field(default=None, pattern=r"^(auto|\d{3,4}x\d{3,4})$")
     avatar_text_model: str | None = Field(default=None, pattern=r"^[A-Za-z0-9._:/-]{1,64}$")
+    volc_tts_base_url: str | None = Field(default=None, max_length=200)
+    volc_tts_api_key: str | None = None
+    clear_volc_tts_api_key: bool = False
+    volc_tts_resource_id: str | None = Field(default=None, pattern=r"^[a-z0-9.\-]{1,40}$")
+    volc_tts_speech_rate: int | None = Field(default=None, ge=-50, le=100)
+    volc_tts_instruction: str | None = Field(default=None, max_length=300)
+    volc_tts_fen_per_10k_chars: int | None = Field(default=None, ge=0, le=100000)
 
     oss_enabled: bool | None = None
     oss_endpoint: str | None = None
@@ -330,6 +344,12 @@ def model_config_field_names() -> tuple[str, ...]:
         "avatar_image_model",
         "avatar_image_size",
         "avatar_text_model",
+        "volc_tts_base_url",
+        "volc_tts_api_key",
+        "volc_tts_resource_id",
+        "volc_tts_speech_rate",
+        "volc_tts_instruction",
+        "volc_tts_fen_per_10k_chars",
         "oss_enabled",
         "oss_endpoint",
         "oss_region",
@@ -393,6 +413,7 @@ SECRET_FIELD_FLAGS: dict[str, str] = {
     "ark_api_key": "has_ark_api_key",
     "avatar_api_key": "has_avatar_api_key",
     "avatar_ai_api_key": "has_avatar_ai_api_key",
+    "volc_tts_api_key": "has_volc_tts_api_key",
     "oss_access_key_id": "has_oss_access_key_id",
     "oss_access_key_secret": "has_oss_access_key_secret",
     "tos_access_key": "has_tos_access_key",

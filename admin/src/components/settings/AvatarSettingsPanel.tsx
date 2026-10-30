@@ -37,6 +37,8 @@ export function AvatarSettingsPanel() {
   const [clearKey, setClearKey] = useState(false);
   const [aiKeyInput, setAiKeyInput] = useState("");
   const [clearAiKey, setClearAiKey] = useState(false);
+  const [volcKeyInput, setVolcKeyInput] = useState("");
+  const [clearVolcKey, setClearVolcKey] = useState(false);
   const [checking, setChecking] = useState(false);
   const [status, setStatus] = useState<AvatarStatus | null>(null);
 
@@ -59,6 +61,13 @@ export function AvatarSettingsPanel() {
         avatar_image_model: form.avatar_image_model.trim(),
         avatar_image_size: form.avatar_image_size.trim() || "1024x1536",
         avatar_text_model: form.avatar_text_model.trim(),
+        volc_tts_base_url: form.volc_tts_base_url.trim(),
+        volc_tts_api_key: volcKeyInput.trim() || undefined,
+        clear_volc_tts_api_key: clearVolcKey,
+        volc_tts_resource_id: form.volc_tts_resource_id.trim() || "seed-tts-1.0",
+        volc_tts_speech_rate: Number(form.volc_tts_speech_rate),
+        volc_tts_instruction: form.volc_tts_instruction.trim(),
+        volc_tts_fen_per_10k_chars: Number(form.volc_tts_fen_per_10k_chars),
       },
       "数字人配置已保存",
     );
@@ -66,6 +75,8 @@ export function AvatarSettingsPanel() {
     setClearKey(false);
     setAiKeyInput("");
     setClearAiKey(false);
+    setVolcKeyInput("");
+    setClearVolcKey(false);
     setStatus(null);
   }
 
@@ -284,6 +295,59 @@ export function AvatarSettingsPanel() {
                 className="settings-input"
                 value={form.avatar_text_model}
                 onChange={(e) => patchField("avatar_text_model", e.target.value)}
+              />
+            </LabeledControl>
+          </div>
+        </SettingsPanel>
+
+        <SettingsPanel
+          className="settings-panel--compact"
+          title="4. 配音（火山引擎豆包）"
+          description="配了 Key 后，豆包音色（*_bigtts、ICL_*）直连火山引擎语音合成；2.0 音色可加语气指令。不配则走原有渠道或微软免费音色"
+        >
+          <div className="settings-field-grid">
+            <SecretField
+              label="API Key"
+              hint="火山引擎控制台 → 豆包语音 → API Key 管理"
+              value={volcKeyInput}
+              configured={form.has_volc_tts_api_key && !clearVolcKey}
+              onChange={setVolcKeyInput}
+              onClear={() => {
+                setVolcKeyInput("");
+                setClearVolcKey(true);
+              }}
+            />
+            <LabeledControl label="语速" hint="-50~100，0 为正常，10 约 1.1 倍">
+              <input
+                className="settings-input"
+                type="number"
+                min={-50}
+                max={100}
+                value={form.volc_tts_speech_rate}
+                onChange={(e) => patchField("volc_tts_speech_rate", Number(e.target.value))}
+              />
+            </LabeledControl>
+            <LabeledControl label="语气指令（2.0 音色）" hint="如：用热情、有感染力的短视频口播博主语气" className="settings-field-span-full">
+              <input
+                className="settings-input"
+                value={form.volc_tts_instruction}
+                onChange={(e) => patchField("volc_tts_instruction", e.target.value)}
+              />
+            </LabeledControl>
+            <LabeledControl label="1.0 音色资源" hint="非 2.0 音色用；2.0 音色自动用 seed-tts-2.0">
+              <input
+                className="settings-input"
+                value={form.volc_tts_resource_id}
+                onChange={(e) => patchField("volc_tts_resource_id", e.target.value)}
+              />
+            </LabeledControl>
+            <LabeledControl label="成本（分/万字符）" hint="用于计费估价，按火山实际单价填写">
+              <input
+                className="settings-input"
+                type="number"
+                min={0}
+                value={form.volc_tts_fen_per_10k_chars}
+                onChange={(e) => patchField("volc_tts_fen_per_10k_chars", Number(e.target.value))}
               />
             </LabeledControl>
           </div>

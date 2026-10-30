@@ -82,6 +82,12 @@ def speech_cost_fen(chars: int, settings: Settings | None = None) -> int:
     return _usd_to_fen(max(1, chars) * SPEECH_USD_PER_M_CHARS / 1_000_000, s)
 
 
+def volc_tts_cost_fen(chars: int, settings: Settings | None = None) -> int:
+    """火山豆包配音的成本（分），按后台每万字符单价。"""
+    s = settings or get_settings()
+    return max(1, math.ceil(max(1, chars) * int(s.volc_tts_fen_per_10k_chars or 0) / 10_000))
+
+
 async def record_avatar_ai(billing_key: str, *, model: str, cost_fen: int | None = None,
                            tokens: int = 0, detail: dict | None = None) -> None:
     """在当前 TaskRun 的计费范围内记一笔数字人素材服务用量；不在任务里（无法结算）时只打日志。
@@ -152,8 +158,12 @@ def estimate_auto_fen(project: Project, settings: Settings | None = None, *, cha
     seconds = max(5.0, n_chars / CHARS_PER_SEC)
     segments = max(1, math.ceil(seconds / SEGMENT_SEC))
     cost = scene_image_count(project, segments) * image_cost_fen(project.avatar_image_model, s)
+    from app.services import volc_tts
+
     if openai_voice(project.voice_id or ""):
         cost += speech_cost_fen(n_chars, s)
+    elif volc_tts.is_configured() and volc_tts.is_volc_speaker(project.voice_id or ""):
+        cost += volc_tts_cost_fen(n_chars, s)
     total = user_charge_fen(cost, s) + charge_fen_official_llm(s.billing_est_llm_tokens, s)
     total += math.ceil(seconds * int(s.avatar_price_fen_per_sec or 0))
     buf = float(s.billing_estimate_buffer or 1.2)

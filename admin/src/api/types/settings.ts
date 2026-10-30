@@ -52,6 +52,13 @@ export type AdminModelSettings = {
   avatar_image_model: string;
   avatar_image_size: string;
   avatar_text_model: string;
+  volc_tts_base_url: string;
+  volc_tts_api_key: string;
+  has_volc_tts_api_key: boolean;
+  volc_tts_resource_id: string;
+  volc_tts_speech_rate: number;
+  volc_tts_instruction: string;
+  volc_tts_fen_per_10k_chars: number;
   oss_enabled: boolean;
   oss_endpoint: string;
   oss_region: string;
