@@ -22,3 +22,11 @@ def test_split_layout_burns_narration_captions():
     assert ":y=70" in vf
     assert ":y=1176" in vf
     assert vf.count("drawtext=") >= 3
+
+
+def test_strip_caption_punct_keeps_decimal_point():
+    """数字中的小数点保留，句末句号仍去掉。"""
+    from app.services.ffmpeg_compose import _strip_caption_punct
+
+    assert _strip_caption_punct("去韩国做脸花了1.7万") == "去韩国做脸花了1.7万"
+    assert _strip_caption_punct("涨了3.5%。真的.") == "涨了3.5真的"

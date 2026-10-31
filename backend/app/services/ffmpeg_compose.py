@@ -23,6 +23,8 @@ _CAPTION_PUNCT_RE = re.compile(
     r"[，。！？；：、,.!?;:…··〜～「」『』【】（）\(\)\[\]\"'“”‘’《》〈〉"
     r"—_\-/\\|@#$%^&*+=<>{}]+"
 )
+# 数字之间的小数点
+_DECIMAL_DOT_RE = re.compile(r"(?<=\d)\.(?=\d)")
 
 # Output sizes keyed by aspect ratio
 _RATIO_SIZE = {
@@ -422,8 +424,9 @@ def _escape_drawtext(text: str) -> str:
 
 
 def _strip_caption_punct(text: str) -> str:
-    """Remove punctuation/symbols from on-screen subtitle text."""
-    t = _CAPTION_PUNCT_RE.sub("", text or "")
+    """去掉屏幕字幕/标题里的标点符号；数字里的小数点（如 1.7万）保留。"""
+    t = _DECIMAL_DOT_RE.sub("\x00", text or "")
+    t = _CAPTION_PUNCT_RE.sub("", t).replace("\x00", ".")
     return re.sub(r"\s+", " ", t).strip()
 
 
