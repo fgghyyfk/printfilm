@@ -95,7 +95,7 @@ export default function AuthorizationPanel({ onSigned }: { onSigned?: () => void
     } catch (e) { setError((e as Error).message) }
     finally { setBusy(false) }
   }
-  return <section className="pf-market-authorization"><h2>PrintFilm 作品授权函</h2><p>按现行条款签署一次，本账号后续 PrintFilm 作品可引用。本函是许可使用，不是著作权转让。</p>
+  return <section className="pf-market-authorization"><h2>开口播作品授权函</h2><p>按现行条款签署一次，本账号后续开口播作品可引用。本函是许可使用，不是著作权转让。</p>
     {status && <>
       <h3>{status.template.title}</h3>
       <p>版本 {status.template.version}</p>

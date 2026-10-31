@@ -10,9 +10,6 @@ from app.services import model_settings
 from app.services.media_model_presets import all_preset_channel_models
 from app.services.tokenfree_gateway import locked_tokenfree_channel
 
-# 开口播保留了 TokenFree / BytePlus 多配置手动切换（provider_profiles）：模型清单由所选配置决定，
-# 路由保存只接受整组渠道配置，不支持上游「逐个模型启停」。两者合并前先标记为已知差异。
-pytestmark = pytest.mark.xfail(reason="多配置手动切换与上游逐模型启停尚未合并", strict=True)
 
 
 @pytest.fixture

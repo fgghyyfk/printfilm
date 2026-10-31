@@ -665,14 +665,17 @@ class ArkGateway:
             if is_tokenfree_content_url(download_url) or is_tokenfree_image_url(download_url):
                 from app.services.tokenfree_gateway import tokenfree_media_headers
 
+                from app.services.provider_profiles import is_byteplus
+
                 route = self._poll_route() if is_tokenfree_content_url(download_url) else None
-                if route and route.api_key:
+                # 只用 TokenFree 渠道自己的 Key；当前生效的若是 BytePlus，绝不把它的 Key 发给 TokenFree 或 CDN
+                if route and route.api_key and not is_byteplus(route.base_url or ""):
                     api_key = route.api_key
                     headers = {"Authorization": f"Bearer {api_key}"}
                 else:
                     # 只对 TokenFree 官方 origin 带 Key，CDN 不带凭据
                     headers = tokenfree_media_headers(download_url)
-                    api_key = headers["Authorization"].removeprefix("Bearer ") if headers else self._ark_api_key()
+                    api_key = headers["Authorization"].removeprefix("Bearer ") if headers else ""
                 timeout = httpx.Timeout(connect=30.0, read=600.0, write=60.0, pool=30.0)
                 if is_tokenfree_content_url(download_url):
                     resolved = await resolve_tokenfree_media_download_url(download_url, api_key=api_key)

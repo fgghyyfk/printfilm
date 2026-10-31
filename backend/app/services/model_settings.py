@@ -430,7 +430,9 @@ async def _compose_runtime_state(db: AsyncSession) -> tuple[list[SystemModelChan
 
     channels = await _load_channels(db, runtime=True)
     config = dict(app_row.config_json or {})
-    logical_models, default_models = profile_state(channels, default_models_from_dict(config.get("default_models")))
+    logical_models, default_models = profile_state(
+        channels, default_models_from_dict(config.get("default_models")), set(config.get("disabled_models") or []),
+    )
     flat = profile_overlay(_effective_flat(_decrypt_flat_config(config)), channels, default_models)
     return channels, logical_models, default_models, flat, app_row
 
@@ -612,56 +614,80 @@ async def patch_admin_routing_settings(
     db: AsyncSession,
     body: AdminRoutingSettingsPatch,
 ) -> tuple[AdminRoutingSettingsOut, list[str]]:
+    """保存模型路由。
+
+    - system_channels：整组替换 TokenFree / BytePlus 配置（有未结束任务时拒绝）
+    - logical_models：只读取每个模型的 enabled，记为停用清单；停用模型不参与路由
+    - default_models：改默认模型；默认模型被停用时自动换成同能力第一个可用模型
+    - media_reference_limits：按模型配置参考素材数量上限
+    """
     from app.models_tasks import TaskRun
     from app.services.tasks.service import TERMINAL_TASK_STATUSES
-    from app.services.provider_profiles import normalize_profiles, profile_state
+    from app.services.provider_profiles import CAPABILITIES, normalize_profiles, profile_state
     from app.services.media_models.reference_limits import reference_limit_settings
 
     limits = {key: value.model_dump() for key, value in body.media_reference_limits.items()} if body.media_reference_limits is not None else None
     reference_limit_settings(limits)
+    applied: list[str] = []
 
     # 先校验整份请求，错误配置不能留下部分写入。
-    if body.logical_models is not None:
-        raise ValueError("请通过渠道配置选择模型")
-    if body.system_channels is None:
-        raise ValueError("请提交完整渠道配置")
-    items = normalize_profiles(body.system_channels)
-    from sqlalchemy import text
-
-    await db.execute(text("LOCK TABLE task_runs IN SHARE ROW EXCLUSIVE MODE"))
-    busy = await db.scalar(select(TaskRun.id).where(TaskRun.status.notin_(TERMINAL_TASK_STATUSES)).limit(1))
-    if busy:
-        raise ValueError("有未结束任务，请等待任务结束后再修改渠道配置")
+    items = normalize_profiles(body.system_channels) if body.system_channels is not None else None
     app_row = await _get_or_create_app_row(db)
     existing_rows = {row.id: row for row in (await db.execute(select(SystemModelChannelRow))).scalars()}
-    # 整组预检结束前不修改任一渠道行。
-    for item in items:
-        previous = existing_rows.get(item.id)
-        previous_base = (previous.base_url or "").rstrip("/") if previous else ""
-        if previous_base and previous_base != item.base_url and not (item.api_key or "").strip():
-            raise ValueError("更换平台或区域时请重新填写 API Key")
-    for item in items:
-        row = existing_rows.get(item.id) or SystemModelChannelRow(id=item.id)
-        for field in ("name", "base_url", "api_format", "protocol", "models", "enabled", "sort_order"):
-            setattr(row, field, getattr(item, field))
-        row.advanced_config = item.advanced_config.model_dump()
-        if item.clear_api_key:
-            row.api_key_ciphertext = None
-        elif (item.api_key or "").strip():
-            row.api_key_ciphertext = _encrypt_secret(item.api_key.strip())
-        db.add(row)
-    # 列表为完整替换；UI 删除的配置从数据库删除，不再参与路由。
-    ids = {item.id for item in items}
-    for cid, row in existing_rows.items():
-        if cid not in ids:
-            await db.delete(row)
-    await db.flush()
-    channels = await _load_channels(db, runtime=True)
+    if items is not None:
+        from sqlalchemy import text
+
+        await db.execute(text("LOCK TABLE task_runs IN SHARE ROW EXCLUSIVE MODE"))
+        busy = await db.scalar(select(TaskRun.id).where(TaskRun.status.notin_(TERMINAL_TASK_STATUSES)).limit(1))
+        if busy:
+            raise ValueError("有未结束任务，请等待任务结束后再修改渠道配置")
+        # 整组预检结束前不修改任一渠道行。
+        for item in items:
+            previous = existing_rows.get(item.id)
+            previous_base = (previous.base_url or "").rstrip("/") if previous else ""
+            if previous_base and previous_base != item.base_url and not (item.api_key or "").strip():
+                raise ValueError("更换平台或区域时请重新填写 API Key")
+        for item in items:
+            row = existing_rows.get(item.id) or SystemModelChannelRow(id=item.id)
+            for field in ("name", "base_url", "api_format", "protocol", "models", "enabled", "sort_order"):
+                setattr(row, field, getattr(item, field))
+            row.advanced_config = item.advanced_config.model_dump()
+            if item.clear_api_key:
+                row.api_key_ciphertext = None
+            elif (item.api_key or "").strip():
+                row.api_key_ciphertext = _encrypt_secret(item.api_key.strip())
+            db.add(row)
+        # 列表为完整替换；UI 删除的配置从数据库删除，不再参与路由。
+        ids = {item.id for item in items}
+        for cid, row in existing_rows.items():
+            if cid not in ids:
+                await db.delete(row)
+        await db.flush()
+        applied.append("system_channels")
+    elif body.default_models is not None:
+        # 只改默认模型：写回当前生效配置，保证重启后仍是这个选择
+        active_row = next((row for row in existing_rows.values() if row.enabled), None)
+        if active_row is not None and active_row.advanced_config:
+            advanced = dict(active_row.advanced_config)
+            for cap in CAPABILITIES:
+                advanced[cap + "_model"] = getattr(body.default_models, cap + "_model")
+            active_row.advanced_config = advanced
+            db.add(active_row)
+            await db.flush()
+
     config = dict(app_row.config_json or {})
-    logical, defaults = profile_state(channels, body.default_models or default_models_from_dict(config.get("default_models")))
+    disabled = set(config.get("disabled_models") or [])
+    if body.logical_models is not None:
+        disabled = {model.id for model in body.logical_models if not model.enabled}
+        config["disabled_models"] = sorted(disabled)
+        applied.append("logical_models")
+    channels = await _load_channels(db, runtime=True)
+    legacy = body.default_models or default_models_from_dict(config.get("default_models"))
+    logical, defaults = profile_state(channels, legacy, disabled)
     config["logical_models"] = [model.model_dump() for model in logical]
     config["default_models"] = default_models_to_dict(defaults)
-    applied = ["system_channels", "default_models"]
+    if body.default_models is not None:
+        applied.append("default_models")
     if limits is not None:
         config["media_reference_limits"] = reference_limit_settings({**(config.get("media_reference_limits") or {}), **limits})
         applied.append("media_reference_limits")

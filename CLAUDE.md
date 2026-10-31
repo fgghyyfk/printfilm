@@ -35,7 +35,7 @@ pytest tests/test_kepu_continuity.py    # 单文件
 pytest tests/test_x.py::test_name       # 单测
 ```
 
-注意：使用 `db_session` fixture 的是集成测试，**需要 PostgreSQL 在运行**（事务回滚隔离，不写库）；其余为纯单测可直接跑。conftest 已自动 stub TokenFree 价目网络请求。
+注意：使用 `db_session` fixture 的是集成测试，**需要 PostgreSQL 在运行**（事务回滚隔离，不写库）；其余为纯单测可直接跑。本机没有测试库时用 `sh scripts/test_with_pg.sh -q`：自动起一次性 PostgreSQL 容器跑全量，跑完删除，不碰业务库。conftest 已自动 stub TokenFree 价目网络请求。
 
 健康检查 `/api/health`（含 task_runtime / db_pool / models），Swagger `/docs`。
 

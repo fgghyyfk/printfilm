@@ -444,7 +444,7 @@ async def test_printfilm_signed_letter_review_and_public_flow(ctx, monkeypatch):
     assert signed.status_code == 200, signed.text
     authorization_id = signed.json()["id"]
     terms = (await ctx.client.get("/api/marketplace/authorization")).json()["template"]
-    assert terms["version"].endswith("v3") and "第七条" in terms["body"] and len(terms["notices"]) == 4
+    assert terms["version"].endswith("v4") and "第七条" in terms["body"] and len(terms["notices"]) == 4
     assert len(uploaded) == 1
     assert (await ctx.client.post("/api/marketplace/authorization", json=signing_body())).json()["id"] == authorization_id
     assert len(uploaded) == 1
@@ -527,6 +527,7 @@ async def test_new_terms_preserve_signed_legacy_archive(ctx, monkeypatch):
 @pytest.mark.parametrize("authorization_version, visible", [
     ("printfilm-marketplace-2026-10-v2", True),
     ("printfilm-marketplace-2026-10-v3", True),
+    ("kaikou-marketplace-2026-10-v4", True),
     ("unrecognized-template", False),
 ])
 async def test_published_printfilm_content_accepts_only_known_signed_templates(ctx, monkeypatch, authorization_version, visible):
@@ -583,7 +584,7 @@ async def test_legacy_authorization_cannot_submit_new_work_version(ctx):
     work = (await ctx.client.post("/api/marketplace/works", json={**work_body(video), "source": "printfilm",
             "sale_type": "free", "cover_asset_id": cover.id})).json()
     response = await ctx.client.post(f"/api/marketplace/works/{work['id']}/submit", json={"version": work["version"]})
-    assert response.status_code == 400 and "现行 PrintFilm 授权函" in response.json()["detail"]
+    assert response.status_code == 400 and "现行开口播授权函" in response.json()["detail"]
     unchanged = await ctx.db.get(Work, work["id"])
     assert unchanged.audit_status == "draft" and not unchanged.listed
 

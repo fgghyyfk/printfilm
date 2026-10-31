@@ -14,7 +14,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_name: str = "PRINTFILM"
+    app_name: str = "开口播 KaiKou"
     debug: bool = True
     # 是否打印 SQLAlchemy 原始 SQL（默认关，避免刷屏；需要排查 SQL 时设 SQL_ECHO=true）
     sql_echo: bool = False

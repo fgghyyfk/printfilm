@@ -91,7 +91,7 @@ export default function DramaPublishModal({ projectId, initialEpisodeId, targetS
       <label className="pf-drama-publish-field">发布到<select disabled={busy || Boolean(targetSeriesId)} value={targetId} onChange={event => { setTargetId(event.target.value); setUpdates([]) }}><option value="new">新建市场短剧</option>{context.series.map(item => <option key={item.id} value={item.id}>{item.title}{item.listed ? '（已上架）' : ''}</option>)}</select></label>
       {targetId === 'new' ? <label className="pf-drama-publish-field">市场短剧名称<input value={title} disabled={busy} maxLength={200} onChange={event => setTitle(event.target.value)} placeholder={context.project.title} /></label> : <p className="pf-drama-publish-hint">保留已有系列的介绍、封面和收益设置；新分集接续目标系列集号。</p>}
       {(changed.length > 0 || (target && (target.listed || target.audit_status === 'approved' || target.audit_status === 'pending'))) && <p className="pf-drama-publish-warning">同步更新或追加分集后，系列将退回草稿并暂停公开销售，需要重新提交审核。历史买家仍可播放已购买版本。</p>}
-      <p className="pf-drama-publish-hint"><CheckCircle2 size={15} />{context.authorization_ready ? '当前授权函有效，同步后自动关联，无需逐集签署。' : '可先同步并保存草稿，提交系列审核前统一签署一次 PrintFilm 授权函。'}</p>
+      <p className="pf-drama-publish-hint"><CheckCircle2 size={15} />{context.authorization_ready ? '当前授权函有效，同步后自动关联，无需逐集签署。' : '可先同步并保存草稿，提交系列审核前统一签署一次开口播授权函。'}</p>
     </> : null}
     {error && <div className="pf-drama-publish-error" role="alert"><p>{error}</p><button type="button" disabled={busy || loading} onClick={() => setReload(value => value + 1)}>刷新分集状态</button></div>}
   </Modal>

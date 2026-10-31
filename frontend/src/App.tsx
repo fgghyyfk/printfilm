@@ -4,40 +4,48 @@ import DialogHost from './components/ui/DialogHost'
 import BillingAlertHost from './components/billing/BillingAlertHost'
 import { DramaGenQueuePanel } from './components/drama/DramaGenQueuePanel'
 import AuthPage from './pages/AuthPage'
-import HistoryPage from './pages/HistoryPage'
 import HomePage from './pages/HomePage'
-import MethodPage from './pages/MethodPage'
-import GenerationPage from './pages/GenerationPage'
-import GenerationTasksPage from './pages/GenerationTasksPage'
-import HelpPage from './pages/HelpPage'
-import { PrivacyPage, TermsPage } from './pages/LegalDocPage'
-import ContactPage from './pages/ContactPage'
-import SettingsPage from './pages/SettingsPage'
-import PricingPage from './pages/PricingPage'
-import StudioPage from './pages/StudioPage'
-import TemplatesPage from './pages/TemplatesPage'
-import CreateProjectPage from './pages/studio/CreateProjectPage'
-import CreationSessionEditorBridge from './pages/studio/CreationSessionEditorBridge'
-import StyleConfigPage from './pages/studio/StyleConfigPage'
-import StoryboardPage from './pages/studio/StoryboardPage'
-import EditorPage from './pages/studio/EditorPage'
-import DramaListPage from './pages/drama/DramaListPage'
-import CanvasListPage from './pages/drama/CanvasListPage'
-import AssetLibraryPage from './pages/drama/AssetLibraryPage'
-import ProjectWorkspacePage from './pages/drama/ProjectWorkspacePage'
-import EpisodeEditPage from './pages/drama/EpisodeEditPage'
-import EpisodesPage from './pages/drama/EpisodesPage'
-import CanvasPage from './pages/drama/canvas/CanvasPage'
-import EpisodeStoryboardPage from './pages/drama/episodeCanvas/EpisodeStoryboardPage'
-import TeamInvitationPage from './features/teams/TeamInvitationPage'
 import RequireAuth from './pages/drama/RequireAuth'
 import { setWorkspaceTeam, subscribeWorkspace, workspaceScope } from './features/teams/workspaceScope'
-import TeamPage from './features/teams/TeamPage'
 import { TeamPreviewProvider } from './features/teams/TeamPreviewContext'
 import './styles/printfilm.css'
 import './App.css'
+import DocumentTitle from './components/layout/DocumentTitle'
 
+/* 除首页与登录页外，页面按路由拆包，首屏只下载需要的代码 */
+const HistoryPage = lazy(() => import('./pages/HistoryPage'))
+const GenerationPage = lazy(() => import('./pages/GenerationPage'))
+const GenerationTasksPage = lazy(() => import('./pages/GenerationTasksPage'))
+const HelpPage = lazy(() => import('./pages/HelpPage'))
+const PrivacyPage = lazy(() => import('./pages/LegalDocPage').then((mod) => ({ default: mod.PrivacyPage })))
+const TermsPage = lazy(() => import('./pages/LegalDocPage').then((mod) => ({ default: mod.TermsPage })))
+const ContactPage = lazy(() => import('./pages/ContactPage'))
+const SettingsPage = lazy(() => import('./pages/SettingsPage'))
+const PricingPage = lazy(() => import('./pages/PricingPage'))
+const StudioPage = lazy(() => import('./pages/StudioPage'))
+const TemplatesPage = lazy(() => import('./pages/TemplatesPage'))
+const CreateProjectPage = lazy(() => import('./pages/studio/CreateProjectPage'))
+const CreationSessionEditorBridge = lazy(() => import('./pages/studio/CreationSessionEditorBridge'))
+const StyleConfigPage = lazy(() => import('./pages/studio/StyleConfigPage'))
+const StoryboardPage = lazy(() => import('./pages/studio/StoryboardPage'))
+const EditorPage = lazy(() => import('./pages/studio/EditorPage'))
+const DramaListPage = lazy(() => import('./pages/drama/DramaListPage'))
+const CanvasListPage = lazy(() => import('./pages/drama/CanvasListPage'))
+const AssetLibraryPage = lazy(() => import('./pages/drama/AssetLibraryPage'))
+const ProjectWorkspacePage = lazy(() => import('./pages/drama/ProjectWorkspacePage'))
+const EpisodeEditPage = lazy(() => import('./pages/drama/EpisodeEditPage'))
+const EpisodesPage = lazy(() => import('./pages/drama/EpisodesPage'))
+const CanvasPage = lazy(() => import('./pages/drama/canvas/CanvasPage'))
+const EpisodeStoryboardPage = lazy(() => import('./pages/drama/episodeCanvas/EpisodeStoryboardPage'))
+const TeamInvitationPage = lazy(() => import('./features/teams/TeamInvitationPage'))
+const TeamPage = lazy(() => import('./features/teams/TeamPage'))
 const Marketplace = lazy(() => import('./features/marketplace/Marketplace'))
+
+/** 页面代码加载中的占位 */
+function PageFallback() {
+  return <div className="pf-page-loading" role="status" aria-live="polite"><span className="pf-page-loading-dot" />加载中…</div>
+}
+
 
 /** 生成队列支持个人和团队空间，余额引导仅在个人业务空间展示。 */
 function PersonalBusinessOverlays() {
@@ -52,10 +60,10 @@ function PersonalBusinessOverlays() {
 export default function App() {
   return (
     <TeamPreviewProvider><BrowserRouter>
+      <Suspense fallback={<PageFallback />}>
       <Routes>
         <Route path="/marketplace/*" element={<Suspense fallback={<p>正在加载作品与招募…</p>}><Marketplace /></Suspense>} />
         <Route path="/" element={<HomePage />} />
-        <Route path="/method" element={<MethodPage />} />
         <Route path="/auth" element={<AuthPage />} />
         <Route path="/templates" element={<TemplatesPage />} />
         <Route path="/tools/video" element={<RequireAuth><GenerationPage kind="video" /></RequireAuth>} />
@@ -95,7 +103,9 @@ export default function App() {
         <Route path="/drama/projects/:projectId/canvas" element={<CanvasPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </Suspense>
       <PersonalBusinessOverlays />
+      <DocumentTitle />
       <DialogHost />
     </BrowserRouter></TeamPreviewProvider>
   )

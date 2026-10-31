@@ -31,11 +31,11 @@ function EpisodePanel({ episode, count, free, open, saleType, seriesId, busy, vi
       {!free && episode.preview_error && <p role="alert">{explainMarketplaceError(episode.preview_error)}</p>}
       <label>集标题<span className="pf-req-mark">必填</span><input required value={episode.title} onChange={event => update({ title: event.target.value })} /></label>
       <label>分集简介<textarea value={episode.description || ''} maxLength={5000} onChange={event => update({ description: event.target.value })} placeholder="介绍这一集的内容" /></label>
-      <label>内容来源<select disabled={videoLocked} value={episode.source || 'external'} onChange={event => update({ source: event.target.value as EpisodeDraft['source'] })}><option value="printfilm">PrintFilm 生成</option><option value="external">其他平台生成</option></select></label>
+      <label>内容来源<select disabled={videoLocked} value={episode.source || 'external'} onChange={event => update({ source: event.target.value as EpisodeDraft['source'] })}><option value="printfilm">开口播生成</option><option value="external">其他平台生成</option></select></label>
       <AssetPicker kind="video" value={episode.asset_id} onChange={asset_id => update({ asset_id })} title="分集视频" required locked={videoLocked} lockUntilPreview={lockVideoUntilPreview} />
       <AssetPicker kind="image" required value={episode.cover_asset_id} onChange={cover_asset_id => update({ cover_asset_id })} title="分集封面（可使用系列封面）" />
       {saleType !== 'free' && <label>本集参考价（元）<input type="number" min="0" step="0.01" value={(episode.copyright_price_fen / 100) || ''} onChange={event => update({ copyright_price_fen: Math.round(Number(event.target.value || 0) * 100) })} /></label>}
-      {episode.source === 'printfilm' ? <p className="pf-market-notice">PrintFilm 生成：本系列统一引用账号授权函，无需逐集签署或上传证书。</p> : episode.asset_id && (seriesId ? <button type="button" disabled={busy} onClick={goRights}>填写第 {episode.episode_no} 集权属材料</button> : <p>请先保存草稿，再填写这一集的权属材料。保存后会回到这个页面。</p>)}
+      {episode.source === 'printfilm' ? <p className="pf-market-notice">开口播生成：本系列统一引用账号授权函，无需逐集签署或上传证书。</p> : episode.asset_id && (seriesId ? <button type="button" disabled={busy} onClick={goRights}>填写第 {episode.episode_no} 集权属材料</button> : <p>请先保存草稿，再填写这一集的权属材料。保存后会回到这个页面。</p>)}
       {saleType === 'platform_unlock' && <><label>本集观众解锁价（元）<input type="number" min="0.01" step="0.01" value={(episode.unlock_price_fen / 100) || ''} onChange={event => update({ unlock_price_fen: Math.round(Number(event.target.value || 0) * 100) })} /></label><label>本集平台抽成比例（万分比，可留空使用平台默认）<input type="number" min="0" max="10000" step="1" value={episode.share_bps ?? ''} onChange={event => update({ share_bps: event.target.value === '' ? null : Number(event.target.value) })} placeholder="例如 2000，表示平台20%、创作者80%" /><small>10000 表示 100%；本集未设置时使用平台默认比例。</small></label></>}
       {count > 1 && <button type="button" disabled={busy} onClick={remove}>删除本集</button>}
     </div>}
@@ -244,13 +244,13 @@ export default function SeriesEditor() {
       })}</div>
       <button type="button" disabled={busy || syncBlocked || hasSyncFailure} onClick={() => { setDirty(true); setEpisodes(value => [...value, { episode_no: value.length + 1, title: `第${value.length + 1}集`, asset_id: null, cover_asset_id: null, copyright_price_fen: 0, unlock_price_fen: 0, source: 'external' }]); setExpanded(new Set([episodes.length])) }}>+ 添加下一集</button>
     </FormSection>
-    {id && <FormSection step="04" title="从我的 PrintFilm 漫剧导入" description="选择项目后，在同一个发布弹窗里选择完整分集；新源版本必须明确确认后才能更新。">
+    {id && <FormSection step="04" title="从我的开口播漫剧导入" description="选择项目后，在同一个发布弹窗里选择完整分集；新源版本必须明确确认后才能更新。">
       <select data-market-transient value={sourceId} disabled={busy || syncBlocked} onChange={event => setSourceId(event.target.value)}><option value="">选择漫剧项目</option>{sources.map(source => <option key={source.id} value={source.id}>{source.title}</option>)}</select>
       <button type="button" disabled={busy || syncBlocked || !sourceId || (dirty && !hasSyncFailure)} onClick={() => setImportOpen(true)}>选择分集并同步到此系列</button>
       {dirty && !hasSyncFailure && <p className="pf-market-notice">请先保存当前修改，再导入分集。</p>}
     </FormSection>}
-    {episodes.some(item => item.source === 'printfilm') && <FormSection step="05" title="PrintFilm 授权确认" description="同一账号按当前条款签署一次，提交系列审核时自动关联全部 PrintFilm 分集。">
-      <AuthorizationPanel onSigned={() => { setSeries(value => value ? { ...value, authorization_ready: true } : value); setMessage('授权函已签署，提交审核时将自动关联本系列的 PrintFilm 分集。') }} />
+    {episodes.some(item => item.source === 'printfilm') && <FormSection step="05" title="开口播授权确认" description="同一账号按当前条款签署一次，提交系列审核时自动关联全部开口播分集。">
+      <AuthorizationPanel onSigned={() => { setSeries(value => value ? { ...value, authorization_ready: true } : value); setMessage('授权函已签署，提交审核时将自动关联本系列的开口播分集。') }} />
     </FormSection>}
     {error && <p role="alert">{error}</p>}{message && <p role="status">{message}</p>}
     {previewPollError && (series?.audit_status === 'processing' || previewActive) && <p role="status">{previewPollError}</p>}

@@ -37,7 +37,7 @@ export const enPages = {
     more: [
       { title: 'Explainer video', desc: 'Topic to storyboard film' },
       { title: 'AI Drama', desc: 'Script to episodes' },
-      { title: 'Tools', desc: 'Image and video gen' },
+      { title: 'Tools', desc: 'Image, video and voice' },
     ],
     closeTitle: 'Let your photo talk',
     closeSub: 'Try one first.',
@@ -67,75 +67,75 @@ export const enPages = {
     drawerSearch: 'Search guides or FAQ',
     noFaq: 'No matching questions',
     cats: [
-      { id: 'start', title: 'Quick start', desc: 'Pick a product on Home', href: '/' },
+      { id: 'avatar', title: 'Talking head', desc: 'One photo · lip-synced video', href: '/studio/new?mode=avatar' },
+      { id: 'kepu', title: 'AI Short Video', desc: 'Topic → boards → film', href: '/history' },
       { id: 'drama', title: 'Drama', desc: 'Script · episodes · film', href: '/drama' },
-      { id: 'kepu', title: 'AI Short Video', desc: 'Storyboard pipeline', href: '/history' },
-      { id: 'tools', title: 'Tools', desc: 'Text-to-image / video', href: '/tools/image' },
+      { id: 'tools', title: 'Tools', desc: 'Image / video / voice', href: '/tools/image' },
       { id: 'tasks', title: 'My tasks', desc: 'Progress · results · downloads', href: '/tasks' },
-      { id: 'billing', title: 'Billing', desc: 'Pay as you go, no expiry', href: '/pricing' },
+      { id: 'billing', title: 'Billing', desc: 'Pay as you go, credit never expires', href: '/pricing' },
     ],
     steps: [
       {
         n: '01',
-        title: 'Choose an entry',
-        body: 'Open Drama or AI Short Video from Home. Open My tasks from your avatar to track generation progress and results.',
+        title: 'Pick what to make',
+        body: 'Click “Make one now” on the home page for a talking-head video, or open AI Short Video, Drama, or Canvas from the top bar.',
       },
       {
         n: '02',
-        title: 'Configure and generate',
-        body: 'Drama: idea → outline → assets → episodes. AI Short Video: topic → style → boards → film. Tools: fill a prompt or upload media, then generate.',
+        title: 'Add your material',
+        body: 'Talking head: upload a clear half-body photo, then choose a look and a voice. AI Short Video: write an idea or paste a script, then pick a style.',
       },
       {
         n: '03',
-        title: 'Review and iterate',
-        body: 'Regenerate a still, clip, or voice track without remaking the whole film. Tool results can be previewed and run again.',
+        title: 'Generate and refine',
+        body: 'Review the script or storyboard first, then voice each segment and generate images or lip sync. Redo only the parts you don’t like.',
       },
       {
         n: '04',
-        title: 'Save and download',
-        body: 'Outputs land in cloud storage. AI Short Video downloads from History; drama from the project workspace. All generation results are also available in your avatar menu → My tasks.',
+        title: 'Compose and download',
+        body: 'Preview and download from the project page. Every generation also appears under “My tasks” in the avatar menu.',
       },
     ],
     faq: [
       {
-        q: 'Where should I start?',
-        a: 'Open Home and pick Drama or AI Short Video. Drama is for episodic stories and character consistency; AI Short Video is positioned for lead-gen storyboards. Open your avatar menu → My tasks to check generation progress and results.',
+        q: 'Where do I start?',
+        a: 'To make a photo talk, click “Make one now” on the home page. For narrated explainers choose AI Short Video; for episodic stories choose Drama. Track progress under “My tasks” in the avatar menu.',
       },
       {
-        q: 'What’s the difference between AI video and stills-to-film?',
-        a: 'AI video has stronger motion and costs more. Stills-to-film (image + narration) is faster and more stable for explainers. Choose when you create a new lead-gen project.',
+        q: 'What photo works for a talking head?',
+        a: 'One clear, front-facing or slightly angled half-body photo, ideally vertical 9:16. Only the face is used to build a styled portrait, so new outfits and scenes still look like you. Avoid group photos, masks, or covered faces, and make sure you have the right to use the photo.',
+      },
+      {
+        q: 'Why do talking-head videos take a while?',
+        a: 'Lip sync runs on a GPU segment by segment: about 2 minutes per second of video, so a 1-minute video takes around 2 hours. You can close the page and check the project or “My tasks” later. Jobs queue when several people render at once.',
+      },
+      {
+        q: 'Can I make talking-head videos in bulk?',
+        a: 'Yes. Use “Batch production” on the talking-head style page to submit several topics at once; each one is scripted, voiced, lip-synced, and composed automatically.',
+      },
+      {
+        q: 'What is the difference between “AI video” and “stills”?',
+        a: 'AI video turns each image into motion, which looks livelier and costs more. Stills use images with camera moves and narration, which is faster and cheaper for explainers. Choose when you create an AI Short Video.',
       },
       {
         q: 'Can I leave the page while it generates?',
-        a: 'Yes. Jobs keep running on the server. Open your avatar menu → My tasks for generation status, or return to AI Short Video History or the drama project workspace.',
+        a: 'Yes. Jobs keep running on the server; check the project page or “My tasks” when you come back.',
       },
       {
-        q: 'What can the tool hub do?',
-        a: 'Text-to-image, image-to-image, product shots, text-to-video, video-to-video, and e-commerce collages. Sign in, pick a tool, then prompt or upload.',
+        q: 'What can the tools do?',
+        a: 'One-off image, video, and voice generation. Open “Tools” at the bottom of the home page, write a prompt or upload material, and the result is saved under “My tasks”.',
       },
       {
-        q: 'Where are tool results stored?',
-        a: 'Generation jobs are registered in My tasks, and media syncs to object storage. Open your avatar → My tasks to see covers, status, and prompts.',
-      },
-      {
-        q: 'How do I view or download tool results?',
-        a: 'In your avatar menu → My tasks, use View to preview an image or video and Download to save the result.',
-      },
-      {
-        q: 'Where do I download finished films or assets?',
-        a: 'AI Short Video: History in the top nav. Drama: the project workspace. Global assets: Digital Asset Library in your avatar menu.',
-      },
-      {
-        q: 'What’s in Account?',
-        a: 'Account contains your profile, team and collaboration settings, notification preferences, and security. Open My tasks, Digital Asset Library, or Balance & billing from your avatar menu for generation records, assets, or usage. Notification preferences are still in progress.',
+        q: 'Where do I download videos and assets?',
+        a: 'Talking head and AI Short Video: in the AI Short Video list, finished projects can be previewed, downloaded, or zipped. Drama: open the project workspace. Characters, scenes, and voices live in “Asset library” in the avatar menu.',
       },
       {
         q: 'How do top-ups and charges work?',
-        a: 'Open Pricing, pick a pack, and pay with Alipay or WeChat. Usage is metered; balance never expires and there is no forced subscription. Open your avatar menu → Balance & billing to review usage.',
+        a: 'Pick a top-up on the Pricing page and pay with Alipay or WeChat Pay. You are charged for actual usage, credit never expires, and there is no subscription. See usage on the Pricing page or under “Balance & billing”.',
       },
       {
-        q: 'Generation failed or the image is off?',
-        a: 'Tweak the prompt, negative prompt, or reference image and retry. Drama and AI Short Video support per-shot regen. Check network and balance; safety filters may block sensitive content.',
+        q: 'A generation failed or looks wrong. What now?',
+        a: 'Adjust the script, prompt, or photo and retry; single segments and shots can be redone on their own. If it keeps failing, check your balance and try again later. Sensitive requests may be blocked by the model.',
       },
     ],
     drawerCats: [

@@ -12,7 +12,7 @@ const AVATAR_PATH = '/studio/new?mode=avatar'
 const MORE_LINKS = [
   { path: '/studio/new', icon: Video },
   { path: '/drama', icon: Clapperboard },
-  { path: '/tools', icon: Wand2 },
+  { path: '/tools/image', icon: Wand2 },
 ]
 
 export default function HomePage() {

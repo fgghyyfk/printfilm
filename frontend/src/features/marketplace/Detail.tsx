@@ -37,7 +37,7 @@ export default function Detail({ recruit = false, manage = false }: { recruit?: 
   const privateView = manage && item.version !== undefined
   const submitIssues = [
     !item.asset_id ? '请先上传并保存作品视频。' : item.media_status !== 'ready' ? '作品视频尚未就绪，请检查上传状态。' : '',
-    !item.rights_complete ? '请补齐版权材料（PrintFilm 授权函或其他平台版权证明）。' : '',
+    !item.rights_complete ? '请补齐版权材料（开口播授权函或其他平台版权证明）。' : '',
     !item.license_scope?.trim() ? '请在“编辑草稿 → 收益与授权”中填写“拟授权用途及限制”。' : '',
     item.blocked ? '作品已被限制，请联系客服处理。' : '',
   ].filter(Boolean)

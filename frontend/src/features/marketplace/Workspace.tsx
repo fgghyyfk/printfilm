@@ -89,7 +89,7 @@ export default function Workspace() {
     try { await request(item.kind === 'series' ? `/series/${item.id}` : `/works/${item.id}`, 'DELETE'); setRefresh(value => value + 1) } catch (e) { setError((e as Error).message) }
   }
   const tabs = { works: '我的作品', series: '我的短剧', recruits: '我的招募', rights: '版权材料', assets: '我的文件', notifications: '站内通知' }
-  return <><PageHeading title="我的发布与业务进度" description="从作品草稿到合作机会，在这里跟进作品发布与需求审核。招募接单请联系客服。" /><p><Link to="/marketplace/authorization">签署 / 查看 PrintFilm 授权函</Link></p>
+  return <><PageHeading title="我的发布与业务进度" description="从作品草稿到合作机会，在这里跟进作品发布与需求审核。招募接单请联系客服。" /><p><Link to="/marketplace/authorization">签署 / 查看开口播授权函</Link></p>
     <div className="pf-market-workspace-toolbar"><nav className="pf-market-tabs" aria-label="个人业务分类">{Object.entries(tabs).map(([key, label]) => <button key={key} type="button" aria-pressed={key === kind} onClick={() => { setKind(key); setPage(1); setMediaId(null); setListing(null); setLoading(true) }}>{label}</button>)}</nav><button type="button" onClick={() => setRefresh(v => v + 1)}><RefreshCw size={14} />刷新</button></div>
     {error && <p role="alert">{error}</p>}
     {kind === 'works' ? <MineWorks listing={listing} loading={loading} page={page} changePage={setPage} remove={item => void removeOwned(item)} /> : kind === 'recruits' ? <MineRecruits listing={listing} loading={loading} page={page} changePage={setPage} /> : <>

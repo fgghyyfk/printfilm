@@ -122,3 +122,27 @@
 @media (hover: none) and (pointer: coarse) {
   .auth-shell input, .auth-shell textarea, .auth-shell select { font-size: max(1em, 16px); }
 }
+
+/* 路由懒加载占位：页面代码下载中时显示 */
+.pf-page-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  min-height: 60vh;
+  color: var(--pf-muted);
+  font-size: 0.92rem;
+}
+
+.pf-page-loading-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--pf-lime);
+  animation: pf-page-loading-pulse 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes pf-page-loading-pulse {
+  from { opacity: 0.25; transform: scale(0.8); }
+  to { opacity: 1; transform: scale(1.1); }
+}
