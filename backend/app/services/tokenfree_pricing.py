@@ -431,8 +431,10 @@ def canonicalize_channel_models(models: list[str] | None) -> list[str]:
     return out
 
 
-def _markup_charge(cost_fen: int, settings: Settings) -> int:
-    """用户预扣金额 = 官方成本，不再乘倍率。"""
+def _markup_charge(cost_fen: int, settings: Settings, with_markup: bool = True) -> int:
+    """with_markup=True 返回用户扣费（官方成本 × billing_markup）；False 返回官方成本本身。"""
+    if not with_markup:
+        return max(1, int(cost_fen)) if cost_fen > 0 else 0
     from app.services.billing.pricing import user_charge_fen
 
     return user_charge_fen(cost_fen, settings)
@@ -523,7 +525,7 @@ def seedream_image_tier_facts(size: str | None = "") -> dict[str, int]:
     return {"images_up_to_1_5k": 1, "images_above_1_5k": 0, "input_images": 0}
 
 
-def charge_fen_official_image(settings: Settings, *, model: str = "", size: str = "") -> int:
+def charge_fen_official_image(settings: Settings, *, model: str = "", size: str = "", with_markup: bool = True) -> int:
     """生图预估：价目里有按次价或表达式时用 TokenFree 规则；否则 Kie 积分档保底。"""
     from app.services.billing.pricing import kie_credits_to_cost_fen
     from app.services.billingexpr import quote_verified_charge_fen
@@ -548,26 +550,26 @@ def charge_fen_official_image(settings: Settings, *, model: str = "", size: str 
         settings=settings,
     )
     if verified is not None and verified > 0:
-        return _markup_charge(verified, settings)
+        return _markup_charge(verified, settings, with_markup)
     rate = lookup_rate(mid)
     use_kie_table = "sunburst" in mid.lower() or "gpt-image" in mid.lower()
     if use_kie_table:
         credits = kie_sunburst_credits_for_size(resolved or "2K")
         fen = kie_credits_to_cost_fen(credits, settings) or 1
-        return _markup_charge(fen, settings)
+        return _markup_charge(fen, settings, with_markup)
     # Seedream / 其它：优先官方按张价
     if rate and rate.billing == "per_call" and rate.cny_per_call > 0:
         # round 避免 0.28*100 浮点成 28.0000000004 被 ceil 多收 1 分
-        return _markup_charge(max(1, int(round(rate.cny_per_call * 100))), settings)
+        return _markup_charge(max(1, int(round(rate.cny_per_call * 100))), settings, with_markup)
     # 无价目时：Seedream 与 gpt-image 共用保守 Kie 2K 档保底（非协议等价，仅防 0 冻）
     credits = kie_sunburst_credits_for_size(
         resolved if (use_kie_table or is_seedream_family(raw_model)) else "2K"
     )
     fen = kie_credits_to_cost_fen(credits, settings) or 1
-    return _markup_charge(fen, settings)
+    return _markup_charge(fen, settings, with_markup)
 
 
-def charge_fen_official_llm(tokens: int, settings: Settings, *, model: str = "") -> int:
+def charge_fen_official_llm(tokens: int, settings: Settings, *, model: str = "", with_markup: bool = True) -> int:
     """LLM 预估：官方 in/out，按 70% 输入 / 30% 输出拆。"""
     from app.services.billing.pricing import charge_fen_for_tokens
 
@@ -578,9 +580,9 @@ def charge_fen_official_llm(tokens: int, settings: Settings, *, model: str = "")
         prompt = int(t * LLM_PROMPT_SHARE)
         completion = t - prompt
         yuan = prompt / 1_000_000 * rate.cny_in_per_1m + completion / 1_000_000 * rate.cny_out_per_1m
-        return _markup_charge(max(1, int(math.ceil(yuan * 100))), settings)
-    _, charge = charge_fen_for_tokens(t, "llm_chat", settings=settings)
-    return charge
+        return _markup_charge(max(1, int(math.ceil(yuan * 100))), settings, with_markup)
+    cost, charge = charge_fen_for_tokens(t, "llm_chat", settings=settings)
+    return charge if with_markup else cost
 
 
 def normalize_video_resolution(resolution: str | None, settings: Settings | None = None) -> str:
@@ -737,6 +739,7 @@ def charge_fen_official_video(
     model: str = "",
     resolution: str = "",
     tokens: int | None = None,
+    with_markup: bool = True,
 ) -> int:
     """视频费用：优先 TokenFree 表达式（常按 u(tokens)）；否则清晰度秒价表。"""
     from app.services.billing.pricing import charge_fen_for_tokens
@@ -768,7 +771,7 @@ def charge_fen_official_video(
         settings=settings,
     )
     if verified is not None and verified > 0:
-        return _markup_charge(verified, settings)
+        return _markup_charge(verified, settings, with_markup)
     # MiniMax 必须在 video_catalog_id 之前，否则会误落到 seedance-2-5
     if _is_minimax_video_model(raw):
         rate = vendor_video_yuan_per_sec(raw, res, settings)
@@ -776,10 +779,10 @@ def charge_fen_official_video(
         mid = video_catalog_id(raw)
         rate = vendor_video_yuan_per_sec(mid, res, settings)
     if rate is not None:
-        return _markup_charge(max(1, int(math.ceil(secs * rate * 100))), settings)
+        return _markup_charge(max(1, int(math.ceil(secs * rate * 100))), settings, with_markup)
     tok = estimate_seedance_billing_tokens(secs, res, settings)
-    _, charge = charge_fen_for_tokens(tok, "seedance2:video0", settings=settings)
-    return charge
+    cost, charge = charge_fen_for_tokens(tok, "seedance2:video0", settings=settings)
+    return charge if with_markup else cost
 
 
 def media_model_pricing_hint(

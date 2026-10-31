@@ -211,7 +211,7 @@ def test_charge_official_image_uses_per_call() -> None:
 def test_charge_official_image_seedream_falls_back_without_rate() -> None:
     """Seedream 无价目时用 Kie 2K 档保守保底。"""
     settings = get_settings()
-    settings.billing_markup = 1.5
+    settings.billing_markup = 1.0
     settings.billing_usd_cny = 7.0
     set_cached_rates(None)
     assert charge_fen_official_image(settings, model="seedream-5-0-pro") == 35
@@ -229,7 +229,7 @@ def test_resolve_billing_image_size_compact_forces_1k() -> None:
 def test_charge_official_image_falls_back_without_cache() -> None:
     """无价目缓存时按 2K sunburst 积分档保底，不再退回 8 元/百万 token。"""
     settings = get_settings()
-    settings.billing_markup = 1.5
+    settings.billing_markup = 1.0
     settings.billing_usd_cny = 7.0
     settings.billing_seedream_per_m = 8.0
     settings.billing_est_seedream_tokens = 45_000
@@ -422,3 +422,15 @@ def test_canonicalize_keeps_unknown_seedance_id() -> None:
     from app.services.tokenfree_pricing import canonicalize_channel_model_id
 
     assert canonicalize_channel_model_id("seedance-1.5") == "seedance-1.5"
+
+
+def test_user_charge_applies_markup_and_rounds_up() -> None:
+    """按成本扣费时乘加价倍率（1.06 即上浮 6%），向上取整到分；倍率低于 1 按 1 处理。"""
+    from types import SimpleNamespace
+    from app.services.billing.pricing import user_charge_fen
+
+    assert user_charge_fen(100, SimpleNamespace(billing_markup=1.06)) == 106
+    assert user_charge_fen(1, SimpleNamespace(billing_markup=1.06)) == 2
+    assert user_charge_fen(50, SimpleNamespace(billing_markup=1.0)) == 50
+    assert user_charge_fen(50, SimpleNamespace(billing_markup=0.5)) == 50
+    assert user_charge_fen(0, SimpleNamespace(billing_markup=1.06)) == 0

@@ -106,9 +106,10 @@ def initial_draft() -> dict:
         rows = {}
         for resolution in strategy.resolutions:
             try:
-                amount = (charge_fen_official_image(settings, model=strategy.model_id, size=resolution)
+                # 草稿取官方成本（不含加价），零售价由后台在此基础上调整后发布
+                amount = (charge_fen_official_image(settings, model=strategy.model_id, size=resolution, with_markup=False)
                           if strategy.capability == "image" else
-                          charge_fen_official_video(10, settings, model=strategy.model_id, resolution=resolution) / 10)
+                          charge_fen_official_video(10, settings, model=strategy.model_id, resolution=resolution, with_markup=False) / 10)
                 if amount > 0:
                     rows[resolution] = format(Decimal(str(amount)) / 100, ".4f")
             except (ValueError, KeyError, TypeError):

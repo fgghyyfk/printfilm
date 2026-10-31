@@ -144,7 +144,7 @@ class Settings(BaseSettings):
     # Legacy flag; prefer billing_enabled
     quota_enabled: bool = False
 
-    # Token 计费：用户扣费 = TokenFree 官方成本（billing_markup 保留兼容，不再乘）
+    # Token 计费：用户扣费 = 上游官方成本 × billing_markup（1.06 即上浮 6%）；生图/视频发布固定价目后按价目表
     billing_enabled: bool = False
     billing_markup: float = 1.0
     # token / 视频时长估价缓冲；按张生图官价不再乘此系数（否则 5 元赠金冻不住一张图）

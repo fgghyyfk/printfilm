@@ -57,10 +57,19 @@ def kie_credits_to_cost_fen(
 
 
 def user_charge_fen(cost_fen: int, settings: Settings | None = None) -> int:
-    """用户扣费 = TokenFree / 上游成本，不再乘 markup。"""
+    """用户扣费 = 上游成本 × billing_markup，向上取整到分（默认 1.0 即按成本）。
+
+    生图、视频在发布固定价目后按价目表计费（价目已含加价），不经过这里。
+    """
     if cost_fen <= 0:
         return 0
-    return max(1, int(cost_fen))
+    s = settings or get_settings()
+    try:
+        markup = float(getattr(s, "billing_markup", 1.0) or 1.0)
+    except (TypeError, ValueError):
+        markup = 1.0
+    markup = min(max(markup, 1.0), 10.0)
+    return max(1, math.ceil(int(cost_fen) * markup - 1e-9))
 
 
 def charge_fen_for_tokens(
@@ -323,6 +332,7 @@ def _video_resolution_duration_fen(
         model=model,
         resolution=resolution,
         tokens=tok if tok > 0 else None,
+        with_markup=False,
     )
     if fen <= 0:
         return None, ""
@@ -374,7 +384,7 @@ def _verified_rule_fen(
             secs = 0
         if secs > 0:
             res = normalize_video_resolution(str(facts.get("resolution") or ""), settings)
-            return charge_fen_official_video(secs, settings, model=model, resolution=res), ""
+            return charge_fen_official_video(secs, settings, model=model, resolution=res, with_markup=False), ""
     return None, ""
 
 
@@ -399,9 +409,9 @@ def _catalog_image_fen_if_per_call(settings: Settings, model: str, *, size: str 
         return None
     resolved = resolve_billing_image_size(settings, model=raw, size=size)
     if rate and rate.billing == "per_call" and rate.cny_per_call > 0:
-        return charge_fen_official_image(settings, model=mid, size=resolved)
+        return charge_fen_official_image(settings, model=mid, size=resolved, with_markup=False)
     if is_seedream_family(raw) or "gpt-image" in mid.lower() or "seedream" in mid.lower():
-        return charge_fen_official_image(settings, model=mid, size=resolved)
+        return charge_fen_official_image(settings, model=mid, size=resolved, with_markup=False)
     return None
 
 

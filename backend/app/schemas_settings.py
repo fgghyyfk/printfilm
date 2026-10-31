@@ -108,7 +108,7 @@ class AdminModelSettingsOut(BaseModel):
 
     # Token 计费
     billing_enabled: bool = Field(default=False, description="是否启用余额计费")
-    billing_markup: float = Field(default=1.0, description="兼容保留的计费倍率配置；当前用户扣费按上游成本计算，不再乘此倍率")
+    billing_markup: float = Field(default=1.0, description="计费加价倍率：文字、配音等按上游成本扣费时乘以此值（1.06 即上浮 6%）；生图、视频按已发布价目表计费")
     billing_estimate_buffer: float = Field(default=1.2, description="Token 或视频时长类预扣估算的缓冲系数；按张计价的生图预扣不乘此系数")
     billing_seedance_video0: float = Field(default=46.0, description="带音频生成的 Seedance Token 成本兜底单价，单位：人民币元/百万 Token")
     billing_seedance_video1: float = Field(default=28.0, description="不带音频生成的 Seedance Token 成本兜底单价，单位：人民币元/百万 Token")
@@ -242,7 +242,7 @@ class AdminModelSettingsPatch(BaseModel):
     clear_epay_key: bool = Field(default=False, description="是否显式清空易支付商户签名密钥；默认为 false；若同时提交非空新值，以新值为准")
 
     billing_enabled: bool | None = Field(default=None, description="是否启用余额计费；省略或 null 时不修改")
-    billing_markup: float | None = Field(default=None, description="兼容保留的计费倍率配置；当前用户扣费按上游成本计算，不再乘此倍率；省略或 null 时不修改")
+    billing_markup: float | None = Field(default=None, ge=1.0, le=10.0, description="计费加价倍率：文字、配音等按上游成本扣费时乘以此值（1.06 即上浮 6%）；省略或 null 时不修改")
     billing_estimate_buffer: float | None = Field(default=None, description="Token 或视频时长类预扣估算的缓冲系数；按张计价的生图预扣不乘此系数；省略或 null 时不修改")
     billing_seedance_video0: float | None = Field(default=None, description="带音频生成的 Seedance Token 成本兜底单价，单位：人民币元/百万 Token；省略或 null 时不修改")
     billing_seedance_video1: float | None = Field(default=None, description="不带音频生成的 Seedance Token 成本兜底单价，单位：人民币元/百万 Token；省略或 null 时不修改")
