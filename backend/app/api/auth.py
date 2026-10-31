@@ -47,7 +47,7 @@ async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)) ->
     existing = await get_user_by_email(db, body.email)
     if existing:
         raise HTTPException(status_code=400, detail="邮箱已注册")
-    grant = int(settings.billing_signup_grant_fen or 0)
+    grant = int(get_settings().billing_signup_grant_fen or 0)
     user = User(
         email=body.email.lower(),
         nickname=body.nickname,

@@ -30,7 +30,6 @@ from app.services.billing.settlement import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/billing", tags=["billing"])
-settings = get_settings()
 
 
 class MediaQuoteItem(BaseModel):
@@ -77,8 +76,8 @@ async def wallet(user: User = Depends(get_current_user)) -> dict:
         "balance_yuan": round(int(user.balance_fen or 0) / 100, 2),
         "frozen_yuan": round(int(user.frozen_fen or 0) / 100, 2),
         "plan": user.plan or "free",
-        "billing_enabled": settings.billing_enabled,
-        "markup": settings.billing_markup,
+        "billing_enabled": get_settings().billing_enabled,
+        "markup": get_settings().billing_markup,
     }
 
 
@@ -92,7 +91,7 @@ async def list_skus() -> dict:
     return {
         "skus": billing.SKUS,
         "pay_types": ["alipay", "wxpay"],
-        "markup": settings.billing_markup,
+        "markup": get_settings().billing_markup,
     }
 
 
