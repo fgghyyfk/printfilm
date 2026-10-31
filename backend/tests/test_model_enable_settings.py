@@ -89,3 +89,19 @@ async def test_enabled_standard_image_default_is_not_changed_to_pro(routing_db):
     await model_settings.load_model_settings_cache(routing_db)
     after = await model_settings.get_admin_routing_settings(routing_db)
     assert after.default_models.image_model == "seedream-5.0"
+
+
+async def test_disabled_default_falls_back_in_preset_order(routing_db):
+    """停用默认生图模型后按推荐顺序取下一个（而不是按字母顺序），重载后保持。"""
+    from app.services.media_model_presets import preset_ids
+
+    before = await model_settings.get_admin_routing_settings(routing_db)
+    previous = before.default_models.image_model
+    models = [model.model_copy(update={"enabled": False}) if model.id == previous else model
+              for model in before.logical_models]
+    saved, _ = await model_settings.patch_admin_routing_settings(routing_db, AdminRoutingSettingsPatch(logical_models=models))
+    expected = next(mid for mid in preset_ids("image") if mid != previous)
+    assert saved.default_models.image_model == expected
+    await model_settings.load_model_settings_cache(routing_db)
+    after = await model_settings.get_admin_routing_settings(routing_db)
+    assert after.default_models.image_model == expected

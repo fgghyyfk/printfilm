@@ -173,7 +173,10 @@ export function RoutingSettingsPanel() {
                       placeholder={cap === "audio" ? "暂不支持独立配音，可使用视频自带音频" : "填写实际模型或 ep- 接入点 ID；不用可留空"}
                       onChange={(e) => update(channel.id, { advanced_config: { ...advanced, [field]: e.target.value } })} />
                       : <select className="settings-select" value={advanced[field]} onChange={(e) => update(channel.id, { advanced_config: { ...advanced, [field]: e.target.value } })}>
-                        {PRESET_MODELS[cap].map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
+                        {PRESET_MODELS[cap].map((model) => {
+                          const off = channel.enabled && models.some((item) => item.id === model.id && !item.enabled);
+                          return <option key={model.id} value={model.id} disabled={off}>{off ? `${model.label}（已停用）` : model.label}</option>;
+                        })}
                       </select>}
                   </LabeledControl>
                 );
@@ -193,9 +196,13 @@ export function RoutingSettingsPanel() {
               return (
                 <section key={cap} className="space-y-2">
                   <strong className="text-sm">{CAPABILITY_LABELS[cap]}</strong>
-                  {rows.map((model) => (
+                  {[...rows].sort((a, b) => {
+                    const order = PRESET_MODELS[cap].map((row) => row.id);
+                    const ia = order.indexOf(a.id), ib = order.indexOf(b.id);
+                    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+                  }).map((model) => (
                     <div key={model.id} className="settings-toggle-row">
-                      <div className="min-w-0"><strong>{model.name || model.id}</strong><span className="block break-all">{model.id}</span></div>
+                      <div className="min-w-0"><strong>{PRESET_MODELS[cap].find((row) => row.id === model.id)?.label ?? (model.name || model.id)}</strong><span className="block break-all">{model.id}</span></div>
                       <div className="flex shrink-0 items-center gap-2">
                         <span>{model.enabled ? "已启用" : "已停用"}</span>
                         <Switch aria-label={`${model.name || model.id} 启用`} checked={model.enabled} disabled={saving}
@@ -222,7 +229,7 @@ export function RoutingSettingsPanel() {
                 </tr></thead>
                 <tbody>{Object.entries(limits).map(([id, row]) => (
                   <tr key={id} className="border-b last:border-0">
-                    <th scope="row" className="px-2 py-3 font-medium"><code className="text-xs">{id}</code></th>
+                    <th scope="row" className="px-2 py-3 font-medium">{[...PRESET_MODELS.image, ...PRESET_MODELS.video].find((model) => model.id === id)?.label ?? id}<code className="mt-1 block text-[10px] font-normal text-[var(--admin-muted)]">{id}</code></th>
                     {MEDIA_FIELDS.map((field) => {
                       const error = limitErrors[id]?.[field];
                       return <td key={field} className="px-2 py-3 align-top">

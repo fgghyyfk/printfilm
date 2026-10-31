@@ -322,7 +322,7 @@ export function AdminLayout() {
             </div>
           ))}
         </nav>
-        <div className="admin-sidebar-footnote"><span />PRINTFILM OPERATIONS</div>
+        <div className="admin-sidebar-footnote"><span />KAIKOU OPERATIONS</div>
         <div className="admin-user-card">
           <div className="admin-avatar">{initial}</div>
           <div className="admin-user-copy"><strong>{user?.nickname || "管理员"}</strong><span title={user?.email}>{user?.email}</span></div>

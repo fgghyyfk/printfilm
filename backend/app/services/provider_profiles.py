@@ -81,10 +81,18 @@ def _apply_disabled(models: list[LogicalModel], defaults: DefaultModels, disable
     update = {}
     for cap in CAPABILITIES:
         current = getattr(defaults, cap+'_model')
-        enabled_ids = [model.id for model in models if model.capability == cap and model.enabled]
+        enabled_ids = _preset_ordered([model.id for model in models if model.capability == cap and model.enabled], cap)
         if current in disabled or (not current and enabled_ids):
             update[cap+'_model'] = enabled_ids[0] if enabled_ids else ''
     return models, defaults.model_copy(update=update) if update else defaults
+
+
+def _preset_ordered(ids: list[str], capability: str) -> list[str]:
+    """按站点预设的推荐顺序排列（预设外的模型排在后面），默认模型回退时优先选推荐款。"""
+    from app.services.media_model_presets import preset_ids
+
+    order = {mid: index for index, mid in enumerate(preset_ids(capability))}
+    return sorted(ids, key=lambda mid: order.get(mid, len(order)))
 
 
 def _active_profile_state(active: SystemModelChannel, legacy_defaults: DefaultModels):

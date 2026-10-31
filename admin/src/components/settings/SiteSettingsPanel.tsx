@@ -87,7 +87,7 @@ export function SiteSettingsPanel() {
               <input
                 className="settings-input"
                 type="url"
-                placeholder="https://www.printfilm.com"
+                placeholder="https://kaikou.haituike.com"
                 autoComplete="url"
                 value={form.public_base_url}
                 onChange={(e) => patchField("public_base_url", e.target.value)}

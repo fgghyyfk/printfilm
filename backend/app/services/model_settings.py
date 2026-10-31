@@ -610,6 +610,30 @@ async def import_admin_model_settings_from_env(
     return out, imported, skipped_secrets
 
 
+async def _sync_active_tokenfree_defaults(db: AsyncSession, defaults: DefaultModels) -> None:
+    """默认模型因停用被自动替换时，写回当前生效的 TokenFree 配置，后台下拉框显示实际生效的模型。
+
+    BytePlus 配置的模型清单就是这几个字段本身，写回会把模型删掉，所以不处理。
+    """
+    from app.services.provider_profiles import CAPABILITIES, is_byteplus
+
+    rows = (await db.execute(select(SystemModelChannelRow).where(SystemModelChannelRow.enabled.is_(True)))).scalars().all()
+    for row in rows:
+        if not row.advanced_config or is_byteplus(row.base_url or ""):
+            continue
+        advanced = dict(row.advanced_config)
+        changed = False
+        for cap in CAPABILITIES:
+            value = getattr(defaults, cap + "_model")
+            if advanced.get(cap + "_model", "") != value:
+                advanced[cap + "_model"] = value
+                changed = True
+        if changed:
+            row.advanced_config = advanced
+            db.add(row)
+    await db.flush()
+
+
 async def patch_admin_routing_settings(
     db: AsyncSession,
     body: AdminRoutingSettingsPatch,
@@ -684,6 +708,7 @@ async def patch_admin_routing_settings(
     channels = await _load_channels(db, runtime=True)
     legacy = body.default_models or default_models_from_dict(config.get("default_models"))
     logical, defaults = profile_state(channels, legacy, disabled)
+    await _sync_active_tokenfree_defaults(db, defaults)
     config["logical_models"] = [model.model_dump() for model in logical]
     config["default_models"] = default_models_to_dict(defaults)
     if body.default_models is not None:
