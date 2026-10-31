@@ -20,6 +20,7 @@ from app.services.drama.image_styles import (
 )
 from app.services.seedance_segments import (
     VOICE_CUE_PREFIX_RE,
+    build_seedance_production_section,
     classify_voice_body,
     is_production_meta_line,
     rewrite_misclassified_visual_voice_lines,
@@ -992,10 +993,15 @@ def build_seedance_prompt_text(
     if not character_intro:
         normalized = strip_character_intro_cues(normalized)
     resolved_catalog = catalog or build_seedance_reference_catalog(reference, script=normalized)
-    # Submitted prompts contain the selected visual style and storyboard body only.
-    # Reference images/audio stay in content[], without extra mandatory instruction paragraphs.
+    # 提交内容：画风 + 音频/字幕约束 + 分镜正文；参考图/音频放在 content[]，不再附参考说明段落。
+    # 约束段保留「禁止画面内烧录字幕」「禁止人物介绍叠字」，避免模型自行加字（开口播）
     sections = [
         build_visual_style_section(video_style_id, has_style_board=has_style_board),
+        build_seedance_production_section(
+            normalized,
+            burn_subtitles=burn_subtitles,
+            character_intro=character_intro,
+        ),
         build_seedance_body_text(normalized, reference, resolved_catalog),
     ]
     return "\n\n".join(section for section in sections if section)

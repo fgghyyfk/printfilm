@@ -9,6 +9,7 @@ from app.services.drama.build_seedance_generate_body import (
 
 
 def test_submitted_prompt_keeps_visual_style_and_body_without_other_forced_sections():
+    """提交内容只有画风、音频/字幕约束（开口播保留，禁止画面内烧字）和分镜正文，不附参考说明段落。"""
     from app.services.tokenfree_video import prepare_video_create_body
     reference = [_char(1, "角色甲", audio="https://cdn.example.com/voice.mp3")]
     script = "@duration:6\n【画面·无配音仅环境音】@asset:1 走到窗前。\n【对白·慢速清晰】角色甲：我们出发。"
@@ -19,7 +20,8 @@ def test_submitted_prompt_keeps_visual_style_and_body_without_other_forced_secti
     assert "【强制约束：视频画面风格】" in prompt
     assert "韩剧" in prompt
     assert "另附画风参考图" in prompt
-    assert prompt.count("【强制约束：") == 1
+    assert prompt.count("【强制约束：") == 2
+    assert "【强制约束：音频、字幕与配乐】" in prompt and "禁止在画面内烧录字幕" in prompt
     assert "走到窗前" in prompt and "我们出发" in prompt
     assert "00:00-00:06" in prompt
     media = body["metadata"]["content"]
