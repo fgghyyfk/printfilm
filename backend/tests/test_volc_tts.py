@@ -96,3 +96,19 @@ async def test_error_code_translated(monkeypatch, tmp_path, patched):
     with pytest.raises(RuntimeError, match="没有这个音色的权限"):
         await volc_tts.synthesize("你好", "zh_female_vv_uranus_bigtts", tmp_path / "c.mp3")
     assert not (tmp_path / "c.mp3").exists()
+
+
+def test_new_voice_presets_are_volc_and_gendered():
+    """新增的豆包 2.0 口播音色都走火山，ICL 音色也能识别男女。"""
+    from app.services import volc_tts
+    from app.services.voices import infer_speaker_gender, list_voices, resolve_speaker
+
+    ids = {v["id"] for v in list_voices()}
+    for vid in ("zh_female_jitangnv_uranus_bigtts", "ICL_uranus_zh_female_reqingaina_tob",
+                "zh_male_guanggaojieshuo_uranus_bigtts"):
+        assert vid in ids
+        assert volc_tts.is_volc_speaker(resolve_speaker(vid))
+        assert volc_tts.resource_for(vid) == "seed-tts-2.0"
+    assert infer_speaker_gender("ICL_uranus_zh_female_reqingaina_tob") == "female"
+    assert infer_speaker_gender("zh_male_dayi_uranus_bigtts") == "male"
+    assert len(ids) == len(list_voices())
