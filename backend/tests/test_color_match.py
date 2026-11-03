@@ -83,3 +83,13 @@ def test_color_ref_file_mapping():
     assert _color_ref_file({"color_match_ref": 1}, files) == Path("b.png")
     assert _color_ref_file({"color_match_ref": 5}, files) is None
     assert _color_ref_file({}, files) is None
+
+
+# .jpg 输出存为 JPEG（体积小，线上加载快）
+def test_match_file_jpeg_output(tmp_path: Path):
+    ref_p, gen_p, out_p = tmp_path / "ref.png", tmp_path / "gen.png", tmp_path / "out.jpg"
+    Image.fromarray(_reference().astype(np.uint8)).save(ref_p)
+    Image.fromarray(_generated().astype(np.uint8)).save(gen_p)
+    assert cm.match_colors_file(gen_p, ref_p, out_p)["applied"]
+    with Image.open(out_p) as im:
+        assert im.format == "JPEG"

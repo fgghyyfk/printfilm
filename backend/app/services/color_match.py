@@ -131,11 +131,15 @@ def match_colors_array(gen_rgb: np.ndarray, ref_rgb: np.ndarray, *, rounds: int 
 
 
 def match_colors_file(gen_path: Path, ref_path: Path, out_path: Path) -> dict:
-    """文件版：校色后写 out_path（PNG）。返回统计；未校色时不写文件，stats['applied']=False。"""
+    """文件版：校色后写 out_path（.jpg 存高质量 JPEG，其余存 PNG）。返回统计；未校色时不写文件，stats['applied']=False。"""
     gen = _load_rgb(gen_path)
     ref = _load_rgb(ref_path, max_edge=800)
     new, stats = match_colors_array(gen, ref)
     if stats.get("applied"):
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        Image.fromarray(new.astype(np.uint8)).save(out_path, format="PNG", optimize=True)
+        img = Image.fromarray(np.round(new).astype(np.uint8))
+        if out_path.suffix.lower() in {".jpg", ".jpeg"}:
+            img.save(out_path, format="JPEG", quality=95, subsampling=0)
+        else:
+            img.save(out_path, format="PNG", optimize=True)
     return stats

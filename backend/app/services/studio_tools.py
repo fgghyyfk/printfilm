@@ -222,7 +222,7 @@ async def _apply_color_match(user_id: int, url: str, color_ref: Path) -> tuple[s
         src = storage.local_path_from_url(url)
         if src is None or not src.exists():
             src = await storage.ensure_local_media(url, tools_dir(user_id) / f"cm_src_{uuid.uuid4().hex[:8]}.png")
-        out = tools_dir(user_id) / f"cm_{uuid.uuid4().hex[:12]}.png"
+        out = tools_dir(user_id) / f"cm_{uuid.uuid4().hex[:12]}.jpg"
         stats = await asyncio.to_thread(match_colors_file, src, color_ref, out)
     except Exception as exc:  # noqa: BLE001
         logger.warning("自动校色失败，保留原图: %s", exc)
