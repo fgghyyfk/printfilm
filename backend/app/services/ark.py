@@ -1081,6 +1081,8 @@ class ArkGateway:
                 "response_format": "url", "watermark": False,
             }
             refs = list(dict.fromkeys([*(subject_refs or []), *(style_refs or [])]))
+            # 本地 /static 参考图方舟拉不到（未开 OSS 时常见），转成 data URI；https 原样保留
+            refs = [await self._resolve_image_ref(ref) for ref in refs]
             if refs:
                 body["image"] = refs[0] if len(refs) == 1 else refs
         # 2.5 的渠道是 image-generation，走 /responses 会报 default 分组无 distributor
