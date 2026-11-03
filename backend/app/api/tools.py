@@ -21,8 +21,9 @@ from app.services.billing.http import http_exception_for_value_error
 from app.services.studio_generation import enqueue_generation, sync_generation_record, validate_generation
 from app.services.studio_tools import get_tool_run, poll_image_tool_task, poll_video_task, save_upload, update_tool_run_task
 from app.services.studio_references import (
-    MAX_UPLOAD_BYTES, ROLE_KIND, asset_kind_expression, parse_references,
-    personal_asset_filters, reference_params, validate_reference_mode, validate_upload,
+    IMAGE_ASSET_TOOLS, MAX_UPLOAD_BYTES, ROLE_KIND, asset_kind_expression, materialize_image_assets,
+    parse_image_asset_references, parse_references, personal_asset_filters, reference_params,
+    validate_reference_mode, validate_upload,
 )
 
 router = APIRouter(prefix="/tools", tags=["tools"])
@@ -135,10 +136,17 @@ async def run_tool(
             params.update(video_mode=video_mode, references=refs)
             params.update(await reference_params(db, user, refs))
         elif references != "[]":
-            raise ValueError("references: 请先选择视频生成模式")
+            if tid not in IMAGE_ASSET_TOOLS:
+                raise ValueError("references: 请先选择视频生成模式")
+            # 图生图 / 图生产品：资产库里的图片作为参考，先复制成本次参考文件
+            asset_ids = parse_image_asset_references(references)
+            if len(asset_ids) + len(files or []) > 9:
+                raise ValueError("references: 参考图合计最多 9 张")
+            saved.extend(await materialize_image_assets(db, user, asset_ids))
+            params["reference_asset_ids"] = asset_ids
         if price_version:
             params["price_version"] = price_version
-        validate_generation(tid, prompt, params, len(files or []))
+        validate_generation(tid, prompt, params, len(files or []) + len(saved))
         upload_kinds = {ref["file_index"]: ROLE_KIND[ref["role"]] for ref in params.get("references", []) if "file_index" in ref}
         for index, item in enumerate(files or []):
             raw = await item.read(MAX_UPLOAD_BYTES + 1)

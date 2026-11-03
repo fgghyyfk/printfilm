@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
-import { ArrowRight, AudioLines, Check, Clock3, Download, Eye, ImagePlus, Layers, Loader2, Mic, Plus, RectangleHorizontal, RectangleVertical, Sparkles, Square, X } from 'lucide-react'
+import { ArrowRight, AudioLines, Check, Clock3, Download, Eye, FolderOpen, ImagePlus, Layers, Loader2, Mic, Plus, RectangleHorizontal, RectangleVertical, Sparkles, Square, X } from 'lucide-react'
 import { getGenerationConfig, listToolRuns, resolveToolMediaUrl, runStudioTool, type ToolRunRecord } from '../api/tools'
 import BillingErrorNotice from '../components/billing/BillingErrorNotice'
 import GenerationLayout from '../components/tools/GenerationLayout'
 import GenerationSelect from '../components/tools/GenerationSelect'
 import GenerationReferences from '../components/tools/GenerationReferences'
 import PromptMentionPopover from '../components/tools/PromptMentionPopover'
+import ToolReferenceAssetPicker from '../components/tools/ToolReferenceAssetPicker'
+import { useImageReferenceAssets } from '../hooks/useImageReferenceAssets'
 import { AssetDetailDialog } from '../components/assets/AssetDetailDialog'
 import { useToolRunDetail } from '../hooks/useToolRunDetail'
 import { mediaIcons, type MediaKind, useGenerationText } from '../lib/generationMedia'
@@ -33,6 +35,9 @@ function GenerationWorkspace({ kind }: { kind: MediaKind }) {
   const [voice, setVoice] = useState('narrator_calm')
   const [files, setFiles] = useState<File[]>([])
   const [previews, setPreviews] = useState<string[]>([])
+  // 图片生成：从资产库选的参考图（与上传文件合计计入参考上限）
+  const imageAssets = useImageReferenceAssets(kind === 'image')
+  const [assetPickerOpen, setAssetPickerOpen] = useState(false)
   // 每种视频模式保留各自素材，切换模式不会把首帧误当普通参考或丢失选择。
   const [videoMode, setVideoMode] = useState<VideoGenerationMode>('text_to_video')
   const [videoReferences, setVideoReferences] = useState<Record<VideoGenerationMode, GenerationReference[]>>({ text_to_video: [], first_last_frame: [], omni_reference: [] })
@@ -120,7 +125,7 @@ function GenerationWorkspace({ kind }: { kind: MediaKind }) {
   function pickFiles(incoming: File[]) {
     const limit = referenceImageLimit
     if (incoming.some(file => file.size > 40 * 1024 * 1024)) { setError(text('单个文件不能超过 40MB', 'Each file must be under 40 MB')); return }
-    if (files.length + incoming.length > limit) { setError(text(`最多选择 ${limit} 个参考文件`, `Choose up to ${limit} reference files`)); return }
+    if (files.length + imageAssets.assets.length + incoming.length > limit) { setError(text(`最多选择 ${limit} 个参考文件`, `Choose up to ${limit} reference files`)); return }
     setFiles(previous => [...previous, ...incoming]); setError('')
   }
 
@@ -167,15 +172,17 @@ function GenerationWorkspace({ kind }: { kind: MediaKind }) {
       setError(referenceError || estimateError || text('请等待预计消耗计算完成', 'Wait for the cost estimate before generating'))
       return
     }
-    if (kind === 'image' && files.length > referenceImageLimit) {
+    if (kind === 'image' && files.length + imageAssets.assets.length > referenceImageLimit) {
       setError(text(`所选模型最多支持 ${referenceImageLimit} 个参考文件，请移除多余文件`, `The selected model supports up to ${referenceImageLimit} reference files. Remove the extra files.`))
       return
     }
     setSubmitting(true); setError(''); setNotice('')
     try {
-      const result = await runStudioTool({ toolId: kind === 'audio' ? 'audio' : kind === 'video' ? 't2v' : files.length ? 'i2i' : 't2i',
+      const imageRefCount = files.length + imageAssets.assets.length
+      const result = await runStudioTool({ toolId: kind === 'audio' ? 'audio' : kind === 'video' ? 't2v' : imageRefCount ? 'i2i' : 't2i',
         prompt, files: kind === 'video' ? serializedReferences.files : files, ratio, duration, voice, modelId: model, resolution,
-        ...(kind === 'video' ? { videoMode, references: serializedReferences.references, priceVersion: quote?.price_version ?? 0 } : {}) })
+        ...(kind === 'video' ? { videoMode, references: serializedReferences.references, priceVersion: quote?.price_version ?? 0 } : {}),
+        ...(kind === 'image' && imageAssets.references.length ? { references: imageAssets.references } : {}) })
       setNotice(text(`任务 ${result.task_id} 已提交，离开页面后仍会继续生成。`, `Task ${result.task_id} queued. Generation continues after you leave.`))
       setRevision(value => value + 1)
     } catch (err) { setError(err instanceof Error ? err.message : text('提交失败', 'Submission failed')) }
@@ -214,19 +221,31 @@ function GenerationWorkspace({ kind }: { kind: MediaKind }) {
       <div className="gen-input-area">
         {kind === 'video' && <GenerationReferences mode={videoMode} limits={referenceLimits} value={currentReferences}
           onChange={value => { setVideoReferences(previous => ({ ...previous, [videoMode]: value })); setError(''); setNotice('') }} onError={setError} disabled={submitting} />}
-        {kind === 'image' && <div className={`gen-references ${files.length ? 'has-files' : ''}`}>
-          <span className="gen-ref-count"><ImagePlus size={14} />{files.length}/{referenceImageLimit}</span>
+        {kind === 'image' && <div className={`gen-references ${files.length + imageAssets.assets.length ? 'has-files' : ''}`}>
+          <span className="gen-ref-count"><ImagePlus size={14} />{files.length + imageAssets.assets.length}/{referenceImageLimit}</span>
           <div className="gen-ref-grid">
+            {imageAssets.assets.map(asset => <div className="gen-ref-item" key={`asset-${asset.id}`} title={asset.name || ''}>
+              <img src={resolveToolMediaUrl(asset.cover || asset.url)} alt={asset.name || text('资产参考图', 'Asset reference')} />
+              <button type="button" aria-label={text('移除参考资产', 'Remove asset')} onClick={() => imageAssets.remove(asset.id)}><X size={13} /></button>
+            </div>)}
             {previews.map((url, index) => <div className="gen-ref-item" key={url}>
               <img src={url} alt={text('参考图', 'Reference')} />
               <button type="button" aria-label={text('移除参考文件', 'Remove reference')} onClick={() => setFiles(items => items.filter((_, i) => i !== index))}><X size={13} /></button>
             </div>)}
-            {files.length < referenceImageLimit && <button type="button" className="gen-upload" onClick={() => upload.current?.click()}
+            {files.length + imageAssets.assets.length < referenceImageLimit && <button type="button" className="gen-upload" onClick={() => setAssetPickerOpen(true)}>
+              <FolderOpen size={22} /><span>{text('从资产库选择', 'From library')}</span>
+            </button>}
+            {files.length + imageAssets.assets.length < referenceImageLimit && <button type="button" className="gen-upload" onClick={() => upload.current?.click()}
               onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); pickFiles(Array.from(event.dataTransfer.files)) }}>
               <Plus size={24} /><span>{text('选择参考图', 'Add reference')}</span>
             </button>}
           </div>
           <input type="file" hidden ref={upload} multiple accept="image/png,image/jpeg,image/webp" onChange={event => { pickFiles(Array.from(event.target.files || [])); event.target.value = '' }} />
+          <ToolReferenceAssetPicker open={assetPickerOpen} onClose={() => setAssetPickerOpen(false)} allowedKinds={['image']} multiple
+            onPick={items => {
+              if (files.length + imageAssets.assets.length + items.length > referenceImageLimit) throw new Error(text(`参考图合计最多 ${referenceImageLimit} 张`, `Up to ${referenceImageLimit} references`))
+              imageAssets.add(items); setError('')
+            }} />
         </div>}
         <div className="gen-prompt-wrap">
           <textarea ref={promptRef} aria-label={text('生成内容', 'Generation prompt')} placeholder={placeholder} maxLength={maxLength} value={prompt}

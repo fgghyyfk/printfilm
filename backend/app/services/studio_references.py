@@ -125,3 +125,52 @@ def validate_upload(raw: bytes, filename: str, kind: str, content_type: str | No
                  or (suffix == ".m4a" and is_mp4))
     if not valid:
         raise ValueError("参考媒体文件内容无效")
+
+
+IMAGE_ASSET_TOOLS = {"i2i", "i2p"}
+MAX_IMAGE_REFERENCES = 9
+
+
+def parse_image_asset_references(raw: str) -> list[int]:
+    """图片生成的资产参考：只接受个人图片资产 {role: reference_image, asset_id}，返回去重后的资产 id。"""
+    refs = parse_references(raw)
+    ids: list[int] = []
+    for ref in refs:
+        if ref["role"] != "reference_image" or "asset_id" not in ref:
+            raise ValueError("references: 图片生成只能从资产库选择图片作参考")
+        if ref["asset_id"] not in ids:
+            ids.append(ref["asset_id"])
+    if len(ids) > MAX_IMAGE_REFERENCES:
+        raise ValueError(f"references: 最多选择 {MAX_IMAGE_REFERENCES} 张参考图")
+    return ids
+
+
+async def materialize_image_assets(db, user, asset_ids: list[int]) -> list[Path]:
+    """把本人图片资产复制成本次生成的参考文件，后续流程与上传的参考图一致。"""
+    from app.services import storage
+    from app.services.studio_tools import save_upload
+
+    refs = [{"role": "reference_image", "asset_id": aid} for aid in asset_ids]
+    urls = (await reference_params(db, user, refs)).get("reference_images", [])
+    paths: list[Path] = []
+    try:
+        for url in urls:
+            local = storage.local_path_from_url(url)
+            if local is not None and local.exists():
+                raw = local.read_bytes()
+                name = local.name
+            elif url.startswith(("http://", "https://")):
+                tmp = storage.project_dir(0) / "tools" / f"u{user.id}" / f"asset_dl_{Path(url.split('?')[0]).name or 'ref.png'}"
+                tmp.parent.mkdir(parents=True, exist_ok=True)
+                await storage.ensure_local_media(url, tmp)
+                raw, name = tmp.read_bytes(), tmp.name
+                tmp.unlink(missing_ok=True)
+            else:
+                raise ValueError("references: 资产图片文件不存在，请重新上传")
+            validate_upload(raw, name if Path(name).suffix.lower() in EXTENSIONS["image"] else name + ".png", "image", None)
+            paths.append(save_upload(user.id, raw, name if Path(name).suffix else name + ".png"))
+    except Exception:
+        for path in paths:
+            path.unlink(missing_ok=True)
+        raise
+    return paths
