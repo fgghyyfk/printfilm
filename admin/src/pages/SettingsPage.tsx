@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Loader2, Save } from "lucide-react";
+import { ComplianceSettingsPanel } from "@/components/settings/ComplianceSettingsPanel";
 import { AvatarSettingsPanel } from "@/components/settings/AvatarSettingsPanel";
 import { OssSettingsPanel } from "@/components/settings/OssSettingsPanel";
 import { PaymentSettingsPanel } from "@/components/settings/PaymentSettingsPanel";
@@ -13,7 +14,7 @@ import {
 } from "@/components/settings/SettingsSaveContext";
 import { cn } from "@/lib/utils";
 
-type SettingsTab = "routing" | "image" | "avatar" | "runtime" | "oss" | "payment" | "site";
+type SettingsTab = "routing" | "image" | "avatar" | "runtime" | "oss" | "payment" | "site" | "compliance";
 
 const TABS: { id: SettingsTab; label: string }[] = [
   { id: "routing", label: "模型" },
@@ -23,6 +24,7 @@ const TABS: { id: SettingsTab; label: string }[] = [
   { id: "oss", label: "存储 OSS" },
   { id: "payment", label: "支付计费" },
   { id: "site", label: "站点工具" },
+  { id: "compliance", label: "内容合规" },
 ];
 
 // 页头：标题 + 统一保存按钮
@@ -82,6 +84,7 @@ function SettingsPageInner() {
         {tab === "oss" ? <OssSettingsPanel /> : null}
         {tab === "payment" ? <PaymentSettingsPanel /> : null}
         {tab === "site" ? <SiteSettingsPanel /> : null}
+        {tab === "compliance" ? <ComplianceSettingsPanel /> : null}
       </div>
     </div>
   );

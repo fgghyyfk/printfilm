@@ -152,6 +152,10 @@ class AdminModelSettingsOut(BaseModel):
     ffprobe_path: str = Field(default="ffprobe", description="FFprobe 可执行文件路径或命令名称")
     marketplace_enabled: bool = Field(default=False, description="是否启用数字资产市场；管理端保存后以数据库配置为准")
 
+    # 内容合规 / 电商套图
+    ad_banned_extra: str = ""
+    model_vision: str = ""
+    ecom_set_plan_fen: int = 10
     source: str = Field(default="env", description="配置来源：db 表示已有数据库配置，env 表示环境变量或默认配置")
     updated_at: datetime | None = Field(default=None, description="数据库配置的最近更新时间；尚无时间记录时为 null")
     readiness: list[ModelCapabilityReadiness] = Field(default_factory=list, description="文本、图像、视频、语音能力的路由就绪状态列表")
@@ -292,6 +296,10 @@ class AdminModelSettingsPatch(BaseModel):
     ffprobe_path: str | None = Field(default=None, description="FFprobe 可执行文件路径或命令名称；省略或 null 时不修改")
     marketplace_enabled: bool | None = Field(default=None, description="是否启用数字资产市场；管理端保存后以数据库配置为准；省略或 null 时不修改")
 
+    ad_banned_extra: str | None = None
+    model_vision: str | None = None
+    ecom_set_plan_fen: int | None = Field(default=None, ge=0, le=100000)
+
 
 class AdminModelSettingsSaveOut(BaseModel):
     """配置保存结果，包含刷新后的脱敏配置与本次实际应用的字段名。"""
@@ -416,6 +424,9 @@ def model_config_field_names() -> tuple[str, ...]:
         "ffmpeg_path",
         "ffprobe_path",
         "marketplace_enabled",
+        "ad_banned_extra",
+        "model_vision",
+        "ecom_set_plan_fen",
     )
 
 

@@ -7,9 +7,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# 成片合成需要 FFmpeg；中文烧录字幕需要文泉驿字体
+# 成片合成需要 FFmpeg；中文烧录字幕需要文泉驿字体；电商套图排版用思源黑体同源的 Noto CJK
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg fonts-wqy-zenhei \
+    && apt-get install -y --no-install-recommends ffmpeg fonts-wqy-zenhei fonts-noto-cjk \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

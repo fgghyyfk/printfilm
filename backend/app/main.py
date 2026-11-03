@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from app.api import auth, billing, capabilities, creation, projects, tasks, templates, tools
 from app.api import teams, team_billing, team_content, team_edit_locks
 from app.api import project_avatar
+from app.api import ecom_set
 from app.api.admin import router as admin_router
 from app.api.drama import router as drama_router
 from app.config import get_settings
@@ -84,6 +85,8 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # 跨域下载（如套图 zip）时前端需要读文件名
+    expose_headers=["Content-Disposition"],
 )
 
 
@@ -131,6 +134,7 @@ app.include_router(creation.router, prefix="/api")
 app.include_router(project_avatar.router, prefix="/api")
 app.include_router(tasks.router, prefix="/api")
 app.include_router(billing.router, prefix="/api")
+app.include_router(ecom_set.router, prefix="/api")
 app.include_router(tools.router, prefix="/api")
 app.include_router(drama_router, prefix="/api")
 app.include_router(teams.router, prefix="/api")
@@ -231,6 +235,13 @@ async def _apply_schema_patches(engine_override: AsyncEngine | None = None) -> N
             await conn.execute(text("ALTER TABLE shots ADD COLUMN highlights VARCHAR(256) DEFAULT ''"))
 
         pcols = await _pg_columns(conn, "projects")
+        if "ecom_set_id" not in pcols:
+            await conn.execute(text("ALTER TABLE projects ADD COLUMN ecom_set_id INTEGER"))
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_projects_ecom_set_id ON projects (ecom_set_id)"))
+        ecols = await _pg_columns(conn, "ecom_sets")
+        if ecols and "project_id" not in ecols:
+            await conn.execute(text("ALTER TABLE ecom_sets ADD COLUMN project_id INTEGER"))
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_ecom_sets_project_id ON ecom_sets (project_id)"))
         if "pipeline_mode" not in pcols:
             await conn.execute(text("ALTER TABLE projects ADD COLUMN pipeline_mode VARCHAR(32) DEFAULT 'full'"))
         if "creation_session_id" not in pcols:

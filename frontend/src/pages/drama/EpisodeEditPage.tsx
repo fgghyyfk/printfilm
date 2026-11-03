@@ -43,6 +43,10 @@ import {
 import { isMinimaxH3Model } from '../../lib/dramaMediaModelMeta'
 import { DRAMA_VOICE_BINDING_ENABLED } from '../../lib/dramaVoiceBinding'
 import BillingErrorNotice from '../../components/billing/BillingErrorNotice'
+import ComplianceNotice from '../../components/compliance/ComplianceNotice'
+import { getEpisodeCompliance } from '../../api/compliance'
+import { dramaComplianceLabel, episodeComplianceKey } from '../../lib/compliance'
+import { useI18n } from '../../i18n'
 import { dialog } from '../../lib/dialog'
 import {
   formatProjectOutputLabel,
@@ -135,6 +139,7 @@ function EpisodeEditInner() {
   const pid = Number(projectId)
   const eid = Number(episodeId)
   const navigate = useNavigate()
+  const { t } = useI18n()
   /*
    * episode 分集
    * fragments 分镜
@@ -146,6 +151,8 @@ function EpisodeEditInner() {
    * busy / status / error 状态
    */
   const [episode, setEpisode] = useState<DramaEpisode | null>(null)
+  // complianceKey 已保存分镜签名：保存/重新分镜/重新加载后变化即自动做广告法检查
+  const complianceKey = useMemo(() => episodeComplianceKey(episode), [episode])
   const [episodeList, setEpisodeList] = useState<DramaEpisode[]>([])
   const [fragments, setFragments] = useState<DramaFragment[]>([])
   const [assets, setAssets] = useState<DramaAsset[]>([])
@@ -1795,6 +1802,17 @@ function EpisodeEditInner() {
       </div>
 
       <footer className="drama-ep-storyboard">
+        <ComplianceNotice
+          fetchReport={() => getEpisodeCompliance(eid)}
+          refreshKey={complianceKey}
+          describe={(item) => {
+            const pos = fragments.findIndex((f) => f.id === item.fragment_id)
+            return {
+              label: dramaComplianceLabel(item, fragments, t),
+              onLocate: pos >= 0 ? () => setSelectedIndex(pos) : undefined,
+            }
+          }}
+        />
         <div className="drama-ep-storyboard-row">
           <button
             type="button"

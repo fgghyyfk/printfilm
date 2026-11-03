@@ -24,9 +24,10 @@ def test_split_layout_burns_narration_captions():
     assert vf.count("drawtext=") >= 3
 
 
+# 回归：字幕去标点时保留数字里的小数点（曾把 2.5L 显示成 25L）
 def test_strip_caption_punct_keeps_decimal_point():
-    """数字中的小数点保留，句末句号仍去掉。"""
     from app.services.ffmpeg_compose import _strip_caption_punct
 
-    assert _strip_caption_punct("去韩国做脸花了1.7万") == "去韩国做脸花了1.7万"
-    assert _strip_caption_punct("涨了3.5%。真的.") == "涨了3.5真的"
+    assert _strip_caption_punct("2.5L大容量，24小时保温。") == "2.5L大容量24小时保温"
+    assert _strip_caption_punct("圆周率约3.14。") == "圆周率约3.14"
+    assert _strip_caption_punct("你好.世界") == "你好世界"

@@ -133,6 +133,8 @@ export const enShell = {
     toolsFootPrefix: 'Or explore short-drama skills at',
     toolsFootLink: 'Drama Skills',
     toolsFootSuffix: '',
+    daihuo: 'Product promo',
+    daihuoHint: 'Image sets · scarf detail page · ZIP',
   },
   settings: {
     nav: 'Settings',

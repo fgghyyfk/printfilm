@@ -219,6 +219,8 @@ class ProjectOut(BaseModel):
     final_video_url: str | None
     resolution_mode: str
     pipeline_mode: str = "full"
+    # 商品带货：关联套图 id
+    ecom_set_id: int | None = None
     output_ratio: str = ""
     voice_id: str = ""
     character_bible: str = ""

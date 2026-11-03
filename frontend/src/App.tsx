@@ -39,6 +39,7 @@ const CanvasPage = lazy(() => import('./pages/drama/canvas/CanvasPage'))
 const EpisodeStoryboardPage = lazy(() => import('./pages/drama/episodeCanvas/EpisodeStoryboardPage'))
 const TeamInvitationPage = lazy(() => import('./features/teams/TeamInvitationPage'))
 const TeamPage = lazy(() => import('./features/teams/TeamPage'))
+const DaihuoPage = lazy(() => import('./pages/DaihuoPage'))
 const Marketplace = lazy(() => import('./features/marketplace/Marketplace'))
 
 /** 页面代码加载中的占位 */
@@ -57,6 +58,12 @@ function PersonalBusinessOverlays() {
 }
 
 /** 用户端路由及全局交互宿主，团队界面使用真实认证服务。 */
+/** 旧套图地址重定向到商品带货，保留 ?id= 等查询参数 */
+function ToDaihuo() {
+  const { search } = useLocation()
+  return <Navigate to={`/daihuo${search}`} replace />
+}
+
 export default function App() {
   return (
     <TeamPreviewProvider><BrowserRouter>
@@ -68,6 +75,8 @@ export default function App() {
         <Route path="/templates" element={<TemplatesPage />} />
         <Route path="/tools/video" element={<RequireAuth><GenerationPage kind="video" /></RequireAuth>} />
         <Route path="/tools/image" element={<RequireAuth><GenerationPage kind="image" /></RequireAuth>} />
+        <Route path="/daihuo" element={<RequireAuth><DaihuoPage /></RequireAuth>} />
+        <Route path="/tools/ecom-set" element={<ToDaihuo />} />
         <Route path="/tools/audio" element={<RequireAuth><GenerationPage kind="audio" /></RequireAuth>} />
         <Route path="/tasks" element={<RequireAuth><GenerationTasksPage /></RequireAuth>} />
         <Route path="/assets" element={<AssetLibraryPage />} />

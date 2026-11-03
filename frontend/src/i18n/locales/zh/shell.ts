@@ -130,6 +130,8 @@ export const zhShell = {
     kepuHint: '输入想法 · 文案分镜 · 画面配音 · 合成成片',
     ecom: '电商图',
     ecomHint: '商品图 + 模特 · 上身图 · 自动校色',
+    daihuo: '商品带货',
+    daihuoHint: '一图出套图 · 丝巾详情页 · 打包下载',
     toolsFootPrefix: '也可以先去',
     toolsFootLink: '短剧Skills',
     toolsFootSuffix: '查看短剧创作技能',

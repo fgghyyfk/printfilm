@@ -423,6 +423,10 @@ def _escape_drawtext(text: str) -> str:
     return t
 
 
+_DECIMAL_POINT_RE = re.compile(r"(?<=\d)[.．](?=\d)")
+_DECIMAL_TOKEN = "\u2024"  # 临时占位（一点前导符），避免小数点被当标点删掉
+
+
 def _strip_caption_punct(text: str) -> str:
     """去掉屏幕字幕/标题里的标点符号；数字里的小数点（如 1.7万）保留。"""
     t = _DECIMAL_DOT_RE.sub("\x00", text or "")

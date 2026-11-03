@@ -15,6 +15,7 @@
 模板 default_ratio 仅作画幅默认建议。
 """
 
+from app.services.templates_seed_daihuo import DAIHUO_TEMPLATES
 from app.services.templates_seed_huoke import HUOKE_TEMPLATES
 
 TEMPLATES: list[dict] = [
@@ -822,3 +823,4 @@ TEMPLATES: list[dict] = [
 ]
 
 TEMPLATES.extend(HUOKE_TEMPLATES)
+TEMPLATES.extend(DAIHUO_TEMPLATES)

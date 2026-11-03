@@ -470,6 +470,29 @@ async def get_project(
     return await _get_owned_project(db, project_id, user)
 
 
+# 合规检查：扫描项目标题与各镜头文案中的广告法极限词（只读，不改字）
+@router.get("/projects/{project_id}/compliance")
+async def project_compliance(
+    project_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    from app.models import Template
+    from app.services.compliance.ad_words import REPORT
+    from app.services.compliance.content import mode_for_template, scan_shots
+
+    project = await _get_owned_project(db, project_id, user)
+    tpl = await db.get(Template, project.template_id) if project.template_id else None
+    shots = sorted(project.shots, key=lambda s: s.shot_no or 0)
+    items = scan_shots(shots, title=project.title or "")
+    return {
+        "mode": mode_for_template(tpl),
+        "auto_replace": mode_for_template(tpl) != REPORT,
+        "count": sum(len(i["hits"]) for i in items),
+        "items": items,
+    }
+
+
 @router.patch(
     "/projects/{project_id}",
     response_model=ProjectOut,
@@ -953,6 +976,16 @@ async def update_shot(
     if not shot:
         raise HTTPException(status_code=404, detail="分镜不存在")
     data = body.model_dump(exclude_unset=True)
+    # 带货/获客模板：用户手改的旁白与叠字同样自动替换广告法极限词（科普模板只在编辑页提示）
+    from app.services.compliance.ad_words import REPLACE
+    from app.services.compliance.content import is_ad_template, sanitize_shot_fields
+
+    if is_ad_template(await db.get(Template, project.template_id)):
+        text_keys = ("narration", "overlay_title", "overlay_subtitle", "segment_script", "highlights")
+        picked = {k: data[k] for k in text_keys if isinstance(data.get(k), str)}
+        if picked:
+            cleaned, _ = sanitize_shot_fields(picked, mode=REPLACE)
+            data.update(cleaned)
     if "segment_script" in data and data["segment_script"] is not None:
         from app.services.seedance_segments import (
             apply_segment_script_edit,

@@ -122,6 +122,14 @@ async def chat_completions(
         len(user or ""),
         max_tokens,
     )
+    data = await _post_chat(base=base, api_key=api_key, payload=payload, timeout=timeout)
+    content = _message_content(data)
+    logger.info("文字 LLM 返回 content_len=%s", len(content))
+    return content
+
+
+# 发送 chat/completions 请求并解析 JSON（文字与视觉共用）
+async def _post_chat(*, base: str, api_key: str, payload: dict[str, Any], timeout: float) -> dict[str, Any]:
     async with httpx.AsyncClient(timeout=timeout) as client:
         res = await observed_request(client, "POST",
             f"{base}/chat/completions",
@@ -144,9 +152,53 @@ async def chat_completions(
                 f"（如 https://api.deepseek.com 或 https://api.moonshot.cn/v1），而非网站首页。"
             )
         try:
-            data = res.json()
+            return res.json()
         except json.JSONDecodeError as exc:
             raise RuntimeError(f"LLM 响应不是合法 JSON: {body[:200]}") from exc
-    content = _message_content(data)
-    logger.info("文字 LLM 返回 content_len=%s", len(content))
-    return content
+
+
+# 解析文本渠道的 (base, api_key)，视觉模型复用同一渠道
+def _resolve_text_channel() -> tuple[str, str]:
+    route = resolve_logical_model("text", resolve_logical_model_id("text", None))
+    if route:
+        return (route.base_url.rstrip("/") or resolve_llm_base_url()), route.api_key
+    return resolve_llm_base_url(), resolve_llm_api_key()
+
+
+# 调用视觉模型：文本 + 图片（URL 或 data URI），返回模型输出文本
+async def chat_completions_vision(
+    system: str,
+    text: str,
+    image_urls: list[str],
+    *,
+    model: str | None = None,
+    temperature: float = 0.4,
+    max_tokens: int = 4096,
+    timeout: float = 180.0,
+    response_format: dict[str, Any] | None = None,
+) -> str:
+    settings = get_settings()
+    vision_model = (model or settings.model_vision or "").strip()
+    if not vision_model:
+        raise LlmUnavailableError("未配置视觉模型（MODEL_VISION）")
+    base, api_key = _resolve_text_channel()
+    content: list[dict[str, Any]] = [{"type": "text", "text": text}]
+    for url in image_urls:
+        content.append({"type": "image_url", "image_url": {"url": url}})
+    payload: dict[str, Any] = {
+        "model": vision_model,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": content},
+        ],
+    }
+    # Seed 系列默认开启深度思考，规划任务不需要，关掉以提速
+    if vision_model.lower().startswith(("seed-", "dola-seed", "doubao-seed")):
+        payload["thinking"] = {"type": "disabled"}
+    if response_format:
+        payload["response_format"] = response_format
+    logger.info("调用视觉 LLM model=%s base=%s images=%s", vision_model, base, len(image_urls))
+    data = await _post_chat(base=base, api_key=api_key, payload=payload, timeout=timeout)
+    return _message_content(data)

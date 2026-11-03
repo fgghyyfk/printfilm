@@ -173,6 +173,8 @@ export type Project = {
   avatar_title2?: string
   /** 对口型分辨率：空=后台默认 */
   avatar_resolution?: '' | '480p' | '720p'
+  /** 商品带货：画面来源套图 id（非带货项目为 null） */
+  ecom_set_id?: number | null
   created_at: string
   updated_at: string
   shots: Shot[]

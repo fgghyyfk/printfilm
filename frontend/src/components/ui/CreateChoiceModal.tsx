@@ -59,6 +59,13 @@ export default function CreateChoiceModal({ open, onClose }: Props) {
           <strong>{t('create.ecom')}</strong>
           <span className="pf-muted">{t('create.ecomHint')}</span>
         </button>
+        <button type="button" className="pf-create-choice-card" onClick={() => go('/daihuo')}>
+          <span className="pf-ws-product-icon" aria-hidden>
+            <ShoppingBag size={24} strokeWidth={1.6} />
+          </span>
+          <strong>{t('create.daihuo')}</strong>
+          <span className="pf-muted">{t('create.daihuoHint')}</span>
+        </button>
       </div>
     </Modal>
   )

@@ -47,6 +47,8 @@ from app.services.kepu_image_references import project_image_references
 from app.services.voices import resolve_speaker
 from app.services import seedance_segments as segplan
 from app.services.bgm import clip_shot_bgm, resolve_bgm_path
+from app.services.compliance.ad_words import REPLACE
+from app.services.compliance.content import is_ad_template, sanitize_shot_fields
 
 logger = logging.getLogger(__name__)
 
@@ -715,6 +717,16 @@ async def _set_status(project_id: int, status: str, progress: int, stage: str) -
 
 async def _script_stage(project_id: int) -> None:
     await _set_status(project_id, ProjectStatus.SCRIPTING, 5, "SCRIPTING")
+    # 商品带货：按关联套图写口播、建分镜（画面复用套图底图，不走通用拆镜与出图）
+    from app.services.daihuo.service import build_daihuo_shots
+
+    async with AsyncSessionLocal() as db:
+        linked = await db.get(Project, project_id)
+        has_ecom_set = bool(linked and getattr(linked, "ecom_set_id", None))
+    if has_ecom_set:
+        await build_daihuo_shots(project_id)
+        await publish_progress(project_id, {"event": "progress", "stage": "SCRIPT_READY", "percent": 15})
+        return
     if await _project_is_avatar(project_id):
         from app.services import avatar_ai
 
@@ -818,17 +830,27 @@ async def _script_stage(project_id: int) -> None:
                 scene = scene.replace(bible, "", 1)
             scene = strip_lock_blocks(scene)
             img_prompt = ark._sanitize_seedream_prompt(scene)
+            # 带货/获客模板：旁白与叠字自动替换广告法极限词（科普模板只在编辑页提示，不改字）
+            copy_fields = {
+                "narration": plan.text,
+                "overlay_title": plan.overlay_title or "",
+                "overlay_subtitle": plan.overlay_subtitle or "",
+                "segment_script": segment_script,
+                "video_prompt": segment_script or plan.video_prompt,
+            }
+            if is_ad_template(tpl):
+                copy_fields, _ = sanitize_shot_fields(copy_fields, mode=REPLACE)
             db.add(
                 Shot(
                     project_id=project.id,
                     shot_no=plan.shot,
                     duration=dur,
-                    narration=plan.text,
-                    overlay_title=plan.overlay_title or "",
-                    overlay_subtitle=plan.overlay_subtitle or "",
+                    narration=copy_fields["narration"],
+                    overlay_title=copy_fields["overlay_title"],
+                    overlay_subtitle=copy_fields["overlay_subtitle"],
                     img_prompt=img_prompt,
-                    video_prompt=segment_script or plan.video_prompt,
-                    segment_script=segment_script,
+                    video_prompt=copy_fields["video_prompt"],
+                    segment_script=copy_fields["segment_script"],
                     camera=plan.camera,
                     bgm_mood=clip_shot_bgm(project.bgm_lock or plan.bgm),
                     status=ShotStatus.PENDING,
