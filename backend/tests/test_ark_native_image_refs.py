@@ -15,7 +15,7 @@ async def test_resolve_local_and_https(tmp_path, monkeypatch):
     assert await gw._resolve_image_ref("https://cdn.example.com/a.png") == "https://cdn.example.com/a.png"
 
 
-# 本地参考图压成小 JPEG data URI（长边 ≤1600），https 原样保留
+# 本地参考图压成小 JPEG data URI（长边 ≤1024），https 原样保留
 async def test_native_ref_compacts_local(tmp_path, monkeypatch):
     import base64
     import io
@@ -31,7 +31,7 @@ async def test_native_ref_compacts_local(tmp_path, monkeypatch):
     out = await gw._native_image_ref("/static/generated/x/ref.png")
     assert out.startswith("data:image/jpeg;base64,")
     with Image.open(io.BytesIO(base64.b64decode(out.split(",", 1)[1]))) as im:
-        assert max(im.size) == 1600
+        assert max(im.size) == 1024
         r, g, b = im.getpixel((10, 10))
         assert abs(r - 20) < 6 and abs(g - 160) < 6 and abs(b - 120) < 6
     assert await gw._native_image_ref("https://cdn.example.com/a.png") == "https://cdn.example.com/a.png"

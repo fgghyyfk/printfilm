@@ -87,9 +87,9 @@ VIDEO_POLL_READ_SEC = 60.0
 VIDEO_FETCH_READ_SEC = 30.0
 
 
-def _upstream_timeout(read_sec: float, *, connect: float = 30.0) -> httpx.Timeout:
+def _upstream_timeout(read_sec: float, *, connect: float = 30.0, write: float = 60.0) -> httpx.Timeout:
     """上游 HTTP 超时：建连短、等结果长，避免 ReadTimeout 被当成连不上。"""
-    return httpx.Timeout(connect=connect, read=float(read_sec), write=60.0, pool=30.0)
+    return httpx.Timeout(connect=connect, read=float(read_sec), write=float(write), pool=30.0)
 
 
 def reraise_upstream_timeout(exc: BaseException, *, kind: str, read_sec: float) -> NoReturn:
@@ -1109,7 +1109,8 @@ class ArkGateway:
             )
 
         try:
-            async with httpx.AsyncClient(timeout=_upstream_timeout(IMAGE_GEN_READ_SEC)) as client:
+            # 带参考图（data URI）时请求体较大，跨境上行慢，写超时放宽到 240 秒
+            async with httpx.AsyncClient(timeout=_upstream_timeout(IMAGE_GEN_READ_SEC, write=240.0)) as client:
                 async def _post():
                     # 单次上游 POST，限流重试由外层包住
                     return await self._request_media(client, "POST",
@@ -2224,7 +2225,7 @@ class ArkGateway:
         )
 
     async def _native_image_ref(self, image_url: str) -> str:
-        """方舟原生生图参考图：本地 /static 文件压成长边 ≤1600 的 JPEG data URI（约几百 KB，避免上传/拉取超时）；
+        """方舟原生生图参考图：本地 /static 文件压成长边 ≤1024 的 JPEG data URI（约 100–200KB，跨境上行慢也能发完）；
         https 原样保留，其余交给通用解析。"""
         raw = (image_url or "").strip()
         if raw.startswith(("https://", "data:")):
@@ -2551,7 +2552,7 @@ def reset_ark() -> None:
     _gateway = None
 
 
-def _compact_image_data_uri(path: Path, max_edge: int = 1600, quality: int = 90) -> str:
+def _compact_image_data_uri(path: Path, max_edge: int = 1024, quality: int = 85) -> str:
     """把本地参考图压成 JPEG data URI：长边 ≤max_edge，保持颜色（sRGB），透明底铺白。"""
     import base64
     import io
