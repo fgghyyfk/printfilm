@@ -1081,8 +1081,7 @@ class ArkGateway:
                 "response_format": "url", "watermark": False,
             }
             refs = list(dict.fromkeys([*(subject_refs or []), *(style_refs or [])]))
-            # 本地 /static 参考图方舟拉不到（未开 OSS 时常见）：有 https 公网站点时给公网地址让方舟自取，
-            # 否则转 data URI；https 原样保留
+            # 本地 /static 参考图方舟拉不到（未开 OSS 时常见）：压缩后以 data URI 发送；https 原样保留
             refs = [await self._native_image_ref(ref) for ref in refs]
             if refs:
                 body["image"] = refs[0] if len(refs) == 1 else refs
@@ -2225,13 +2224,14 @@ class ArkGateway:
         )
 
     async def _native_image_ref(self, image_url: str) -> str:
-        """方舟原生生图参考图：本地 /static 文件优先转站点 https 公网地址（请求体小、不怕上传超时），否则交给通用解析。"""
+        """方舟原生生图参考图：本地 /static 文件压成长边 ≤1600 的 JPEG data URI（约几百 KB，避免上传/拉取超时）；
+        https 原样保留，其余交给通用解析。"""
         raw = (image_url or "").strip()
-        base = (self.settings.public_base_url or "").strip()
-        if raw.startswith("/static/") and base.startswith("https://"):
-            local = storage.local_path_from_url(raw)
-            if local and local.exists():
-                return storage.to_public_url(raw)
+        if raw.startswith(("https://", "data:")):
+            return raw
+        local = storage.local_path_from_url(raw)
+        if local and local.exists():
+            return await asyncio.to_thread(_compact_image_data_uri, local)
         return await self._resolve_image_ref(raw)
 
     async def _resolve_image_ref(self, image_url: str, *, prefer_https: bool = False) -> str:
@@ -2549,3 +2549,25 @@ def get_ark() -> ArkGateway:
 def reset_ark() -> None:
     global _gateway
     _gateway = None
+
+
+def _compact_image_data_uri(path: Path, max_edge: int = 1600, quality: int = 90) -> str:
+    """把本地参考图压成 JPEG data URI：长边 ≤max_edge，保持颜色（sRGB），透明底铺白。"""
+    import base64
+    import io
+
+    from PIL import Image, ImageOps
+
+    with Image.open(path) as im:
+        im = ImageOps.exif_transpose(im)
+        if im.mode in ("RGBA", "LA", "P"):
+            im = im.convert("RGBA")
+            bg = Image.new("RGB", im.size, (255, 255, 255))
+            bg.paste(im, mask=im.getchannel("A"))
+            im = bg
+        else:
+            im = im.convert("RGB")
+        im.thumbnail((max_edge, max_edge), Image.Resampling.LANCZOS)
+        buf = io.BytesIO()
+        im.save(buf, format="JPEG", quality=quality, optimize=True)
+    return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()

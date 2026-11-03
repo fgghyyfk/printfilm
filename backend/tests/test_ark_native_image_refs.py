@@ -15,15 +15,23 @@ async def test_resolve_local_and_https(tmp_path, monkeypatch):
     assert await gw._resolve_image_ref("https://cdn.example.com/a.png") == "https://cdn.example.com/a.png"
 
 
-# 有 https 公网站点时，本地参考图转站点公网地址；否则退回 data URI
-async def test_native_ref_prefers_public_https(tmp_path, monkeypatch):
+# 本地参考图压成小 JPEG data URI（长边 ≤1600），https 原样保留
+async def test_native_ref_compacts_local(tmp_path, monkeypatch):
+    import base64
+    import io
+
+    from PIL import Image
+
     from app.services import storage
 
     f = tmp_path / "ref.png"
-    f.write_bytes(b"\x89PNG\r\n\x1a\nfake")
+    Image.new("RGBA", (3000, 2000), (20, 160, 120, 255)).save(f)
     monkeypatch.setattr(storage, "local_path_from_url", lambda url: f if url.startswith("/static/") else None)
     gw = ArkGateway()
-    monkeypatch.setattr(gw.settings, "public_base_url", "https://kaikou.example.com")
-    assert await gw._native_image_ref("/static/generated/x/ref.png") == "https://kaikou.example.com/static/generated/x/ref.png"
-    monkeypatch.setattr(gw.settings, "public_base_url", "http://localhost:8000")
-    assert (await gw._native_image_ref("/static/generated/x/ref.png")).startswith("data:image/")
+    out = await gw._native_image_ref("/static/generated/x/ref.png")
+    assert out.startswith("data:image/jpeg;base64,")
+    with Image.open(io.BytesIO(base64.b64decode(out.split(",", 1)[1]))) as im:
+        assert max(im.size) == 1600
+        r, g, b = im.getpixel((10, 10))
+        assert abs(r - 20) < 6 and abs(g - 160) < 6 and abs(b - 120) < 6
+    assert await gw._native_image_ref("https://cdn.example.com/a.png") == "https://cdn.example.com/a.png"
