@@ -316,6 +316,11 @@ async def estimate_task_fen(db: AsyncSession, task: TaskRun, settings: Settings 
     if domain in {"api", "studio"}:
         if task_type in {"v1_image", "tool_image"}:
             return _catalog_image_fen(s, payload=payload)
+        if task_type == "ecom_set_image":
+            # 套图底图按 2K 生成（1920² / 1728×2304），按张官价预扣
+            return _catalog_image_fen(s, size="2k")
+        if task_type == "ecom_set_plan":
+            return max(1, int(s.ecom_set_plan_fen))
         if task_type in {"v1_video", "v1_seedance", "tool_video"}:
             dur = float(payload.get("duration") or 5)
             c = charge_fen_official_video(

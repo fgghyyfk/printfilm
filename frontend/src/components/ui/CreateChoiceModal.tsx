@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom'
-import { Clapperboard, Video } from 'lucide-react'
+import { Clapperboard, ShoppingBag, Video } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import Modal from './Modal'
 
@@ -8,7 +8,7 @@ type Props = {
   onClose: () => void
 }
 
-/** 开始创作：在漫剧与科普之间选择入口 */
+/** 开始创作：在漫剧、短视频、商品带货之间选择入口 */
 export default function CreateChoiceModal({ open, onClose }: Props) {
   const nav = useNavigate()
   const { t } = useI18n()
@@ -38,6 +38,13 @@ export default function CreateChoiceModal({ open, onClose }: Props) {
           </span>
           <strong>{t('create.kepu')}</strong>
           <span className="pf-muted">{t('create.kepuHint')}</span>
+        </button>
+        <button type="button" className="pf-create-choice-card" onClick={() => go('/daihuo')}>
+          <span className="pf-ws-product-icon" aria-hidden>
+            <ShoppingBag size={24} strokeWidth={1.6} />
+          </span>
+          <strong>{t('create.daihuo')}</strong>
+          <span className="pf-muted">{t('create.daihuoHint')}</span>
         </button>
       </div>
       <p className="pf-create-choice-foot">

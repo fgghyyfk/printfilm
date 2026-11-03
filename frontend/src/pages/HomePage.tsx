@@ -1,7 +1,7 @@
 /** 开口播官网首页：简洁风，居中主张 + 产品示意窗 + 平台条 + 流程标签页 + 其他出片方式 */
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowRight, Clapperboard, Video, Wand2 } from 'lucide-react'
+import { ArrowRight, Clapperboard, ShoppingBag, Video, Wand2 } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import BrandMark from '../components/BrandMark'
 import { useI18n } from '../i18n'
@@ -10,6 +10,7 @@ import './home/home.css'
 
 const AVATAR_PATH = '/studio/new?mode=avatar'
 const MORE_LINKS = [
+  { path: '/daihuo', icon: ShoppingBag },
   { path: '/studio/new', icon: Video },
   { path: '/drama', icon: Clapperboard },
   { path: '/tools', icon: Wand2 },

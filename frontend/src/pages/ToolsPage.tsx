@@ -3,7 +3,7 @@ import { ArrowRight } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import ComingSoon from '../components/ui/ComingSoon'
 import { useI18n } from '../i18n'
-import { PRODUCT_ICONS, localizeToolDefs } from '../lib/toolsCatalog'
+import { PRODUCT_ICONS, localizeToolDefs, toolHref } from '../lib/toolsCatalog'
 
 export default function ToolsPage() {
   const { t, m } = useI18n()
@@ -25,7 +25,7 @@ export default function ToolsPage() {
           return (
             <Link
               key={tool.id}
-              to={`/tools/${tool.id}`}
+              to={toolHref(tool)}
               className={`pf-tools-card pf-tools-card-lg${tool.soon ? ' is-soon' : ''}`}
             >
               <div className="pf-tools-card-top">

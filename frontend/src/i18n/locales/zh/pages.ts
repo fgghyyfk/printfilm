@@ -32,6 +32,7 @@ export const zhPages = {
     ],
     moreTitle: '还能这样出片',
     more: [
+      { title: '商品带货', desc: '一张商品图出套图和带货视频' },
       { title: '科普短视频', desc: '主题自动拆镜成片' },
       { title: 'AI 漫剧', desc: '剧本到分集成片' },
       { title: '创作工具', desc: '生图、生视频' },

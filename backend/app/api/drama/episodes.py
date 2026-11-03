@@ -422,6 +422,28 @@ async def get_episode(
     return await _episode_out_with_tasks(db, user, ep)
 
 
+# 合规检查：扫描本集分镜台词中的广告法极限词（只读提示，不改字）
+@router.get("/episodes/{episode_id}/compliance")
+async def episode_compliance(
+    episode_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    from app.models_drama import DramaEpisodeFragment
+    from app.services.compliance.content import scan_fragments
+
+    ep = await get_owned_episode(db, episode_id, user)
+    frags = (
+        await db.execute(
+            select(DramaEpisodeFragment)
+            .where(DramaEpisodeFragment.episode_id == ep.id)
+            .order_by(DramaEpisodeFragment.sort_order, DramaEpisodeFragment.id)
+        )
+    ).scalars().all()
+    items = scan_fragments(list(frags))
+    return {"mode": "report", "auto_replace": False, "count": sum(len(i["hits"]) for i in items), "items": items}
+
+
 @router.patch("/episodes/{episode_id}", response_model=DramaEpisodeOut)
 async def update_episode(
     episode_id: int,

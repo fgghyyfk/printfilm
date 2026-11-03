@@ -108,6 +108,8 @@ export const zhShell = {
     dramaHint: '剧本 · 分集 · 成片',
     kepu: 'AI短视频',
     kepuHint: '分镜流水线出片',
+    daihuo: '商品带货',
+    daihuoHint: '套图 · 带货短视频',
     toolsFootPrefix: '也可以先去',
     toolsFootLink: '工具中心',
     toolsFootSuffix: '浏览独立能力',

@@ -119,6 +119,12 @@ export type AdminModelSettings = {
   public_base_url: string;
   ffmpeg_path: string;
   ffprobe_path: string;
+  /** 自定义广告法禁用词（逗号/顿号/空白分隔，命中即删除） */
+  ad_banned_extra: string;
+  /** 视觉理解模型 ID（电商套图看商品图） */
+  model_vision: string;
+  /** 电商套图规划单价（分） */
+  ecom_set_plan_fen: number;
   source: string;
   updated_at?: string | null;
   readiness: ModelCapabilityReadiness[];
@@ -175,4 +181,32 @@ export type AdminRoutingSettings = {
   default_models: AdminDefaultModels;
   validation_errors: string[];
   updated_at?: string | null;
+};
+
+/** 内置广告法词库的单个分类概览 */
+export type AdWordCategory = {
+  category: string;
+  count: number;
+  examples: string[];
+};
+
+/** 广告法词库概览：拦截档 / 提醒档 / 自定义词 */
+export type AdWordsOverview = {
+  block: AdWordCategory[];
+  warn: AdWordCategory[];
+  extra: string[];
+};
+
+/** 试检命中项 */
+export type AdWordHit = {
+  word: string;
+  category: string;
+  level: "block" | "warn";
+};
+
+/** 试检结果 */
+export type AdWordsCheckResult = {
+  clean: string;
+  hits: AdWordHit[];
+  messages: string[];
 };

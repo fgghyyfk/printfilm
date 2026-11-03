@@ -151,6 +151,11 @@ class AdminModelSettingsOut(BaseModel):
     ffmpeg_path: str = "ffmpeg"
     ffprobe_path: str = "ffprobe"
 
+    # 内容合规 / 电商套图
+    ad_banned_extra: str = ""
+    model_vision: str = ""
+    ecom_set_plan_fen: int = 10
+
     source: str = "env"
     updated_at: datetime | None = None
     readiness: list[ModelCapabilityReadiness] = Field(default_factory=list)
@@ -282,6 +287,10 @@ class AdminModelSettingsPatch(BaseModel):
     ffmpeg_path: str | None = None
     ffprobe_path: str | None = None
 
+    ad_banned_extra: str | None = None
+    model_vision: str | None = None
+    ecom_set_plan_fen: int | None = Field(default=None, ge=0, le=100000)
+
 
 class AdminModelSettingsSaveOut(BaseModel):
     """Save response with refreshed admin view."""
@@ -405,6 +414,9 @@ def model_config_field_names() -> tuple[str, ...]:
         "public_base_url",
         "ffmpeg_path",
         "ffprobe_path",
+        "ad_banned_extra",
+        "model_vision",
+        "ecom_set_plan_fen",
     )
 
 

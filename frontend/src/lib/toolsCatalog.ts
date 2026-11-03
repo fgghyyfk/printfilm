@@ -24,6 +24,8 @@ export type ToolDef = {
   panelHint: string
   fields: ToolField[]
   cta: string
+  /** 独立页面路由；设置后卡片直接跳转，不走通用 ToolDetailPage */
+  href?: string
 }
 
 export const TOOL_DEFS: ToolDef[] = [
@@ -117,6 +119,11 @@ export const TOOL_DEFS: ToolDef[] = [
     cta: '开始制作',
   },
 ]
+
+// 工具卡片跳转地址：独立页面优先，否则进通用工作台
+export function toolHref(tool: Pick<ToolDef, 'id' | 'href'>): string {
+  return tool.href || `/tools/${tool.id}`
+}
 
 // 按 id 查找工具定义
 export function getToolDef(id: string | undefined): ToolDef | undefined {

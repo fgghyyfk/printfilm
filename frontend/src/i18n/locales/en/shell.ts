@@ -109,6 +109,8 @@ export const enShell = {
     dramaHint: 'Script · episodes · film',
     kepu: 'AI Short Video',
     kepuHint: 'Storyboard pipeline',
+    daihuo: 'Product promo',
+    daihuoHint: 'Image set · promo video',
     toolsFootPrefix: 'Or browse standalone tools in the',
     toolsFootLink: 'tool hub',
     toolsFootSuffix: '',

@@ -419,9 +419,14 @@ def _escape_drawtext(text: str) -> str:
     return t
 
 
+_DECIMAL_POINT_RE = re.compile(r"(?<=\d)[.．](?=\d)")
+_DECIMAL_TOKEN = "\u2024"  # 临时占位（一点前导符），避免小数点被当标点删掉
+
+
 def _strip_caption_punct(text: str) -> str:
-    """Remove punctuation/symbols from on-screen subtitle text."""
-    t = _CAPTION_PUNCT_RE.sub("", text or "")
+    """Remove punctuation/symbols from on-screen subtitle text（保留数字里的小数点，如 2.5L、3.14）。"""
+    t = _DECIMAL_POINT_RE.sub(_DECIMAL_TOKEN, text or "")
+    t = _CAPTION_PUNCT_RE.sub("", t).replace(_DECIMAL_TOKEN, ".")
     return re.sub(r"\s+", " ", t).strip()
 
 

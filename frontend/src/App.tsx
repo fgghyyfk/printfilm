@@ -1,4 +1,4 @@
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import DialogHost from './components/ui/DialogHost'
 import BillingAlertHost from './components/billing/BillingAlertHost'
 import { DramaGenQueuePanel } from './components/drama/DramaGenQueuePanel'
@@ -8,6 +8,7 @@ import HomePage from './pages/HomePage'
 import MethodPage from './pages/MethodPage'
 import ToolsPage from './pages/ToolsPage'
 import ToolDetailPage from './pages/ToolDetailPage'
+import DaihuoPage from './pages/DaihuoPage'
 import HelpPage from './pages/HelpPage'
 import { PrivacyPage, TermsPage } from './pages/LegalDocPage'
 import ContactPage from './pages/ContactPage'
@@ -29,6 +30,12 @@ import EpisodeStoryboardPage from './pages/drama/episodeCanvas/EpisodeStoryboard
 import './styles/printfilm.css'
 import './App.css'
 
+/** 旧套图地址重定向到商品带货，保留 ?id= 等查询参数 */
+function ToDaihuo() {
+  const { search } = useLocation()
+  return <Navigate to={`/daihuo${search}`} replace />
+}
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -38,6 +45,9 @@ export default function App() {
         <Route path="/auth" element={<AuthPage />} />
         <Route path="/templates" element={<TemplatesPage />} />
         <Route path="/tools" element={<ToolsPage />} />
+        <Route path="/daihuo" element={<DaihuoPage />} />
+        <Route path="/tools/ecom-set" element={<ToDaihuo />} />
+        <Route path="/tools/ecomset" element={<ToDaihuo />} />
         <Route path="/tools/:toolId" element={<ToolDetailPage />} />
         <Route path="/assets" element={<AssetLibraryPage />} />
         <Route path="/help" element={<HelpPage />} />

@@ -165,6 +165,8 @@ sequenceDiagram
 | 科普选题扩写 | `run_billed_ephemeral(domain=kepu, content_expand)` |
 | 漫剧资产 seed（轻量同步） | `run_billed_ephemeral(domain=drama, seed_assets)` |
 | 工作室工具 | `run_billed_ephemeral(domain=studio, tool_image/tool_video)` |
+| 一图出套图·规划 | `run_billed_ephemeral(domain=studio, ecom_set_plan)`：**固定价**，写一条 `billing_key=ecom_set_plan`、`charge_fen=ECOM_SET_PLAN_FEN`（默认 10 分）的用量行，不按 token 计；规划失败不扣 |
+| 一图出套图·生图 | `create_task(domain=studio, ecom_set_image)`，一张一个 TaskRun，executor 自动 freeze/settle，handler 内 `record_seedream_image_usage`；入队前 `ensure_balance_for_task_batch` 一次校验 N 张；单张失败不扣；改文案（重新排版）不调模型、免费 |
 | 开放 API | `run_billed_ephemeral(domain=api, v1_image/v1_video/v1_seedance)` |
 
 ### LLM 操作全清单（`billing_key=llm_chat`）

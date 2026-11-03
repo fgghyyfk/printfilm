@@ -1,0 +1,77 @@
+/* 商品带货：创作入口卡、带货视频面板、分镜页来源提示（pf-daihuo-*） */
+
+.pf-daihuo-panel {
+  margin-top: 1rem;
+}
+
+.pf-daihuo-submit {
+  margin-top: 1rem;
+}
+
+.pf-daihuo-entry {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  width: 100%;
+  margin-bottom: 1rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid color-mix(in srgb, var(--pf-lime) 45%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--pf-lime) 10%, #fff);
+  color: var(--pf-ink);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.pf-daihuo-entry:hover {
+  border-color: var(--pf-lime);
+  transform: translateY(-1px);
+}
+
+.pf-daihuo-entry-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--pf-lime);
+  color: #fff;
+}
+
+.pf-daihuo-entry-body {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.pf-daihuo-entry-body span {
+  font-size: 0.8rem;
+  color: var(--pf-muted);
+}
+
+.pf-daihuo-entry-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex: none;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.pf-daihuo-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.35rem;
+  font-size: 0.82rem;
+  color: var(--pf-muted);
+}
+
+.pf-daihuo-source a {
+  color: var(--pf-ink);
+  font-weight: 600;
+  text-decoration: underline;
+}

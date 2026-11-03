@@ -1862,7 +1862,7 @@
 
 .pf-create-choice {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 0.85rem;
   margin: 0.75rem 0 0.5rem;
 }

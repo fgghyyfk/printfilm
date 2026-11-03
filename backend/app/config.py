@@ -49,6 +49,13 @@ class Settings(BaseSettings):
     seedance_duration_min: int = 4
     seedance_duration_max: int = 30
     model_audio: str = "qwen-tts-2025-05-22"
+    # 视觉理解模型（看商品图规划套图）；空则退化为纯文字规划。走文本渠道的 Base URL 与 Key
+    model_vision: str = "seed-2-0-lite-260428"
+    # 一图出套图：规划一次收费（分）；排版字体路径（空则按系统候选自动查找）
+    ecom_set_plan_fen: int = 10
+    ecom_font_path: str = ""
+    # 广告法极限词库：额外追加的自定义禁用词（逗号分隔，命中即删除）
+    ad_banned_extra: str = ""
     # Seedream: 2k|3k|4k or WIDTHxHEIGHT，且总像素 >= 3686400（约 2560x1440）
     ark_image_size: str = "2k"
     ark_video_resolution: str = "480p"

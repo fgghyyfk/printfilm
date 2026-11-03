@@ -19,6 +19,11 @@ import { scenePromptForDisplay } from '../../promptDisplay'
 import { dialog } from '../../lib/dialog'
 import { handleBillingError } from '../../lib/billingError'
 import BillingErrorNotice from '../../components/billing/BillingErrorNotice'
+import ComplianceNotice from '../../components/compliance/ComplianceNotice'
+import EcomSetSourceLink from '../../components/daihuo/EcomSetSourceLink'
+import { getProjectCompliance } from '../../api/compliance'
+import { kepuComplianceLabel, projectComplianceKey, scrollToShotRow, shotRowDomId } from '../../lib/compliance'
+import { useI18n } from '../../i18n'
 import {
   effectiveStatus,
   formatMmSs,
@@ -127,6 +132,7 @@ export default function StoryboardPage() {
   const { id } = useParams()
   const projectId = Number(id)
   const nav = useNavigate()
+  const { t } = useI18n()
   const [project, setProject] = useState<Project | null>(null)
   const [template, setTemplate] = useState<Template | null>(null)
   const [busy, setBusy] = useState(false)
@@ -193,6 +199,8 @@ export default function StoryboardPage() {
     return () => document.removeEventListener('click', onDoc)
   }, [menuShotId])
 
+  // complianceKey 文案签名：保存分镜/重新拆镜后变化即自动重新做广告法检查
+  const complianceKey = useMemo(() => projectComplianceKey(project), [project])
   const running = isProjectBusy(project)
   const step = project ? kepuStepIndex('board', project) : 2
   const totalDuration = useMemo(
@@ -711,6 +719,7 @@ export default function StoryboardPage() {
               AI 生成故事板 / 分镜工作台
             </button>
             <h1 className="pf-page-title">{project.title}</h1>
+            <EcomSetSourceLink ecomSetId={project.ecom_set_id} />
           </div>
           <div className="pf-toolbar">
             {primaryAction === 'preview' ? (
@@ -1025,6 +1034,16 @@ title="用当前镜头重新拼接"
               </p>
             ) : null}
             {project.shots.length === 0 ? null : (
+              <ComplianceNotice
+                fetchReport={() => getProjectCompliance(project.id)}
+                refreshKey={complianceKey}
+                describe={(item) => ({
+                  label: kepuComplianceLabel(item, t),
+                  onLocate: item.shot_id != null ? () => scrollToShotRow(item.shot_id as number) : undefined,
+                })}
+              />
+            )}
+            {project.shots.length === 0 ? null : (
               <div className="pf-shot-table-wrap">
                 <table className="pf-shot-table">
                   <thead>
@@ -1063,7 +1082,7 @@ title="用当前镜头重新拼接"
                       const { cues, beats } = parseSegmentScript(script)
                       const desc = scenePromptForDisplay(shot.img_prompt).trim()
                       return (
-                        <tr key={shot.id}>
+                        <tr key={shot.id} id={shotRowDomId(shot.id)}>
                           <td className="col-no">{String(shot.shot_no).padStart(2, '0')}</td>
                           <td className="col-thumb">
                             <button

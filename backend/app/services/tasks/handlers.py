@@ -273,6 +273,13 @@ async def _run_tools_mock_delay(task: TaskRun) -> dict[str, Any] | None:
     }
 
 
+# 执行一图出套图中的单张生图 + 排版。
+async def _run_studio_ecom_set_image(task: TaskRun) -> dict[str, Any] | None:
+    from app.services.ecom_set.jobs import run_item_job
+
+    return await run_item_job(task)
+
+
 # 轻量任务占位 handler（实际由 run_billed_ephemeral 内联执行）。
 async def _noop_ephemeral(task: TaskRun) -> dict[str, Any] | None:
     return {"ok": True, "ephemeral": True}
@@ -303,6 +310,8 @@ TASK_HANDLERS: dict[tuple[str, str], TaskHandler] = {
     ("api", "v1_seedance"): TaskHandler("api", "v1_seedance", _noop_ephemeral),
     ("studio", "tool_image"): TaskHandler("studio", "tool_image", _noop_ephemeral),
     ("studio", "tool_video"): TaskHandler("studio", "tool_video", _noop_ephemeral),
+    ("studio", "ecom_set_plan"): TaskHandler("studio", "ecom_set_plan", _noop_ephemeral),
+    ("studio", "ecom_set_image"): TaskHandler("studio", "ecom_set_image", _run_studio_ecom_set_image),
     ("kepu", "project_pipeline"): TaskHandler("kepu", "project_pipeline", _run_kepu_project_pipeline),
     ("kepu", "shot_regen_image"): TaskHandler("kepu", "shot_regen_image", _run_kepu_shot_image),
     ("kepu", "shot_regen_video"): TaskHandler("kepu", "shot_regen_video", _run_kepu_shot_video),

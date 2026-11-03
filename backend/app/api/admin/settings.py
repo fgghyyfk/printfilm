@@ -144,3 +144,33 @@ async def admin_tokenfree_account_quota(
     except RuntimeError as exc:
         logger.warning("tokenfree quota query failed: %s", exc)
         raise HTTPException(status_code=502, detail="TokenFree 额度查询失败") from exc
+
+
+class AdminAdWordsCheckIn(BaseModel):
+    """极限词试检请求。"""
+
+    text: str = Field(default="", max_length=2000)
+
+
+# 极限词库概览：内置分类词数/示例 + 当前自定义词
+@router.get("/settings/compliance/ad-words")
+async def admin_ad_words_catalog(_admin: User = Depends(get_current_admin)) -> dict:
+    from app.services.compliance.ad_words import catalog
+
+    return catalog()
+
+
+# 用当前词库试检一段文字，返回清洗结果与命中
+@router.post("/settings/compliance/ad-words/check")
+async def admin_ad_words_check(
+    body: AdminAdWordsCheckIn,
+    _admin: User = Depends(get_current_admin),
+) -> dict:
+    from app.services.compliance.ad_words import check_text, summarize
+
+    clean, hits = check_text(body.text)
+    return {
+        "clean": clean,
+        "hits": [{"word": h.word, "category": h.category, "level": h.level} for h in hits],
+        "messages": summarize(hits),
+    }

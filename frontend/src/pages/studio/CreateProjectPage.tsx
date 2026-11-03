@@ -4,6 +4,7 @@ import { api, defaultsFromTemplate } from '../../api'
 import type { Template } from '../../api'
 import BillingErrorNotice from '../../components/billing/BillingErrorNotice'
 import AppShell from '../../components/layout/AppShell'
+import DaihuoEntryCard from '../../components/daihuo/DaihuoEntryCard'
 import Stepper from '../../components/ui/Stepper'
 import PillTabs from '../../components/ui/PillTabs'
 import { IconChevronLeft, IconRefresh, IconSparkles } from '../../components/ui/Icons'
@@ -321,6 +322,7 @@ export default function CreateProjectPage() {
 
       <div className="pf-create">
         <aside className="pf-create-col">
+          <DaihuoEntryCard />
           <h3>选择模板</h3>
           <div className="pf-search">
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索模板…" />

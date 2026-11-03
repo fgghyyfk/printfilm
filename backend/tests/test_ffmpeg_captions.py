@@ -22,3 +22,12 @@ def test_split_layout_burns_narration_captions():
     assert ":y=70" in vf
     assert ":y=1176" in vf
     assert vf.count("drawtext=") >= 3
+
+
+# 回归：字幕去标点时保留数字里的小数点（曾把 2.5L 显示成 25L）
+def test_strip_caption_punct_keeps_decimal_point():
+    from app.services.ffmpeg_compose import _strip_caption_punct
+
+    assert _strip_caption_punct("2.5L大容量，24小时保温。") == "2.5L大容量24小时保温"
+    assert _strip_caption_punct("圆周率约3.14。") == "圆周率约3.14"
+    assert _strip_caption_punct("你好.世界") == "你好世界"

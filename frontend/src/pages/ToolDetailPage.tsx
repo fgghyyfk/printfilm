@@ -17,6 +17,7 @@ export default function ToolDetailPage() {
   const tool = useMemo(() => getToolDef(toolId), [toolId])
 
   if (!tool) return <Navigate to="/tools" replace />
+  if (tool.href) return <Navigate to={tool.href} replace />
   if (!localStorage.getItem('token')) {
     return <Navigate to={`/auth?next=/tools/${tool.id}`} replace />
   }
