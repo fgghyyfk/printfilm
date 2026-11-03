@@ -120,6 +120,7 @@ async def run_tool(
     model_id: str = Form("", max_length=128, description="生成模型标识；留空时使用工具默认模型"), resolution: str = Form("", max_length=16, description="输出分辨率，按所选模型支持的值填写"),
     video_mode: str = Form("", max_length=32, description="视频模式：text_to_video 文生视频、first_last_frame 首尾帧、omni_reference 全能参考；留空兼容旧流程"), references: str = Form("[]", max_length=8000, description="最多 12 项的 JSON 数组；每项包含 role，并且仅提供 file_index 上传文件索引或 asset_id 个人资产编号之一"),
     price_version: int | None = Form(default=None, ge=0, description="客户端确认的价格版本；传入有效版本时用于价格一致性校验"),
+    color_ref: int | None = Form(default=None, ge=0, le=8, description="图生图自动校色的色板参考图序号（资产库所选在前、上传文件在后，从 0 开始）；留空不校色"),
     files: list[UploadFile] | None = File(default=None, description="参考图片、视频或音频文件；单个文件最大 40 MB，格式由工具及素材角色决定"),
     db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user),
 ) -> ToolRunOut:
@@ -146,6 +147,12 @@ async def run_tool(
             params["reference_asset_ids"] = asset_ids
         if price_version:
             params["price_version"] = price_version
+        if color_ref is not None:
+            if tid not in IMAGE_ASSET_TOOLS:
+                raise ValueError("color_ref: 只有图生图可以自动校色")
+            if color_ref >= len(saved) + len(files or []):
+                raise ValueError("color_ref: 色板参考图不存在")
+            params["color_match_ref"] = color_ref
         validate_generation(tid, prompt, params, len(files or []) + len(saved))
         upload_kinds = {ref["file_index"]: ROLE_KIND[ref["role"]] for ref in params.get("references", []) if "file_index" in ref}
         for index, item in enumerate(files or []):

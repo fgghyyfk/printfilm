@@ -84,6 +84,8 @@ export function resolveToolMediaUrl(url?: string | null): string {
 }
 
 export type ToolRunPayload = {
+  /** 图生图自动校色的色板参考序号（资产在前、上传在后） */
+  colorRef?: number
   modelId?: string
   resolution?: string
   toolId: string
@@ -160,6 +162,7 @@ export async function runStudioTool(payload: ToolRunPayload): Promise<ToolRunRes
   if (payload.videoMode) body.append('video_mode', payload.videoMode)
   if (payload.references) body.append('references', JSON.stringify(payload.references))
   if (payload.priceVersion !== undefined) body.append('price_version', String(payload.priceVersion))
+  if (payload.colorRef !== undefined) body.append('color_ref', String(payload.colorRef))
   for (const file of payload.files || []) {
     body.append('files', file)
   }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
-import { ArrowRight, AudioLines, Check, Clock3, Download, Eye, FolderOpen, ImagePlus, Layers, Loader2, Mic, Plus, RectangleHorizontal, RectangleVertical, Sparkles, Square, X } from 'lucide-react'
+import { ArrowRight, AudioLines, Check, Clock3, Download, Eye, FolderOpen, ImagePlus, Layers, Loader2, Mic, Palette, Plus, RectangleHorizontal, RectangleVertical, Sparkles, Square, X } from 'lucide-react'
 import { getGenerationConfig, listToolRuns, resolveToolMediaUrl, runStudioTool, type ToolRunRecord } from '../api/tools'
 import BillingErrorNotice from '../components/billing/BillingErrorNotice'
 import GenerationLayout from '../components/tools/GenerationLayout'
@@ -38,6 +38,25 @@ function GenerationWorkspace({ kind }: { kind: MediaKind }) {
   // 图片生成：从资产库选的参考图（与上传文件合计计入参考上限）
   const imageAssets = useImageReferenceAssets(kind === 'image')
   const [assetPickerOpen, setAssetPickerOpen] = useState(false)
+  // 自动校色的色板：资产按 id、上传文件按对象引用（移除别的文件不会错位）
+  const [colorRef, setColorRef] = useState<{ kind: 'asset'; id: number } | { kind: 'file'; file: File } | null>(null)
+  const presetColorAssetId = imageAssets.presetColorAssetId
+  useEffect(() => { if (presetColorAssetId) setColorRef({ kind: 'asset', id: presetColorAssetId }) }, [presetColorAssetId])
+  /** 色板在提交时的参考序号：资产在前、上传在后；色板已被移除则不校色 */
+  function colorRefIndex(): number | undefined {
+    if (!colorRef) return undefined
+    if (colorRef.kind === 'asset') {
+      const i = imageAssets.assets.findIndex(item => item.id === colorRef.id)
+      return i >= 0 ? i : undefined
+    }
+    const i = files.indexOf(colorRef.file)
+    return i >= 0 ? imageAssets.assets.length + i : undefined
+  }
+  /** 切换某张参考图为色板（再点取消） */
+  function toggleColorRef(next: { kind: 'asset'; id: number } | { kind: 'file'; file: File }) {
+    setColorRef(current => current && current.kind === next.kind
+      && (next.kind === 'asset' ? current.kind === 'asset' && current.id === next.id : current.kind === 'file' && current.file === next.file) ? null : next)
+  }
   // 每种视频模式保留各自素材，切换模式不会把首帧误当普通参考或丢失选择。
   const [videoMode, setVideoMode] = useState<VideoGenerationMode>('text_to_video')
   const [videoReferences, setVideoReferences] = useState<Record<VideoGenerationMode, GenerationReference[]>>({ text_to_video: [], first_last_frame: [], omni_reference: [] })
@@ -182,7 +201,8 @@ function GenerationWorkspace({ kind }: { kind: MediaKind }) {
       const result = await runStudioTool({ toolId: kind === 'audio' ? 'audio' : kind === 'video' ? 't2v' : imageRefCount ? 'i2i' : 't2i',
         prompt, files: kind === 'video' ? serializedReferences.files : files, ratio, duration, voice, modelId: model, resolution,
         ...(kind === 'video' ? { videoMode, references: serializedReferences.references, priceVersion: quote?.price_version ?? 0 } : {}),
-        ...(kind === 'image' && imageAssets.references.length ? { references: imageAssets.references } : {}) })
+        ...(kind === 'image' && imageAssets.references.length ? { references: imageAssets.references } : {}),
+        ...(kind === 'image' && colorRefIndex() !== undefined ? { colorRef: colorRefIndex() } : {}) })
       setNotice(text(`任务 ${result.task_id} 已提交，离开页面后仍会继续生成。`, `Task ${result.task_id} queued. Generation continues after you leave.`))
       setRevision(value => value + 1)
     } catch (err) { setError(err instanceof Error ? err.message : text('提交失败', 'Submission failed')) }
@@ -224,14 +244,16 @@ function GenerationWorkspace({ kind }: { kind: MediaKind }) {
         {kind === 'image' && <div className={`gen-references ${files.length + imageAssets.assets.length ? 'has-files' : ''}`}>
           <span className="gen-ref-count"><ImagePlus size={14} />{files.length + imageAssets.assets.length}/{referenceImageLimit}</span>
           <div className="gen-ref-grid">
-            {imageAssets.assets.map(asset => <div className="gen-ref-item" key={`asset-${asset.id}`} title={asset.name || ''}>
+            {imageAssets.assets.map(asset => { const isColor = colorRef?.kind === 'asset' && colorRef.id === asset.id; return <div className={`gen-ref-item ${isColor ? 'is-color-ref' : ''}`} key={`asset-${asset.id}`} title={asset.name || ''}>
               <img src={resolveToolMediaUrl(asset.cover || asset.url)} alt={asset.name || text('资产参考图', 'Asset reference')} />
+              <button type="button" className="gen-ref-color" aria-pressed={isColor} title={text('设为自动校色的色板（以这张图的颜色为准）', 'Use as color reference')} onClick={() => toggleColorRef({ kind: 'asset', id: asset.id })}><Palette size={12} />{isColor ? text('色板', 'Color') : ''}</button>
               <button type="button" aria-label={text('移除参考资产', 'Remove asset')} onClick={() => imageAssets.remove(asset.id)}><X size={13} /></button>
-            </div>)}
-            {previews.map((url, index) => <div className="gen-ref-item" key={url}>
+            </div> })}
+            {previews.map((url, index) => { const isColor = colorRef?.kind === 'file' && colorRef.file === files[index]; return <div className={`gen-ref-item ${isColor ? 'is-color-ref' : ''}`} key={url}>
               <img src={url} alt={text('参考图', 'Reference')} />
+              <button type="button" className="gen-ref-color" aria-pressed={isColor} title={text('设为自动校色的色板（以这张图的颜色为准）', 'Use as color reference')} onClick={() => files[index] && toggleColorRef({ kind: 'file', file: files[index] })}><Palette size={12} />{isColor ? text('色板', 'Color') : ''}</button>
               <button type="button" aria-label={text('移除参考文件', 'Remove reference')} onClick={() => setFiles(items => items.filter((_, i) => i !== index))}><X size={13} /></button>
-            </div>)}
+            </div> })}
             {files.length + imageAssets.assets.length < referenceImageLimit && <button type="button" className="gen-upload" onClick={() => setAssetPickerOpen(true)}>
               <FolderOpen size={22} /><span>{text('从资产库选择', 'From library')}</span>
             </button>}
@@ -240,6 +262,9 @@ function GenerationWorkspace({ kind }: { kind: MediaKind }) {
               <Plus size={24} /><span>{text('选择参考图', 'Add reference')}</span>
             </button>}
           </div>
+          {files.length + imageAssets.assets.length > 0 && <p className="gen-ref-hint">{colorRef
+            ? text('已开启自动校色：生成后按「色板」图的颜色校正商品颜色，原图会一并保留。', 'Auto color match on: product colors will be matched to the color reference.')
+            : text('点参考图左上角的调色板，把商品图设为「色板」，生成后自动校正色差。', 'Tap the palette icon on a reference to auto-match product colors.')}</p>}
           <input type="file" hidden ref={upload} multiple accept="image/png,image/jpeg,image/webp" onChange={event => { pickFiles(Array.from(event.target.files || [])); event.target.value = '' }} />
           <ToolReferenceAssetPicker open={assetPickerOpen} onClose={() => setAssetPickerOpen(false)} allowedKinds={['image']} multiple
             onPick={items => {

@@ -147,6 +147,7 @@ async def run_image_tool(
     pack: str | None,
     files: list[Path],
     output_no: int | None = None,
+    color_ref: Path | None = None,
 ) -> dict:
     ark = get_ark()
     size = ratio_to_size(ratio)
@@ -203,9 +204,32 @@ async def run_image_tool(
         extra_raw={"tool_id": tool_id},
     )
     url = result.local_url or result.remote_url or ""
+    extra: dict = {}
+    if url and color_ref is not None:
+        url, extra = await _apply_color_match(user.id, url, color_ref)
     if url:
         url = ensure_public_url(url) or url
-    return {"kind": "image", "urls": [url], "status": "succeeded"}
+    return {"kind": "image", "urls": [url], "status": "succeeded", **extra}
+
+
+async def _apply_color_match(user_id: int, url: str, color_ref: Path) -> tuple[str, dict]:
+    """按参考图色板自动校色：成功返回新图地址与统计；失败或画面里没有商品颜色时保留原图。"""
+    import asyncio
+
+    from app.services.color_match import match_colors_file
+
+    try:
+        src = storage.local_path_from_url(url)
+        if src is None or not src.exists():
+            src = await storage.ensure_local_media(url, tools_dir(user_id) / f"cm_src_{uuid.uuid4().hex[:8]}.png")
+        out = tools_dir(user_id) / f"cm_{uuid.uuid4().hex[:12]}.png"
+        stats = await asyncio.to_thread(match_colors_file, src, color_ref, out)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("自动校色失败，保留原图: %s", exc)
+        return url, {"color_match": {"applied": False, "error": str(exc)[:200]}}
+    if not stats.get("applied"):
+        return url, {"color_match": stats}
+    return storage.rel_static_url(out), {"color_match": stats, "original_url": ensure_public_url(url) or url}
 
 
 async def poll_image_tool_task(db: AsyncSession, user: User, task_id: str) -> dict:

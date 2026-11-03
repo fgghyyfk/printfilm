@@ -81,6 +81,14 @@ async def enqueue_generation(db, user, *, tool_id: str, prompt: str, params: dic
             "status": "queued", "run_id": row.id, "message": "任务已排队，可在我的任务中查看进度"}
 
 
+def _color_ref_file(params: dict, files: list[Path]) -> Path | None:
+    """自动校色的色板参考：color_match_ref 是参考文件序号（资产在前、上传在后）。"""
+    idx = params.get("color_match_ref")
+    if isinstance(idx, int) and 0 <= idx < len(files):
+        return files[idx]
+    return None
+
+
 async def execute_generation(task: TaskRun) -> dict:
     async with AsyncSessionLocal() as db:
         row = await db.get(ToolRun, int((task.payload or {}).get("run_id") or 0))
@@ -130,12 +138,15 @@ async def execute_generation(task: TaskRun) -> dict:
             data = await run_image_tool(db, user, tool_id=row.tool_id, prompt=row.prompt,
                 negative=str(params.get("negative") or ""), ratio=params.get("ratio"),
                 strength=params.get("strength"), mode=params.get("mode"), pack=params.get("pack"),
-                files=files, output_no=row.id)
+                files=files, output_no=row.id, color_ref=_color_ref_file(params, files))
         urls = ensure_public_urls(data.get("urls"))
         if not urls or not all(urls):
             raise RuntimeError("上游未返回生成结果")
         row.urls = urls
         row.preview_url = urls[0] if row.kind == "image" else row.preview_url
+        if data.get("color_match") is not None:
+            row.params = {**(row.params or {}), "color_match": data["color_match"],
+                          **({"original_url": data["original_url"]} if data.get("original_url") else {})}
         # Persist result before executor finalization, so recovery cannot regenerate it.
         stored_task.result_payload = {"ok": True, **data, "urls": urls}
         await db.commit()

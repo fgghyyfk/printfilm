@@ -43,5 +43,7 @@ export function useImageReferenceAssets(enabled: boolean) {
   }
 
   const references = useMemo(() => assets.map(item => ({ role: 'reference_image' as const, asset_id: item.id })), [assets])
-  return { assets, add, remove, references }
+  // 链接里的 color_ref=资产 id：预选为自动校色的色板
+  const presetColorAssetId = parseRefAssetIds(searchParams.get('color_ref'))[0] ?? null
+  return { assets, add, remove, references, presetColorAssetId }
 }

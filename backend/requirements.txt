@@ -19,4 +19,6 @@ oss2==2.19.1
 # 授权函 PDF。reportlab 会一并使用 Pillow。
 reportlab==4.4.4
 Pillow==11.3.0
+# 生成图自动校色（color_match）
+numpy==2.2.6
 # Optional: pip install "volcengine-python-sdk[ark]" if you prefer official SDK
