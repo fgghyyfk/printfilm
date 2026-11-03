@@ -1081,8 +1081,9 @@ class ArkGateway:
                 "response_format": "url", "watermark": False,
             }
             refs = list(dict.fromkeys([*(subject_refs or []), *(style_refs or [])]))
-            # 本地 /static 参考图方舟拉不到（未开 OSS 时常见），转成 data URI；https 原样保留
-            refs = [await self._resolve_image_ref(ref) for ref in refs]
+            # 本地 /static 参考图方舟拉不到（未开 OSS 时常见）：有 https 公网站点时给公网地址让方舟自取，
+            # 否则转 data URI；https 原样保留
+            refs = [await self._native_image_ref(ref) for ref in refs]
             if refs:
                 body["image"] = refs[0] if len(refs) == 1 else refs
         # 2.5 的渠道是 image-generation，走 /responses 会报 default 分组无 distributor
@@ -2222,6 +2223,16 @@ class ArkGateway:
             capture_output=True,
             check=False,
         )
+
+    async def _native_image_ref(self, image_url: str) -> str:
+        """方舟原生生图参考图：本地 /static 文件优先转站点 https 公网地址（请求体小、不怕上传超时），否则交给通用解析。"""
+        raw = (image_url or "").strip()
+        base = (self.settings.public_base_url or "").strip()
+        if raw.startswith("/static/") and base.startswith("https://"):
+            local = storage.local_path_from_url(raw)
+            if local and local.exists():
+                return storage.to_public_url(raw)
+        return await self._resolve_image_ref(raw)
 
     async def _resolve_image_ref(self, image_url: str, *, prefer_https: bool = False) -> str:
         raw = (image_url or "").strip()
