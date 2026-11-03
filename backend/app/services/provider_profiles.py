@@ -8,9 +8,12 @@ from app.schemas_routing import (
 from app.services.media_model_presets import all_preset_channel_models, clamp_default_to_preset
 
 TOKENFREE_BASE = 'https://www.tokenfree.com/v1'
+# Ark 原生协议的官方区域：BytePlus（国际站）与火山方舟（国内站）接口一致
+VOLC_ARK_BEIJING = 'https://ark.cn-beijing.volces.com/api/v3'
 BYTEPLUS_BASES = {
     'https://ark.ap-southeast.bytepluses.com/api/v3',
     'https://ark.eu-west.bytepluses.com/api/v3',
+    VOLC_ARK_BEIJING,
 }
 CAPABILITIES = ('text', 'image', 'video', 'audio')
 
@@ -35,7 +38,7 @@ def normalize_profiles(items: list[SystemModelChannelIn]) -> list[SystemModelCha
         base = item.base_url.strip().rstrip('/')
         if advanced.provider == 'byteplus':
             if base not in BYTEPLUS_BASES:
-                raise ValueError('BytePlus 接口地址必须选择官方区域')
+                raise ValueError('BytePlus / 火山方舟接口地址必须选择官方区域')
             if advanced.audio_model:
                 raise ValueError('BytePlus 暂不支持独立配音模型')
             models = [getattr(advanced, cap+'_model').strip() for cap in CAPABILITIES]
