@@ -288,9 +288,10 @@ async def _after_regen(project_id: int) -> None:
 
 
 async def _record_avatar_usage(project_id: int, shot_id: int, seconds: float) -> None:
-    """按成片秒数记账（后台单价为 0 时不记）。"""
-    price = int(get_settings().avatar_price_fen_per_sec or 0)
-    if price <= 0 or seconds <= 0:
+    """按成片秒数和清晰度记账（后台单价为 0 时不记）。"""
+    from app.services.kepu_avatar_billing import avatar_price_fen_per_sec
+
+    if seconds <= 0:
         return
     try:
         from app.services.billing import record_line
@@ -298,6 +299,9 @@ async def _record_avatar_usage(project_id: int, shot_id: int, seconds: float) ->
         async with AsyncSessionLocal() as db:
             project = await db.get(Project, project_id)
             if not project:
+                return
+            price = avatar_price_fen_per_sec(get_settings(), getattr(project, "avatar_resolution", None))
+            if price <= 0:
                 return
             await record_line(db, user_id=project.user_id, billing_key="avatar_video", provider="avatar",
                               raw={"cost_fen": int(round(seconds * price)), "seconds": round(seconds, 2)},
@@ -311,7 +315,9 @@ def estimate_videos_fen(project: Project) -> int:
     """视频阶段预扣：未完成段的配音秒数 × 单价（无配音时按 15 秒/段估）。"""
     from app.services.kepu_stages import shot_video_ready
 
-    price = int(get_settings().avatar_price_fen_per_sec or 0)
+    from app.services.kepu_avatar_billing import avatar_price_fen_per_sec
+
+    price = avatar_price_fen_per_sec(get_settings(), getattr(project, "avatar_resolution", None))
     if price <= 0:
         return 0
     secs = sum(float(s.duration or 15.0) for s in (project.shots or []) if not shot_video_ready(s))

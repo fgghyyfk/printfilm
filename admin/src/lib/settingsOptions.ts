@@ -54,7 +54,8 @@ export const AVATAR_POLL_INTERVAL_OPTIONS = numberOptions([5, 10, 15, 30, 60], "
 export const AVATAR_POLL_TIMEOUT_OPTIONS = numberOptions([3600, 7200, 14400, 21600, 28800], "", {
   3600: "1 小时", 7200: "2 小时", 14400: "4 小时", 21600: "6 小时", 28800: "8 小时",
 });
-export const AVATAR_PRICE_OPTIONS = numberOptions([0, 1, 2, 3, 5, 8, 10, 15, 20], " 分/秒", { 0: "0（不收费）" });
+export const AVATAR_PRICE_OPTIONS = numberOptions([0, 5, 10, 15, 20, 25, 28, 30, 35, 40, 45, 50, 52, 55, 60, 80, 100], " 分/秒", { 0: "0（不收费）" });
+export const AVATAR_PRICE_720P_OPTIONS = numberOptions([0, 20, 30, 40, 45, 50, 52, 55, 60, 70, 80, 90, 100, 150], " 分/秒", { 0: "0（按 480p × 1.8）" });
 export const AVATAR_AI_BASE_OPTIONS: SelectOption<string>[] = [
   { value: "https://promptoll.com/v1", label: "promptoll（https://promptoll.com/v1）" },
 ];

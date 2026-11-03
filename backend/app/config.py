@@ -86,6 +86,8 @@ class Settings(BaseSettings):
     avatar_segment_max_sec: int = 20
     # 计费：每秒成片预扣/结算的分（自建 GPU 默认 0）
     avatar_price_fen_per_sec: int = 0
+    # 720p 成片单价（分/秒）；0 表示按 480p 单价 × 1.8
+    avatar_price_fen_per_sec_720p: int = 0
     # 数字人形象/场景/文案：OpenAI 兼容服务（默认 promptoll），与主流水线的 TokenFree 渠道互不影响
     avatar_ai_base_url: str = "https://promptoll.com/v1"
     avatar_ai_api_key: str = ""

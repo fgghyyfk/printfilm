@@ -228,7 +228,9 @@ async def estimate_task_fen(db: AsyncSession, task: TaskRun, settings: Settings 
             project_id = task.project_id or payload.get("project_id")
             project = await db.get(Project, int(project_id)) if project_id else None
             if project is not None and (getattr(project, "pipeline_mode", "") or "") == "avatar":
-                return max(1, int(round(max(dur, 2.0) * int(s.avatar_price_fen_per_sec or 0))))
+                from app.services.kepu_avatar_billing import avatar_price_fen_per_sec
+
+                return max(1, int(round(max(dur, 2.0) * avatar_price_fen_per_sec(s, getattr(project, "avatar_resolution", None)))))
             c = charge_fen_official_video(
                 max(dur, 2.0),
                 s,
@@ -253,7 +255,9 @@ async def estimate_task_fen(db: AsyncSession, task: TaskRun, settings: Settings 
             if project is not None:
                 return estimate_auto_fen(project, s)
             llm = charge_fen_official_llm(s.billing_est_llm_tokens, s)
-            return _buffered_fen(llm, s) + 60 * int(s.avatar_price_fen_per_sec or 0)
+            from app.services.kepu_avatar_billing import avatar_price_fen_per_sec
+
+            return _buffered_fen(llm, s) + 60 * avatar_price_fen_per_sec(s)
         if task_type in {"avatar_look", "avatar_scene"}:
             # 定妆照 / 单段场景重画：按所选改图模型的张价
             from app.services.billing.pricing import user_charge_fen

@@ -61,6 +61,7 @@ class AdminModelSettingsOut(BaseModel):
     avatar_poll_timeout: float = 14400.0
     avatar_segment_max_sec: int = 20
     avatar_price_fen_per_sec: int = 0
+    avatar_price_fen_per_sec_720p: int = 0
     avatar_ai_base_url: str = "https://promptoll.com/v1"
     avatar_ai_api_key: str = ""
     has_avatar_ai_api_key: bool = False
@@ -199,6 +200,7 @@ class AdminModelSettingsPatch(BaseModel):
     avatar_poll_timeout: float | None = Field(default=None, ge=600, le=86400)
     avatar_segment_max_sec: int | None = Field(default=None, ge=6, le=30)
     avatar_price_fen_per_sec: int | None = Field(default=None, ge=0, le=10000)
+    avatar_price_fen_per_sec_720p: int | None = Field(default=None, ge=0, le=10000)
     avatar_ai_base_url: str | None = None
     avatar_ai_api_key: str | None = None
     clear_avatar_ai_api_key: bool = False
@@ -332,6 +334,7 @@ def model_config_field_names() -> tuple[str, ...]:
         "avatar_poll_timeout",
         "avatar_segment_max_sec",
         "avatar_price_fen_per_sec",
+        "avatar_price_fen_per_sec_720p",
         "avatar_ai_base_url",
         "avatar_ai_api_key",
         "avatar_image_model",

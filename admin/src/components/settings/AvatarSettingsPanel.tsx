@@ -17,6 +17,7 @@ import {
   AVATAR_POLL_INTERVAL_OPTIONS,
   AVATAR_POLL_TIMEOUT_OPTIONS,
   AVATAR_PRICE_OPTIONS,
+  AVATAR_PRICE_720P_OPTIONS,
   AVATAR_SEGMENT_OPTIONS,
   AVATAR_TEXT_MODEL_OPTIONS,
   VOLC_INSTRUCTION_OPTIONS,
@@ -64,6 +65,7 @@ export function AvatarSettingsPanel() {
         avatar_poll_timeout: Number(form.avatar_poll_timeout),
         avatar_segment_max_sec: Number(form.avatar_segment_max_sec),
         avatar_price_fen_per_sec: Number(form.avatar_price_fen_per_sec),
+        avatar_price_fen_per_sec_720p: Number(form.avatar_price_fen_per_sec_720p ?? 0),
         avatar_ai_base_url: form.avatar_ai_base_url.trim(),
         avatar_ai_api_key: aiKeyInput.trim() || undefined,
         clear_avatar_ai_api_key: clearAiKey,
@@ -218,8 +220,11 @@ export function AvatarSettingsPanel() {
             <LabeledControl label="单段超时（秒）" hint="含排队时间，默认 4 小时">
               <SettingsSelect value={form.avatar_poll_timeout} options={AVATAR_POLL_TIMEOUT_OPTIONS} onChange={(v) => patchField("avatar_poll_timeout", v)} />
             </LabeledControl>
-            <LabeledControl label="单价（分/秒成片）" hint="自建 GPU 默认 0 不收费；开启计费时按成片秒数扣费">
+            <LabeledControl label="480p 单价（分/秒成片）" hint="成本口径，结算时再乘计费加价倍率；0 表示不收费">
               <SettingsSelect value={form.avatar_price_fen_per_sec} options={AVATAR_PRICE_OPTIONS} onChange={(v) => patchField("avatar_price_fen_per_sec", v)} />
+            </LabeledControl>
+            <LabeledControl label="720p 单价（分/秒成片）" hint="0 表示按 480p 单价 × 1.8">
+              <SettingsSelect value={form.avatar_price_fen_per_sec_720p ?? 0} options={AVATAR_PRICE_720P_OPTIONS} onChange={(v) => patchField("avatar_price_fen_per_sec_720p", v)} />
             </LabeledControl>
           </div>
         </SettingsPanel>
