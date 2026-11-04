@@ -2,7 +2,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   ChevronRight, CircleHelp, Clapperboard, CreditCard, House, Mic,
-  Menu, Plus, Store,
+  Menu, Plus, ShoppingBag, Store,
   Video, Workflow, X,
 } from 'lucide-react'
 import { api } from '../../api'
@@ -29,6 +29,7 @@ const NAV_ICONS = {
   drama: Clapperboard,
   canvas: Workflow,
   kepu: Video,
+  image: ShoppingBag,
   pricing: CreditCard,
 }
 

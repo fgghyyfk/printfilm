@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { Clapperboard, PanelsTopLeft, Video, Mic } from 'lucide-react'
+import { Clapperboard, PanelsTopLeft, Video, Mic, ShoppingBag } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { SHORT_VIDEO_CREATE_PATH } from '../../lib/shortVideoRoutes'
 import Modal from './Modal'
@@ -9,7 +9,7 @@ type Props = {
   onClose: () => void
 }
 
-/** 开始创作：选择漫剧、自由画布或短视频。 */
+/** 开始创作：选择漫剧、自由画布、数字人口播、短视频或电商图。 */
 export default function CreateChoiceModal({ open, onClose }: Props) {
   const nav = useNavigate()
   const { t } = useI18n()
@@ -51,6 +51,13 @@ export default function CreateChoiceModal({ open, onClose }: Props) {
           </span>
           <strong>{t('create.kepu')}</strong>
           <span className="pf-muted">{t('create.kepuHint')}</span>
+        </button>
+        <button type="button" className="pf-create-choice-card" onClick={() => go('/tools/image')}>
+          <span className="pf-ws-product-icon" aria-hidden>
+            <ShoppingBag size={24} strokeWidth={1.6} />
+          </span>
+          <strong>{t('create.ecom')}</strong>
+          <span className="pf-muted">{t('create.ecomHint')}</span>
         </button>
       </div>
     </Modal>

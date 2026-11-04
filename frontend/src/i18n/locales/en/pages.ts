@@ -10,6 +10,7 @@ export const enPages = {
     sub2: 'Voice, lip sync, and title bar — one finished video.',
     start: 'Make one now',
     trial: 'Sign up free',
+    ecom: 'Product images',
     winTitle: 'KaiKou · Talking head',
     winStatus: 'Rendering',
     winSteps: ['Photo', 'Script', 'Voice', 'Lip sync', 'Compose'],

@@ -10,6 +10,7 @@ export const zhPages = {
     sub2: '配音、对口型、标题条，一次出成片。',
     start: '立即制作',
     trial: '注册试用',
+    ecom: '做电商图',
     winTitle: '开口播 · 数字人口播',
     winStatus: '生成中',
     winSteps: ['上传照片', '口播稿', '配音', '对口型', '合成'],

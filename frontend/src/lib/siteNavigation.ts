@@ -11,6 +11,7 @@ export const CREATION_NAV = [
   { key: 'drama', path: '/drama', label: 'nav.drama' },
   { key: 'canvas', path: '/canvas', label: 'nav.canvas' },
   { key: 'kepu', path: SHORT_VIDEO_LIST_PATH, label: 'nav.kepu' },
+  { key: 'image', path: '/tools/image', label: 'nav.ecom' },
 ] as const
 
 export const RESOURCE_NAV = [
