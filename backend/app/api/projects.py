@@ -276,6 +276,7 @@ async def create_project(
         source_text=body.source_text,
         resolution_mode=body.resolution_mode,
         pipeline_mode=body.pipeline_mode,
+        auto_advance=body.auto_advance and body.pipeline_mode != "avatar",
         output_ratio=(body.output_ratio or "").strip(),
         voice_id=(body.voice_id or "").strip(),
         # 空则生成时读后台模板；不在创建时拷贝，避免后台改模板对已有项目不生效
@@ -579,6 +580,7 @@ async def generate_project(
     elif phase == "videos":
         project.status = ProjectStatus.VIDEOING
         project.progress = max(project.progress or 0, 55)
+    project.auto_chain_id = uuid4().hex if project.auto_advance and project.pipeline_mode != "avatar" else None
     try:
         await create_task(
             db,
@@ -590,6 +592,7 @@ async def generate_project(
                 payload={
                     "project_id": project_id,
                     "restart": bool(restart),
+                    "auto_chain_id": project.auto_chain_id,
                     "phase": phase,
                     "pipeline_mode": project.pipeline_mode or "full",
                 },

@@ -1042,8 +1042,14 @@ async def count_active_tasks_for_user(
 
 async def cancel_task_for_user(db: AsyncSession, user: User, task_id: int) -> TaskRun:
     task = await get_task_for_user(db, user, task_id)
+    from app.services.kepu_auto import cancel_auto_chain_for_task
+
+    chain_stopped = await cancel_auto_chain_for_task(db, task)
     if not task.cancelable:
         raise ValueError("任务不支持取消")
+    if task.status in TERMINAL_TASK_STATUSES and chain_stopped:
+        await db.commit()
+        return task
     if task.status in TERMINAL_TASK_STATUSES:
         raise ValueError("任务已结束，不能取消")
     task.cancel_requested = True
@@ -1124,6 +1130,10 @@ async def cancel_tasks_for_scope(
     drama_project_id: int | None = None,
     episode_id: int | None = None,
 ) -> list[TaskRun]:
+    if project_id is not None:
+        from app.services.kepu_auto import stop_auto_chain
+
+        await stop_auto_chain(db, project_id)
     filters = [
         TaskRun.requested_by == user_id,
         TaskRun.status.in_(tuple(ACTIVE_TASK_STATUSES)),
@@ -1241,8 +1251,14 @@ async def list_tasks_admin(
 async def cancel_task_admin(db: AsyncSession, task_id: int) -> TaskRun:
     """Cancel any task as admin."""
     task = await get_task_admin(db, task_id)
+    from app.services.kepu_auto import cancel_auto_chain_for_task
+
+    chain_stopped = await cancel_auto_chain_for_task(db, task)
     if not task.cancelable:
         raise ValueError("任务不支持取消")
+    if task.status in TERMINAL_TASK_STATUSES and chain_stopped:
+        await db.commit()
+        return task
     if task.status in TERMINAL_TASK_STATUSES:
         raise ValueError("任务已结束，不能取消")
     task.cancel_requested = True

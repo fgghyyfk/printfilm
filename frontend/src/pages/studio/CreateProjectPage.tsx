@@ -194,6 +194,7 @@ export default function CreateProjectPage() {
   const [titleTouched, setTitleTouched] = useState(false)
   const [inspPage, setInspPage] = useState(0)
   const [busy, setBusy] = useState(false)
+  const [autoAdvance, setAutoAdvance] = useState(false)
   const [aiBusy, setAiBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -294,6 +295,7 @@ export default function CreateProjectPage() {
         source_text: sourceText.trim(),
         resolution_mode: 'preview',
         pipeline_mode,
+        auto_advance: pipeline_mode !== 'avatar' && autoAdvance,
         output_ratio: d?.output_ratio || '16:9',
         voice_id: d?.voice_id,
       })
@@ -488,6 +490,12 @@ export default function CreateProjectPage() {
             <span>输入方式</span>
             <span>{inputTab}</span>
           </div>
+          {params.get('mode') !== 'avatar' ? (
+            <label className="pf-field" style={{ marginTop: '1rem' }}>
+              <span><input type="checkbox" checked={autoAdvance} onChange={(e) => setAutoAdvance(e.target.checked)} /> 全自动生成到成片</span>
+              <small>逐阶段自动预扣和结算，余额不足暂停；首阶段报价不是整片总价，可随时请求取消。</small>
+            </label>
+          ) : null}
           <button
             type="button"
             className="pf-btn pf-btn-lime pf-btn-block pf-btn-lg pf-btn-icon"

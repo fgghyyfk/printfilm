@@ -115,6 +115,9 @@ class Project(Base):
     # avatar = 数字人口播：一张半身照 + 逐段配音 → 自建 GPU 对口型视频 → 标题条合成
     # 由用户选择，不由模板锁定
     pipeline_mode: Mapped[str] = mapped_column(String(32), default="full")
+    # 明确授权逐阶段自动预扣；取消时撤销当前链，默认仍逐步确认。
+    auto_advance: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    auto_chain_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     # 商品带货：关联的电商套图（ecom_sets.id）；有值时写稿阶段按套图建分镜
     ecom_set_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     # 显式新建另一条带货视频的幂等键，不由普通项目编辑接口写入。

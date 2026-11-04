@@ -160,6 +160,7 @@ class ProjectCreate(BaseModel):
     source_text: str = Field(min_length=2, max_length=20000)
     resolution_mode: str = Field(default="preview", pattern="^(preview|hd)$")
     pipeline_mode: str = Field(default="full", pattern="^(full|image_text|avatar)$")
+    auto_advance: bool = False
     output_ratio: str | None = Field(
         default=None,
         pattern=r"^(16:9|9:16|1:1|4:3|21:9)?$",
@@ -183,6 +184,7 @@ class ProjectUpdate(BaseModel):
     source_text: str | None = Field(default=None, min_length=2, max_length=20000)
     template_id: str | None = None
     pipeline_mode: str | None = Field(default=None, pattern="^(full|image_text|avatar)$")
+    auto_advance: bool | None = None
     output_ratio: str | None = Field(
         default=None,
         pattern=r"^(16:9|9:16|1:1|4:3|21:9)$",
@@ -223,6 +225,7 @@ class ProjectOut(BaseModel):
     final_video_url: str | None
     resolution_mode: str
     pipeline_mode: str = "full"
+    auto_advance: bool = False
     # 商品带货：关联套图 id
     ecom_set_id: int | None = None
     output_ratio: str = ""

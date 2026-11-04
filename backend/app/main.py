@@ -164,6 +164,8 @@ async def _apply_schema_patches() -> None:
         await conn.execute(text("ALTER TABLE shots ADD COLUMN IF NOT EXISTS tts_metadata JSON"))
         await conn.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS daihuo_request_id VARCHAR(64)"))
         await conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_projects_daihuo_request ON projects (user_id, ecom_set_id, daihuo_request_id)"))
+        await conn.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS auto_advance BOOLEAN NOT NULL DEFAULT false"))
+        await conn.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS auto_chain_id VARCHAR(32)"))
         scols = await _pg_columns(conn, "shots")
         await conn.execute(text("ALTER TABLE shots ADD COLUMN IF NOT EXISTS compliance_changes JSON DEFAULT '{}'"))
         await conn.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS compliance_changes JSON DEFAULT '{}'"))

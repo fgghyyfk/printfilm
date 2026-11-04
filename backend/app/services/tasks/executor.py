@@ -131,7 +131,13 @@ async def execute_task_run(task_id: int) -> None:
 
 
 # 把任务收敛到成功态。
-async def _complete_task(db, task, result: dict) -> None:
+async def _complete_task(db, task, result: dict, *, commit: bool = True, prepared=None, auto_handled: bool = False) -> None:
+    if (not auto_handled and task.domain == "kepu" and task.task_type in {"project_pipeline", "project_compose_only"}
+            and (task.payload or {}).get("auto_chain_id")):
+        from app.services.kepu_auto import complete_auto_stage
+
+        await complete_auto_stage(db, task, result)
+        return
     now = datetime.now(UTC)
     step = task.steps[0] if task.steps else None
     set_task_step_state(task, step, status="done", now=now)
@@ -151,10 +157,16 @@ async def _complete_task(db, task, result: dict) -> None:
         payload=result,
     )
     try:
-        await settle_task(db, task.id)
+        if prepared is not None:
+            await settle_task(db, task.id, prepared_settlements=prepared)
+        else:
+            await settle_task(db, task.id)
     except Exception:  # noqa: BLE001
+        if prepared is not None:
+            raise
         logger.exception("settle_task failed task_id=%s", task.id)
-    await db.commit()
+    if commit:
+        await db.commit()
 
 
 # 预扣阶段（handler 尚未执行）失败收敛：此时 _lock_task(populate_existing) 已卸掉
