@@ -1289,6 +1289,7 @@ async def submit_fragment_video_task(task: TaskRun) -> dict[str, Any]:
             next_payload["attempt_limit"] = max_attempts
             next_payload["prepared"] = serialize_fragment_video_prepared(prepared)
             next_payload["reference_snapshot"] = prepared.reference_snapshot
+            next_payload["video_input_snapshot"] = prepared.video_input_snapshot
             task_row.status = "pending"
             task_row.progress_percent = 25
             task_row.current_step_status = "prepared"
@@ -1361,6 +1362,7 @@ async def submit_fragment_video_task(task: TaskRun) -> dict[str, Any]:
         next_payload = dict(payload)
         next_payload.pop("prepared", None)
         next_payload["reference_snapshot"] = prepared.reference_snapshot
+        next_payload["video_input_snapshot"] = prepared.video_input_snapshot
         next_payload["nio_phase"] = "poll"
         next_payload["generation_attempts"] = attempts
         next_payload["attempt_limit"] = max_attempts
@@ -1646,6 +1648,7 @@ async def poll_fragment_video_task(task_id: int) -> None:
                     provider_task_id=task.provider_task_id,
                     model_id=str(payload.get("model_id") or "") or None,
                     reference_snapshot=payload.get("reference_snapshot") if isinstance(payload.get("reference_snapshot"), list) else None,
+                    video_input_snapshot=payload.get("video_input_snapshot") if isinstance(payload.get("video_input_snapshot"), dict) else None,
                     output_settings=payload if payload.get("resolution") and payload.get("aspect_ratio") else None,
                 )
                 # apply 已 commit：行锁复查。下载期间用户可能已取消（status=cancel_requested），

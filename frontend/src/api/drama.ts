@@ -150,6 +150,8 @@ export type SeedAssetsResult = {
 }
 
 export type DramaFragment = {
+  /** 仅页面本地身份，保存请求不发送。 */
+  clientKey?: string
   id: number
   episode_id: number
   sort_order: number
@@ -453,6 +455,7 @@ export const dramaApi = {
       cover: string
       lastFrameUrl?: string | null
       reference_snapshot?: Array<Record<string, unknown>> | null
+      video_input_snapshot?: { content: string; duration_sec: number } | null
       video_versions: Array<Record<string, unknown>>
     }>(`/api/drama/fragments/${fragmentId}/activate_video_version`, {
       method: 'POST',

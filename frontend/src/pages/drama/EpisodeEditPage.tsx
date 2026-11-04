@@ -9,9 +9,9 @@ import {
   type DramaFragment,
 } from '../../api/drama'
 import {
-  createFragmentEditSnapshot, duplicateEditableFragment, markFragmentDeleted,
-  mergeFragmentRuntime, saveFragmentsAfterSetting, type FragmentEditSnapshot,
+  duplicateEditableFragment, mergeFragmentRuntime,
 } from '../../lib/dramaFragmentEditing'
+import { createFragmentAutosave, type FragmentSaveState } from '../../lib/dramaFragmentAutosave'
 import { type ImageStyleId } from '../../lib/dramaImageStyles'
 import { selectedFragmentAssetIds, fragmentReferenceFreshness, fragmentReferenceStatusLabel } from '../../lib/dramaFragmentReferences'
 import {
@@ -152,13 +152,12 @@ function EpisodeEditInner() {
    * videoStyleId / modelId / aspectRatio 生成参数（UI）
    * busy / status / error 状态
    */
-  // 编辑快照只随完整采用的分镜列表推进，不能从设置响应或轮询借用版本。
-  const editSnapshot = useRef<FragmentEditSnapshot | null>(null)
   const [episode, setEpisode] = useState<DramaEpisode | null>(null)
   // complianceKey 已保存分镜签名：保存/重新分镜/重新加载后变化即自动做广告法检查
   const complianceKey = useMemo(() => episodeComplianceKey(episode), [episode])
   const [episodeList, setEpisodeList] = useState<DramaEpisode[]>([])
-  const [fragments, setFragments] = useState<DramaFragment[]>([])
+  const [fragments, setFragmentState] = useState<DramaFragment[]>([])
+  const [saveState, setSaveState] = useState<FragmentSaveState>({ dirty: false, saving: false, conflict: false })
   const [assets, setAssets] = useState<DramaAsset[]>([])
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [assetScope, setAssetScope] = useState<AssetScope>('episode')
@@ -205,6 +204,39 @@ function EpisodeEditInner() {
   >>(() => ({ episode_id: 0, done: 0, failed: 0, running: 0, total: 0, tasks: [], fragments: [] }))
   const projectParamsRef = useRef<Record<string, unknown>>({})
   const episodeParamsRef = useRef<Record<string, unknown>>({})
+
+  const autosave = useMemo(() => createFragmentAutosave({
+    persist: (rows, snapshot) => dramaApi.saveFragments(eid, rows.map((row, index) => ({
+      ...row, id: row.id > 0 ? row.id : undefined, sort_order: index,
+      duration_sec: resolveFragmentDurationSec(row.content, row.duration_sec),
+      params: { ...row.params, user_edited: true },
+    })), snapshot),
+    onRows: setFragmentState,
+    onSaved: setEpisode,
+    onState: setSaveState,
+    onError: (err) => setError(err instanceof Error ? err.message : '保存失败'),
+  }), [eid])
+  // 自动保存不把尚未重生的视频当成最新创作输入；旧视频保留本页初载基线。
+  const videoBaselines = useRef(new Map<number, DramaFragment>())
+  function rememberVideoBaselines(rows: DramaFragment[], initial = false) {
+    if (initial) videoBaselines.current.clear()
+    for (const row of rows) {
+      if (row.video && (initial || videoBaselines.current.get(row.id)?.video !== row.video)) {
+        videoBaselines.current.set(row.id, structuredClone(row))
+      }
+    }
+  }
+  const currentEditor = useRef(autosave)
+  currentEditor.current = autosave
+  const setFragments = (update: DramaFragment[] | ((rows: DramaFragment[]) => DramaFragment[])) => autosave.runtime(update)
+  const editFragments = (update: DramaFragment[] | ((rows: DramaFragment[]) => DramaFragment[])) => autosave.edit(update)
+  useEffect(() => { autosave.activate(); return () => autosave.dispose() }, [autosave])
+  useEffect(() => {
+    if (!saveState.dirty && !saveState.saving) return
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [saveState.dirty, saveState.saving])
 
   useEffect(() => {
     // 目录到达后，把旧 Kie/方舟 id 换成后台默认视频模型
@@ -352,6 +384,7 @@ function EpisodeEditInner() {
     setProjectParams(nextParams)
     try {
       const updated = await dramaApi.updateProject(pid, { params: nextParams })
+      if (!autosave.isActive()) return
       const updatedParams =
         updated.params && typeof updated.params === 'object'
           ? (updated.params as Record<string, unknown>)
@@ -361,6 +394,7 @@ function EpisodeEditInner() {
       // 刷新本集任务态，让底部分镜条立刻反映串行/并行调整
       try {
         const ep = await dramaApi.getEpisode(eid)
+        if (!autosave.isActive()) return
         if (Array.isArray(ep.fragments)) setFragments((local) => mergeFragmentRuntime(local, ep.fragments))
       } catch {
         /* ignore refresh errors */
@@ -371,6 +405,7 @@ function EpisodeEditInner() {
           : '已关闭尾帧衔接：未开始的任务已恢复并可并发生成，进行中的任务不受影响',
       )
     } catch (err) {
+      if (!autosave.isActive()) return
       setLinkLastFrame(prevEnabled)
       setProjectParams(prevParams)
       setError(err instanceof Error ? err.message : '保存衔接设置失败')
@@ -404,15 +439,17 @@ function EpisodeEditInner() {
         cancelText: '取消',
         tone: generatedCount > 0 ? 'danger' : 'default',
       })
-      if (!ok) return
+      if (!ok || !autosave.isActive()) return
     }
 
     const prevParams = episodeParams
+    const outputEpoch = autosave.epoch()
     setEpisodeParams(nextParams)
     episodeParamsRef.current = nextParams
     setAspectRatio(nextRatio)
     try {
       const updated = await dramaApi.updateEpisode(eid, { params: nextParams })
+      if (!autosave.isActive()) return
       const updatedParams =
         updated.params && typeof updated.params === 'object' && !Array.isArray(updated.params)
           ? (updated.params as Record<string, unknown>)
@@ -428,7 +465,7 @@ function EpisodeEditInner() {
             : `已更新本集规格为 ${nextLabel}`,
         )
         setError('')
-        if (generatedCount > 0) {
+        if (generatedCount > 0 && autosave.epoch() === outputEpoch) {
           await generateAll({ forceRegen: true, skipConfirm: true })
         }
       } else if (generatedCount > 0) {
@@ -436,6 +473,7 @@ function EpisodeEditInner() {
         setStatus(`规格已按当前模型调整为 ${nextLabel}，已生成镜头需重生成才会按新规格出片`)
       }
     } catch (err) {
+      if (!autosave.isActive()) return
       setEpisodeParams(prevParams)
       episodeParamsRef.current = prevParams
       setAspectRatio(readEpisodeAspectRatio(prevParams, projectParams))
@@ -444,168 +482,61 @@ function EpisodeEditInner() {
     }
   }
 
-  // 持久化本集字幕方式，并动态改写当前分镜里的字幕提示词
-  async function handleEpisodeSubtitleChange(mode: DramaSubtitleMode) {
-    if (mode === subtitleMode) return
-    const prevParams = episodeParams
-    const prevFragments = fragments
-    const nextParams = {
-      ...episodeParams,
-      subtitleMode: mode,
-      subtitleEnabled: subtitleModeUsesModelOutput(mode),
-    }
-    const nextFragments = applySubtitleModeToFragments(fragments, mode)
-    // 与 nextFragments 同时捕获基线，用于迟到结果的状态归属判断。
-    const sourceSnapshot = editSnapshot.current
-    setSubtitleMode(mode)
+  // 设置与创作输入共享同一 epoch；等待设置时不提交旧的分镜快照。
+  async function saveContentSetting(nextParams: Record<string, unknown>, transform: (rows: DramaFragment[]) => DramaFragment[], message: string) {
+    const editor = autosave
+    const prevParams = episodeParamsRef.current
+    const prevRows = editor.rows()
+    const release = editor.hold()
+    editor.edit(transform)
+    const settingEpoch = editor.epoch()
+    setBusy(true)
     setEpisodeParams(nextParams)
     episodeParamsRef.current = nextParams
-    setFragments(nextFragments)
+    setSubtitleMode(readEffectiveSubtitleMode(nextParams, projectParamsRef.current))
+    setCharacterIntroMode(readEffectiveCharacterIntroMode(nextParams, projectParamsRef.current))
+    let settingSaved = false
     try {
-      const ep = await saveFragmentsAfterSetting(
-        editSnapshot,
-        async () => {
-          const updated = await dramaApi.updateEpisode(eid, { params: nextParams })
-          const updatedParams =
-            updated.params && typeof updated.params === 'object' && !Array.isArray(updated.params)
-              ? (updated.params as Record<string, unknown>)
-              : nextParams
-          if (editSnapshot.current !== sourceSnapshot) return
-          setEpisode(updated)
-          setEpisodeParams(updatedParams)
-          episodeParamsRef.current = updatedParams
-          setSubtitleMode(readEffectiveSubtitleMode(updatedParams, projectParamsRef.current))
-        },
-        async (snapshot) => {
-          const contentChanged = nextFragments.some(
-            (frag, index) => frag.content !== prevFragments[index]?.content,
-          )
-          if (!contentChanged) return null
-          return dramaApi.saveFragments(
-            eid,
-            nextFragments.map((f, i) => {
-              const prevFragParams =
-                f.params && typeof f.params === 'object' && !Array.isArray(f.params)
-                  ? (f.params as Record<string, unknown>)
-                  : {}
-              return {
-                id: typeof f.id === 'number' && f.id > 0 ? f.id : undefined,
-                sort_order: i,
-                content: f.content,
-                cover: f.cover,
-                video: f.video,
-                duration_sec: resolveFragmentDurationSec(f.content, f.duration_sec),
-                params: { ...prevFragParams, user_edited: true },
-                asset_ids: f.asset_ids || [],
-              }
-            }),
-            snapshot,
-          )
-        },
-      )
-      if (editSnapshot.current !== sourceSnapshot) return
-      if (ep) {
-        editSnapshot.current = createFragmentEditSnapshot(ep)
-        setEpisode(ep)
-        setFragments(ep.fragments || nextFragments)
-      }
-      setStatus(
-        mode === 'model'
-          ? '已切换为模型自出字幕，并补回分镜字幕提示词'
-          : '已切换为后期拼接字幕，并去掉分镜里的字幕提示词',
-      )
+      const updated = await dramaApi.updateEpisode(eid, { params: nextParams })
+      if (!editor.isActive() || currentEditor.current !== editor) return
+      settingSaved = true
+      const params = (updated.params || nextParams) as Record<string, unknown>
+      setEpisodeParams(params)
+      episodeParamsRef.current = params
+      release()
+      await editor.flush()
+      if (!editor.isActive()) return
+      setStatus(message)
       setError('')
     } catch (err) {
-      if (editSnapshot.current === sourceSnapshot) {
-        setSubtitleMode(readEffectiveSubtitleMode(prevParams, projectParamsRef.current))
+      if (!editor.isActive()) return
+      // 设置未保存时只回滚同一份稿；等待期间的新输入始终保留。
+      if (!settingSaved && editor.epoch() === settingEpoch) {
+        editor.edit(prevRows)
         setEpisodeParams(prevParams)
         episodeParamsRef.current = prevParams
-        setFragments(prevFragments)
+        setSubtitleMode(readEffectiveSubtitleMode(prevParams, projectParamsRef.current))
+        setCharacterIntroMode(readEffectiveCharacterIntroMode(prevParams, projectParamsRef.current))
       }
-      setError(err instanceof Error ? err.message : '本集字幕方式保存失败')
+      setError(err instanceof Error ? err.message : '设置保存失败')
+    } finally {
+      release()
+      if (editor.isActive()) setBusy(false)
     }
   }
 
-  // 持久化本集人物介绍叠字开关，并动态去掉当前分镜里的介绍行
+  async function handleEpisodeSubtitleChange(mode: DramaSubtitleMode) {
+    if (mode === subtitleMode) return
+    await saveContentSetting({ ...episodeParamsRef.current, subtitleMode: mode, subtitleEnabled: subtitleModeUsesModelOutput(mode) },
+      (rows) => applySubtitleModeToFragments(rows, mode),
+      mode === 'model' ? '已切换为模型自出字幕，并补回分镜字幕提示词' : '已切换为后期拼接字幕，并去掉分镜里的字幕提示词')
+  }
+
   async function handleEpisodeCharacterIntroChange(mode: DramaCharacterIntroMode) {
     if (mode === characterIntroMode) return
-    const prevParams = episodeParams
-    const prevFragments = fragments
-    const nextParams = {
-      ...episodeParams,
-      characterIntroMode: mode,
-      characterIntroEnabled: characterIntroModeEnabled(mode),
-    }
-    const nextFragments = applyCharacterIntroModeToFragments(fragments, mode)
-    // 与 nextFragments 同时捕获基线，用于迟到结果的状态归属判断。
-    const sourceSnapshot = editSnapshot.current
-    setCharacterIntroMode(mode)
-    setEpisodeParams(nextParams)
-    episodeParamsRef.current = nextParams
-    setFragments(nextFragments)
-    try {
-      const ep = await saveFragmentsAfterSetting(
-        editSnapshot,
-        async () => {
-          const updated = await dramaApi.updateEpisode(eid, { params: nextParams })
-          const updatedParams =
-            updated.params && typeof updated.params === 'object' && !Array.isArray(updated.params)
-              ? (updated.params as Record<string, unknown>)
-              : nextParams
-          if (editSnapshot.current !== sourceSnapshot) return
-          setEpisode(updated)
-          setEpisodeParams(updatedParams)
-          episodeParamsRef.current = updatedParams
-          setCharacterIntroMode(readEffectiveCharacterIntroMode(updatedParams, projectParamsRef.current))
-        },
-        async (snapshot) => {
-          const contentChanged = nextFragments.some(
-            (frag, index) => frag.content !== prevFragments[index]?.content,
-          )
-          if (!contentChanged) return null
-          return dramaApi.saveFragments(
-            eid,
-            nextFragments.map((f, i) => {
-              const prevFragParams =
-                f.params && typeof f.params === 'object' && !Array.isArray(f.params)
-                  ? (f.params as Record<string, unknown>)
-                  : {}
-              return {
-                id: typeof f.id === 'number' && f.id > 0 ? f.id : undefined,
-                sort_order: i,
-                content: f.content,
-                cover: f.cover,
-                video: f.video,
-                duration_sec: resolveFragmentDurationSec(f.content, f.duration_sec),
-                params: { ...prevFragParams, user_edited: true },
-                asset_ids: f.asset_ids || [],
-              }
-            }),
-            snapshot,
-          )
-        },
-      )
-      if (editSnapshot.current !== sourceSnapshot) return
-      if (ep) {
-        editSnapshot.current = createFragmentEditSnapshot(ep)
-        setEpisode(ep)
-        setFragments(ep.fragments || nextFragments)
-      }
-      setStatus(
-        mode === 'model'
-          ? '已开启人物介绍叠字；重新规划分镜时会重新注入介绍行'
-          : '已关闭人物介绍，并去掉分镜里的介绍叠字行',
-      )
-      setError('')
-    } catch (err) {
-      if (editSnapshot.current === sourceSnapshot) {
-        setCharacterIntroMode(readEffectiveCharacterIntroMode(prevParams, projectParamsRef.current))
-        setEpisodeParams(prevParams)
-        episodeParamsRef.current = prevParams
-        setFragments(prevFragments)
-      }
-      setError(err instanceof Error ? err.message : '本集人物介绍设置保存失败')
-    }
+    await saveContentSetting({ ...episodeParamsRef.current, characterIntroMode: mode, characterIntroEnabled: characterIntroModeEnabled(mode) },
+      (rows) => applyCharacterIntroModeToFragments(rows, mode),
+      mode === 'model' ? '已开启人物介绍叠字；重新规划分镜时会重新注入介绍行' : '已关闭人物介绍，并去掉分镜里的介绍叠字行')
   }
 
   const referencedIds = useMemo(() => {
@@ -701,18 +632,27 @@ function EpisodeEditInner() {
   async function resumeGenerateIfNeeded() {
     try {
       const ep = await dramaApi.getEpisode(eid)
+      if (!autosave.isActive()) return
       if (readFragmentPlanStatus(ep) === 'generating') {
+        const planEpoch = autosave.epoch()
         setBusy(true)
         setStatus('等待生成…')
         const started = Date.now()
         while (Date.now() - started < 10 * 60 * 1000) {
           await new Promise((r) => setTimeout(r, 2500))
           const cur = await dramaApi.getEpisode(eid)
+          if (!autosave.isActive()) return
           const st = readFragmentPlanStatus(cur)
           if (st === 'completed') {
-            editSnapshot.current = createFragmentEditSnapshot(cur)
+            if (!autosave.isActive()) return
+            if (autosave.state().dirty || autosave.epoch() !== planEpoch) {
+              setError('分镜已更新，本地稿已保留，请刷新后核对')
+              setBusy(false)
+              return
+            }
+            rememberVideoBaselines(cur.fragments || [], true)
+            autosave.load(cur)
             setEpisode(cur)
-            setFragments(cur.fragments || [])
             setSelectedIndex(0)
             setStatus(`分镜完成 · ${(cur.fragments || []).length} 条`)
             setBusy(false)
@@ -728,7 +668,9 @@ function EpisodeEditInner() {
         setBusy(false)
         return
       }
-      const st = applyGenerateStatus(await dramaApi.generateStatus(eid))
+      const result = await dramaApi.generateStatus(eid)
+      if (!autosave.isActive()) return
+      const st = applyGenerateStatus(result)
       if (st.running > 0) ensureEpisodeVideoStatusPoll()
     } catch {
       /* ignore */
@@ -736,14 +678,18 @@ function EpisodeEditInner() {
   }
 
   // 打开全屏分镜故事板画布
-  function openEpisodeStoryboard() {
-    navigate(`/drama/projects/${pid}/episodes/${eid}/canvas`)
+  async function openEpisodeStoryboard() {
+    try { await save(); navigate(`/drama/projects/${pid}/episodes/${eid}/canvas`) } catch { /* 保留本地稿 */ }
   }
 
   // 重新加载分集
-  async function reload() {
+  async function reload(isCurrent = () => true) {
     const ep = await dramaApi.getEpisode(eid)
-    editSnapshot.current = createFragmentEditSnapshot(ep)
+    if (!autosave.isActive() || !isCurrent()) return
+    rememberVideoBaselines(ep.fragments || [], true)
+    autosave.load({ ...ep, fragments: ep.fragments?.length ? ep.fragments : [{
+      id: 0, episode_id: eid, sort_order: 0, content: '', cover: '', video: '', duration_sec: 8, asset_ids: [],
+    }] })
     setEpisode(ep)
     const epParams =
       ep.params && typeof ep.params === 'object' && !Array.isArray(ep.params)
@@ -754,31 +700,18 @@ function EpisodeEditInner() {
     setSubtitleMode(readEffectiveSubtitleMode(epParams, projectParamsRef.current))
     setCharacterIntroMode(readEffectiveCharacterIntroMode(epParams, projectParamsRef.current))
     setAspectRatio(readEpisodeAspectRatio(epParams, projectParamsRef.current))
-    setFragments(ep.fragments || [])
-    if ((ep.fragments || []).length === 0) {
-      setFragments([
-        {
-          id: 0,
-          episode_id: eid,
-          sort_order: 0,
-          content: '',
-          cover: '',
-          video: '',
-          duration_sec: 8,
-          asset_ids: [],
-        },
-      ])
-    }
     await resumeGenerateIfNeeded()
   }
 
   // 复用全局 generate_status 轮询，避免与 dramaGenQueue 重复请求
   useEffect(() => {
     return subscribeEpisodeGenerateStatus(async (episodeId, st) => {
-      if (episodeId !== eid) return
+      if (episodeId !== eid || !autosave.isActive() || currentEditor.current !== autosave) return
       const result = applyStatusRef.current(st)
       if (result.running === 0) {
         const ep = await dramaApi.getEpisode(eid)
+        if (!autosave.isActive()) return
+        rememberVideoBaselines(ep.fragments || [])
         setFragments((local) => mergeFragmentRuntime(local, ep.fragments || []))
       }
     })
@@ -791,22 +724,24 @@ function EpisodeEditInner() {
 
   useEffect(() => {
     if (!eid || !pid) return
+    let live = true
     setBusy(false)
     setStatus('')
     setError('')
-    reload().catch((err) => setError(err instanceof Error ? err.message : '加载失败'))
+    reload(() => live).catch((err) => { if (live && autosave.isActive()) setError(err instanceof Error ? err.message : '加载失败') })
     dramaApi
       .listAssets(pid)
-      .then(setAssets)
-      .catch(() => setAssets([]))
+      .then((rows) => { if (live && autosave.isActive()) setAssets(rows) })
+      .catch(() => { if (live && autosave.isActive()) setAssets([]) })
     dramaApi
       .listEpisodes(pid)
-      .then((rows) => setEpisodeList(rows))
-      .catch(() => setEpisodeList([]))
+      .then((rows) => { if (live && autosave.isActive()) setEpisodeList(rows) })
+      .catch(() => { if (live && autosave.isActive()) setEpisodeList([]) })
     // 加载项目默认画面风格 / 镜间衔接等到顶栏
     dramaApi
       .getProject(pid)
       .then((project) => {
+        if (!live || !autosave.isActive()) return
         const styleId = getImageStyleId(project.script, project)
         if (styleId) setVideoStyleId(styleId as ImageStyleId)
         const params =
@@ -824,11 +759,12 @@ function EpisodeEditInner() {
       .catch(() => {
         /* ignore */
       })
+    return () => { live = false }
   }, [eid, pid])
 
   // 更新当前分镜
   function updateSelected(patch: Partial<DramaFragment>) {
-    setFragments((prev) =>
+    editFragments((prev) =>
       prev.map((f, i) => (i === selectedIndex ? { ...f, ...patch } : f)),
     )
   }
@@ -851,7 +787,7 @@ function EpisodeEditInner() {
 
   // 插入空白分镜
   function insertFrag(at: number) {
-    setFragments((prev) => {
+    editFragments((prev) => {
       const next = [...prev]
       next.splice(at, 0, {
         id: 0,
@@ -873,7 +809,7 @@ function EpisodeEditInner() {
   function duplicateFrag(index: number) {
     const source = fragments[index]
     if (!source) return
-    setFragments((prev) => {
+    editFragments((prev) => {
       const next = [...prev]
       next.splice(index + 1, 0, {
         ...duplicateEditableFragment(source),
@@ -887,8 +823,7 @@ function EpisodeEditInner() {
   // 删除分镜
   function deleteFrag(index: number) {
     if (fragments.length <= 1) return
-    if (editSnapshot.current) markFragmentDeleted(editSnapshot.current, fragments[index]?.id || 0)
-    setFragments((prev) => prev.filter((_, i) => i !== index))
+    editFragments((prev) => prev.filter((_, i) => i !== index))
     setSelectedIndex((cur) => {
       if (cur === index) return Math.max(0, index - 1)
       if (cur > index) return cur - 1
@@ -896,42 +831,18 @@ function EpisodeEditInner() {
     })
   }
 
-  // 保存全部分镜（带 id 更新，避免每次重建 id 打断在途生成；标记 user_edited 防自动重切覆盖）
+  // 手动保存、自动保存、生成和导航都等待同一份最新稿（包括在途新增的 B）。
   async function save() {
-    setBusy(true)
+    const editor = autosave
     setError('')
     try {
-      const ep = await dramaApi.saveFragments(
-        eid,
-        fragments.map((f, i) => {
-          const prevParams =
-            f.params && typeof f.params === 'object' && !Array.isArray(f.params)
-              ? (f.params as Record<string, unknown>)
-              : {}
-          return {
-            id: typeof f.id === 'number' && f.id > 0 ? f.id : undefined,
-            sort_order: i,
-            content: f.content,
-            cover: f.cover,
-            video: f.video,
-            duration_sec: resolveFragmentDurationSec(f.content, f.duration_sec),
-            params: { ...prevParams, user_edited: true },
-            asset_ids: f.asset_ids || [],
-          }
-        }),
-        editSnapshot.current!,
-      )
-      editSnapshot.current = createFragmentEditSnapshot(ep)
-      setEpisode(ep)
-      setFragments(ep.fragments || [])
+      const ep = await editor.flush()
+      if (!editor.isActive()) throw new Error('分集已切换')
       setStatus('已保存')
-      setEditing(false)
       return ep
     } catch (err) {
-      setError(err instanceof Error ? err.message : '保存失败')
+      if (editor.isActive()) setError(err instanceof Error ? err.message : '保存失败')
       throw err
-    } finally {
-      setBusy(false)
     }
   }
 
@@ -951,19 +862,19 @@ function EpisodeEditInner() {
     if (!frag.video || !frag.id) return false
     const freshness = fragmentReferenceFreshness(frag, assets)
     if (freshness === 'inputs_changed' || (includeUpdatedImages && freshness === 'image_updated')) return false
-    const prev = (episode?.fragments || []).find((item) => item.id === frag.id)
-    if (!prev?.video) return false
-    const sameContent = (prev.content || '') === (frag.content || '')
-    const sameCover = (prev.cover || '') === (frag.cover || '')
+    const input = frag.params?.video_input_snapshot as { content?: string; duration_sec?: number } | undefined
+    const prev = videoBaselines.current.get(frag.id)
+    if (!input && !prev?.video) return false
+    const sameContent = (input?.content ?? prev?.content ?? '') === (frag.content || '')
     const sameDuration =
-      resolveFragmentDurationSec(prev.content || '', prev.duration_sec) ===
+      resolveFragmentDurationSec(input?.content ?? prev?.content ?? '', input?.duration_sec ?? prev?.duration_sec) ===
       resolveFragmentDurationSec(frag.content || '', frag.duration_sec)
-    const prevAssetIds = selectedFragmentAssetIds(prev, assets)
+    const prevAssetIds = selectedFragmentAssetIds(prev || frag, assets)
     const nextAssetIds = selectedFragmentAssetIds(frag, assets)
     const sameAssets =
       prevAssetIds.length === nextAssetIds.length &&
       prevAssetIds.every((id, index) => id === nextAssetIds[index])
-    return sameContent && sameCover && sameDuration && sameAssets
+    return sameContent && sameDuration && sameAssets
   }
 
   // 仅生成当前选中分镜（保存按 id 更新，生成前仍用保存后返回的 id）
@@ -1007,6 +918,7 @@ function EpisodeEditInner() {
       return
     }
 
+    const targetKey = selected.clientKey
     const fragLabel = formatFragLabel(selectedIndex, selectedDuration)
     const isRegen = Boolean(selected.video)
     const ok = await dialog.confirm({
@@ -1031,7 +943,7 @@ function EpisodeEditInner() {
     try {
       const ep = await save()
       setBusy(true)
-      const frag = (ep.fragments || [])[selectedIndex]
+      const frag = autosave.rows().find((row) => row.clientKey === targetKey)
       if (!frag?.id) {
         throw new Error('保存后未找到当前分镜，请刷新后重试')
       }
@@ -1064,6 +976,7 @@ function EpisodeEditInner() {
       setStatus(isRegen ? `「${fragLabel}」已重新入队，可在右下角查看队列` : `「${fragLabel}」已入队，可在右下角查看队列`)
       ensureEpisodeVideoStatusPoll()
     } catch (err) {
+      if (!autosave.isActive()) return
       setBusy(false)
       setError(err instanceof Error ? err.message : '生成失败')
     }
@@ -1082,6 +995,7 @@ function EpisodeEditInner() {
     setError('')
     try {
       const result = await dramaApi.activateFragmentVideoVersion(selected.id, versionId)
+      if (!autosave.isActive()) return
       setFragments((prev) =>
         prev.map((f) =>
           f.id === selected.id
@@ -1093,6 +1007,7 @@ function EpisodeEditInner() {
                   ...(f.params || {}),
                   video_versions: result.video_versions,
                   reference_snapshot: result.reference_snapshot || undefined,
+                  video_input_snapshot: result.video_input_snapshot || undefined,
                   lastFrameUrl: result.lastFrameUrl || undefined,
                   generation: {
                     status: 'done',
@@ -1108,9 +1023,10 @@ function EpisodeEditInner() {
       setPreviewVersionId(null)
       setStatus('已切换历史版本')
     } catch (err) {
+      if (!autosave.isActive()) return
       setError(err instanceof Error ? err.message : '切换版本失败')
     } finally {
-      setBusy(false)
+      if (autosave.isActive()) setBusy(false)
     }
   }
 
@@ -1125,23 +1041,25 @@ function EpisodeEditInner() {
       return
     }
 
+    const plannedRows = autosave.rows()
     const allBlocking: string[] = []
     const allWarnings: string[] = []
     let missingReference = false
     const doneIndices: number[] = []
-    for (let i = 0; i < fragments.length; i++) {
-      if ((fragments[i].id && generatingIds.has(fragments[i].id!)) ||
-          (!opts?.forceRegen && shouldSkipGenerateAllFragment(fragments[i]))) {
+    for (let i = 0; i < plannedRows.length; i++) {
+      if ((plannedRows[i].id && generatingIds.has(plannedRows[i].id!)) ||
+          (!opts?.forceRegen && shouldSkipGenerateAllFragment(plannedRows[i]))) {
         doneIndices.push(i)
         continue
       }
-      const { blocking, warnings } = collectDramaGenerateGateIssues(fragments[i], assets)
+      const { blocking, warnings } = collectDramaGenerateGateIssues(plannedRows[i], assets)
       if (blocking.some((issue) => issue.code === 'missing_reference_image')) missingReference = true
-      const label = formatFragLabel(i, fragments[i]?.duration_sec)
+      const label = formatFragLabel(i, plannedRows[i]?.duration_sec)
       for (const issue of blocking) allBlocking.push(`${label}：${issue.message}`)
       for (const issue of warnings) allWarnings.push(`${label}：${issue.message}`)
     }
-    const pendingCount = fragments.length - doneIndices.length
+    const pendingCount = plannedRows.length - doneIndices.length
+    const pendingKeys = new Set(plannedRows.filter((_, index) => !doneIndices.includes(index)).map((row) => row.clientKey))
     if (pendingCount <= 0) {
       setStatus('本集分镜已全部生成，已自动跳过')
       return
@@ -1168,8 +1086,8 @@ function EpisodeEditInner() {
     try {
       const ep = await save()
       setBusy(true)
-      const ids = (ep.fragments || [])
-        .filter((_, index) => !doneIndices.includes(index))
+      const ids = autosave.rows()
+        .filter((row) => pendingKeys.has(row.clientKey))
         .map((f) => f.id)
         .filter((id): id is number => typeof id === 'number' && id > 0)
       if (ids.length === 0) {
@@ -1220,20 +1138,21 @@ function EpisodeEditInner() {
       }
       setBusy(false)
     } catch (err) {
+      if (!autosave.isActive()) return
       setError(err instanceof Error ? err.message : '批量生成失败')
       setBusy(false)
     }
   }
 
   // 返回剧情大纲
-  function handleBack() {
-    navigate(`/drama/projects/${pid}`, { state: { activeStep: 'outline' } })
+  async function handleBack() {
+    try { await save(); navigate(`/drama/projects/${pid}`, { state: { activeStep: 'outline' } }) } catch { /* 保留本地稿 */ }
   }
 
   // 左侧目录切换分集
-  function handleSelectEpisode(nextId: number) {
+  async function handleSelectEpisode(nextId: number) {
     if (nextId === eid) return
-    navigate(`/drama/projects/${pid}/episodes/${nextId}`)
+    try { await save(); navigate(`/drama/projects/${pid}/episodes/${nextId}`) } catch { /* 保留本地稿 */ }
   }
 
   // 单集 LLM 重新分镜：确认并勾选 Skill 后入队
@@ -1252,6 +1171,8 @@ function EpisodeEditInner() {
     setError('')
     setStatus('等待生成…')
     try {
+      await save()
+      const planEpoch = autosave.epoch()
       await dramaApi.planEpisodeFragments(eid, {
         force: true,
         fallback_rules: true,
@@ -1262,14 +1183,21 @@ function EpisodeEditInner() {
       while (Date.now() - started < 10 * 60 * 1000) {
         await new Promise((r) => setTimeout(r, 2500))
         const ep = await dramaApi.getEpisode(eid)
+        if (!autosave.isActive()) return
         const st = readFragmentPlanStatus(ep)
         if (st === 'completed') {
-          editSnapshot.current = createFragmentEditSnapshot(ep)
+          if (!autosave.isActive()) return
+          if (autosave.state().dirty || autosave.epoch() !== planEpoch) {
+            setError('分镜已更新，本地稿已保留，请刷新后核对')
+            setBusy(false)
+            return
+          }
+          rememberVideoBaselines(ep.fragments || [], true)
+          autosave.load(ep)
           setEpisode(ep)
           const nextParams = (ep.params as Record<string, unknown>) || {}
           setEpisodeParams(nextParams)
           episodeParamsRef.current = nextParams
-          setFragments(ep.fragments || [])
           setSelectedIndex(0)
           setEditing(false)
           const mode = String(ep.params?.fragment_plan_mode || 'llm')
@@ -1292,6 +1220,7 @@ function EpisodeEditInner() {
       }
       throw new Error('AI 分镜超时，请稍后刷新查看')
     } catch (err) {
+      if (!autosave.isActive()) return
       setError(err instanceof Error ? err.message : 'AI 分镜失败')
       setBusy(false)
     }
@@ -1575,6 +1504,7 @@ function EpisodeEditInner() {
         </div>
       </header>
 
+      <p role="status">{saveState.conflict ? '保存冲突，本地稿已保留，请刷新后核对' : saveState.saving ? '保存中…' : saveState.dirty ? '有未保存的修改' : '已保存'}</p>
       {(status || error) && (
         <div className="drama-ep-banner">
           {error ? <BillingErrorNotice message={error} className="drama-ep-banner-error" inline /> : null}
@@ -1726,18 +1656,15 @@ function EpisodeEditInner() {
                   type="button"
                   className="drama-ep-btn-ghost"
                   disabled={busy}
-                  onClick={() => {
-                    setEditing(false)
-                    void reload()
-                  }}
+                  onClick={() => { void save().then(() => { if (autosave.isActive()) setEditing(false) }).catch(() => undefined) }}
                 >
-                  取消
+                  结束编辑
                 </button>
                 <button
                   type="button"
                   className="drama-ep-btn-dark"
                   disabled={busy}
-                  onClick={() => void save()}
+                  onClick={() => void save().catch(() => undefined)}
                 >
                   {busy ? '保存中…' : '保存'}
                 </button>

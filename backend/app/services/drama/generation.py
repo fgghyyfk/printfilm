@@ -446,6 +446,7 @@ def archive_fragment_video_version(fragment: DramaEpisodeFragment) -> dict[str, 
         "createdAt": datetime.now(timezone.utc).isoformat(),
         "source": "generate",
         "reference_snapshot": params.get("reference_snapshot"),
+        "video_input_snapshot": params.get("video_input_snapshot"),
     }
     versions = params.get("video_versions")
     if not isinstance(versions, list):
@@ -463,15 +464,17 @@ async def _lock_and_archive_fragment_video(db: AsyncSession, fragment: DramaEpis
     while True:
         await db.refresh(fragment, attribute_names=["video", "cover", "params"])
         media = (fragment.video or "", fragment.cover or "", read_fragment_last_frame_url(fragment),
-                 (fragment.params or {}).get("reference_snapshot"))
+                 (fragment.params or {}).get("reference_snapshot"),
+                 (fragment.params or {}).get("video_input_snapshot"))
         snapshot = DramaEpisodeFragment(
             id=fragment.id, video=media[0], cover=media[1],
-            params={"lastFrameUrl": media[2], "reference_snapshot": media[3]},
+            params={"lastFrameUrl": media[2], "reference_snapshot": media[3], "video_input_snapshot": media[4]},
         )
         entry = archive_fragment_video_version(snapshot)
         await lock_fragment_for_update(db, fragment)
         current_media = (fragment.video or "", fragment.cover or "", read_fragment_last_frame_url(fragment),
-                         (fragment.params or {}).get("reference_snapshot"))
+                         (fragment.params or {}).get("reference_snapshot"),
+                         (fragment.params or {}).get("video_input_snapshot"))
         if media == current_media:
             if entry is not None:
                 params = dict(fragment.params or {})
@@ -535,6 +538,7 @@ def activate_fragment_video_version(
                 "createdAt": datetime.now(timezone.utc).isoformat(),
                 "source": "replaced",
                 "reference_snapshot": params.get("reference_snapshot"),
+                "video_input_snapshot": params.get("video_input_snapshot"),
             },
         )
 
@@ -550,6 +554,10 @@ def activate_fragment_video_version(
         params["reference_snapshot"] = target["reference_snapshot"]
     else:
         params.pop("reference_snapshot", None)
+    if isinstance(target.get("video_input_snapshot"), dict):
+        params["video_input_snapshot"] = target["video_input_snapshot"]
+    else:
+        params.pop("video_input_snapshot", None)
     fragment.params = params
     ratio = str(target.get("aspect_ratio") or params.get("aspect_ratio") or "9:16")
     resolution = str(target.get("resolution") or params.get("resolution") or "480p")
@@ -579,6 +587,7 @@ def activate_fragment_video_version(
         "lastFrameUrl": last_frame,
         "video_versions": params["video_versions"],
         "reference_snapshot": params.get("reference_snapshot"),
+        "video_input_snapshot": params.get("video_input_snapshot"),
     }
 
 
@@ -1474,6 +1483,7 @@ class FragmentVideoPrepared:
     content_labels: list[str] | None = None
     model_id: str | None = None
     reference_snapshot: list[dict] | None = None
+    video_input_snapshot: dict | None = None
 
 
 # Worker 准备阶段：参考图 / 衔接帧 / 请求体（可耗时，但不等待上游成片）。
@@ -1486,6 +1496,7 @@ async def prepare_fragment_video_for_submit(
     model_id: str | None = None,
     output_settings: dict | None = None,
 ) -> FragmentVideoPrepared:
+    video_input_snapshot = {"content": fragment.content or "", "duration_sec": fragment.duration_sec}
     prompt = prepare_fragment_content(
         fragment.content or "",
         duration_sec=int(fragment.duration_sec or 0) or None,
@@ -1627,6 +1638,7 @@ async def prepare_fragment_video_for_submit(
             content_labels=content_labels,
             model_id=mid,
             reference_snapshot=reference_snapshot,
+            video_input_snapshot=video_input_snapshot,
         )
 
     ark = get_ark()
@@ -1656,6 +1668,7 @@ async def prepare_fragment_video_for_submit(
         generate_audio=True,
         model_id=mid,
         reference_snapshot=reference_snapshot,
+        video_input_snapshot=video_input_snapshot,
     )
 
 
@@ -1701,6 +1714,7 @@ def serialize_fragment_video_prepared(prepared: FragmentVideoPrepared) -> dict[s
         "content_labels": prepared.content_labels,
         "model_id": prepared.model_id,
         "reference_snapshot": prepared.reference_snapshot,
+        "video_input_snapshot": prepared.video_input_snapshot,
     }
 
 
@@ -1733,6 +1747,7 @@ def deserialize_fragment_video_prepared(raw: dict[str, Any]) -> FragmentVideoPre
         content_labels=labels,
         model_id=str(raw.get("model_id") or "") or None,
         reference_snapshot=raw.get("reference_snapshot") if isinstance(raw.get("reference_snapshot"), list) else None,
+        video_input_snapshot=raw.get("video_input_snapshot") if isinstance(raw.get("video_input_snapshot"), dict) else None,
     )
 
 
@@ -1751,6 +1766,7 @@ async def apply_fragment_video_assets(
     provider_task_id: str | None = None,
     model_id: str | None = None,
     reference_snapshot: list[dict] | None = None,
+    video_input_snapshot: dict | None = None,
     output_settings: dict | None = None,
 ) -> DramaEpisodeFragment:
     from app.services import storage as storage_svc
@@ -1832,6 +1848,10 @@ async def apply_fragment_video_assets(
         params["reference_snapshot"] = reference_snapshot
     else:
         params.pop("reference_snapshot", None)
+    if video_input_snapshot is not None:
+        params["video_input_snapshot"] = video_input_snapshot
+    else:
+        params.pop("video_input_snapshot", None)
     params.pop("generation_attempts", None)
     gen = dict(params.get("generation") or {}) if isinstance(params.get("generation"), dict) else {}
     params.update({key: value for key, value in output.params.items() if key != "generation"})

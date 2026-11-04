@@ -6,30 +6,12 @@ export type FragmentEditSnapshot = { revision: number; deletedIds: number[] }
 // 与后端保持相同的服务端成片/任务字段边界，普通创作设置可提交。
 const serverKeys = new Set([
   'video_versions', 'lastFrameUrl', 'last_frame_url', 'generation', 'generation_attempts',
-  'aspect_ratio', 'resolution', 'video_width', 'video_height', 'reference_snapshot',
+  'aspect_ratio', 'resolution', 'video_width', 'video_height', 'reference_snapshot', 'video_input_snapshot',
 ])
 
 /** 完整采用服务端分镜时建立新的编辑快照。 */
 export function createFragmentEditSnapshot(episode: Pick<DramaEpisode, 'revision'>): FragmentEditSnapshot {
   return { revision: episode.revision, deletedIds: [] }
-}
-
-/** 设置请求开始时冻结同批分镜的版本/删除集合，跨 await 后仍使用原编辑基线。 */
-export async function saveFragmentsAfterSetting<T>(
-  source: { current: FragmentEditSnapshot | null },
-  updateSetting: () => Promise<unknown>,
-  saveFragments: (snapshot: FragmentEditSnapshot) => Promise<T>,
-): Promise<T> {
-  const current = source.current
-  if (!current) throw new Error('请先加载分镜')
-  const snapshot = { revision: current.revision, deletedIds: [...current.deletedIds] }
-  await updateSetting()
-  return saveFragments(snapshot)
-}
-
-/** 只记录用户明确删除的持久化分镜。 */
-export function markFragmentDeleted(snapshot: FragmentEditSnapshot, id: number) {
-  if (id > 0 && !snapshot.deletedIds.includes(id)) snapshot.deletedIds.push(id)
 }
 
 /** 过滤生成字段，防止复制或旧客户端参数伪造成片。 */
@@ -42,7 +24,7 @@ export function fragmentSaveBody(snapshot: FragmentEditSnapshot, fragments: Arra
   return {
     revision: snapshot.revision,
     deleted_ids: [...snapshot.deletedIds],
-    fragments: fragments.map(({ cover: _cover, video: _video, ...fragment }) => ({
+    fragments: fragments.map(({ cover: _cover, video: _video, clientKey: _clientKey, ...fragment }) => ({
       ...fragment,
       params: editableParams(fragment.params),
     })),
@@ -51,7 +33,7 @@ export function fragmentSaveBody(snapshot: FragmentEditSnapshot, fragments: Arra
 
 /** 复制创作内容与引用，新镜不继承服务端成片和生成历史。 */
 export function duplicateEditableFragment(fragment: DramaFragment): DramaFragment {
-  return { ...fragment, id: 0, cover: '', video: '', params: editableParams(fragment.params) }
+  return { ...fragment, clientKey: undefined, id: 0, cover: '', video: '', params: editableParams(fragment.params) }
 }
 
 /** 同 id 合并服务端运行态，保留当前编辑内容、集合及编辑快照。 */

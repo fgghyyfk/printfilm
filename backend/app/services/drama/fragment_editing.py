@@ -11,7 +11,7 @@ from app.models_drama import DramaEpisode, DramaEpisodeFragment
 SERVER_FRAGMENT_PARAMS = frozenset({
     'video_versions', 'lastFrameUrl', 'last_frame_url', 'generation',
     'generation_attempts', 'aspect_ratio', 'resolution', 'video_width', 'video_height',
-    'reference_snapshot',
+    'reference_snapshot', 'video_input_snapshot',
 })
 EDIT_CONFLICT = '内容已在别处更新，请刷新'
 
