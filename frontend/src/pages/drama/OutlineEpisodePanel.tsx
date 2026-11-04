@@ -785,7 +785,7 @@ export function OutlineEpisodePanel({
             />
           ) : (
             <h2>
-              {translateUi("workflow.episode_28c99a", { v1: selected.episodeNumber, v2: selected.title ? `：${selected.title}` : '' })}</h2>
+              {translateUi("workflow.episode_28c99a", { v1: selected.episodeNumber ?? '', v2: selected.title ? `：${selected.title}` : '' })}</h2>
           )}
           {imageStyleLabel ? <span className="drama-outline-style-badge">{imageStyleLabel}</span> : null}
           <div className="drama-outline-detail-meta">
@@ -865,7 +865,7 @@ export function OutlineEpisodePanel({
         </p>
       ) : null}
       {selectedGenerating ? (
-        <p className="drama-loader">{translateUi("workflow.generatingThisEpisode", { v1: generatingMode })}</p>
+        <p className="drama-loader">{translateUi("workflow.generatingThisEpisode", { v1: generatingMode ?? '' })}</p>
       ) : anyEpisodeGenerating && generatingEpisodeNumber ? (
         <p className="drama-loader">
           {translateUi("workflow.episodeIsGeneratingYouCanBrowseOrEditThis", { v1: generatingEpisodeNumber })}</p>
@@ -886,7 +886,7 @@ export function OutlineEpisodePanel({
           sectionKey="summary"
           icon={<BookOpen size={18} strokeWidth={1.9} />}
           title={translateUi("workflow.episodeSynopsis")}
-          subtitle=translateUi("workflow.charactersConflictTurnsAndEndingForThisEpisodeThe")
+          subtitle={translateUi("workflow.charactersConflictTurnsAndEndingForThisEpisodeThe")}
           text={selected.summary || ''}
           editing={editingSection === 'summary'}
           draft={sectionDraft}
@@ -915,7 +915,7 @@ export function OutlineEpisodePanel({
           sectionKey="body"
           icon={<FileText size={18} strokeWidth={1.9} />}
           title={translateUi("workflow.shootingScript")}
-          subtitle=translateUi("workflow.shootingScriptWithDialogueAndVisualsParsedIntoEditable")
+          subtitle={translateUi("workflow.shootingScriptWithDialogueAndVisualsParsedIntoEditable")}
           text={selected.body || ''}
           editing={editingSection === 'body'}
           draft={sectionDraft}
@@ -947,14 +947,14 @@ export function OutlineEpisodePanel({
           sectionKey="creative"
           icon={<Lightbulb size={18} strokeWidth={1.9} />}
           title={translateUi("workflow.creativeNotesOptional")}
-          subtitle=translateUi("workflow.addCreativeDirectionOrKeepEarlyIdeasOptionalWhen")
+          subtitle={translateUi("workflow.addCreativeDirectionOrKeepEarlyIdeasOptionalWhen")}
           text={selected.creative || ''}
           editing={editingSection === 'creative'}
           draft={sectionDraft}
           open={openSections.has('creative')}
           busy={busy}
           placeholder={translateUi("workflow.optionalCharacterMotivationsCreativeDirectionOrSpecialRequirements")}
-          regenerateLabel=translateUi("workflow.generateSynopsis")
+          regenerateLabel={translateUi("workflow.generateSynopsis")}
           onToggle={() => toggleSection('creative')}
           onEdit={() => startEdit('creative')}
           onCancel={() => setEditingSection(null)}

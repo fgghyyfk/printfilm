@@ -282,7 +282,7 @@ export function EpisodeEditHeaderControls({
                   <DramaMediaModelPicker
                     models={videoModels}
                     selectedId={modelId}
-                    emptyHint=translateUi("workflow.saveADefaultModelUnderModelsInTheAdmin")
+                    emptyHint={translateUi("workflow.saveADefaultModelUnderModelsInTheAdmin")}
                     onSelect={(opt) => {
                       onModelChange(opt.id)
                       setOpen(null)
@@ -359,7 +359,7 @@ export function EpisodeEditHeaderControls({
                   className="fc-gen-opt-panel drama-ep-opt-panel fc-gen-opt-panel--portal"
                   style={panelStyle}
                   role="dialog"
-                  aria-label=translateUi("workflow.characterIntroductions")
+                  aria-label={translateUi("workflow.characterIntroductions")}
                 >
                   <div className="fc-gen-opt-panel-title">{translateUi("workflow.characterIntroductionOverlays")}</div>
                   <label className="drama-ep-link-last-frame">

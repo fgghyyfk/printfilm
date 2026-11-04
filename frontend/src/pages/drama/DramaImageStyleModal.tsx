@@ -86,7 +86,7 @@ export function DramaImageStyleModal({
         <p className="drama-style-modal-hint">
           {translateUi("workflow.theCoverIsIncludedAsAStyleReferenceFor")}
         </p>
-        <DramaImageStyleCardGrid value={value} onChange={select} noneLabel=translateUi("workflow.noStyle") />
+        <DramaImageStyleCardGrid value={value} onChange={select} noneLabel={translateUi("workflow.noStyle")} />
       </Modal>
     </>
   )

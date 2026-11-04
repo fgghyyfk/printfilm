@@ -206,7 +206,7 @@ export function DramaProjectSettingsModal({
             variant="field"
             fieldLabel=""
             title={translateUi("workflow.chooseProjectStyle")}
-            emptyLabel=translateUi("workflow.chooseStyle")
+            emptyLabel={translateUi("workflow.chooseStyle")}
             value={styleId}
             disabled={saving}
             onChange={(id) => void handleStyleChange(id)}

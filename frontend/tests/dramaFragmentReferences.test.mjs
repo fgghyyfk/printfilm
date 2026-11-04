@@ -1,7 +1,7 @@
 import { loadSource } from './bundleModule.mjs'
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-const { orderedFragmentAssetIds, selectedFragmentAssetIds, fragmentCharacterLimitWarning } = await loadSource('../src/lib/dramaFragmentReferences.ts')
+const { orderedFragmentAssetIds, selectedFragmentAssetIds, fragmentCharacterLimitWarning, fragmentReferenceFreshness } = await loadSource('../src/lib/dramaFragmentReferences.ts')
 
 test('角色优先级持久化后改变实际入选三人，重复正文不虚增警告', () => {
   const assets = [{ id: 1, type: 'scene' }, ...[11, 12, 13, 14].map(id => ({ id, type: 'character', name: `角色${id}` })),
@@ -16,7 +16,6 @@ test('角色优先级持久化后改变实际入选三人，重复正文不虚�
 })
 
 test('成片仅按实际引用版本判旧，改名/未入选角色不触发重做', async () => {
-  const { fragmentReferenceFreshness } = await import('../src/lib/dramaFragmentReferences.ts')
   const assets = [11, 12, 13, 14].map(id => ({ id, type: 'character', asset_type: 'image', cover: `/static/generated/p1/${id}.jpg`, image_revision: `v${id}` }))
   const fragment = { video: 'video.mp4', asset_ids: [11, 12, 13, 14], params: {
     reference_snapshot: assets.slice(0, 3).map(a => ({ asset_id: a.id, revision: a.image_revision, media: a.cover })),

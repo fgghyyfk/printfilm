@@ -429,9 +429,9 @@ export function OutlineStep({
         <div className="drama-outline-toolbar-left">
           <DramaImageStyleModal
             variant="field"
-            fieldLabel=translateUi("workflow.projectStyle")
+            fieldLabel={translateUi("workflow.projectStyle")}
             title={translateUi("workflow.chooseProjectStyle")}
-            emptyLabel=translateUi("workflow.notSelected")
+            emptyLabel={translateUi("workflow.notSelected")}
             value={(imageStyleId as ImageStyleId | '') || ''}
             onChange={(id) => void handleStyleChange(id)}
           />
