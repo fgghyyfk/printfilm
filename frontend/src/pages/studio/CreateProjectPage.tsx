@@ -195,6 +195,7 @@ export default function CreateProjectPage() {
   const [inspPage, setInspPage] = useState(0)
   const [busy, setBusy] = useState(false)
   const [autoAdvance, setAutoAdvance] = useState(false)
+  const [imageReferenceMode, setImageReferenceMode] = useState<'chain' | 'independent'>('chain')
   const [aiBusy, setAiBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -296,6 +297,7 @@ export default function CreateProjectPage() {
         resolution_mode: 'preview',
         pipeline_mode,
         auto_advance: pipeline_mode !== 'avatar' && autoAdvance,
+        image_reference_mode: imageReferenceMode,
         output_ratio: d?.output_ratio || '16:9',
         voice_id: d?.voice_id,
       })
@@ -490,6 +492,16 @@ export default function CreateProjectPage() {
             <span>输入方式</span>
             <span>{inputTab}</span>
           </div>
+          {params.get('mode') !== 'avatar' ? (
+            <label className="pf-field" style={{ marginTop: '1rem' }}>
+              <span>批量出图参考策略</span>
+              <select value={imageReferenceMode} onChange={(e) => setImageReferenceMode(e.target.value as 'chain' | 'independent')}>
+                <option value="chain">连续参考上一镜（默认）</option>
+                <option value="independent">独立出图，不参考上一镜</option>
+              </select>
+              <small>独立模式保留模板参考图，并发受上游配置限制，可能仍为单路。单镜重绘沿用连续参考规则。</small>
+            </label>
+          ) : null}
           {params.get('mode') !== 'avatar' ? (
             <label className="pf-field" style={{ marginTop: '1rem' }}>
               <span><input type="checkbox" checked={autoAdvance} onChange={(e) => setAutoAdvance(e.target.checked)} /> 全自动生成到成片</span>

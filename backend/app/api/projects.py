@@ -277,6 +277,7 @@ async def create_project(
         resolution_mode=body.resolution_mode,
         pipeline_mode=body.pipeline_mode,
         auto_advance=body.auto_advance and body.pipeline_mode != "avatar",
+        image_reference_mode=body.image_reference_mode,
         output_ratio=(body.output_ratio or "").strip(),
         voice_id=(body.voice_id or "").strip(),
         # 空则生成时读后台模板；不在创建时拷贝，避免后台改模板对已有项目不生效
@@ -444,6 +445,8 @@ async def update_project(
     _ensure_project_idle(project, detail="生成进行中，无法修改")
 
     data = body.model_dump(exclude_unset=True)
+    if any(key in data and data[key] is None for key in ("auto_advance", "image_reference_mode")):
+        raise HTTPException(status_code=422, detail="自动生成与出图参考策略不能为空")
     from app.services.compliance.changes import prepare_undo
     from app.services.compliance.suggestions import prepare_suggestion
 

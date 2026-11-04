@@ -118,6 +118,8 @@ class Project(Base):
     # 明确授权逐阶段自动预扣；取消时撤销当前链，默认仍逐步确认。
     auto_advance: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     auto_chain_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # 批量出图参考策略；单镜重绘仍按原连续参考规则。
+    image_reference_mode: Mapped[str] = mapped_column(String(16), default="chain", server_default="chain")
     # 商品带货：关联的电商套图（ecom_sets.id）；有值时写稿阶段按套图建分镜
     ecom_set_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     # 显式新建另一条带货视频的幂等键，不由普通项目编辑接口写入。

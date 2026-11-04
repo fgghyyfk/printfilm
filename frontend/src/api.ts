@@ -144,6 +144,7 @@ export type Project = {
   final_video_url: string | null
   resolution_mode: string
   auto_advance?: boolean
+  image_reference_mode?: 'chain' | 'independent'
   pipeline_mode?: PipelineMode
   output_ratio?: string
   voice_id?: string
@@ -390,6 +391,7 @@ export const api = {
     resolution_mode?: 'preview' | 'hd'
     pipeline_mode?: PipelineMode
     auto_advance?: boolean
+    image_reference_mode?: 'chain' | 'independent'
     output_ratio?: string
     voice_id?: string
     style_prompt?: string

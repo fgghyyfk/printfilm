@@ -984,11 +984,12 @@ async def _parallel_image_and_audio(project_id: int) -> None:
         voice = _project_voice(project)
         image_model = (getattr(project, "image_model", None) or "").strip()
         output_ratio = _project_output_ratio(project) or ""
+        independent_images = project.image_reference_mode == "independent"
 
     if not shot_meta:
         return
 
-    img_sem = asyncio.Semaphore(max(1, cfg.pipeline_image_concurrency))
+    img_sem = asyncio.Semaphore(max(1, min(cfg.pipeline_image_concurrency, cfg.tokenfree_image_concurrency)))
     done_img = 0
     progress_lock = asyncio.Lock()
     # 静图成片仍走外部 TTS；full + Seedance 内置口播则跳过
@@ -1080,7 +1081,17 @@ async def _parallel_image_and_audio(project_id: int) -> None:
         return SimpleNamespace(image_ark_url=img.remote_url, image_url=img.local_url)
 
     async def run_images() -> None:
-        """逐镜出图：后镜 Seedream 参考上一镜静帧。"""
+        """默认逐镜连续；独立策略只用模板参考，等待所有已发请求收尾。"""
+        if independent_images:
+            results = await asyncio.gather(*(one_image(meta, image_refs_for_shot(None, base_refs))
+                                             for meta in shot_meta), return_exceptions=True)
+            errors = [item for item in results if isinstance(item, BaseException)]
+            for error in errors:
+                if isinstance(error, TTSBillingPending):
+                    raise error
+            if errors:
+                raise errors[0]
+            return
         prev_proxy = None
         for meta in shot_meta:
             if meta.get("has_image"):
@@ -1130,22 +1141,29 @@ async def _parallel_image_and_audio(project_id: int) -> None:
             },
         )
 
-    results = await asyncio.gather(
-        run_images(),
-        run_continuous_audio(),
-        return_exceptions=True,
-    )
-    errors = [r for r in results if isinstance(r, Exception)]
+    group = asyncio.gather(run_images(), run_continuous_audio(), return_exceptions=True)
+    cancelled = False
+    try:
+        results = await asyncio.shield(group)
+    except asyncio.CancelledError:
+        # 热更新/软停机也先收拢已发费用，不能父任务先结算、子请求随后落账。
+        cancelled = True
+        results = await group
+    errors = [r for r in results if isinstance(r, BaseException)]
     if errors:
         # 已付费但尚未落账必须原样传到任务结算，不能被出图失败或取消覆盖成零成本。
         for err in errors:
             if isinstance(err, TTSBillingPending):
                 raise err
+        if cancelled:
+            raise asyncio.CancelledError
         # Prefer cancel over generic failure
         for err in errors:
             if isinstance(err, (PipelineCancelled, asyncio.CancelledError)):
                 raise err
         raise RuntimeError(str(errors[0]))
+    if cancelled:
+        raise asyncio.CancelledError
 
     async with _db_write_lock():
         async with AsyncSessionLocal() as db:

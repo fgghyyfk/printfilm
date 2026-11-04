@@ -161,6 +161,7 @@ class ProjectCreate(BaseModel):
     resolution_mode: str = Field(default="preview", pattern="^(preview|hd)$")
     pipeline_mode: str = Field(default="full", pattern="^(full|image_text|avatar)$")
     auto_advance: bool = False
+    image_reference_mode: str = Field(default="chain", pattern="^(chain|independent)$")
     output_ratio: str | None = Field(
         default=None,
         pattern=r"^(16:9|9:16|1:1|4:3|21:9)?$",
@@ -185,6 +186,7 @@ class ProjectUpdate(BaseModel):
     template_id: str | None = None
     pipeline_mode: str | None = Field(default=None, pattern="^(full|image_text|avatar)$")
     auto_advance: bool | None = None
+    image_reference_mode: str | None = Field(default=None, pattern="^(chain|independent)$")
     output_ratio: str | None = Field(
         default=None,
         pattern=r"^(16:9|9:16|1:1|4:3|21:9)$",
@@ -226,6 +228,7 @@ class ProjectOut(BaseModel):
     resolution_mode: str
     pipeline_mode: str = "full"
     auto_advance: bool = False
+    image_reference_mode: str = "chain"
     # 商品带货：关联套图 id
     ecom_set_id: int | None = None
     output_ratio: str = ""
