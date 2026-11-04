@@ -222,6 +222,8 @@ class DramaImageGenerateRequest(BaseModel):
     aspect_ratio: str | None = None
     # 清晰度 3K / 4K
     resolution: str | None = None
+    # 批量补缺时跳过已有参考图，复用同资产的活动生图任务；单项重绘默认关闭。
+    missing_only: bool = False
 
 
 class DramaVideoGenerateRequest(BaseModel):

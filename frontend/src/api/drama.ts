@@ -203,6 +203,8 @@ export type DramaImageGenerateResult = {
   ok: boolean
   queued: boolean
   status: string
+  skipped?: boolean
+  reused?: boolean
   task_id?: string | null
   asset_id?: number | null
   asset?: DramaAsset | null
@@ -466,6 +468,7 @@ export const dramaApi = {
     model_id?: string
     aspect_ratio?: string
     resolution?: string
+    missing_only?: boolean
   }) =>
     request<DramaImageGenerateResult>('/api/drama/generation/image', {
       method: 'POST',

@@ -5,12 +5,14 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.deps import get_current_user
 from app.models import User
 from app.models_drama import DramaAsset
+from app.models_tasks import TaskRun
 from app.schemas_drama import (
     DramaAssetOut,
     DramaImageGenerateRequest,
@@ -19,7 +21,7 @@ from app.schemas_drama import (
     DramaVoicePromptRequest,
 )
 from app.services.drama.access import get_owned_drama_project
-from app.services.drama.generation import generate_voice_asset_audio
+from app.services.drama.generation import asset_needs_reference_image, generate_voice_asset_audio
 from app.services.billing import record_llm_chat_line, run_billed_ephemeral
 from app.services.billing.http import http_exception_for_value_error
 from app.services.drama.jobs import dispatch_asset_image_job, dispatch_asset_video_job
@@ -42,15 +44,6 @@ async def generate_image(
         asset = await db.get(DramaAsset, body.asset_id)
         if not asset or asset.project_id != project.id:
             raise HTTPException(status_code=404, detail="资产不存在")
-        params = dict(asset.params or {})
-        from datetime import datetime, timezone
-
-        params["generation"] = {
-            "status": "queued",
-            "queued_at": datetime.now(timezone.utc).isoformat(),
-            "message": "已入队",
-        }
-        asset.params = params
 
     prompt = (body.prompt or "").strip()
     if not prompt:
@@ -61,6 +54,49 @@ async def generate_image(
     style_id = (body.image_style_id or "").strip() or str(
         (project.params or {}).get("image_style_id") or ""
     ).strip() or None
+    # 冷价目在资产锁外准备；补缺的校验与入队共用短事务，不依赖前端本地队列。
+    prepared_estimate_fen = None
+    if body.missing_only:
+        from app.services.billing.estimates import estimate_task_fen
+        from app.services.billing.settlement import billing_active
+        from app.services.tasks.service import ACTIVE_TASK_STATUSES
+
+        if asset is None:
+            raise HTTPException(status_code=400, detail="补缺生成需要指定资产")
+        prepared_estimate_fen = (
+            await estimate_task_fen(db, TaskRun(
+                domain="drama", task_type="asset_image", requested_by=user.id,
+                payload={"model_id": body.model_id, "resolution": body.resolution},
+            )) if billing_active(user) else 0
+        )
+        with db.no_autoflush:
+            asset = (await db.execute(
+                select(DramaAsset).where(DramaAsset.id == asset.id, DramaAsset.project_id == project.id)
+                .with_for_update().execution_options(populate_existing=True)
+            )).scalar_one_or_none()
+        if asset is None:
+            raise HTTPException(status_code=404, detail="资产不存在")
+        if not asset_needs_reference_image(asset):
+            await db.commit()
+            return {"ok": True, "queued": False, "skipped": True, "status": "skipped",
+                    "asset_id": asset.id, "asset": DramaAssetOut.model_validate(asset).model_dump()}
+        existing = (await db.execute(select(TaskRun).where(
+            TaskRun.requested_by == user.id, TaskRun.drama_project_id == project.id,
+            TaskRun.asset_id == asset.id, TaskRun.domain == "drama", TaskRun.task_type == "asset_image",
+            TaskRun.status.in_(tuple(ACTIVE_TASK_STATUSES)),
+        ).order_by(TaskRun.id).limit(1))).scalar_one_or_none()
+        if existing is not None:
+            await db.commit()
+            return {"ok": True, "queued": True, "reused": True, "status": existing.status, "task_id": existing.id,
+                    "asset_id": asset.id, "asset": DramaAssetOut.model_validate(asset).model_dump()}
+    if asset is not None:
+        from datetime import datetime, timezone
+
+        params = dict(asset.params or {})
+        params["generation"] = {
+            "status": "queued", "queued_at": datetime.now(timezone.utc).isoformat(), "message": "已入队",
+        }
+        asset.params = params
     try:
         task_id = await dispatch_asset_image_job(
             db,
@@ -75,6 +111,7 @@ async def generate_image(
             model_id=body.model_id,
             aspect_ratio=body.aspect_ratio,
             resolution=body.resolution,
+            prepared_estimate_fen=prepared_estimate_fen,
         )
     except ValueError as exc:
         await db.rollback()

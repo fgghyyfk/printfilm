@@ -64,6 +64,9 @@ async def billing_preflight(
     domain: str = Query(..., min_length=1),
     task_type: str = Query(..., min_length=1),
     count: int = Query(1, ge=1, le=500),
+    model_id: str | None = Query(None, max_length=256),
+    resolution: str | None = Query(None, max_length=32),
+    aspect_ratio: str | None = Query(None, max_length=32),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
@@ -82,7 +85,7 @@ async def billing_preflight(
         domain=domain.strip(),
         task_type=task_type.strip(),
         requested_by=user.id,
-        payload={},
+        payload={"model_id": model_id, "resolution": resolution, "aspect_ratio": aspect_ratio},
     )
     try:
         summary = await ensure_balance_for_task_batch(db, user, probe, count)

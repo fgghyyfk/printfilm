@@ -213,7 +213,7 @@ export function DramaGenQueuePanel() {
                             </span>
                             <span className="drama-gen-fab-name">{job.title}</span>
                             <span className="drama-gen-fab-type">{jobTypeLabel(job)}</span>
-                            {job.message && (job.status === 'queued' || job.status === 'running') ? (
+                            {job.message ? (
                               <span className="drama-gen-fab-msg">{job.message}</span>
                             ) : null}
                           </div>

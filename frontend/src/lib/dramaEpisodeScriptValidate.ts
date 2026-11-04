@@ -3,7 +3,7 @@
  * 用于生成前告警：时长、空镜误标对白、资产缺图/缺音色
  */
 import type { DramaAsset, DramaFragment } from '../api/drama'
-import { dramaAssetHasImage } from './dramaAssetImage'
+import { dramaAssetHasReferenceImage } from './dramaAssetImage'
 import {
   DRAMA_SEGMENT_DURATION_HARD_MAX,
   DRAMA_SEGMENT_DURATION_MAX,
@@ -33,6 +33,7 @@ const VISUAL_SHOT_LABEL_RE =
 const VOICE_CUE_PREFIX_RE = /^【(?:对白|旁白|内心独白)[^】]*】\s*/
 
 export type DramaScriptIssue = {
+  code?: 'missing_reference_image'
   level: 'error' | 'warn'
   message: string
 }
@@ -200,7 +201,7 @@ export function validateDramaFragmentAssets(
       continue
     }
     const kind = (asset.type || '').toLowerCase()
-    if ((kind === 'character' || kind === 'scene' || kind === 'prop') && !dramaAssetHasImage(asset)) {
+    if ((kind === 'character' || kind === 'scene' || kind === 'prop') && !dramaAssetHasReferenceImage(asset)) {
       missingImage.push(asset.name || `#${id}`)
     }
     if (DRAMA_VOICE_BINDING_ENABLED && kind === 'character' && needsVoice && !assetHasVoiceBinding(asset)) {
@@ -211,6 +212,7 @@ export function validateDramaFragmentAssets(
   if (missingImage.length > 0) {
     issues.push({
       level: 'error',
+      code: 'missing_reference_image',
       message: `以下关联资产缺少参考图，请先生成或上传后再生成视频：${missingImage.slice(0, 5).join('、')}${missingImage.length > 5 ? '…' : ''}`,
     })
   }

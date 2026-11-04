@@ -1717,6 +1717,7 @@ async def dispatch_asset_image_job(
     model_id: str | None = None,
     aspect_ratio: str | None = None,
     resolution: str | None = None,
+    prepared_estimate_fen: int | None = None,
 ) -> int:
     """入队资产生图任务。"""
     task_id = await _enqueue_drama_task(
@@ -1739,6 +1740,7 @@ async def dispatch_asset_image_job(
             "resolution": resolution,
         },
         commit=False,
+        prepared_estimate_fen=prepared_estimate_fen,
     )
     logger.info("dispatch 资产生图 → task_id=%s project_id=%s asset_id=%s", task_id, project_id, asset_id)
     return task_id

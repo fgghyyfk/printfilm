@@ -917,6 +917,17 @@ function EpisodeEditInner() {
     }
   }
 
+  // 补参考图前先沿用当前保存入口；保存失败时保留本页和本地稿。
+  async function openReferenceAssets() {
+    if (busy) return
+    try {
+      await save()
+      navigate(`/drama/projects/${pid}`, { state: { activeStep: 'assets' } })
+    } catch {
+      // save 已展示具体原因，失败不离开编辑页。
+    }
+  }
+
   // 判断「批量生成」时是否可安全跳过：仅跳过未改动且已有成片的旧分镜
   function shouldSkipGenerateAllFragment(frag: DramaFragment): boolean {
     if (!frag.video || !frag.id) return false
@@ -1095,6 +1106,7 @@ function EpisodeEditInner() {
 
     const allBlocking: string[] = []
     const allWarnings: string[] = []
+    let missingReference = false
     const doneIndices: number[] = []
     for (let i = 0; i < fragments.length; i++) {
       if (!opts?.forceRegen && shouldSkipGenerateAllFragment(fragments[i])) {
@@ -1102,6 +1114,7 @@ function EpisodeEditInner() {
         continue
       }
       const { blocking, warnings } = collectDramaGenerateGateIssues(fragments[i], assets)
+      if (blocking.some((issue) => issue.code === 'missing_reference_image')) missingReference = true
       const label = formatFragLabel(i, fragments[i]?.duration_sec)
       for (const issue of blocking) allBlocking.push(`${label}：${issue.message}`)
       for (const issue of warnings) allWarnings.push(`${label}：${issue.message}`)
@@ -1113,12 +1126,16 @@ function EpisodeEditInner() {
     }
     if (allBlocking.length > 0) {
       setError(allBlocking[0] || '分镜脚本校验未通过')
-      await dialog.alert({
-        title: '无法批量生成',
-        message: ['请先修复以下问题：', '', ...allBlocking.slice(0, 8).map((m) => `· ${m}`)].join(
-          '\n',
-        ),
-      })
+      const message = ['请先修复以下问题：', '', ...allBlocking.slice(0, 8).map((m) => `· ${m}`)].join('\n')
+      if (missingReference) {
+        const go = await dialog.confirm({
+          title: '请先补齐参考图', message: `${message}\n\n可前往资产库使用「一键生成未出图」。`,
+          confirmText: '去一键出图',
+        })
+        if (go) await openReferenceAssets()
+      } else {
+        await dialog.alert({ title: '无法批量生成', message })
+      }
       return
     }
 
@@ -1663,6 +1680,16 @@ function EpisodeEditInner() {
           ) : null}
 
           <div className="drama-ep-editor-actions">
+            {selectedGateBlocking.some((issue) => issue.code === 'missing_reference_image') ? (
+              <button
+                type="button"
+                className="drama-ep-btn-ghost"
+                disabled={busy}
+                onClick={() => void openReferenceAssets()}
+              >
+                去一键补参考图
+              </button>
+            ) : null}
             {editing ? (
               <>
                 <button

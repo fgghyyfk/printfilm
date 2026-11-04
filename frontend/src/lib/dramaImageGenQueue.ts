@@ -15,6 +15,7 @@ export type DramaImageGenJob = {
   options: Partial<ImageGenerationOptions>
   status: DramaImageGenStatus
   error?: string
+  message?: string
   createdAt: number
   finishedAt?: number
 }
@@ -28,12 +29,17 @@ type EnqueueInput = {
   options?: Partial<ImageGenerationOptions>
   /** 仅恢复轮询（后端已在 generating，不再重复 POST） */
   resumeOnly?: boolean
+  /** 只补缺图：由服务端重查图片和在途任务，避免跨标签重复入队。 */
+  missingOnly?: boolean
+  onSubmission?: (result: { skipped: boolean; reused: boolean }) => void
   /** 入队/状态变化时回写资产（用于 UI 即时显示 generating / 新图） */
   onAssetUpdate?: (asset: DramaAsset) => void
 }
 
 type InternalJob = DramaImageGenJob & {
   resumeOnly: boolean
+  missingOnly: boolean
+  onSubmission?: EnqueueInput['onSubmission']
   taskId?: number
   baselineUrl: string
   onAssetUpdate?: (asset: DramaAsset) => void
@@ -76,6 +82,7 @@ function toPublicJob(job: InternalJob): DramaImageGenJob {
     options: job.options,
     status: job.status,
     error: job.error,
+    message: job.message,
     createdAt: job.createdAt,
     finishedAt: job.finishedAt,
   }
@@ -92,6 +99,7 @@ function snapshotsEqual(a: DramaImageGenJob[], b: DramaImageGenJob[]): boolean {
       left.id !== right.id ||
       left.status !== right.status ||
       left.error !== right.error ||
+      left.message !== right.message ||
       left.finishedAt !== right.finishedAt
     ) {
       return false
@@ -133,6 +141,7 @@ function emit() {
         status: job.status,
         taskId: job.taskId,
         error: job.error,
+        message: job.message,
       })
     }
   }
@@ -309,12 +318,22 @@ async function submitJob(job: InternalJob) {
         model_id: job.options.model_id,
         aspect_ratio: job.options.aspect_ratio,
         resolution: job.options.resolution,
+        missing_only: job.missingOnly,
       })
       job.taskId = resp.task_id != null ? Number(resp.task_id) : undefined
       const queuedAsset = (resp as { asset?: DramaAsset }).asset
       if (queuedAsset) {
         job.onAssetUpdate?.(queuedAsset)
       }
+      job.onSubmission?.({ skipped: Boolean(resp.skipped), reused: Boolean(resp.reused) })
+      if (resp.skipped && queuedAsset) {
+        job.status = 'done'
+        job.message = '已有参考图，已跳过（未新增任务）'
+        job.finishedAt = Date.now()
+        job.resolve(queuedAsset)
+        return
+      }
+      if (resp.reused) job.message = '已接回现有生图任务，未重复入队'
     }
     if (job.status === 'queued') {
       job.status = 'running'
@@ -344,6 +363,7 @@ export function enqueueDramaImageGen(input: EnqueueInput): Promise<DramaAsset> {
       (job.status === 'queued' || job.status === 'running'),
   )
   if (existing) {
+    input.onSubmission?.({ skipped: false, reused: true })
     if (input.onAssetUpdate) {
       const prev = existing.onAssetUpdate
       existing.onAssetUpdate = (asset) => {
@@ -373,10 +393,12 @@ export function enqueueDramaImageGen(input: EnqueueInput): Promise<DramaAsset> {
       assetName: (input.assetName || '').trim() || `资产 ${input.assetId}`,
       assetType: input.assetType || 'character',
       prompt: input.prompt,
-      options: input.options || {},
+      options: { ...input.options },
       status: 'queued',
       createdAt: Date.now(),
       resumeOnly: Boolean(input.resumeOnly),
+      missingOnly: Boolean(input.missingOnly),
+      onSubmission: input.onSubmission,
       baselineUrl: '',
       onAssetUpdate: input.onAssetUpdate,
       resolve,

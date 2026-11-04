@@ -74,6 +74,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
    * tab 当前分类
    * loading 首次加载
    * batchBusy 一键入队中
+   * batchSummary 本次实际新增、复用、跳过数量
    * genOptions 生图选项
    * voiceAsset 打开音色弹窗的角色
    * detailAsset 打开详情操作框的资产
@@ -87,6 +88,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
   const [tab, setTab] = useState<AssetTabKey>('character')
   const [loading, setLoading] = useState(true)
   const [batchBusy, setBatchBusy] = useState(false)
+  const [batchSummary, setBatchSummary] = useState('')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(PAGE_SIZE_DEFAULT)
   const [genOptions, setGenOptions] = useState<ImageGenerationOptions>(() =>
@@ -222,6 +224,10 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
       )
       .map((j) => j.assetId),
   )
+  for (const asset of assetList) {
+    const status = String((asset.params?.generation as { status?: string } | undefined)?.status || '')
+    if (status === 'queued' || status === 'generating') busyAssetIds.add(asset.id)
+  }
   // 未出图：无有效 cover/url，且当前未在队列中
   const pending = filtered.filter((a) => needsImageGeneration(a) && !busyAssetIds.has(a.id))
   const queueBusy = busyAssetIds.size > 0
@@ -242,12 +248,15 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
   }
 
   // 入队前校验余额（批量/单项共用）；成功时返回预检明细（含单张估算）
-  async function ensureImageGenBalance(count: number): Promise<BillingPreflight | null> {
+  async function ensureImageGenBalance(count: number, options = genOptions): Promise<BillingPreflight | null> {
     try {
       return await api.billingPreflight({
         domain: 'drama',
         task_type: 'asset_image',
         count,
+        model_id: options.model_id,
+        resolution: options.resolution,
+        aspect_ratio: options.aspect_ratio,
       })
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err || '')
@@ -278,7 +287,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
   function enqueueOne(asset: DramaAsset, options = genOptions) {
     if (busyAssetIds.has(asset.id)) return
     void (async () => {
-      if (!(await ensureImageGenBalance(1))) return
+      if (!(await ensureImageGenBalance(1, options))) return
       try {
         const updated = await enqueueDramaImageGen({
           projectId,
@@ -300,6 +309,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
 
   // 一键只入队「当前分类下尚未出图」的资产（已有图 / 排队中跳过）
   async function batchGenerate() {
+    if (batchBusy) return
     const targets = filtered.filter(
       (a) => needsImageGeneration(a) && !busyAssetIds.has(a.id),
     )
@@ -307,48 +317,55 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
       onError('当前分类没有未生成的资产')
       return
     }
-    const pre = await ensureImageGenBalance(targets.length)
-    if (!pre) return
-    const unitYuan = pre.unit_estimate_yuan ?? pre.unit_estimate_fen / 100
-    const totalYuan = pre.requested_total_yuan ?? pre.requested_total_fen / 100
-    const balanceYuan = pre.balance_yuan ?? pre.balance_fen / 100
-    const ok = await dialog.confirm({
-      title: '批量生成形象',
-      message:
-        `将为当前「${ASSET_TABS.find((t) => t.key === tab)?.label || '分类'}」下 ${targets.length} 个未出图资产开始生图（并行提交，不排队）。\n\n` +
-        `每张预扣约 ¥${unitYuan.toFixed(2)}，本次合计约 ¥${totalYuan.toFixed(2)}（当前余额 ¥${balanceYuan.toFixed(2)}；结束后按实际上游用量多退少补）。\n\n是否继续？`,
-      confirmText: '开始生成',
-    })
-    if (!ok) return
+    // 报价、确认期间选择器可变化，本批始终使用点击时的同一份选项。
+    const options = { ...genOptions }
     setBatchBusy(true)
-    const tasks = targets.map((asset) =>
-      enqueueDramaImageGen({
-        projectId,
-        assetId: asset.id,
-        assetName: asset.name || undefined,
-        assetType: asset.type,
-        prompt: readVisualPrompt(asset),
-        options: {
-          ...genOptions,
-          ...defaultOptionsForAssetKind(asset.type),
-          image_style_id: genOptions.image_style_id,
-          model_id: genOptions.model_id,
-          resolution: genOptions.resolution,
-        },
-        onAssetUpdate: (next) => {
-          setAssets((prev) => (prev ?? []).map((a) => (a.id === next.id ? next : a)))
-        },
-      }).then((updated) => {
-        setAssets((prev) => (prev ?? []).map((a) => (a.id === updated.id ? updated : a)))
-      }),
-    )
-    void Promise.allSettled(tasks).then(async (results) => {
-      setBatchBusy(false)
+    setBatchSummary('')
+    try {
+      const pre = await ensureImageGenBalance(targets.length, options)
+      if (!pre) return
+      const unitYuan = pre.unit_estimate_yuan ?? pre.unit_estimate_fen / 100
+      const totalYuan = pre.requested_total_yuan ?? pre.requested_total_fen / 100
+      const balanceYuan = pre.balance_yuan ?? pre.balance_fen / 100
+      const ok = await dialog.confirm({
+        title: '批量生成形象',
+        message:
+          `将为当前「${ASSET_TABS.find((t) => t.key === tab)?.label || '分类'}」下 ${targets.length} 个缺少可用参考图的资产排队生成。\n\n` +
+          `每张预扣约 ¥${unitYuan.toFixed(2)}，本次最多约 ¥${totalYuan.toFixed(2)}（当前余额 ¥${balanceYuan.toFixed(2)}；结束后按实际用量结算）。\n\n` +
+          '提交时会再次检查，已有参考图会跳过，在途任务会复用，不重复入队。是否继续？',
+        confirmText: '开始生成',
+      })
+      if (!ok) return
+      const counts = { queued: 0, reused: 0, skipped: 0 }
+      const results = await Promise.allSettled(targets.map((asset) =>
+        enqueueDramaImageGen({
+          projectId,
+          assetId: asset.id,
+          assetName: asset.name || undefined,
+          assetType: asset.type,
+          prompt: readVisualPrompt(asset),
+          options,
+          missingOnly: true,
+          onSubmission: ({ skipped, reused }) => {
+            if (skipped) counts.skipped += 1
+            else if (reused) counts.reused += 1
+            else counts.queued += 1
+            setBatchSummary(`本次新增入队 ${counts.queued} 项，复用在途 ${counts.reused} 项，已有图跳过 ${counts.skipped} 项。`)
+          },
+          onAssetUpdate: (next) => {
+            setAssets((prev) => (prev ?? []).map((a) => (a.id === next.id ? next : a)))
+          },
+        }).then((updated) => {
+          setAssets((prev) => (prev ?? []).map((a) => (a.id === updated.id ? updated : a)))
+        }),
+      ))
+      const failedCount = results.filter((r) => r.status === 'rejected').length
+      setBatchSummary(`本次新增入队 ${counts.queued} 项，复用在途 ${counts.reused} 项，已有图跳过 ${counts.skipped} 项${failedCount ? `；${failedCount} 项未完成，请查看失败原因` : ''}。`)
       const failed = results.find((r) => r.status === 'rejected')
-      if (failed && failed.status === 'rejected') {
-        await notifyImageGenFailure(failed.reason)
-      }
-    })
+      if (failed && failed.status === 'rejected') await notifyImageGenFailure(failed.reason)
+    } finally {
+      setBatchBusy(false)
+    }
   }
 
   // 音色绑定成功后刷新列表项
@@ -682,6 +699,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
           </div>
         </div>
       </header>
+      {batchSummary ? <p role="status">{batchSummary}</p> : null}
 
       <div className="drama-assets-tips" role="note">
         <Sparkles size={15} strokeWidth={1.75} aria-hidden />
@@ -739,8 +757,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
               ? `AI 抽取中…（约 ${Math.max(imageAssetCount, 1)} 项，需 1–3 分钟）`
               : '重新抽取资产'}
           </button>
-          {/* 一键生成未出图：暂时隐藏，恢复时去掉 && false */}
-          {tab !== 'voice' && false ? (
+          {tab !== 'voice' ? (
             <button
               type="button"
               className="drama-btn-primary"
@@ -748,7 +765,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
               onClick={() => void batchGenerate()}
               title={
                 pending.length > 0
-                  ? `仅生成当前分类下尚未出图的 ${pending.length} 项（最多同时 3 路）`
+                  ? `仅为当前分类下缺少可用参考图的 ${pending.length} 项排队生成`
                   : '当前分类没有未出图资产'
               }
             >

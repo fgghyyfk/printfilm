@@ -111,7 +111,7 @@ def _buffered_fen(fen: int, settings: Settings) -> int:
 def _catalog_image_fen(settings: Settings, *, model: str = "", size: str = "", payload: dict | None = None) -> int:
     """按张官价预扣，不再乘 1.2。缓冲是给 token 低估用的，张价已是结算价。"""
     body = payload if isinstance(payload, dict) else {}
-    mid = model or settings.model_image
+    mid = model or str(body.get("model_id") or body.get("model") or settings.model_image)
     resolved = _billing_image_size(settings, model=mid, size=size or _payload_image_size(body))
     return max(1, int(charge_fen_official_image(settings, model=mid, size=resolved)))
 

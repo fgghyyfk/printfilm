@@ -213,6 +213,7 @@ export function syncImageJobToUnified(input: {
   status: DramaGenJobStatus
   taskId?: number
   error?: string
+  message?: string
 }): void {
   upsertDramaGenJob({
     id: imageJobId(input.assetId),
@@ -224,12 +225,12 @@ export function syncImageJobToUnified(input: {
     status: input.status,
     taskId: input.taskId,
     error: input.error,
-    message:
+    message: input.message || (
       input.status === 'running'
         ? '生图中'
         : input.status === 'queued'
           ? '排队中'
-          : undefined,
+          : undefined),
   })
 }
 

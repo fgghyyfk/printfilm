@@ -10,6 +10,13 @@ function isBitmapImageUrl(url: string): boolean {
   return BITMAP_SUFFIXES.some((suffix) => path.endsWith(suffix))
 }
 
+// 与后端参考图判定一致；临时预览存在不代表可用于视频生成。
+export function dramaAssetHasReferenceImage(asset: DramaAsset): boolean {
+  const cover = (asset.cover || '').trim()
+  const url = (asset.url || '').trim()
+  return isBitmapImageUrl(cover || url)
+}
+
 // 从 params 中读取可能存在的预览 URL（画布同步等）
 function readParamsMediaUrl(asset: DramaAsset): string {
   const params = asset.params
@@ -51,7 +58,7 @@ export function dramaAssetHasImage(asset: DramaAsset): boolean {
 export function dramaAssetNeedsImageGeneration(asset: DramaAsset): boolean {
   const kind = (asset.type || '').toLowerCase()
   if (['voice', 'video', 'audio', 'text'].includes(kind)) return false
-  return !dramaAssetHasImage(asset)
+  return !dramaAssetHasReferenceImage(asset)
 }
 
 // 卡片/弹窗生图按钮文案（queueLabel 为排队态文案，有值时优先）

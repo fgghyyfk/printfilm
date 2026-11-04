@@ -672,12 +672,15 @@ export const api = {
   billingAlertAck(alertId: number) {
     return request<{ ok: boolean }>(`/api/billing/alerts/${alertId}/ack`, { method: 'POST' })
   },
-  billingPreflight(params: { domain: string; task_type: string; count?: number }) {
+  billingPreflight(params: { domain: string; task_type: string; count?: number; model_id?: string; resolution?: string; aspect_ratio?: string }) {
     const q = new URLSearchParams({
       domain: params.domain,
       task_type: params.task_type,
       count: String(params.count ?? 1),
     })
+    if (params.model_id) q.set('model_id', params.model_id)
+    if (params.resolution) q.set('resolution', params.resolution)
+    if (params.aspect_ratio) q.set('aspect_ratio', params.aspect_ratio)
     return request<BillingPreflight>(`/api/billing/preflight?${q.toString()}`)
   },
   eventsUrl(projectId: number) {
