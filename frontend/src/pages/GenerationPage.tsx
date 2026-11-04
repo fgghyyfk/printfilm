@@ -243,6 +243,11 @@ function GenerationWorkspace({ kind }: { kind: MediaKind }) {
       <p>{kind === 'audio' ? text('选一款音色，为你的文字注入情绪与温度。', 'Choose a voice and give your words warmth.') : text('从一个想法开始，让灵感自然发生。', 'Start with an idea. Let inspiration happen.')}</p>
       <div className="gen-hero-art" aria-hidden>{kind === 'audio' ? <><AudioLines className="gen-wave" /><Mic /></> : <Icon />}</div>
     </header>
+    {kind === 'image' && <Link to="/ecom" className="gen-ecom-tip">
+      <div><strong><Layers size={16} />{text('做商品详情页、模特上身图？用「电商图」', 'Making product pages? Try Product images')}</strong>
+        <span>{text('选商品、选模特、勾要的图，一键出整套，不用写提示词；本页为高级生成（自己写提示词）。', 'Pick product, model and shots — no prompts. This page is for advanced prompting.')}</span></div>
+      <em>{text('去电商图', 'Open')} <ArrowRight size={15} /></em>
+    </Link>}
     <form className="gen-composer" onSubmit={submit}>
       {kind === 'image' && catalog?.billing_mode === 'fixed_media' && <div className="gen-price-summary">
         <MediaCostNotice modelId={model} resolution={resolution} scope="tools" />
