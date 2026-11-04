@@ -84,10 +84,9 @@ export type DaihuoProjectPayload = { output_ratio: DaihuoRatio; voice_id?: strin
 /** 文案编辑：单张排版文字 */
 export type EcomSetCopyPatch = Pick<EcomSetItem, 'title' | 'subtitle' | 'bullets'>
 
-// 错误策略：401 统一抛「未登录」，收费入口额外触发余额不足充值引导
+// 错误策略：认证由统一客户端处理，收费入口额外触发余额不足充值引导
 function errorHandler(fallback: string, notifyBilling: boolean): ApiErrorHandler {
   return (response, detail) => {
-    if (response.status === 401) throw new Error('未登录')
     if (notifyBilling) throwApiError(response.status, detail, fallback, response.headers.get('X-Error-Code'))
     throw new Error(apiErrorMessage(detail, fallback))
   }

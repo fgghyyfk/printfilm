@@ -34,6 +34,7 @@ export function createHttpTransport(options: {
   baseUrl: string
   getToken: () => string | null
   onError: ApiErrorHandler
+  onUnauthorized?: (request: { path: string; requestToken: string | null }) => void
 }) {
   /** 保留 Headers 的全部合法输入形式，FormData 的 boundary 交给浏览器生成。 */
   async function response(
@@ -47,8 +48,11 @@ export function createHttpTransport(options: {
     if (token) headers.set('Authorization', `Bearer ${token}`)
     if (!(init?.body instanceof FormData)) headers.set('Content-Type', 'application/json')
     new Headers(init?.headers).forEach((value, key) => headers.set(key, value))
+    // 调用方可覆盖认证头，失效判断必须对应实际发送的凭据。
+    const requestToken = /^Bearer\s+(.+)$/i.exec(headers.get('Authorization') || '')?.[1] || null
     const result = await fetch(`${options.baseUrl}${path}`, { ...init, headers })
     if (!result.ok) {
+      if (result.status === 401) options.onUnauthorized?.({ path, requestToken })
       const error = await result.json().catch(() => ({ detail: result.statusText }))
       onError(result, error?.detail)
     }

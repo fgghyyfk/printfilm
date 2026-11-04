@@ -53,7 +53,7 @@ export default function SiteNav({ active }: Props) {
 
   useEffect(() => {
     if (!localStorage.getItem('token')) return
-    api.me().then(setUser).catch(() => localStorage.removeItem('token'))
+    api.me().then(setUser).catch(() => undefined)
   }, [])
 
   useEffect(() => {

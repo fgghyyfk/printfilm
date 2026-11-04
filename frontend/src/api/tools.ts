@@ -4,7 +4,7 @@ import { throwApiError } from '../lib/apiError'
 import { API_BASE, createJsonRequester } from './client'
 import { apiErrorMessage } from './http'
 
-/** 工具请求统一处理登录失效；仅生成入口沿用全局计费提示。 */
+/** 工具请求复用统一认证处理；仅生成入口沿用全局计费提示。 */
 function requestToolJson<T>(
   path: string,
   fallback: string,
@@ -12,7 +12,6 @@ function requestToolJson<T>(
   notifyBilling = false,
 ): Promise<T> {
   return createJsonRequester((response, detail) => {
-    if (response.status === 401) throw new Error('未登录')
     if (notifyBilling) throwApiError(response.status, detail, fallback, response.headers.get('X-Error-Code'))
     throw new Error(apiErrorMessage(detail, fallback))
   })<T>(path, init)

@@ -136,6 +136,7 @@
 ### [ ] 11. 前端登录态：统一处理 401，别因断网登出
 - 位置：`frontend/src/api/http.ts` 约 45-60 行无统一 401；`frontend/src/components/SiteNav.tsx` 约 56 行 `api.me()` 任意失败都删 token；`api/tools.ts` 约 15 行、`api/ecomSet.ts` 约 90 行各自写死「未登录」。
 - 改法：transport 层遇 401 清 token 并跳 `/auth?next=当前路径`（复用 `safeNextPath`）；网络错误/5xx 不清 token。删掉各处重复的 401 文案。
+- 实施进度（2026-11-04）：已实施，**待 10–13 项集中验证**。统一 401 hook 按实际发送的认证头核对当前会话，保护新 token、去重回跳；登录等公开认证失败留在表单，网络、403 和服务错误保留登录态。共享安全回跳校验，移除导航栏及设置页的任意失败登出，保留公开素材下载和第 10 项错误码契约。
 
 ### [ ] 12. 漫剧整集合成改为异步任务
 - 位置：`backend/app/services/drama/episode_compose.py` 约 102 行；`backend/app/api/drama/episodes.py` 约 896 行，HTTP 请求内同步逐镜 x264 重编码，输出文件名固定。

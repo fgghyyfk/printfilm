@@ -1,6 +1,7 @@
 import { throwApiError } from '../lib/apiError'
 import { createHttpTransport, resolveApiBase } from './http'
 import type { ApiErrorHandler } from './http'
+import { safeNextPath } from '../lib/authRedirect'
 
 /** 用户端统一 API 地址；空值为生产同源，未设置时使用开发端口 8000。 */
 export const API_BASE = resolveApiBase(
@@ -8,10 +9,30 @@ export const API_BASE = resolveApiBase(
   typeof window === 'undefined' ? undefined : window.location,
 )
 
+/* 公开认证失败留在表单；匿名并发失效只发起一次整页回跳。 */
+const PUBLIC_AUTH_PATHS = new Set([
+  '/api/auth/login', '/api/auth/register', '/api/auth/forgot-password', '/api/auth/reset-password',
+])
+let redirectingToAuth = false
+
+/** 只清理本次请求仍在使用的会话，迟到的旧请求不能影响新登录。 */
+function handleUnauthorized({ path, requestToken }: { path: string; requestToken: string | null }) {
+  const requestPath = path.split(/[?#]/, 1)[0].replace(/\/$/, '')
+  if (PUBLIC_AUTH_PATHS.has(requestPath)) return
+  const currentToken = localStorage.getItem('token') || null
+  if (requestToken !== currentToken || (!currentToken && redirectingToAuth)) return
+  if (currentToken) localStorage.removeItem('token')
+  if (/^\/auth\/?$/.test(window.location.pathname)) return
+  const next = safeNextPath(window.location.pathname + window.location.search + window.location.hash)
+  redirectingToAuth = true
+  window.location.replace(`/auth?${new URLSearchParams({ next })}`)
+}
+
 /** 默认保留全局计费提示，上传和工具请求可以显式传入原有错误处理。 */
 const transport = createHttpTransport({
   baseUrl: API_BASE,
   getToken: () => localStorage.getItem('token'),
+  onUnauthorized: handleUnauthorized,
   onError: (response, detail) => throwApiError(response.status, detail, '请求未完成，请稍后再试', response.headers.get('X-Error-Code')),
 })
 

@@ -72,6 +72,7 @@ export default function SettingsPage() {
   /*
    * tab 当前侧栏分区
    * user 当前登录用户
+   * userError 账号加载失败提示（不改变登录态）
    * wallet 钱包余额
    * dramaItems 最近漫剧项目
    * kepuItems 最近科普项目
@@ -80,6 +81,7 @@ export default function SettingsPage() {
    */
   const [tab, setTab] = useState<SettingsTab>(() => parseTab(params.get('tab')))
   const [user, setUser] = useState<User | null>(null)
+  const [userError, setUserError] = useState('')
   const [wallet, setWallet] = useState<Wallet | null>(null)
   const [dramaItems, setDramaItems] = useState<DramaProjectListItem[]>([])
   const [kepuItems, setKepuItems] = useState<KepuItem[]>([])
@@ -95,8 +97,7 @@ export default function SettingsPage() {
       .me()
       .then(setUser)
       .catch(() => {
-        localStorage.removeItem('token')
-        nav('/auth')
+        setUserError('账号信息暂时无法加载，请稍后重试')
       })
     api.wallet().then(setWallet).catch(() => undefined)
   }, [nav])
@@ -176,6 +177,7 @@ export default function SettingsPage() {
         </aside>
 
         <main className="pf-settings-main">
+          {userError ? <p className="pf-error" role="alert">{userError}</p> : null}
           {tab === 'account' ? <AccountProfileCard user={user} onUserChange={setUser} /> : null}
 
           {tab === 'projects' ? (

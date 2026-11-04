@@ -6,15 +6,9 @@ import BrandMark from '../components/BrandMark'
 import LanguageSwitch from '../components/layout/LanguageSwitch'
 import { useI18n } from '../i18n'
 import { isValidAuthPassword, isValidEmailInput } from '../lib/validateAuthForm'
+import { safeNextPath } from '../lib/authRedirect'
 
 type AuthMode = 'login' | 'register' | 'forgot' | 'reset'
-
-// 仅允许站内相对路径回跳，防止开放重定向
-function safeNextPath(raw: string | null, fallback = '/') {
-  if (!raw) return fallback
-  if (!raw.startsWith('/') || raw.startsWith('//') || raw.includes('://')) return fallback
-  return raw
-}
 
 // 由 URL ?mode= / ?token= 决定初始 Auth 模式
 function modeFromParams(params: URLSearchParams): AuthMode {
