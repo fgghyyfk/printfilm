@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.services.compliance.ad_words import REPLACE, check_text
+from app.services.compliance.changes import clean_fields
 from app.services.ecom_set.planner import extract_json
 from app.services.ecom_set.prompts import clip
 
@@ -81,11 +81,17 @@ def parse_segments(raw: str, items: list[dict], *, name: str) -> dict[str, Any]:
         narration = str(src.get("narration") or "").strip()
         if len(narration) < SEG_MIN_CHARS // 2:
             narration = fallback_narration(it, name=name, first=pos == 0, last=pos == len(items) - 1)
-        narration = check_text(clip(narration, SEG_MAX_CHARS), mode=REPLACE)[0]
-        title = check_text(fit_title(str(src.get("title") or ""), it.get("title") or ""), mode=REPLACE)[0]
-        segments.append({"idx": int(it["idx"]), "title": title, "narration": narration})
-    title = check_text(clip(str(data.get("title") or name), 16), mode=REPLACE)[0] or clip(name, 16)
-    return {"title": title, "segments": segments}
+        fields, audit = clean_fields({
+            "narration": clip(narration, SEG_MAX_CHARS),
+            "overlay_title": fit_title(str(src.get("title") or ""), it.get("title") or ""),
+        })
+        segments.append({"idx": int(it["idx"]), "title": fields["overlay_title"],
+                         "narration": fields["narration"], "compliance_changes": audit})
+    fields, audit = clean_fields({"title": clip(str(data.get("title") or name), 16)})
+    # 回退品名同样生成可追溯清洗结果，不把已删除的极限词重新带回标题。
+    if not fields["title"]:
+        fields, audit = clean_fields({"title": clip(name, 16)})
+    return {"title": fields["title"], "segments": segments, "compliance_changes": audit}
 
 
 # 无 Key 联调时的固定口播

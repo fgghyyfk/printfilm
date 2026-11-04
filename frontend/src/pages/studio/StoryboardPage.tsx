@@ -22,7 +22,7 @@ import { handleBillingError } from '../../lib/billingError'
 import BillingErrorNotice from '../../components/billing/BillingErrorNotice'
 import ComplianceNotice from '../../components/compliance/ComplianceNotice'
 import EcomSetSourceLink from '../../components/daihuo/EcomSetSourceLink'
-import { getProjectCompliance } from '../../api/compliance'
+import { getProjectCompliance, undoProjectReplacement } from '../../api/compliance'
 import { kepuComplianceLabel, projectComplianceKey, scrollToShotRow, shotRowDomId } from '../../lib/compliance'
 import { useI18n } from '../../i18n'
 import {
@@ -1047,6 +1047,11 @@ title="用当前镜头重新拼接"
               <ComplianceNotice
                 fetchReport={() => getProjectCompliance(project.id)}
                 refreshKey={complianceKey}
+                undoDisabled={busy || running}
+                onUndoReplacement={async (row, change) => {
+                  await undoProjectReplacement(project.id, row, change)
+                  setProject(await api.getProject(project.id))
+                }}
                 describe={(item) => ({
                   label: kepuComplianceLabel(item, t),
                   onLocate: item.shot_id != null ? () => scrollToShotRow(item.shot_id as number) : undefined,

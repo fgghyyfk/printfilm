@@ -136,13 +136,15 @@ async def build_daihuo_shots(project_id: int) -> int:
             db.add(Shot(
                 project_id=project_id, shot_no=no,
                 duration=float(max(3, min(10, estimate_narration_duration(narration)))),
-                narration=narration, overlay_title=seg.get("title") or it["title"],
+                narration=narration, overlay_title=seg.get("title", it["title"]),
+                compliance_changes=seg.get("compliance_changes") or {},
                 overlay_subtitle=it["subtitle"], img_prompt=it["scene"][:500],
                 video_prompt="", segment_script="", camera="slow push in",
                 image_url=image_url, status=ShotStatus.IMAGE_READY,
             ))
         if project.title in {"", "商品带货", ecom.name[:60]} and script.get("title"):
             project.title = script["title"][:60]
+            project.compliance_changes = script.get("compliance_changes") or {}
         project.status = ProjectStatus.SCRIPT_READY
         project.progress = 15
         await db.commit()

@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
@@ -101,6 +101,7 @@ class ShotOut(BaseModel):
     img_prompt: str
     video_prompt: str
     segment_script: str = ""
+    compliance_changes: dict = Field(default_factory=dict)
     camera: str
     bgm_mood: str
     image_url: str | None
@@ -119,7 +120,15 @@ class ShotReorderIn(BaseModel):
     shot_ids: list[int] = Field(min_length=1)
 
 
+class ComplianceUndo(BaseModel):
+    """只接收服务端已有替换记录的字段与ID，禁止客户端写审计原稿。"""
+
+    field: Literal["title", "avatar_title2", "narration", "overlay_title", "overlay_subtitle", "segment_script", "video_prompt", "highlights"]
+    change_id: str
+
+
 class ShotUpdate(BaseModel):
+    compliance_undo: ComplianceUndo | None = None
     narration: str | None = None
     overlay_title: str | None = None
     overlay_subtitle: str | None = None
@@ -156,6 +165,7 @@ class ProjectCreate(BaseModel):
 
 
 class ProjectUpdate(BaseModel):
+    compliance_undo: ComplianceUndo | None = None
     title: str | None = Field(default=None, max_length=200)
     source_type: str | None = Field(default=None, pattern="^(theme|script)$")
     source_text: str | None = Field(default=None, min_length=2, max_length=20000)
@@ -188,6 +198,7 @@ class ProjectUpdate(BaseModel):
 
 
 class ProjectOut(BaseModel):
+    compliance_changes: dict = Field(default_factory=dict)
     id: int
     template_id: str
     title: str

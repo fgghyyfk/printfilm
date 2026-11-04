@@ -146,12 +146,27 @@ async def expand_content(
     )
 
 
-async def _get_owned_project(db: AsyncSession, project_id: int, user: User) -> Project:
-    result = await db.execute(
-        select(Project)
-        .where(Project.id == project_id, Project.user_id == user.id)
-        .options(selectinload(Project.shots))
-    )
+async def _get_owned_project(
+    db: AsyncSession, project_id: int, user: User, *, for_undo: bool = False, shot_id: int | None = None,
+) -> Project:
+    """读取拥有的项目；仅撤销先锁Project→目标Shot并新读，锁保持到原PATCH提交。"""
+    statement = select(Project).where(Project.id == project_id, Project.user_id == user.id)
+    if for_undo:
+        # 首次读取之前禁止autoflush陈旧ORM，再用数据库当前值覆盖身份映射。
+        with db.no_autoflush:
+            locked = (await db.execute(statement.with_for_update().execution_options(populate_existing=True))).scalar_one_or_none()
+            if not locked:
+                raise HTTPException(status_code=404, detail="项目不存在")
+            if shot_id is not None:
+                shot = (await db.execute(
+                    select(Shot).where(Shot.id == shot_id, Shot.project_id == project_id)
+                    .with_for_update().execution_options(populate_existing=True)
+                )).scalar_one_or_none()
+                if not shot:
+                    raise HTTPException(status_code=404, detail="分镜不存在")
+            result = await db.execute(statement.options(selectinload(Project.shots)).execution_options(populate_existing=True))
+    else:
+        result = await db.execute(statement.options(selectinload(Project.shots)))
     project = result.scalar_one_or_none()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
@@ -393,17 +408,19 @@ async def project_compliance(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
-    from app.models import Template
     from app.services.compliance.ad_words import REPORT
-    from app.services.compliance.content import mode_for_template, scan_shots
+    from app.services.compliance.content import scan_shots
+    from app.services.compliance.changes import change_rows
 
     project = await _get_owned_project(db, project_id, user)
-    tpl = await db.get(Template, project.template_id) if project.template_id else None
     shots = sorted(project.shots, key=lambda s: s.shot_no or 0)
-    items = scan_shots(shots, title=project.title or "")
+    items = scan_shots(shots, title=project.title or "", title2=project.avatar_title2 or "")
     return {
-        "mode": mode_for_template(tpl),
-        "auto_replace": mode_for_template(tpl) != REPORT,
+        "mode": REPORT,
+        "auto_replace": False,
+        "replacements": change_rows(project, scope="project") + [
+            row for shot in shots for row in change_rows(shot, scope="shot", index=shot.shot_no)
+        ],
         "count": sum(len(i["hits"]) for i in items),
         "items": items,
     }
@@ -416,10 +433,16 @@ async def update_project(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> Project:
-    project = await _get_owned_project(db, project_id, user)
+    project = await _get_owned_project(db, project_id, user, for_undo=body.compliance_undo is not None)
     _ensure_project_idle(project, detail="生成进行中，无法修改")
 
     data = body.model_dump(exclude_unset=True)
+    from app.services.compliance.changes import prepare_undo
+
+    try:
+        data, is_undo = prepare_undo(project, data, allowed={"title", "avatar_title2"})
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     if "template_id" in data:
         from app.models import Template
 
@@ -456,7 +479,9 @@ async def update_project(
         data["bgm_lock"] = str(data["bgm_lock"] or "").strip()
     if "subtitle_preset" in data:
         data["subtitle_preset"] = str(data["subtitle_preset"] or "").strip()
-    if "bgm_lock" in data or "subtitle_preset" in data:
+    # 数字人成片烧录项目标题；撤销标题后只作废旧成片，沿用已有素材进度。
+    title_undo = is_undo and project.pipeline_mode == "avatar" and any(key in data for key in ("title", "avatar_title2"))
+    if "bgm_lock" in data or "subtitle_preset" in data or title_undo:
         _demote_after_edit(project)
     for k, v in data.items():
         setattr(project, k, v)
@@ -788,23 +813,24 @@ async def update_shot(
     from app.models import Template
     from app.services.pipeline import clamp_shot_duration
 
-    project = await _get_owned_project(db, project_id, user)
+    project = await _get_owned_project(db, project_id, user, for_undo=body.compliance_undo is not None, shot_id=shot_id)
     shot = next((s for s in project.shots if s.id == shot_id), None)
     if not shot:
         raise HTTPException(status_code=404, detail="分镜不存在")
     data = body.model_dump(exclude_unset=True)
-    # 带货/获客模板：用户手改的旁白与叠字同样自动替换广告法极限词（科普模板只在编辑页提示）
-    from app.services.compliance.ad_words import REPLACE
-    from app.services.compliance.content import is_ad_template, sanitize_shot_fields
+    # 用户手改只报告；撤销仅依据服务端原稿重建，沿用下方素材失效规则。
+    from app.services.compliance.changes import prepare_undo
 
-    if is_ad_template(await db.get(Template, project.template_id)):
-        text_keys = ("narration", "overlay_title", "overlay_subtitle", "segment_script", "highlights")
-        picked = {k: data[k] for k in text_keys if isinstance(data.get(k), str)}
-        if picked:
-            cleaned, _ = sanitize_shot_fields(picked, mode=REPLACE)
-            data.update(cleaned)
+    if data.get("compliance_undo"):
+        _ensure_project_idle(project, detail="生成进行中，无法撤销替换")
+    try:
+        data, is_undo = prepare_undo(shot, data, allowed={
+            "narration", "overlay_title", "overlay_subtitle", "segment_script", "video_prompt", "highlights",
+        })
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     # 同值全字段保存无需重新规范化；历史空脚本只改旁白时也不凭空生成制作脚本。
-    if "segment_script" in data and data["segment_script"] is not None and (
+    if not is_undo and "segment_script" in data and data["segment_script"] is not None and (
         data["segment_script"] != shot.segment_script
         or (
             bool(data["segment_script"].strip())

@@ -7,7 +7,7 @@ import type { TFunction } from '../i18n'
 
 // 科普命中位置：「标题」或「第 X 镜 · 旁白/标题/副标题」
 export function kepuComplianceLabel(item: KepuComplianceItem, t: TFunction): string {
-  if (item.scope === 'project') return t('compliance.where.title')
+  if (item.scope === 'project') return t(`compliance.fields.${item.field}`)
   return t('compliance.where.shot', {
     index: item.index ?? '?',
     field: t(`compliance.fields.${item.field}`),
@@ -28,9 +28,9 @@ export function dramaComplianceLabel(
 export function projectComplianceKey(project: Project | null): string {
   if (!project) return ''
   const shots = (project.shots || []).map(
-    (s) => `${s.id}\u0001${s.narration || ''}\u0001${s.overlay_title || ''}\u0001${s.overlay_subtitle || ''}`,
+    (s) => `${s.id}\u0001${s.narration || ''}\u0001${s.overlay_title || ''}\u0001${s.overlay_subtitle || ''}\u0001${s.segment_script || ''}\u0001${s.video_prompt || ''}\u0001${s.highlights || ''}\u0001${JSON.stringify(s.compliance_changes || {})}`,
   )
-  return `${project.id}\u0002${project.title || ''}\u0002${shots.join('\u0003')}`
+  return `${project.id}\u0002${project.title || ''}\u0002${project.avatar_title2 || ''}\u0002${JSON.stringify(project.compliance_changes || {})}\u0002${shots.join('\u0003')}`
 }
 
 // 漫剧分集签名：仅取服务端已保存的分镜内容（本地未保存编辑不触发）

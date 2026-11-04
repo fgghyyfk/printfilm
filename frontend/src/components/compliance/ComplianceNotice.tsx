@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ComplianceHit, ComplianceReport } from '../../api/compliance'
+import type { ComplianceChange, ComplianceHit, ComplianceReplacementItem, ComplianceReport } from '../../api/compliance'
 import { useI18n } from '../../i18n'
 import './complianceNotice.css'
+import GeneratedCopyChanges from './GeneratedCopyChanges'
 
 /** 单条命中的展示信息：位置文案 + 可选定位动作 */
 export type ComplianceEntryView = {
@@ -16,16 +17,20 @@ type Props<T extends { hits: ComplianceHit[] }> = {
   refreshKey: string
   /** 把一条命中描述成位置文案与定位动作 */
   describe: (item: T) => ComplianceEntryView
+  undoDisabled?: boolean
+  onUndoReplacement?: (row: ComplianceReplacementItem, change: ComplianceChange) => Promise<void>
 }
 
 // 防抖时长：轮询/连续保存时避免重复请求
 const DEBOUNCE_MS = 500
 
-/** 广告法合规提示条：无命中不显示；可折叠列出命中位置与词，支持重新检查 */
+/** 广告法合规提示条：当前风险与真实生成历史分别展示，支持重新检查 */
 export default function ComplianceNotice<T extends { hits: ComplianceHit[] }>({
   fetchReport,
   refreshKey,
   describe,
+  undoDisabled,
+  onUndoReplacement,
 }: Props<T>) {
   const { t } = useI18n()
   /*
@@ -66,11 +71,11 @@ export default function ComplianceNotice<T extends { hits: ComplianceHit[] }>({
     // runCheck 通过 ref 读取最新 fetcher，只需随签名触发
   }, [refreshKey])
 
-  if (!report || report.count <= 0 || report.items.length === 0) return null
+  if (!report || (report.count <= 0 && !report.replacements?.length)) return null
 
-  const headline = report.auto_replace
-    ? t('compliance.autoReplaced', { count: report.count })
-    : t('compliance.found', { count: report.count })
+  const headline = report.count > 0
+    ? t('compliance.found', { count: report.count })
+    : t('compliance.generatedHistory')
 
   return (
     <div className="pf-compliance" role="status">
@@ -131,7 +136,15 @@ export default function ComplianceNotice<T extends { hits: ComplianceHit[] }>({
               )
             })}
           </ul>
-          <p className="pf-compliance-note">{t('compliance.note')}</p>
+          {report.count > 0 ? <p className="pf-compliance-note">{t('compliance.note')}</p> : null}
+          {report.replacements?.length ? <GeneratedCopyChanges
+            rows={report.replacements}
+            disabled={undoDisabled}
+            onUndo={onUndoReplacement ? async (row, change) => {
+              await onUndoReplacement(row, change)
+              await runCheck()
+            } : undefined}
+          /> : null}
         </div>
       ) : null}
     </div>

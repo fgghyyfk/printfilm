@@ -92,6 +92,7 @@ WHITELIST = (
     "最近", "最后", "最终", "最初", "最少", "最多可", "最长可", "最高可", "最后一天",
     "能效一级", "一级能效", "第一次", "第一步", "第一天", "第一眼", "第一口", "第一时间",
     "第一集", "第一章", "第一季", "第一个", "第一位", "第一层", "第一代", "第一部分",
+    "第一印象", "最低温", "最高温", "治疗仪",
     "历史上", "转运蛋白", "转运站", "永久冻土", "冠军赛",
 )
 
@@ -143,20 +144,30 @@ def catalog() -> dict:
 
 
 # 把白名单词暂时替换成占位符，避免被误伤
-def _protect(text: str) -> tuple[str, dict[str, str]]:
+def _protect(text: str, trace=None) -> tuple[str, dict[str, str]]:
     keep: dict[str, str] = {}
     for i, w in enumerate(WHITELIST):
         if w in text:
             token = f"\u0000{i}\u0000"
             keep[token] = w
-            text = text.replace(w, token)
+            text = trace.literal(w, token, record=False) if trace else text.replace(w, token)
+    # 数量上限是客观参数搭配，不将「最多12小时」截成「多12小时」。
+    for i, match in enumerate(list(re.finditer(r"最[多少长短高低]\s*(?:[0-9０-９]+(?:[.．][0-9０-９]+)?|[一二三四五六七八九十百千万]+)", text))):
+        token = f"\u0000quantity{i}\u0000"
+        keep[token] = match.group(0)
+        if trace:
+            pos = trace.text.find(match.group(0))
+            trace.replace(pos, pos + len(match.group(0)), token, record=False)
+            text = trace.text
+        else:
+            text = text.replace(match.group(0), token, 1)
     return text, keep
 
 
 # 还原白名单占位符
-def _restore(text: str, keep: dict[str, str]) -> str:
+def _restore(text: str, keep: dict[str, str], trace=None) -> str:
     for token, w in keep.items():
-        text = text.replace(token, w)
+        text = trace.literal(token, w, record=False) if trace else text.replace(token, w)
     return text
 
 
@@ -164,7 +175,7 @@ REPLACE = "replace"
 REPORT = "report"
 
 
-def check_text(text: str, *, mode: str = REPLACE) -> tuple[str, list[Hit]]:
+def check_text(text: str, *, mode: str = REPLACE, _changes: list[dict] | None = None) -> tuple[str, list[Hit]]:
     """检测并清洗一段文本，返回 (结果文本, 命中列表)。
 
     mode=replace：拦截档自动替换/删除（广告、带货文案用）；
@@ -174,30 +185,44 @@ def check_text(text: str, *, mode: str = REPLACE) -> tuple[str, list[Hit]]:
     if not text:
         return text or "", []
     hits: list[Hit] = []
-    lines = [_check_line(line, hits, replace=(mode == REPLACE)) for line in text.split("\n")]
+    lines: list[str] = []
+    old_offset, new_offset = 0, 0
+    for line in text.split("\n"):
+        changes: list[dict] | None = [] if _changes is not None else None
+        result = _check_line(line, hits, replace=(mode == REPLACE), changes=changes)
+        for change in changes or []:
+            _changes.append({**change, "original_start": change["original_start"] + old_offset,
+                             "original_end": change["original_end"] + old_offset,
+                             "start": change["start"] + new_offset, "end": change["end"] + new_offset})
+        lines.append(result)
+        old_offset += len(line) + 1
+        new_offset += len(result) + 1
     return "\n".join(lines), hits
 
 
 # 处理单行：替换/记录拦截词，再记录提醒词
-def _check_line(line: str, hits: list[Hit], *, replace: bool) -> str:
+def _check_line(line: str, hits: list[Hit], *, replace: bool, changes: list[dict] | None = None) -> str:
     if not line.strip():
         return line
-    out, keep = _protect(line)
+    from app.services.compliance._tracked import TrackedText
+
+    trace = TrackedText(line) if changes is not None and replace else None
+    out, keep = _protect(line, trace)
     for word, repl, cat in _block_entries():
         if word in out:
             hits.append(Hit(word, cat, BLOCK))
             if replace:
-                out = out.replace(word, repl)
+                out = trace.literal(word, repl) if trace else out.replace(word, repl)
     for pattern, repl, cat in REGEX_RULES:
         for m in pattern.findall(out):
             hits.append(Hit(m if isinstance(m, str) else m[0], cat, BLOCK))
         if replace:
-            out = pattern.sub(repl, out)
+            out = trace.sub(pattern, repl) if trace else pattern.sub(repl, out)
     if MOST_RE.search(out):
         hits.append(Hit("最", "最高级", BLOCK))
         if replace:
-            out = MOST_RE.sub("", out)
-    out = _restore(out, keep)
+            out = trace.sub(MOST_RE, "") if trace else MOST_RE.sub("", out)
+    out = _restore(out, keep, trace)
     for cat, words in WARN_WORDS.items():
         for w in words:
             if w in out:
@@ -209,7 +234,11 @@ def _check_line(line: str, hits: list[Hit], *, replace: bool) -> str:
     body = re.sub(r"[ \t]{2,}", " ", out.strip())
     body = re.sub(r"([，,、；;])\1+", r"\1", body)
     body = re.sub(r"^[，,、；;]+|[，,、；;]+$", "", body).strip()
-    return lead + body
+    result = lead + body
+    if trace:
+        trace.rewrite(result)
+        changes.extend(trace.changes())
+    return result
 
 
 def summarize(hits: list[Hit], *, mode: str = "replace") -> list[str]:

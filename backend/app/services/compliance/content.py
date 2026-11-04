@@ -1,6 +1,7 @@
 """把极限词库应用到开口播的业务文案：按项目类型选模式、清洗镜头文案、扫描生成提示。
 
-策略：带货/获客类（模板分类含「获客」「带货」或允许保留店名）→ 写入时自动替换；
+策略：带货/获客类（模板分类含「获客」「带货」或允许保留店名）→ 生成时自动替换；
+用户手改文案只报告，由用户决定是否修改。
 科普/漫剧 → 写入不改字，编辑页通过扫描接口提示「可能违规用语」由用户自己改。
 """
 
@@ -36,23 +37,35 @@ def mode_for_template(tpl: Any) -> str:
 
 
 # 只清洗脚本里的旁白行（保留【…】前缀与其它所有行）
-def sanitize_script(script: str, *, mode: str) -> tuple[str, list[Hit]]:
+def sanitize_script(script: str, *, mode: str, _changes: list[dict] | None = None) -> tuple[str, list[Hit]]:
     if not script:
         return script or "", []
     from app.services.seedance_segments import _is_narration_script_line
 
     hits: list[Hit] = []
     out: list[str] = []
-    for line in script.replace("\r\n", "\n").split("\n"):
+    old_offset, new_offset = 0, 0
+    for line in script.split("\n"):
         if not _is_narration_script_line(line):
             out.append(line)
+            old_offset += len(line) + 1
+            new_offset += len(line) + 1
             continue
         m = SCRIPT_PREFIX_RE.match(line)
         prefix = m.group(1) if m else ""
-        body, h = check_text(line[len(prefix):], mode=mode)
+        changes: list[dict] | None = [] if _changes is not None else None
+        body, h = check_text(line[len(prefix):], mode=mode, _changes=changes)
+        for change in changes or []:
+            _changes.append({**change,
+                "original_start": change["original_start"] + old_offset + len(prefix),
+                "original_end": change["original_end"] + old_offset + len(prefix),
+                "start": change["start"] + new_offset + len(prefix),
+                "end": change["end"] + new_offset + len(prefix)})
+        old_offset += len(line) + 1
+        new_offset += len(prefix) + len(body) + 1
         hits += h
         out.append(prefix + body)
-    return "\n".join(out), hits
+    return "\n".join(out).replace("\r\n", "\n"), hits
 
 
 def sanitize_shot_fields(fields: dict[str, Any], *, mode: str) -> tuple[dict[str, Any], list[Hit]]:
@@ -85,17 +98,20 @@ def _hit_rows(hits: list[Hit]) -> list[dict]:
     return list(seen.values())
 
 
-def scan_shots(shots: list[Any], *, title: str = "") -> list[dict]:
+def scan_shots(shots: list[Any], *, title: str = "", title2: str = "") -> list[dict]:
     """扫描科普项目各镜头文案（只报告不改），返回 [{scope, shot_id, index, field, hits}]。"""
     items: list[dict] = []
-    if title:
-        _, h = check_text(title, mode=REPORT)
+    for field, text in (("title", title), ("avatar_title2", title2)):
+        _, h = check_text(text, mode=REPORT)
         if h:
-            items.append({"scope": "project", "shot_id": None, "index": None, "field": "title", "hits": _hit_rows(h)})
+            items.append({"scope": "project", "shot_id": None, "index": None, "field": field, "hits": _hit_rows(h)})
     for i, shot in enumerate(shots):
-        for field in ("narration", "overlay_title", "overlay_subtitle"):
+        for field in ("narration", "overlay_title", "overlay_subtitle", "highlights", "segment_script", "video_prompt"):
             text = getattr(shot, field, None) or ""
-            _, h = check_text(text, mode=REPORT)
+            if field in {"segment_script", "video_prompt"}:
+                _, h = sanitize_script(text, mode=REPORT)
+            else:
+                _, h = check_text(text, mode=REPORT)
             if h:
                 items.append({
                     "scope": "shot", "shot_id": getattr(shot, "id", None),

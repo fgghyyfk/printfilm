@@ -1,3 +1,4 @@
+import type { ComplianceAudit } from './api/compliance'
 import { API_BASE, createJsonRequester, requestResponse, uploadFile } from './api/client'
 import { apiErrorMessage } from './api/http'
 
@@ -87,6 +88,7 @@ export function defaultsFromTemplate(t: Template): {
 }
 
 export type Shot = {
+  compliance_changes?: ComplianceAudit
   id: number
   shot_no: number
   duration: number
@@ -128,6 +130,7 @@ export function resolveVoiceId(raw: string, voices: VoicePreset[]): string {
 }
 
 export type Project = {
+  compliance_changes?: ComplianceAudit
   id: number
   template_id: string
   title: string

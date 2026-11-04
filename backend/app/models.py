@@ -101,6 +101,8 @@ class Project(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     template_id: Mapped[str] = mapped_column(ForeignKey("templates.id"), index=True)
     title: Mapped[str] = mapped_column(String(200), default="未命名作品")
+    # 仅生成文案的原稿及逐字段码点替换明细；用户编辑不覆盖原稿。
+    compliance_changes: Mapped[dict] = mapped_column(JSON, default=dict)
     source_type: Mapped[str] = mapped_column(String(16), default="theme")  # theme | script
     source_text: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(32), default=ProjectStatus.DRAFT)
@@ -179,6 +181,8 @@ class Shot(Base):
     video_prompt: Mapped[str] = mapped_column(Text, default="")
     # Manju-style timed segment script (@duration + production cues)
     segment_script: Mapped[str] = mapped_column(Text, default="")
+    # 仅生成文案的原稿及逐字段码点替换明细。
+    compliance_changes: Mapped[dict] = mapped_column(JSON, default=dict)
     camera: Mapped[str] = mapped_column(String(64), default="slow pan")
     bgm_mood: Mapped[str] = mapped_column(String(64), default="neutral")
     image_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)

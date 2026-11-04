@@ -150,3 +150,27 @@
 .drama-ep-storyboard .pf-compliance-list {
   max-height: 7.5rem;
 }
+
+/* 生成历史与风险扫描分开呈现；原稿和高亮保持换行可复核。 */
+.pf-compliance-history {
+  border-top: 1px dashed #f0d79c;
+  margin-top: 0.6rem;
+}
+
+.pf-compliance-history section {
+  margin: 0.75rem 0;
+}
+
+.pf-compliance-preview {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  max-height: 12rem;
+  overflow: auto;
+  margin: 0.4rem 0;
+}
+
+.pf-compliance-history mark {
+  background: #ffe396;
+  color: inherit;
+}

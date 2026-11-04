@@ -81,33 +81,44 @@ async def write_script(project_id: int) -> None:
         # 标题：项目标题还是占位（或就是主题原文，批量建项目时如此）才用模型给的
         # 带货/获客模板（或带货文案风格）：标题与口播自动替换广告法极限词
         from app.models import Template
-        from app.services.compliance.ad_words import REPLACE, check_text
-        from app.services.compliance.content import is_ad_template, sanitize_shot_fields
+        from app.services.compliance.content import is_ad_template
+        from app.services.compliance.changes import clean_fields
 
         tpl = await db.get(Template, project.template_id) if project.template_id else None
         ad_mode = is_ad_template(tpl) or style == "daihuo"
+        title_audit = {}
         if ad_mode:
-            for key in ("title", "title2"):
-                if data.get(key):
-                    data[key] = check_text(str(data[key]), mode=REPLACE)[0]
+            titles, title_audit = clean_fields({
+                "title": str(data.get("title") or "").strip()[:60],
+                "avatar_title2": str(data.get("title2") or "").strip()[:32],
+            })
+            data["title"], data["title2"] = titles["title"], titles["avatar_title2"]
             for seg in segs:
-                fields, _ = sanitize_shot_fields(
+                fields, audit = clean_fields(
                     {"narration": seg["narration"], "overlay_title": seg["title"],
                      "highlights": "|".join(seg["keywords"])},
-                    mode=REPLACE,
                 )
+                seg["compliance_changes"] = audit
                 seg["narration"], seg["title"] = fields["narration"], fields["overlay_title"]
                 seg["keywords"] = [k for k in fields["highlights"].split("|") if k]
+        project_audit = dict(project.compliance_changes or {})
         placeholder = _PLACEHOLDER_TITLES | {source_text.strip()[:60]}
         if source_type == "theme" and data.get("title") and project.title in placeholder:
             project.title = str(data["title"]).strip()[:60]
+            project_audit.pop("title", None)
+            if "title" in title_audit:
+                project_audit["title"] = title_audit["title"]
         if style == "opinion" and not (project.avatar_title2 or "").strip() and data.get("title2"):
             project.avatar_title2 = str(data["title2"]).strip()[:32]
+            if "avatar_title2" in title_audit:
+                project_audit["avatar_title2"] = title_audit["avatar_title2"]
+        project.compliance_changes = project_audit
         for i, seg in enumerate(segs, start=1):
             db.add(Shot(
                 project_id=project.id, shot_no=i,
                 duration=float(min(max_sec, max(3, estimate_narration_duration(seg["narration"])))),
                 narration=seg["narration"], overlay_title=seg["title"],
+                compliance_changes=seg.get("compliance_changes") or {},
                 img_prompt=shot_scene(seg["scene"], scene_mode=scene_mode, look_style=look_style),
                 video_prompt="", segment_script="", camera="static", highlights="|".join(seg["keywords"]),
                 image_url=project.avatar_image_url, status=ShotStatus.PENDING,

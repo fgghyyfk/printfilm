@@ -3,7 +3,14 @@
 export const enCompliance = {
   compliance: {
     found: '{count} phrase(s) may violate advertising law',
-    autoReplaced: 'Superlatives in sales copy were replaced automatically; {count} still need review',
+    generatedHistory: 'Generated copy replacement history',
+    generatedNote: 'These changes were applied during generation. Review the original or undo individual changes. The current scan only reports risks.',
+    undo: 'Undo change',
+    undone: 'Undone',
+    undoFailed: 'Could not undo this change',
+    edited: 'This field was edited later. Review the original and adjust it manually.',
+    original: 'View generated original',
+    empty: '(empty)',
     expand: 'Show',
     collapse: 'Hide',
     recheck: 'Re-check',
@@ -19,6 +26,10 @@ export const enCompliance = {
     },
     fields: {
       title: 'Title',
+      avatar_title2: 'Second title line',
+      segment_script: 'Segment script',
+      video_prompt: 'Video script',
+      highlights: 'Highlights',
       narration: 'Narration',
       overlay_title: 'Title',
       overlay_subtitle: 'Subtitle',

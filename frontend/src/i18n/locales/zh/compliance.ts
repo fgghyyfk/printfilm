@@ -3,7 +3,14 @@
 export const zhCompliance = {
   compliance: {
     found: '发现 {count} 处可能违反广告法的用语',
-    autoReplaced: '带货文案已自动替换极限词；仍有 {count} 处需人工确认',
+    generatedHistory: '生成文案的替换记录',
+    generatedNote: '以下是生成时实际发生的替换。可核对原稿或逐条撤销；当前风险扫描仅提示，不修改文字。',
+    undo: '撤销此条',
+    undone: '已撤销',
+    undoFailed: '撤销失败，请重试',
+    edited: '此字段后来已编辑，旧记录仅供复核，请对照原稿手动修改。',
+    original: '查看生成原稿',
+    empty: '（空）',
     expand: '展开',
     collapse: '收起',
     recheck: '重新检查',
@@ -19,6 +26,10 @@ export const zhCompliance = {
     },
     fields: {
       title: '标题',
+      avatar_title2: '标题第二行',
+      segment_script: '逐段脚本',
+      video_prompt: '视频脚本',
+      highlights: '重点文字',
       narration: '旁白',
       overlay_title: '标题',
       overlay_subtitle: '副标题',

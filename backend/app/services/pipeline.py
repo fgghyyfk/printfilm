@@ -46,8 +46,8 @@ from app.services.kepu_continuity import (
 from app.services.voices import resolve_speaker
 from app.services import seedance_segments as segplan
 from app.services.bgm import clip_shot_bgm, resolve_bgm_path
-from app.services.compliance.ad_words import REPLACE
-from app.services.compliance.content import is_ad_template, sanitize_shot_fields
+from app.services.compliance.content import is_ad_template
+from app.services.compliance.changes import clean_fields
 from app.services.tts_billing import TTSBillingPending
 
 logger = logging.getLogger(__name__)
@@ -801,13 +801,15 @@ async def _script_stage(project_id: int) -> None:
                 "segment_script": segment_script,
                 "video_prompt": segment_script or plan.video_prompt,
             }
+            compliance_changes = {}
             if is_ad_template(tpl):
-                copy_fields, _ = sanitize_shot_fields(copy_fields, mode=REPLACE)
+                copy_fields, compliance_changes = clean_fields(copy_fields)
             db.add(
                 Shot(
                     project_id=project.id,
                     shot_no=plan.shot,
                     duration=dur,
+                    compliance_changes=compliance_changes,
                     narration=copy_fields["narration"],
                     overlay_title=copy_fields["overlay_title"],
                     overlay_subtitle=copy_fields["overlay_subtitle"],
