@@ -1611,6 +1611,8 @@ async def prepare_fragment_video_for_submit(
                 ),
             }
         )
+        if output_settings is not None:
+            body["duration"] = duration
         content_labels = describe_seedance_content_slots(
             ref_payloads,
             continuity_url,

@@ -149,6 +149,14 @@ export type SeedAssetsResult = {
   message?: string | null
 }
 
+export type DramaFragmentVideoQuoteInput = {
+  fragment_id: number
+  duration_sec: number
+  model_id: string | null
+  resolution: string
+  aspect_ratio: string
+}
+
 export type DramaFragment = {
   /** 仅页面本地身份，保存请求不发送。 */
   clientKey?: string
@@ -404,11 +412,11 @@ export const dramaApi = {
       body: JSON.stringify(fragmentSaveBody(snapshot, fragments)),
     }),
   quoteEpisodeVideos: (episodeId: number, fragment_ids: number[], model_id?: string) =>
-    request<{ fragment_ids: number[]; count: number; estimate_fen: number }>(
+    request<{ fragment_ids: number[]; count: number; estimate_fen: number; fragments: DramaFragmentVideoQuoteInput[] }>(
       `/api/drama/episodes/${episodeId}/generate_quote`,
       { method: 'POST', body: JSON.stringify({ fragment_ids, model_id }) },
     ),
-  generateEpisode: (episodeId: number, fragment_ids?: number[], model_id?: string) =>
+  generateEpisode: (episodeId: number, fragment_ids?: number[], model_id?: string, quoted_inputs?: DramaFragmentVideoQuoteInput[]) =>
     request<{
       ok: boolean
       fragment_ids: number[]
@@ -418,7 +426,7 @@ export const dramaApi = {
       remaining_not_queued?: number
     }>(`/api/drama/episodes/${episodeId}/generate`, {
       method: 'POST',
-      body: JSON.stringify({ fragment_ids, model_id }),
+      body: JSON.stringify({ fragment_ids, model_id, quoted_inputs }),
     }),
   generateStatus: (episodeId: number) =>
     request<{

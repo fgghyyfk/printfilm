@@ -45,3 +45,27 @@ async def test_prepare_snapshot_survives_image_change_result_and_history(db_sess
     assert result['reference_snapshot'] == snapshot
     assert result['video_input_snapshot'] == input_snapshot
     assert rows[0].params['video_versions'][0]['reference_snapshot'][0]['revision'] == asset.image_revision
+
+
+async def test_quote_rejects_changed_output_without_relying_on_episode_revision(db_session, monkeypatch):
+    from fastapi import HTTPException
+    import pytest
+    from app.api.drama.episodes import generate_episode
+    from app.schemas_drama import DramaGenerateRequest
+    from app.services.drama.fragment_video_quote import fragment_video_task_inputs
+
+    user, project, episode, rows = await make_episode(db_session)
+    project.params = {'linkLastFrame': False}
+    episode.params = {'aspect_ratio': '9:16', 'resolution': '480p'}
+    inputs = fragment_video_task_inputs(episode, project, rows[0], 'seedance-2.5')
+    quoted = {'fragment_id': rows[0].id, **{key: inputs[key] for key in ('duration_sec', 'model_id', 'resolution', 'aspect_ratio')}}
+    episode.params = {**episode.params, 'resolution': '720p'}
+    await db_session.commit()
+    create = AsyncMock()
+    monkeypatch.setattr('app.api.drama.episodes.create_task', create)
+    body = DramaGenerateRequest(fragment_ids=[rows[0].id], model_id='seedance-2.5', quoted_inputs=[quoted])
+    with pytest.raises(HTTPException) as exc:
+        await generate_episode(episode.id, body, db_session, user)
+    assert exc.value.status_code == 409
+    assert '重新报价' in exc.value.detail
+    create.assert_not_awaited()

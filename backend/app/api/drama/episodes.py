@@ -771,13 +771,33 @@ async def generate_episode(
                     detail="已开启尾帧衔接：请先生成上一镜并等待尾帧就绪后，再点本镜生成",
                 )
 
-    # 清除进程内「本集已取消」标记，避免旧取消态把新入队任务立刻作废
-    clear_episode_video_cancelled(episode_id)
+    # 报价后的设置修改也会改变费用；实际规格刷新核对后冻结为此次入队输入。
+    await db.refresh(ep, attribute_names=["params"])
+    await db.refresh(project, attribute_names=["params"])
+    inputs_by_id = {}
+    quoted = {item.fragment_id: item.model_dump() for item in body.quoted_inputs or []}
+    if body.quoted_inputs is not None and (
+        len(quoted) != len(body.quoted_inputs) or set(quoted) != set(body.fragment_ids or [])
+    ):
+        raise HTTPException(status_code=409, detail="生成规格已变化，请重新报价确认")
+    for fragment in idle_frags:
+        await db.refresh(fragment, attribute_names=["content", "duration_sec"])
+        inputs = fragment_video_task_inputs(ep, project, fragment, body.model_id)
+        if body.quoted_inputs is not None:
+            actual = {"fragment_id": fragment.id, **{key: inputs[key] for key in (
+                "duration_sec", "model_id", "resolution", "aspect_ratio",
+            )}}
+            if actual != quoted.get(fragment.id):
+                raise HTTPException(status_code=409, detail="生成规格已变化，请重新报价确认")
+        inputs_by_id[fragment.id] = inputs
 
     # 全部入队；超过单用户并发上限的镜保持 pending 排队，由调度器按空位激活
     limit = max(1, int(get_settings().drama_user_video_job_limit or 12))
     inflight = await count_user_inflight_fragment_video_tasks(db, user.id)
     activate_slots = max(0, limit - inflight)
+
+    # 清除进程内「本集已取消」标记，避免旧取消态把新入队任务立刻作废
+    clear_episode_video_cancelled(episode_id)
 
     sequential = project_link_last_frame_enabled(project)
     frag_ids = [f.id for f in idle_frags]
@@ -794,7 +814,7 @@ async def generate_episode(
         if defer_activation:
             deferred_count += 1
         has_video = bool((f.video or "").strip())
-        inputs = fragment_video_task_inputs(ep, project, f, body.model_id)
+        inputs = inputs_by_id[f.id]
         try:
             task = await create_task(
                 db,

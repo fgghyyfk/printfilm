@@ -1112,7 +1112,7 @@ function EpisodeEditInner() {
         })
         if (!ok) { setBusy(false); setStatus('已保存，未提交生成'); return }
       }
-      const genResult = await dramaApi.generateEpisode(eid, quote.fragment_ids, selectedModelId)
+      const genResult = await dramaApi.generateEpisode(eid, quote.fragment_ids, selectedModelId, quote.fragments)
       const queuedIds =
         Array.isArray(genResult.fragment_ids) && genResult.fragment_ids.length > 0
           ? genResult.fragment_ids

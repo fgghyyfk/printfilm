@@ -277,10 +277,19 @@ class DramaSaveFragmentsRequest(BaseModel):
     fragments: list[DramaFragmentSaveItem]
 
 
+class DramaFragmentVideoQuoteInput(BaseModel):
+    fragment_id: int
+    duration_sec: int
+    model_id: str | None = None
+    resolution: str
+    aspect_ratio: str
+
+
 class DramaGenerateRequest(BaseModel):
     fragment_ids: list[int] | None = None
     # 视频模型：后台 TokenFree 目录 id
     model_id: str | None = Field(default=None, max_length=64)
+    quoted_inputs: list[DramaFragmentVideoQuoteInput] | None = None
 
 
 class DramaComposeEpisodeRequest(BaseModel):
