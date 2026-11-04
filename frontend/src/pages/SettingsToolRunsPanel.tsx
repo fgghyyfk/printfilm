@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Download, Eye } from 'lucide-react'
 import BillingErrorNotice from '../components/billing/BillingErrorNotice'
@@ -13,6 +13,7 @@ import {
 } from '../api/tools'
 import { getToolDef } from '../lib/toolsCatalog'
 import { pageCountOf } from '../lib/pagination'
+import { keepToolRunTerminal, pollToolRunPage } from '../lib/toolRunPolling'
 
 const PAGE_SIZE_DEFAULT = 8
 
@@ -81,24 +82,38 @@ export default function SettingsToolRunsPanel() {
   const [downloading, setDownloading] = useState('')
   const [actionError, setActionError] = useState('')
 
+  // 详情请求独立代次，关闭、翻页、卸载后旧响应不能重新打开弹窗。
+  const detailRequest = useRef<AbortController | null>(null)
+
   useEffect(() => {
-    let cancelled = false
     setLoading(true)
     setError('')
-    listToolRuns(page, pageSize)
-      .then((res) => {
-        if (cancelled) return
-        setItems(res.items)
+    detailRequest.current?.abort()
+    setDetail(null)
+    setDetailLoading(false)
+    const stop = pollToolRunPage({
+      load: (signal) => listToolRuns(page, pageSize, signal),
+      onData: (res) => {
+        setItems((current) => res.items.map((row) => {
+          const previous = current.find((item) => item.id === row.id)
+          return previous ? keepToolRunTerminal(previous, row) : row
+        }))
         setTotal(res.total)
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : '加载失败')
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
+        setError('')
+        setLoading(false)
+        setDetail((current) => {
+          const fresh = current && res.items.find((row) => row.id === current.id)
+          return current && fresh ? keepToolRunTerminal(current, fresh) : current
+        })
+      },
+      onError: (err) => {
+        setError(err instanceof Error ? err.message : '加载失败')
+        setLoading(false)
+      },
+    })
     return () => {
-      cancelled = true
+      stop()
+      detailRequest.current?.abort()
     }
   }, [page, pageSize])
 
@@ -106,18 +121,29 @@ export default function SettingsToolRunsPanel() {
 
   // 打开详情：再拉一次接口，确保 OSS 地址最新
   async function openDetail(item: ToolRunRecord) {
+    detailRequest.current?.abort()
+    const controller = new AbortController()
+    detailRequest.current = controller
     setActionError('')
     setDetail(item)
     setDetailLoading(true)
     try {
-      const fresh = await getToolRun(item.id)
-      setDetail(fresh)
-      setItems((prev) => prev.map((row) => (row.id === fresh.id ? fresh : row)))
+      const fresh = await getToolRun(item.id, controller.signal)
+      if (controller.signal.aborted) return
+      setDetail((current) => current?.id === fresh.id ? keepToolRunTerminal(current, fresh) : current)
+      setItems((prev) => prev.map((row) => (row.id === fresh.id ? keepToolRunTerminal(row, fresh) : row)))
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : '加载详情失败')
+      if (!controller.signal.aborted) setActionError(err instanceof Error ? err.message : '加载详情失败')
     } finally {
-      setDetailLoading(false)
+      if (!controller.signal.aborted) setDetailLoading(false)
     }
+  }
+
+  // 关闭详情时一并取消请求，避免迟到结果回填。
+  function closeDetail() {
+    detailRequest.current?.abort()
+    setDetail(null)
+    setDetailLoading(false)
   }
 
   // 从 OSS/公网地址下载结果
@@ -167,7 +193,7 @@ export default function SettingsToolRunsPanel() {
             const cover = coverOf(item)
             const video = isVideoRecord(item, cover)
             const firstUrl = item.urls[0] || item.preview_url || ''
-            const canDownload = item.status === 'succeeded' && Boolean(firstUrl)
+            const canDownload = item.status === 'succeeded' && Boolean(item.kind === 'video' ? item.urls[0] : firstUrl)
             return (
               <li key={item.id}>
                 <div className="pf-settings-list-row pf-settings-tool-row">
@@ -184,7 +210,7 @@ export default function SettingsToolRunsPanel() {
                     <span className="pf-settings-list-main">
                       <strong>{tool?.title || item.tool_id}</strong>
                       <em className="pf-muted">
-                        {STATUS_CN[item.status] || item.status}
+                        {item.status === 'succeeded' && !item.urls.length ? '结果待恢复' : STATUS_CN[item.status] || item.status}
                         {item.prompt ? ` · ${item.prompt.slice(0, 36)}` : ''}
                       </em>
                     </span>
@@ -230,14 +256,14 @@ export default function SettingsToolRunsPanel() {
 
       <Modal
         open={Boolean(detail)}
-        onClose={() => setDetail(null)}
+        onClose={closeDetail}
         title={detail ? getToolDef(detail.tool_id)?.title || '创作详情' : '创作详情'}
         size="lg"
         className="pf-tool-run-modal"
         footer={
           detail ? (
             <div className="pf-tool-run-foot">
-              <Link className="pf-btn pf-btn-ghost pf-btn-sm" to={`/tools/${detail.tool_id}`} onClick={() => setDetail(null)}>
+              <Link className="pf-btn pf-btn-ghost pf-btn-sm" to={`/tools/${detail.tool_id}`} onClick={closeDetail}>
                 再创作
               </Link>
               {detail.urls[0] || detail.preview_url ? (
@@ -246,6 +272,7 @@ export default function SettingsToolRunsPanel() {
                   className="pf-btn pf-btn-lime pf-btn-sm"
                   disabled={
                     detail.status !== 'succeeded' ||
+                    (detail.kind === 'video' && !detail.urls.length) ||
                     downloading === resolveToolMediaUrl(detail.urls[0] || detail.preview_url || '')
                   }
                   onClick={() => void downloadUrl(detail, detail.urls[0] || detail.preview_url || '')}
@@ -313,7 +340,7 @@ export default function SettingsToolRunsPanel() {
               ) : null}
               {detail.error ? (
                 <div className="is-block">
-                  <dt>错误</dt>
+                  <dt>{detail.status === 'succeeded' ? '提示' : '错误'}</dt>
                   <dd className="pf-error">{detail.error}</dd>
                 </div>
               ) : null}

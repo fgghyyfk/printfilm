@@ -220,7 +220,7 @@ async def _poll_ephemeral_deferred_tasks() -> None:
             .where(
                 TaskRun.status == "awaiting_poll",
                 TaskRun.domain.in_(["api", "studio"]),
-                TaskRun.billing_status == "frozen",
+                TaskRun.billing_status.in_(("frozen", "skipped")),
                 or_(TaskRun.next_action_at.is_(None), TaskRun.next_action_at <= now),
             )
             .order_by(TaskRun.next_action_at.asc().nullsfirst(), TaskRun.id.asc())
@@ -243,6 +243,7 @@ async def _poll_ephemeral_deferred_tasks() -> None:
 async def _poll_one_ephemeral_task(task_id: int, *, now, timeout_sec: float) -> None:
     from app.models import User
     from app.services.billing.ephemeral import settle_deferred_video_poll
+    from app.services.billing.settlement import finish_prepared_task_settlements
     from app.services.studio_tools import poll_video_task
 
     async with AsyncSessionLocal() as db:
@@ -250,32 +251,21 @@ async def _poll_one_ephemeral_task(task_id: int, *, now, timeout_sec: float) -> 
         if not task or task.status != "awaiting_poll":
             return
 
+        user = await db.get(User, task.requested_by)
+        provider_id = (task.provider_task_id or "").strip()
+        if not user or not provider_id:
+            return
         started = task.started_at or task.created_at
         if started is not None and started.tzinfo is None:
             started = started.replace(tzinfo=UTC)
         if started and (now - started).total_seconds() > timeout_sec:
-            task.status = "failed"
-            task.error_code = "poll_timeout"
-            task.error_message = "视频轮询超时，预扣已退回"
-            task.finished_at = now
-            await append_task_event(
-                db,
-                task.id,
-                event_type="task.failed",
-                status=task.status,
-                phase=task.current_step_key,
-                message=task.error_message,
+            prepared = await settle_deferred_video_poll(
+                db, user, provider_task_id=provider_id, poll_status="failed",
+                error="视频轮询超时", failure_code="poll_timeout", billing_task_id=task_id,
             )
-            try:
-                await settle_task(db, task.id)
-            except Exception:  # noqa: BLE001
-                logger.exception("settle_task failed task_id=%s", task.id)
             await db.commit()
-            return
-
-        user = await db.get(User, task.requested_by)
-        provider_id = (task.provider_task_id or "").strip()
-        if not user or not provider_id:
+            if prepared:
+                await finish_prepared_task_settlements(db, prepared)
             return
 
         # 后台轮询与提交请求共用任务上下文，便于关联真实上游状态和计费。
@@ -289,11 +279,12 @@ async def _poll_one_ephemeral_task(task_id: int, *, now, timeout_sec: float) -> 
             await db.commit()
             return
 
-        await settle_deferred_video_poll(
+        prepared = await settle_deferred_video_poll(
             db,
             user,
             provider_task_id=provider_id,
             poll_status=status,
+            result_data=data,
             error=str(data.get("error") or "") or None,
             billing_task_id=task.id,
             usage_tokens=int((data.get("usage") or {}).get("total_tokens") or 0),
@@ -301,3 +292,5 @@ async def _poll_one_ephemeral_task(task_id: int, *, now, timeout_sec: float) -> 
             raw_usage=data.get("raw_usage") if isinstance(data.get("raw_usage"), dict) else None,
         )
         await db.commit()
+        if prepared:
+            await finish_prepared_task_settlements(db, prepared)

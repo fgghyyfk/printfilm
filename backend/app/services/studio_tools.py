@@ -508,27 +508,40 @@ async def persist_tool_run(
     return row
 
 
-# 按 Seedance task_id 回写视频结果（同步 OSS）
-async def update_tool_run_task(db: AsyncSession, user_id: int, task_id: str, data: dict) -> None:
-    stmt = select(ToolRun).where(ToolRun.user_id == user_id, ToolRun.task_id == task_id)
-    row = (await db.execute(stmt)).scalar_one_or_none()
-    if not row:
-        return
-    row.status = str(data.get("status") or row.status)
-    if data.get("urls"):
-        urls = ensure_public_urls(list(data["urls"]))
-        row.urls = urls
-        if not row.preview_url and urls:
-            row.preview_url = urls[0]
-        elif row.preview_url:
-            row.preview_url = ensure_public_url(row.preview_url)
-    if data.get("error"):
-        row.error = public_message(data["error"])
+# 锁内只投影已准备好的 URL；不在行锁内上传或下载媒体。
+async def update_tool_run_task(
+    db: AsyncSession, user_id: int, task_id: str, data: dict, *, billing_task_id: int | None = None,
+) -> None:
+    rows = list((await db.scalars(select(ToolRun).where(
+        ToolRun.user_id == user_id, ToolRun.task_id == task_id,
+    ).order_by(ToolRun.id).with_for_update().execution_options(populate_existing=True))).all())
+    for row in rows:
+        bound = (row.params or {}).get("billing_task_id")
+        if bound is not None and str(bound) != str(billing_task_id):
+            continue
+        if row.kind == "video" and bound is not None:
+            matching = await db.scalar(select(TaskRun.id).where(
+                TaskRun.id == billing_task_id, TaskRun.requested_by == user_id,
+                TaskRun.provider_task_id == task_id, TaskRun.domain == "studio", TaskRun.task_type == "tool_video",
+            ))
+            if matching is None:
+                continue
+        status = str(data.get("status") or row.status)
+        if row.status in {"succeeded", "failed", "cancelled"} and status != row.status:
+            continue
+        row.status = status
+        if data.get("urls"):
+            row.urls = list(data["urls"])
+            row.preview_url = data.get("preview_url") or row.preview_url or row.urls[0]
+        if status == "succeeded":
+            row.error = public_message(data.get("error")) if data.get("error") else None
+        elif data.get("error"):
+            row.error = public_message(data["error"])
     await db.flush()
 
 
 # 读取时把本地 URL 补传到 OSS，并回写库
-async def hydrate_tool_run_urls(db: AsyncSession, row: ToolRun) -> ToolRun:
+async def hydrate_tool_run_urls(db: AsyncSession, row: ToolRun, *, flush: bool = True) -> ToolRun:
     changed = False
     urls = ensure_public_urls(list(row.urls or []))
     if urls != list(row.urls or []):
@@ -538,7 +551,7 @@ async def hydrate_tool_run_urls(db: AsyncSession, row: ToolRun) -> ToolRun:
     if preview != row.preview_url:
         row.preview_url = preview
         changed = True
-    if changed:
+    if changed and flush:
         await db.flush()
     return row
 
@@ -549,7 +562,12 @@ async def get_tool_run(db: AsyncSession, user_id: int, run_id: int) -> ToolRun |
     row = (await db.execute(stmt)).scalar_one_or_none()
     if not row:
         return None
-    return await hydrate_tool_run_urls(db, row)
+    from app.services.tool_video_records import restore_terminal_tool_records
+
+    with db.no_autoflush:
+        await hydrate_tool_run_urls(db, row, flush=False)
+        await restore_terminal_tool_records(db, user_id, [row])
+    return row
 
 
 # 分页列出当前用户的工具创作记录
@@ -570,7 +588,10 @@ async def list_tool_runs(
         .limit(page_size)
     )
     rows = list((await db.execute(stmt)).scalars().all())
-    hydrated: list[ToolRun] = []
-    for row in rows:
-        hydrated.append(await hydrate_tool_run_urls(db, row))
-    return hydrated, total
+    from app.services.tool_video_records import restore_terminal_tool_records
+
+    with db.no_autoflush:
+        for row in rows:
+            await hydrate_tool_run_urls(db, row, flush=False)
+        await restore_terminal_tool_records(db, user_id, rows)
+    return rows, total

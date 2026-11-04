@@ -10,6 +10,7 @@ from app.config import get_settings
 from app.database import get_db
 from app.deps import get_api_user
 from app.models import User
+from app.services.billing.settlement import finish_prepared_task_settlements
 from app.services.public_errors import public_http_exception
 from app.models_tasks import TaskRun
 from app.schemas_api import (
@@ -220,17 +221,20 @@ async def get_task(
     if owned is None:
         raise HTTPException(status_code=404, detail="任务不存在")
     data = await poll_video_task(user, tid)
-    await settle_deferred_video_poll(
+    prepared = await settle_deferred_video_poll(
         db,
         user,
         provider_task_id=tid,
         poll_status=str(data.get("status") or ""),
+        result_data=data,
         error=str(data.get("error") or "") or None,
         usage_tokens=int((data.get("usage") or {}).get("total_tokens") or 0),
         completion_tokens=int((data.get("usage") or {}).get("completion_tokens") or 0),
         raw_usage=data.get("raw_usage") if isinstance(data.get("raw_usage"), dict) else None,
     )
     await db.commit()
+    if prepared:
+        await finish_prepared_task_settlements(db, prepared)
     return V1GenerationOut(
         status=str(data.get("status") or "running"),
         kind="video",

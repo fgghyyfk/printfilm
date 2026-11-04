@@ -101,12 +101,12 @@ export async function pollStudioToolTask(taskId: string): Promise<ToolTaskResult
 }
 
 // 个人中心：分页拉取工具创作记录
-export async function listToolRuns(page = 1, pageSize = 8): Promise<ToolRunList> {
+export async function listToolRuns(page = 1, pageSize = 8, signal?: AbortSignal): Promise<ToolRunList> {
   const qs = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
-  return requestToolJson(`/api/tools/runs?${qs}`, '加载失败')
+  return requestToolJson(`/api/tools/runs?${qs}`, '加载失败', { signal })
 }
 
 // 个人中心：单条创作详情（含 OSS 结果地址）
-export async function getToolRun(runId: number): Promise<ToolRunRecord> {
-  return requestToolJson(`/api/tools/runs/${runId}`, '加载失败')
+export async function getToolRun(runId: number, signal?: AbortSignal): Promise<ToolRunRecord> {
+  return requestToolJson(`/api/tools/runs/${runId}`, '加载失败', { signal })
 }

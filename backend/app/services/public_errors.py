@@ -32,6 +32,7 @@ _LOCAL_MESSAGES = frozenset({
 
 # 固定模板同时保证新错误与历史重复投影保持同一类别。
 _FIXED_ERRORS = {
+    'tool_result_restore_pending': ('任务已完成，结果链接待恢复，请稍后查看或联系客服，请勿重复生成', 502),
     'billing_review_pending': ('本次调用的结果和费用待核对，请勿重复生成，请联系客服', 500),
     'upstream_account_unavailable': ('平台模型账户暂不可用，请联系管理员处理', 502),
     'upstream_auth_unavailable': ('模型服务认证暂不可用，请联系管理员处理', 502),

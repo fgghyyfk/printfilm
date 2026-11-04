@@ -18,7 +18,7 @@ from sqlalchemy import select
 
 from app.config import get_settings
 from app.services.billing.context import billing_scope
-from app.services.billing.settlement import freeze_for_task, settle_task
+from app.services.billing.settlement import PreparedTaskSettlements, freeze_for_task, settle_task
 from app.services.tasks.handlers import get_task_handler
 from app.services.tasks.service import append_task_event, build_task_event, build_task_step
 from app.services.tasks.upstream import upstream_event_session
@@ -331,108 +331,84 @@ async def settle_deferred_video_poll(
     completion_tokens: int = 0,
     raw_usage: dict | None = None,
     billing_key: str | None = None,
-) -> None:
-    """轮询终态后结算轻量视频任务：成功才记 seedance 用量。
-
-    用行锁 + billing_status==frozen 门闩，避免客户端轮询与后台 poller 并发双记用量。
-    """
+    result_data: dict | None = None,
+    failure_code: str = "upstream_failed",
+) -> PreparedTaskSettlements | None:
+    """锁外准备费用，短事务幂等结算并投影工具记录；调用方提交后执行 finish。"""
+    from app.models import UsageEvent
+    from app.services.billing.newapi_bill import prepare_newapi_bill_logs
     from app.services.billing.settlement import _lock_task
+    from app.services.drama.billing_util import (
+        prepare_seedance_video_usage, record_seedance_video_usage, seedance_billing_key,
+    )
+    from app.services.studio_tools import update_tool_run_task
+    from app.services.tokenfree_pricing import canonicalize_channel_model_id
 
     terminal = (poll_status or "").strip().lower()
-    if terminal in {"", "running", "queued"}:
-        return
+    if terminal not in {"succeeded", "failed", "cancelled"}:
+        return None
+    stmt = select(TaskRun).where(
+        TaskRun.requested_by == user.id,
+        TaskRun.provider_task_id == provider_task_id.strip(),
+        TaskRun.domain.in_(("api", "studio")),
+    )
+    if billing_task_id is not None:
+        stmt = stmt.where(TaskRun.id == billing_task_id)
+    probe = (await db.execute(stmt.order_by(TaskRun.id.desc()).limit(1))).scalar_one_or_none()
+    if not probe or probe.status != "awaiting_poll" or probe.billing_status not in {"frozen", "skipped"}:
+        return None
 
-    task_id: int | None = None
-    if billing_task_id:
-        probe = await db.get(TaskRun, billing_task_id)
-        if probe and int(probe.requested_by) == int(user.id):
-            task_id = int(probe.id)
-    if task_id is None and provider_task_id.strip():
-        stmt = (
-            select(TaskRun.id)
-            .where(
-                TaskRun.requested_by == user.id,
-                TaskRun.provider_task_id == provider_task_id.strip(),
-                TaskRun.billing_status == "frozen",
+    task_id = int(probe.id)
+    payload = probe.payload if isinstance(probe.payload, dict) else {}
+    key = billing_key or seedance_billing_key(generate_audio=bool(payload.get("generate_audio", True)))
+    raw_model = str(payload.get("model_id") or payload.get("model") or get_settings().model_video or "")
+    model = canonicalize_channel_model_id(raw_model) or raw_model or "seedance-2.5"
+    events = list((await db.scalars(select(UsageEvent).where(
+        UsageEvent.task_run_id == task_id, UsageEvent.settled.is_(False),
+    ))).all())
+    prepared_usage = None
+    async with billing_scope(task_id):
+        if terminal == "succeeded":
+            from app.services.ark import TaskResult
+
+            result = TaskResult(status="succeeded", total_tokens=int(usage_tokens),
+                                completion_tokens=int(completion_tokens or usage_tokens), raw_usage=raw_usage)
+            prepared_usage = await prepare_seedance_video_usage(
+                user_id=user.id, billing_key=key, model=model, domain=probe.domain,
+                task_result=result, fallback_duration_sec=payload.get("duration"),
+                resolution=str(payload.get("resolution") or ""), provider_task_id=provider_task_id,
+                project_id=probe.project_id, drama_project_id=probe.drama_project_id, shot_id=probe.shot_id,
             )
-            .order_by(TaskRun.id.desc())
-            .limit(1)
-        )
-        task_id = (await db.execute(stmt)).scalar_one_or_none()
-    if task_id is None:
-        return
-
-    # 原子门闩：仅 frozen 任务可进入结算；并发第二次拿到 settled 后直接返回
+    prepared = PreparedTaskSettlements(
+        event_ids={task_id: {int(event.id) for event in events}},
+        newapi_logs={task_id: await prepare_newapi_bill_logs(events + ([prepared_usage] if prepared_usage else []))},
+    )
+    # 网络、OSS、价目和账单已完成；之后只允许数据库操作。
     task = await _lock_task(db, task_id)
-    if not task or task.billing_status != "frozen":
-        return
-    if int(task.requested_by) != int(user.id):
-        return
-
-    now = datetime.now(UTC)
-    if terminal == "succeeded":
-        payload = task.payload if isinstance(task.payload, dict) else {}
-        async with billing_scope(task.id):
-            from app.services.drama.billing_util import record_seedance_video_usage, seedance_billing_key
-
-            generate_audio = bool(payload.get("generate_audio", True))
-            key = billing_key or seedance_billing_key(generate_audio=generate_audio)
-            task_result = None
-            if usage_tokens > 0:
-                from app.services.ark import TaskResult
-
-                task_result = TaskResult(
-                    status="succeeded",
-                    total_tokens=int(usage_tokens),
-                    completion_tokens=int(completion_tokens or usage_tokens),
-                    raw_usage=raw_usage,
-                )
-            from app.services.tokenfree_pricing import canonicalize_channel_model_id
-
-            raw_billing = str(payload.get("model_id") or payload.get("model") or "").strip()
-            if raw_billing:
-                billing_model = canonicalize_channel_model_id(raw_billing) or raw_billing
-            else:
-                billing_model = canonicalize_channel_model_id(
-                    str(get_settings().model_video or "").strip()
-                ) or "seedance-2.5"
-            await record_seedance_video_usage(
-                db,
-                user_id=user.id,
-                billing_key=key,
-                model=billing_model,
-                domain=task.domain or "api",
-                task_result=task_result,
-                fallback_duration_sec=payload.get("duration"),
-                resolution=str(payload.get("resolution") or ""),
-                provider_task_id=provider_task_id,
-                project_id=task.project_id,
-                drama_project_id=task.drama_project_id,
-                shot_id=task.shot_id,
+    if (not task or task.status != "awaiting_poll" or task.billing_status not in {"frozen", "skipped"}
+            or task.requested_by != user.id or task.provider_task_id != provider_task_id.strip()):
+        return None
+    if prepared_usage is not None:
+        async with billing_scope(task_id):
+            usage = await record_seedance_video_usage(
+                db, user_id=user.id, billing_key=key, model=model, domain=task.domain,
+                provider_task_id=provider_task_id, prepared_usage=prepared_usage,
             )
-        task.status = "succeeded"
+        prepared.event_ids[task_id].add(int(usage.id))
+    task.status = "succeeded" if terminal == "succeeded" else "failed"
+    task.finished_at = datetime.now(UTC)
+    diagnosis = public_error(error or "生成失败", code=failure_code if failure_code != "upstream_failed" else None)
+    task.error_code = None if terminal == "succeeded" else diagnosis.code
+    task.error_message = None if terminal == "succeeded" else diagnosis.message
+    if terminal == "succeeded":
         task.progress_percent = 100
-        task.finished_at = now
-        task.error_code = None
-        task.error_message = None
-        await append_task_event(
-            db,
-            task.id,
-            event_type="task.completed",
-            status=task.status,
-            message="视频生成完成",
-        )
-    else:
-        task.status = "failed"
-        task.error_code = "upstream_failed"
-        task.error_message = public_message(error or "生成失败")
-        task.finished_at = now
-        await append_task_event(
-            db,
-            task.id,
-            event_type="task.failed",
-            status=task.status,
-            message=task.error_message,
-        )
-
-    await settle_task(db, task.id)
+    data = {**(result_data or {}), "status": task.status, "error": task.error_message}
+    # 只持久化用于恢复记录的有限结果，不保存上游整包响应。
+    task.result_payload = {"status": task.status, "kind": "video", "urls": list(data.get("urls") or []),
+                           "preview_url": data.get("preview_url"), "error": task.error_message}
+    if task.domain == "studio" and task.task_type == "tool_video":
+        await update_tool_run_task(db, user.id, provider_task_id, data, billing_task_id=task_id)
+    await append_task_event(db, task_id, event_type="task.completed" if terminal == "succeeded" else "task.failed",
+                            status=task.status, message="视频生成完成" if terminal == "succeeded" else task.error_message)
+    await settle_task(db, task_id, prepared_settlements=prepared)
+    return prepared

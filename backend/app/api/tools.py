@@ -14,6 +14,7 @@ from app.deps import get_current_user
 from app.models import ToolRun, User
 from app.schemas_tools import ToolRunListOut, ToolRunOut, ToolRunRecordOut, ToolTaskOut
 from app.services.billing import run_billed_ephemeral_deferred, settle_deferred_video_poll
+from app.services.billing.settlement import finish_prepared_task_settlements
 from app.services.public_errors import public_http_exception
 from app.services.studio_tools import (
     enqueue_image_tool,
@@ -160,23 +161,27 @@ async def get_tool_task(
                 billing_task_id = int(raw_bid)
             except (TypeError, ValueError):
                 billing_task_id = None
+    prepared = None
     if row.kind == "image":
         data = await poll_image_tool_task(db, user, tid)
+        await update_tool_run_task(db, user.id, tid, data, billing_task_id=billing_task_id)
     else:
         data = await poll_video_task(user, tid)
-        await settle_deferred_video_poll(
+        prepared = await settle_deferred_video_poll(
             db,
             user,
             provider_task_id=tid,
             poll_status=str(data.get("status") or ""),
+            result_data=data,
             error=str(data.get("error") or "") or None,
             billing_task_id=billing_task_id,
             usage_tokens=int((data.get("usage") or {}).get("total_tokens") or 0),
             completion_tokens=int((data.get("usage") or {}).get("completion_tokens") or 0),
             raw_usage=data.get("raw_usage") if isinstance(data.get("raw_usage"), dict) else None,
         )
-    await update_tool_run_task(db, user.id, tid, data)
     await db.commit()
+    if prepared:
+        await finish_prepared_task_settlements(db, prepared)
     return ToolTaskOut.model_validate(data)
 
 
