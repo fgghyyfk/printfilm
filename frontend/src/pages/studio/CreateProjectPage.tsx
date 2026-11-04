@@ -204,7 +204,7 @@ export default function CreateProjectPage() {
       nav('/auth')
       return
     }
-    api.me().catch(() => nav('/auth'))
+    api.me().catch(() => setError('暂时无法确认登录状态，请稍后重试'))
     api.templates().then((list) => {
       setTemplates(list)
       const fromUrl = params.get('template') || ''
