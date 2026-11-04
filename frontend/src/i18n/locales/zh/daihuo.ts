@@ -12,7 +12,7 @@ export const zhDaihuo = {
     },
     video: {
       title: '生成带货视频',
-      hint: '画面直接用套图，不再额外出图，只收配音与合成费用。',
+      hint: '画面复用套图，无需额外生图；写稿、配音与合成按阶段预估和结算。',
       ratio: '画幅',
       voice: '音色',
       voicesLoading: '正在加载音色…',

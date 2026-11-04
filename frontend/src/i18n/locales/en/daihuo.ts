@@ -12,7 +12,7 @@ export const enDaihuo = {
     },
     video: {
       title: 'Generate promo video',
-      hint: 'Uses the image set as visuals — no extra image generation; only voiceover and compositing are charged.',
+      hint: 'Reuses the image set with no extra image generation; scriptwriting, voiceover and compositing are estimated and settled by stage.',
       ratio: 'Aspect ratio',
       voice: 'Voice',
       voicesLoading: 'Loading voices…',
