@@ -5,6 +5,7 @@ import logging
 import re
 import zipfile
 from datetime import datetime
+from uuid import uuid4
 
 from pathlib import Path
 
@@ -699,7 +700,7 @@ async def create_shot(
     user: User = Depends(get_current_user),
 ) -> Shot:
     """在片尾追加一镜空白分镜。"""
-    project = await _get_owned_project(db, project_id, user)
+    project = await _get_owned_project(db, project_id, user, lock=True)
     _ensure_side_task_allowed(project)
     shots = sorted(project.shots, key=lambda s: s.shot_no)
     next_no = (shots[-1].shot_no + 1) if shots else 1
@@ -742,7 +743,7 @@ async def reorder_shots(
     user: User = Depends(get_current_user),
 ) -> Project:
     """按 shot_ids 重排镜号。"""
-    project = await _get_owned_project(db, project_id, user)
+    project = await _get_owned_project(db, project_id, user, lock=True)
     _ensure_side_task_allowed(project)
     existing = {s.id: s for s in project.shots}
     if set(body.shot_ids) != set(existing.keys()):
@@ -763,11 +764,6 @@ async def upload_shot_image(
     user: User = Depends(get_current_user),
 ) -> Project:
     """上传替换本镜画面。"""
-    project = await _get_owned_project(db, project_id, user)
-    _ensure_side_task_allowed(project)
-    shot = next((s for s in project.shots if s.id == shot_id), None)
-    if not shot:
-        raise HTTPException(status_code=404, detail="分镜不存在")
     content_type = (file.content_type or "").lower()
     allowed = {
         "image/jpeg": ".jpg",
@@ -791,7 +787,13 @@ async def upload_shot_image(
     if not sniffed:
         raise HTTPException(status_code=400, detail="文件不是有效图片")
     ext = sniffed
-    dest = storage.project_dir(project_id) / f"shot_{shot.id}_upload{ext}"
+    # 文件读取/校验不占项目锁；真正修改前锁内重读并核对活跃任务。
+    project = await _get_owned_project(db, project_id, user, lock=True)
+    _ensure_side_task_allowed(project)
+    shot = next((s for s in project.shots if s.id == shot_id), None)
+    if not shot:
+        raise HTTPException(status_code=404, detail="分镜不存在")
+    dest = storage.project_dir(project_id) / f"shot_{shot.id}_upload_{uuid4().hex[:12]}{ext}"
     dest.write_bytes(raw)
     shot.image_url = storage.publish_local(dest)
     shot.image_ark_url = None
