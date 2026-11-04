@@ -198,3 +198,13 @@ def test_tools_catalog_adds_openai_option(monkeypatch):
     payload2 = {**base, "image_models": [dict(r) for r in base["image_models"]], "defaults": dict(base["defaults"])}
     media_catalog._add_openai_image_option(payload2, _settings(openai_image_enabled=False))
     assert [r["id"] for r in payload2["image_models"]] == ["seedream-5.0-pro"]
+
+
+# 开启 OpenAI 生图后，gpt-image 在价目路由里视为可用；未开启时仍按原逻辑
+def test_pin_route_openai_image(monkeypatch):
+    from app.services.media_models import runtime
+
+    monkeypatch.setattr(runtime, "get_settings", lambda: _settings())
+    route = runtime.pin_route("image", "gpt-image-2")
+    assert route["channel_id"] == "__openai_image__" and route["upstream_model"] == "gpt-image-2"
+    assert "api_key" not in route

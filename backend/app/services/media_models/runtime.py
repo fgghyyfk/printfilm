@@ -31,6 +31,13 @@ def pin_route(capability: str, model_id: str) -> dict:
     if not is_model_enabled(capability, model_id, models):
         raise ValueError(f"model: {model_id} 已停用")
     strategy = resolve_strategy(model_id)
+    # 图片生成页的 OpenAI 生图旁路：后台开启并填 Key 时视为可用路由（实际调用在 openai_image 中完成）
+    from app.services.openai_image import is_openai_image_model, openai_image_configured
+
+    if capability == "image" and is_openai_image_model(model_id) and openai_image_configured(settings):
+        return _public_route({"capability": capability, "logical_model_id": model_id,
+                "upstream_model": strategy.model_id, "channel_id": "__openai_image__", "channel_name": "OpenAI",
+                "base_url": settings.openai_image_base_url, "protocol": "openai", "api_format": "openai"})
     logical = next((model for model in getattr(snapshot, "logical_models", []) if model.id.lower() == model_id.lower()), None)
     route = resolve_logical_model(capability, model_id)
     if route is None and logical is None and model_id != strategy.model_id:
