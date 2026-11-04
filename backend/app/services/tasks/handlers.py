@@ -83,6 +83,18 @@ async def _run_drama_fragment_video(task: TaskRun) -> dict[str, Any] | None:
     return await submit_fragment_video_task(task)
 
 
+# 本地整集合成只读取入队快照，不调用 AI，也不在执行时重选镜头。
+async def _run_drama_episode_compose(task: TaskRun) -> dict[str, Any]:
+    from app.services.drama.episode_compose import compose_episode_video
+
+    episode_id = _require_int(task.episode_id, "episode_id")
+    url = await compose_episode_video(
+        snapshot=task.payload or {}, project_id=_require_int(task.drama_project_id, "drama_project_id"),
+        episode_id=episode_id, task_id=int(task.id),
+    )
+    return {"ok": True, "episode_id": episode_id, "video_url": url}
+
+
 # 执行漫剧资产生图任务。
 async def _run_drama_asset_image(task: TaskRun) -> dict[str, Any] | None:
     from app.services.drama.jobs import run_asset_image_job
@@ -301,6 +313,7 @@ TASK_HANDLERS: dict[tuple[str, str], TaskHandler] = {
     ("drama", "episode_script"): TaskHandler("drama", "episode_script", _run_drama_episode_script),
     ("drama", "fragment_plan"): TaskHandler("drama", "fragment_plan", _run_drama_fragment_plan),
     ("drama", "fragment_video"): TaskHandler("drama", "fragment_video", _run_drama_fragment_video),
+    ("drama", "episode_compose"): TaskHandler("drama", "episode_compose", _run_drama_episode_compose),
     ("drama", "asset_image"): TaskHandler("drama", "asset_image", _run_drama_asset_image),
     ("drama", "asset_video"): TaskHandler("drama", "asset_video", _run_drama_asset_video),
     ("drama", "seed_assets"): TaskHandler("drama", "seed_assets", _run_drama_seed_assets),

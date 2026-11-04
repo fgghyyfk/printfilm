@@ -6,9 +6,7 @@ import asyncio
 import logging
 import tempfile
 from pathlib import Path
-
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from uuid import uuid4
 
 from app.models_drama import DramaEpisode, DramaProject
 from app.services import storage as storage_svc
@@ -98,29 +96,38 @@ async def _ensure_clip_local(url: str, cache_dir: Path, index: int) -> Path:
     return dest
 
 
-# 按分集设置统一重编码并拼接；返回可下载 URL
-async def compose_episode_video(
-    db: AsyncSession,
-    *,
-    episode: DramaEpisode,
-    project: DramaProject,
-    fragment_ids: list[int] | None = None,
-) -> str:
+# 入队时固定有权限的镜头、播放顺序及输出规格，不让排队后的编辑改变成片。
+def episode_compose_snapshot(
+    episode: DramaEpisode, project: DramaProject, fragment_ids: list[int] | None,
+) -> dict:
     frags = sorted(episode.fragments or [], key=lambda f: f.sort_order)
-    if fragment_ids:
+    if fragment_ids is not None:
         allow = {int(x) for x in fragment_ids}
+        if not allow:
+            raise ValueError("本集还没有可拼接的分镜视频")
+        if not allow.issubset({f.id for f in frags}):
+            raise ValueError("所选分镜已变更或不属于本集，请刷新后重试")
         frags = [f for f in frags if f.id in allow]
-    clips = [(f.id, (f.video or "").strip()) for f in frags if (f.video or "").strip()]
+        if any(not (f.video or "").strip() for f in frags):
+            raise ValueError("所选分镜尚无视频，请刷新后重试")
+    clips = [{"fragment_id": f.id, "video_url": f.video.strip()} for f in frags if (f.video or "").strip()]
     if not clips:
-        raise RuntimeError("本集还没有可拼接的分镜视频")
-
+        raise ValueError("本集还没有可拼接的分镜视频")
     ratio, resolution = resolve_episode_video_output(episode.params, project.params)
-    width, height = target_pixel_size(ratio, resolution)
+    return {"clips": clips, "aspect_ratio": ratio, "resolution": resolution}
 
-    out_dir = storage_svc.project_dir(project.id)
-    out_path = out_dir / f"episode_{episode.id}_compose.mp4"
 
-    with tempfile.TemporaryDirectory(prefix=f"drama_ep_{episode.id}_") as tmp:
+# 只使用已验证的任务快照合成；每次执行使用独立路径，不覆盖历史或并发产物。
+async def compose_episode_video(
+    *, snapshot: dict, project_id: int, episode_id: int, task_id: int,
+) -> str:
+    clips = snapshot["clips"]
+    width, height = target_pixel_size(snapshot["aspect_ratio"], snapshot["resolution"])
+    out_dir = storage_svc.GENERATED_ROOT / "drama" / f"p{project_id}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"episode_{episode_id}_task_{task_id}_{uuid4().hex}.mp4"
+
+    with tempfile.TemporaryDirectory(prefix=".compose_", dir=out_dir) as tmp:
         tmp_path = Path(tmp)
         src_dir = tmp_path / "src"
         norm_dir = tmp_path / "norm"
@@ -128,8 +135,8 @@ async def compose_episode_video(
         norm_dir.mkdir()
 
         local_srcs: list[Path] = []
-        for idx, (_fid, url) in enumerate(clips):
-            local_srcs.append(await _ensure_clip_local(url, src_dir, idx))
+        for idx, clip in enumerate(clips):
+            local_srcs.append(await _ensure_clip_local(clip["video_url"], src_dir, idx))
 
         normalized: list[Path] = []
         for idx, src in enumerate(local_srcs):
@@ -139,7 +146,7 @@ async def compose_episode_video(
 
         await asyncio.to_thread(_concat_normalized, normalized, out_path)
 
-    published = storage_svc.publish_local(out_path, sync=True)
+    published = await asyncio.to_thread(storage_svc.publish_local, out_path, sync=True)
     if published and str(published).startswith(("http://", "https://", "/static/")):
         url = str(published)
     else:
@@ -147,23 +154,10 @@ async def compose_episode_video(
         url = storage_svc.to_public_url(rel)
     logger.info(
         "episode compose done episode_id=%s clips=%s size=%sx%s url=%s",
-        episode.id,
+        episode_id,
         len(clips),
         width,
         height,
         url[:120],
     )
     return url
-
-
-# 加载分集（含 fragments）供合成
-async def load_episode_for_compose(db: AsyncSession, episode_id: int) -> DramaEpisode | None:
-    from sqlalchemy import select
-
-    return (
-        await db.execute(
-            select(DramaEpisode)
-            .where(DramaEpisode.id == episode_id)
-            .options(selectinload(DramaEpisode.fragments))
-        )
-    ).scalar_one_or_none()

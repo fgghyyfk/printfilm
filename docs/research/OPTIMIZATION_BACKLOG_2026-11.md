@@ -142,6 +142,8 @@
 - 位置：`backend/app/services/drama/episode_compose.py` 约 102 行；`backend/app/api/drama/episodes.py` 约 896 行，HTTP 请求内同步逐镜 x264 重编码，输出文件名固定。
 - 现象：镜头多时 nginx 504；并发两次互相覆盖或拿到缓存旧片。
 - 改法：注册新 TaskRun 类型（在 `services/tasks/handlers.py` 的 `HANDLERS` 登记 `("drama", "episode_compose")`），前端轮询任务状态；输出文件名带时间戳或任务 ID。
+- 实施进度（2026-11-04）：已实施，**待 10–13 项集中验证**。服务端合成以任务执行，入队固定镜头、顺序、媒体 URL 与输出规格；使用漫剧分域及任务 / 执行唯一文件名。纯本地合成免价目查询、钱包冻结及排队金额限制，保留浏览器正常拼接，仅服务端回退轮询任务结果；不可协作取消的 FFmpeg 任务不提供取消操作，同步发布局部转入线程。
+- 验证状态：仅完成免费入队、快照与旧文件保护的合并关键检查；权限、失败、前端轮询及完整检查留本组末执行。
 
 ### [ ] 13. 工具中心：离开页面后视频记录永远「生成中」
 - 位置：`backend/app/api/tools.py` 约 131 行只在前端轮询时回写 ToolRun；poller 结算时不更新 ToolRun；`SettingsToolRunsPanel.tsx` 不重拉。

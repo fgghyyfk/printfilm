@@ -941,28 +941,28 @@ async def compose_episode(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
-    """统一画幅重编码后拼接本集分镜，供浏览器无损失败时回退。"""
-    from app.services.drama.episode_compose import compose_episode_video, load_episode_for_compose
+    """固定分镜快照后异步合成，供浏览器无损失败时回退。"""
+    from app.services.drama.episode_compose import episode_compose_snapshot
 
     ep = await get_owned_episode(db, episode_id, user)
     project = await get_owned_drama_project(db, ep.project_id, user)
-    episode = await load_episode_for_compose(db, episode_id)
-    if episode is None:
-        raise HTTPException(status_code=404, detail="分集不存在")
     req = body or DramaComposeEpisodeRequest()
     try:
-        url = await compose_episode_video(
-            db,
-            episode=episode,
-            project=project,
-            fragment_ids=req.fragment_ids,
+        snapshot = episode_compose_snapshot(ep, project, req.fragment_ids)
+        task = await create_task(
+            db, user, TaskCreateRequest(
+                domain="drama", task_type="episode_compose", cancelable=False,
+                drama_project_id=project.id, episode_id=ep.id, payload=snapshot,
+                targets=[TaskTargetBind(target_type="drama_project", target_id=project.id),
+                         TaskTargetBind(target_type="episode", target_id=ep.id)],
+            ),
         )
-    except RuntimeError as exc:
+    except ValueError as exc:
         raise public_http_exception(exc) from exc
     except Exception as exc:  # noqa: BLE001
         logger.exception("episode compose failed episode_id=%s", episode_id)
         raise public_http_exception(exc) from exc
-    return {"ok": True, "video_url": url, "episode_id": episode_id}
+    return {"ok": True, "queued": True, "task_id": task.id, "episode_id": episode_id}
 
 
 @router.post("/episodes/{episode_id}/cancel_generate")

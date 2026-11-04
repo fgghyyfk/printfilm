@@ -14,7 +14,7 @@ from app.config import Settings, get_settings
 from app.models import UsageEvent, User, WalletLedger
 from app.models_tasks import TaskRun
 from app.services.public_errors import InsufficientBalanceError
-from app.services.billing.estimates import estimate_task_fen
+from app.services.billing.estimates import estimate_task_fen, is_free_local_task
 
 logger = logging.getLogger(__name__)
 
@@ -149,7 +149,7 @@ async def ensure_balance_for_task(
     db: AsyncSession, user: User, task: TaskRun, *, prepared_estimate_fen: int | None = None,
 ) -> int:
     """入队前同步校验余额（含排队中未冻结估算），不足抛 ValueError；返回本任务估算分。"""
-    if not billing_active(user):
+    if is_free_local_task(task) or not billing_active(user):
         return 0
     locked = await _lock_user(db, int(user.id))
     if locked is None:
@@ -218,6 +218,11 @@ async def freeze_for_task(db: AsyncSession, task: TaskRun) -> int:
     if task.billing_status == "frozen":
         return int(task.billing_estimate_fen or 0)
 
+    if is_free_local_task(task):
+        task.billing_status = "skipped"
+        task.billing_estimate_fen = 0
+        await db.flush()
+        return 0
     user = await _lock_user(db, int(task.requested_by))
     if not user or not billing_active(user):
         task.billing_status = "skipped"
@@ -345,7 +350,7 @@ async def settle_task(
     for e in events:
         e.settled = True
 
-    # 全局关闭计费：标记用量已结算，不动钱包，任务标 settled
+    # 免计费任务：标记用量已结算，不动钱包，任务标 settled
     if task.billing_status == "skipped":
         task.billing_charged_fen = charged
         task.billing_status = "settled"

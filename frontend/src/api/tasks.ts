@@ -34,6 +34,7 @@ export type TaskRunOut = {
   current_step_status?: string | null
   error_code?: string | null
   error_message?: string | null
+  result_payload?: Record<string, unknown> | null
   provider_task_id?: string | null
   episode_id?: number | null
   fragment_id?: number | null

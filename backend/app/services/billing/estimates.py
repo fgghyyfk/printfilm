@@ -189,8 +189,15 @@ def estimate_phase_fen(project: Project, phase: str, settings: Settings | None =
     return _estimate_assets_fen(project, s)
 
 
+# 纯本地拼接没有 AI 调用，不能因价目服务或钱包承诺阻止执行。
+def is_free_local_task(task: TaskRun) -> bool:
+    return (task.domain, task.task_type) == ("drama", "episode_compose")
+
+
 async def estimate_task_fen(db: AsyncSession, task: TaskRun, settings: Settings | None = None) -> int:
     """按 domain + task_type 估算单任务预扣（分）。"""
+    if is_free_local_task(task):
+        return 0
     s = settings or get_settings()
     await ensure_official_rates(s)
     domain = (task.domain or "").strip()

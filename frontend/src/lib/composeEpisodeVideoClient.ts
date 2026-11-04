@@ -2,6 +2,7 @@
 
 import type { DramaFragment } from '../api/drama'
 import { dramaApi, resolveDramaMediaUrl } from '../api/drama'
+import { tasksApi } from '../api/tasks'
 import { fetchMediaBlob } from './clientDownload'
 import { sanitizeMediaBasename } from './canvasNodeMedia'
 
@@ -44,11 +45,19 @@ async function composeEpisodeVideoServer(
   onProgress?: (progress: EpisodeComposeProgress) => void,
 ): Promise<Blob> {
   onProgress?.({ phase: 'server', done: 0, total: clips.length })
-  const result = await dramaApi.composeEpisode(
+  const queued = await dramaApi.composeEpisode(
     episodeId,
     clips.map((c) => c.id),
   )
-  const url = resolveDramaMediaUrl(result.video_url)
+  // 本地FFmpeg任务不可协作取消，沿用任务状态回读，不重复提交或假称已停止。
+  let task = await tasksApi.get(queued.task_id)
+  while (!['succeeded', 'failed', 'cancelled', 'awaiting_review'].includes(task.status)) {
+    onProgress?.({ phase: 'server', done: 0, total: clips.length })
+    await new Promise<void>((resolve) => setTimeout(resolve, 1500))
+    task = await tasksApi.get(queued.task_id)
+  }
+  if (task.status !== 'succeeded') throw new Error(task.error_message || '全片合成未完成，请查看任务记录')
+  const url = resolveDramaMediaUrl(String(task.result_payload?.video_url || ''))
   if (!url) throw new Error('服务端合成未返回可下载地址')
   const blob = await fetchMediaBlob(url)
   onProgress?.({ phase: 'server', done: clips.length, total: clips.length })
