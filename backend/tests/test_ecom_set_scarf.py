@@ -114,7 +114,7 @@ def test_cover_copy():
 def test_silk_wool_material_and_135():
     assert scarf.normalize_size("135") == "135" and "135×135" in scarf.size_label("135")
     p = scarf.build_prompt(slot_prompt="背面披肩", scene="", ref="model", size="135", material="silk_wool")
-    assert "丝毛混纺" in p and "哑光" in p and "羊绒针织" in p and "真丝吊带" not in p
+    assert "丝毛混纺" in p and "人字纹" in p and "丝光" in p and "羊绒针织" in p and "真丝吊带" not in p
     assert "斜纹缎面" in scarf.build_prompt(slot_prompt="x", scene="", ref="product", size="88")
     c = scarf.cover_copy("《太平有象》", "135", "silk_wool")
     assert c["title"] == "太平有象·丝毛方巾" and c["subtitle"] == "丝毛混纺 135cm"

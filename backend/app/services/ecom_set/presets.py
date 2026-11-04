@@ -104,7 +104,7 @@ SCARF_SLOTS: dict[str, Slot] = {
     ),
     "scarf_texture": Slot(
         "scarf_texture", "面料特写",
-        "丝巾自然揉褶堆叠的微距特写，展示面料质感、垂坠与印花细节，柔和侧光，浅景深，下半部为丝巾，上部留出浅色留白",
+        "丝巾自然揉褶堆叠的微距特写，近距离看清面料的织纹与光泽、垂坠与印花细节，柔和侧光掠过布面突出织理，浅景深，下半部为丝巾，上部留出浅色留白",
         "title_bullets", "3:4", "top", ref="product",
     ),
     "scarf_knot": Slot(
