@@ -251,6 +251,7 @@
 ### [ ] 30. OSS 上传失败自动补传
 - 位置：`backend/app/services/oss_queue.py` 约 56 行 `create_task` 发后不管；补传只能手跑 `scripts/backfill_oss_media.py`。
 - 改法：在现有维护循环里定时调用 `backfill_pending_local_media`。
+- 实施进度（2026-11-04）：已实施，**待 30–32 项最终集中验证**。维护tick每5分钟启动/复用唯一强引用补传任务，每批最多20项，上传在线程中执行、不占维护operation的5秒窗口。即时enqueue与补传共用每URL Redis NX token；取消等待线程真正结束后才释放本人标记。扫描按来源/主键/行内URL游标限量轮转，不扩大原媒体清单；Asset.params短锁fresh+deepcopy回填，保并发历史/设置且不推进形象版本。本地文件成功失败均保留。必要慢上传/取消互斥检查1通过；真实PG并发JSON合并检查1通过（fixture字段修正后精准复验），无全量。
 
 ### [ ] 31. 本地生成目录清理
 - 背景：只有删科普项目时清理（`pipeline.py` 约 670 行），`static/generated` 无过期清理；漫剧/工具产物是否清理待验证。

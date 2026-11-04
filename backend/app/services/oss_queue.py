@@ -5,6 +5,9 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import time
+from copy import deepcopy
+from uuid import uuid4
 from typing import Any
 
 import redis
@@ -18,6 +21,13 @@ logger = logging.getLogger(__name__)
 
 _ENQUEUE_KEY = "ai_movie:oss:enqueued:{digest}"
 _ENQUEUE_TTL = 7200
+_upload_tasks: dict[str, asyncio.Task] = {}
+_backfill_task: asyncio.Task | None = None
+_next_backfill_at = 0.0
+# 稳定主键+行内URL游标；缺文件/失败URL不会永远挡住后面的素材。
+_scan_source = 0
+_scan_row = None
+_scan_after_url: str | None = None
 
 # JSON params 内可能存本地媒体 URL 的字段
 _ASSET_PARAM_URL_KEYS = ("voiceAudio", "cover", "url", "image", "video")
@@ -36,47 +46,85 @@ def _digest(local_url: str) -> str:
     return hashlib.sha1(local_url.encode("utf-8")).hexdigest()[:24]
 
 
+def _claim_upload(local_url: str) -> str | None:
+    token = uuid4().hex
+    if _redis().set(_ENQUEUE_KEY.format(digest=_digest(local_url)), token, nx=True, ex=_ENQUEUE_TTL):
+        return token
+    return None
+
+
+def _start_upload(local_url: str, token: str) -> asyncio.Task:
+    job = asyncio.create_task(_upload_local_url_background(local_url, token))
+    _upload_tasks[local_url] = job
+    def finished(done):
+        if _upload_tasks.get(local_url) is done:
+            _upload_tasks.pop(local_url, None)
+        if not done.cancelled():
+            done.exception()
+    job.add_done_callback(finished)
+    return job
+
+
 def enqueue_oss_upload(local_url: str) -> bool:
-    """Queue OSS upload for a /static URL. Returns True if newly enqueued."""
+    """即时上传和定时补传共享URL互斥；任务强引用保留至线程/回填真正结束。"""
     url = (local_url or "").strip()
-    if not url or not storage.is_local_static_url(url):
+    if not storage.is_local_static_url(url) or not oss_svc.oss_enabled() or url in _upload_tasks:
         return False
-    if not oss_svc.oss_enabled():
+    token = _claim_upload(url)
+    if not token:
         return False
-
-    key = _ENQUEUE_KEY.format(digest=_digest(url))
-    try:
-        r = _redis()
-        if not r.set(key, "1", nx=True, ex=_ENQUEUE_TTL):
-            return False
-    except Exception:  # noqa: BLE001
-        logger.warning("oss enqueue redis unavailable, caller should sync-upload", exc_info=True)
-        raise
-
-    asyncio.create_task(_upload_local_url_background(url))
-    logger.info("oss upload enqueued %s → background", url)
+    _start_upload(url, token)
     return True
 
 
-async def _upload_local_url_background(local_url: str) -> None:
-    """Upload one local static asset and backfill all DB references."""
+async def _upload_local_url_background(local_url: str, token: str) -> tuple[bool | None, int]:
+    """取消等待者也先等同步线程退出，之后才释放本URL互斥。"""
+    worker = asyncio.create_task(asyncio.to_thread(upload_local_url_sync, local_url))
+    cancelled = False
     try:
-        oss_url = await asyncio.to_thread(upload_local_url_sync, local_url)
-        if not oss_url:
-            clear_enqueue_marker(local_url)
-            return
-        await backfill_media_url(local_url, oss_url)
-        clear_enqueue_marker(local_url)
+        try:
+            oss_url = await asyncio.shield(worker)
+        except asyncio.CancelledError:
+            cancelled = True
+            while not worker.done():
+                try:
+                    await asyncio.shield(worker)
+                except asyncio.CancelledError:
+                    pass
+            oss_url = worker.result()
+        changed = await backfill_media_url(local_url, oss_url) if oss_url else 0
+        if cancelled:
+            raise asyncio.CancelledError
+        return (True if oss_url else None), changed
     except Exception:  # noqa: BLE001
-        clear_enqueue_marker(local_url)
         logger.exception("background oss upload failed url=%s", local_url)
+        return False, 0
+    finally:
+        await asyncio.to_thread(clear_enqueue_marker, local_url, token)
 
 
-def clear_enqueue_marker(local_url: str) -> None:
+def clear_enqueue_marker(local_url: str, token: str) -> None:
     try:
-        _redis().delete(_ENQUEUE_KEY.format(digest=_digest(local_url)))
+        key = _ENQUEUE_KEY.format(digest=_digest(local_url))
+        _redis().eval("if redis.call('get',KEYS[1]) == ARGV[1] then return redis.call('del',KEYS[1]) end return 0", 1, key, token)
     except Exception:  # noqa: BLE001
         pass
+
+
+def start_pending_media_backfill_if_due() -> bool:
+    """维护tick只启动/复用唯一批任务，不等待上传，也不受5秒operation取消影响。"""
+    global _backfill_task, _next_backfill_at
+    if not oss_svc.oss_enabled() or (_backfill_task is not None and not _backfill_task.done()):
+        return False
+    if time.monotonic() < _next_backfill_at:
+        return False
+    _next_backfill_at = time.monotonic() + 300
+    _backfill_task = asyncio.create_task(backfill_pending_local_media(limit=20), name="oss-media-backfill")
+    def finished(done):
+        if not done.cancelled() and done.exception() is not None:
+            logger.error("OSS补传批次失败", exc_info=done.exception())
+    _backfill_task.add_done_callback(finished)
+    return True
 
 
 # 从资产 params 递归收集本地 /static URL
@@ -151,14 +199,14 @@ async def backfill_media_url(old_url: str, new_url: str) -> int:
                 select(DramaAsset).where(
                     DramaAsset.params.is_not(None),
                     cast(DramaAsset.params, String).like(f"%{old}%"),
-                )
+                ).with_for_update().execution_options(populate_existing=True)
             )
         ).scalars().all()
         for asset in assets:
             params = asset.params
             if not isinstance(params, dict):
                 continue
-            rewritten = dict(params)
+            rewritten = deepcopy(params)
             if _rewrite_local_urls_in_params(rewritten, old, new):
                 asset.params = rewritten
                 changed += 1
@@ -183,38 +231,49 @@ def collect_pending_column_targets() -> list[tuple[type, list[str]]]:
 
 
 async def collect_pending_local_media_urls(*, limit: int = 2000) -> list[str]:
-    """扫描库中仍指向本地 /static 的媒体 URL（含漫剧）。"""
+    """限定SQL页大小；跨批次按来源、主键、行内URL轮转，不全表all。"""
+    global _scan_source, _scan_row, _scan_after_url
     from app.database import AsyncSessionLocal
     from app.models_drama import DramaAsset
 
+    sources = [*collect_pending_column_targets(), (DramaAsset, [])]
     found: set[str] = set()
+    budget = max(1, int(limit))
+    visited = 0
     async with AsyncSessionLocal() as db:
-        column_targets = collect_pending_column_targets()
-        for model, fields in column_targets:
-            clauses = []
-            for field in fields:
-                col = getattr(model, field)
-                clauses.append(col.like("/static/%"))
-                clauses.append(col.like("%/static/%"))
-            rows = (await db.execute(select(model).where(or_(*clauses)))).scalars().all()
+        while budget > 0 and visited < len(sources):
+            model, fields = sources[_scan_source]
+            clauses = [getattr(model, field).like("%/static/%") for field in fields]
+            if not fields:
+                clauses = [cast(model.params, String).like("%/static/%")]
+            statement = select(model).where(or_(*clauses)).order_by(model.id).limit(budget)
+            if _scan_row is not None:
+                statement = statement.where(model.id >= _scan_row if _scan_after_url is not None else model.id > _scan_row)
+            rows = list((await db.scalars(statement)).all())
+            page_size = budget
             for row in rows:
-                for field in fields:
-                    raw = (getattr(row, field) or "").strip()
-                    if storage.is_local_static_url(raw):
-                        found.add(raw)
-                        if len(found) >= limit:
-                            return sorted(found)
-
-        assets = (
-            await db.execute(
-                select(DramaAsset).where(DramaAsset.params.is_not(None))
-            )
-        ).scalars().all()
-        for asset in assets:
-            _collect_local_urls_from_params(asset.params, found)
-            if len(found) >= limit:
+                urls: set[str] = set()
+                if fields:
+                    urls.update(raw for field in fields if storage.is_local_static_url(raw := str(getattr(row, field) or "").strip()))
+                else:
+                    _collect_local_urls_from_params(row.params, urls)
+                after = _scan_after_url if row.id == _scan_row else None
+                for url in sorted(urls):
+                    if after is not None and url <= after:
+                        continue
+                    found.add(url)
+                    if len(found) >= limit:
+                        _scan_row, _scan_after_url = row.id, url
+                        return sorted(found)
+                _scan_row, _scan_after_url = row.id, None
+                budget -= 1
+            if len(rows) < page_size:
+                _scan_source = (_scan_source + 1) % len(sources)
+                _scan_row, _scan_after_url = None, None
+                visited += 1
+            elif not rows:
                 break
-    return sorted(found)[:limit]
+    return sorted(found)
 
 
 def upload_local_url_sync(local_url: str) -> str | None:
@@ -236,47 +295,38 @@ def upload_local_url_sync(local_url: str) -> str | None:
 
 
 async def backfill_pending_local_media(*, limit: int = 500, dry_run: bool = False) -> dict[str, Any]:
-    """把库里仍是 /static 的媒体补传到 OSS 并回写 URL。"""
-    pending = await collect_pending_local_media_urls(limit=limit)
-    # uploaded / failed / skipped / changed_rows 统计
-    uploaded = 0
-    failed = 0
-    skipped = 0
-    changed_rows = 0
-    errors: list[str] = []
-
-    if dry_run:
-        return {
-            "ok": True,
-            "dry_run": True,
-            "pending": len(pending),
-            "urls": pending[:50],
-        }
-
+    """小批补传，昂贵上传在线程；成功与失败都保留本地文件。"""
     if not oss_svc.oss_enabled():
-        return {"ok": False, "error": "OSS disabled", "pending": len(pending)}
-
+        return {"ok": False, "error": "OSS disabled", "pending": 0}
+    pending = await collect_pending_local_media_urls(limit=limit)
+    if dry_run:
+        return {"ok": True, "dry_run": True, "pending": len(pending), "urls": pending[:50]}
+    uploaded = changed_rows = failed = skipped = 0
     for local_url in pending:
+        if local_url in _upload_tasks:
+            skipped += 1
+            continue
         try:
-            oss_url = upload_local_url_sync(local_url)
-            if not oss_url:
+            token = await asyncio.to_thread(_claim_upload, local_url)
+            if not token:
                 skipped += 1
                 continue
-            changed_rows += await backfill_media_url(local_url, oss_url)
-            clear_enqueue_marker(local_url)
-            uploaded += 1
-            logger.info("oss pending backfill ok %s → %s", local_url, oss_url)
-        except Exception as exc:  # noqa: BLE001
+            job = _start_upload(local_url, token)
+            try:
+                ok, changed = await asyncio.shield(job)
+            except asyncio.CancelledError:
+                await job
+                raise
+            if ok:
+                uploaded += 1
+                changed_rows += changed
+            elif ok is None:
+                skipped += 1
+            else:
+                failed += 1
+        except Exception:  # noqa: BLE001
             failed += 1
-            errors.append(f"{local_url}: {exc}"[:240])
-            logger.exception("oss pending backfill failed %s", local_url)
-
-    return {
-        "ok": failed == 0,
-        "pending": len(pending),
-        "uploaded": uploaded,
-        "skipped": skipped,
-        "failed": failed,
-        "changed_rows": changed_rows,
-        "errors": errors[:20],
-    }
+            logger.exception("oss pending backfill failed")
+    return {"ok": failed == 0, "pending": len(pending), "uploaded": uploaded,
+            "skipped": skipped, "failed": failed, "changed_rows": changed_rows,
+            "errors": ["部分素材补传失败，本地文件已保留，稍后重试"] if failed else []}

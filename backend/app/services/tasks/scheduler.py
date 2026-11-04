@@ -189,6 +189,11 @@ def _ensure_maintenance_loop() -> None:
 
 # 每项维护独占短事务；超时退出时由 session 上下文回滚，释放已持有的锁。
 async def _run_maintenance_operation(name: str) -> None:
+    if name == "oss_backfill":
+        from app.services.oss_queue import start_pending_media_backfill_if_due
+
+        start_pending_media_backfill_if_due()
+        return
     if name == "orphan_recovery":
         await recover_orphaned_tasks()
         return
@@ -204,7 +209,7 @@ async def _run_maintenance_operation(name: str) -> None:
 # 低频维护与任务领取隔离，单项锁等待不得阻塞新任务和取消请求。
 async def _maintenance_loop() -> None:
     while not _stop_event.is_set():
-        for name in ("orphan_recovery", "sequential_queue", "stale_fragments", "billing_reconcile"):
+        for name in ("orphan_recovery", "sequential_queue", "stale_fragments", "billing_reconcile", "oss_backfill"):
             try:
                 await asyncio.wait_for(_run_maintenance_operation(name), timeout=_MAINTENANCE_TIMEOUT_SEC)
             except asyncio.CancelledError:
