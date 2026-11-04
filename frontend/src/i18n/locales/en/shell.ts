@@ -129,7 +129,7 @@ export const enShell = {
     kepu: 'AI Short Video',
     kepuHint: 'Idea · Copy & storyboard · Images & voice · Compose',
     ecom: 'Product images',
-    ecomHint: 'Product + model · on-model shots · color match',
+    ecomHint: 'Pick product & model · full detail set or single shots · no prompts',
     toolsFootPrefix: 'Or explore short-drama skills at',
     toolsFootLink: 'Drama Skills',
     toolsFootSuffix: '',

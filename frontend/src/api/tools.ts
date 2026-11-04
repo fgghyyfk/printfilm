@@ -161,6 +161,13 @@ export function updateToolModel(assetId: number, body: { is_model: boolean; is_d
   })
 }
 
+/** 一句话生成新模特（收一张生图费），返回更新后的模特库 */
+export function generateToolModel(body: { description: string; name?: string; make_default?: boolean }): Promise<{ items: ToolModel[] }> {
+  return requestToolJson('/api/tools/models/generate', '生成模特失败', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  }, true)
+}
+
 // 提交工具生成（multipart）
 export async function runStudioTool(payload: ToolRunPayload): Promise<ToolRunResult> {
   const body = new FormData()

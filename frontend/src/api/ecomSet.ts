@@ -47,7 +47,8 @@ export interface EcomSet {
   project_id: number | null
   created_at: string
   /** general 通用商品；scarf 丝巾详情页 */
-  category?: 'general' | 'scarf'
+  category?: string
+  styled?: EcomStyledInfo | null
   scarf?: { size: string; size_label: string; material?: string; model_asset_id: number | null; model_name: string; model_url: string } | null
 }
 
@@ -59,6 +60,8 @@ export interface EcomSetOptions {
   scarf_sizes?: { id: string; name: string }[]
   scarf_counts?: number[]
   scarf_materials?: { id: string; name: string }[]
+  styled?: EcomStyledCategory[]
+  frames?: { id: string; name: string }[]
   plan_fen: number
   image_fen: number
   billing_enabled: boolean
@@ -72,18 +75,55 @@ export type EcomSetList = {
 }
 
 /** 规划请求参数（multipart） */
+/** 「模特上身」套图信息（丝巾 / 服饰 / 首饰 / 包袋） */
+export type EcomStyledInfo = {
+  category: string
+  size: string
+  size_label: string
+  material: string
+  material_label?: string
+  frame?: string
+  model_asset_id: number | null
+  model_name: string
+  model_url: string
+  product_id?: number | null
+  color_index?: number
+  color_name?: string
+  fabric_url?: string
+}
+
+/** 品类选项（来自 /options 的 styled） */
+export type EcomStyledCategory = {
+  id: string
+  name: string
+  materials: { id: string; name: string }[]
+  sizes: { id: string; name: string }[]
+  default_material: string
+  default_size: string
+  counts: number[]
+  default_count: number
+  compositions: Record<string, string[]>
+  slots: { key: string; label: string; ref: 'model' | 'product' | 'flat'; free: boolean }[]
+}
+
 export type EcomSetPlanPayload = {
-  file: File
+  file?: File | null
   name: string
   platform: string
   style: string
   count: number
   notes?: string
   /** 丝巾详情页：品类、尺寸与模特（留空用默认模特） */
-  category?: 'general' | 'scarf'
+  category?: string
   scarfSize?: string
   scarfMaterial?: string
   modelAssetId?: number | null
+  /** 产品化流程：画幅、勾选槽位、商品库商品与颜色款、面料实拍 */
+  frame?: string
+  slots?: string[]
+  productId?: number | null
+  colorIndex?: number
+  fabric?: File | null
 }
 
 /** 方案编辑：单张可改字段 */
@@ -120,18 +160,25 @@ export function getEcomSetOptions(): Promise<EcomSetOptions> {
 // 上传商品图并生成出图方案（同步，约 10–20 秒，收规划费）
 export function planEcomSet(payload: EcomSetPlanPayload): Promise<EcomSet> {
   const body = new FormData()
-  body.append('file', payload.file)
+  if (payload.file) body.append('file', payload.file)
   body.append('name', payload.name)
   body.append('platform', payload.platform)
   body.append('style', payload.style)
   body.append('count', String(payload.count))
   body.append('notes', payload.notes || '')
   body.append('category', payload.category || 'general')
-  if (payload.category === 'scarf') {
+  if (payload.category && payload.category !== 'general') {
     body.append('scarf_size', payload.scarfSize || '')
     body.append('scarf_material', payload.scarfMaterial || '')
     if (payload.modelAssetId) body.append('model_asset_id', String(payload.modelAssetId))
   }
+  if (payload.frame) body.append('frame', payload.frame)
+  if (payload.slots?.length) body.append('slots', payload.slots.join(','))
+  if (payload.productId) {
+    body.append('product_id', String(payload.productId))
+    body.append('color_index', String(payload.colorIndex || 0))
+  }
+  if (payload.fabric) body.append('fabric', payload.fabric)
   return requestEcom('/plan', '方案生成失败', { method: 'POST', body }, true)
 }
 
@@ -181,6 +228,18 @@ export async function downloadEcomSetZip(id: number, fallbackName: string): Prom
   const blob = await response.blob()
   const filename = parseDispositionFilename(response.headers.get('Content-Disposition')) || fallbackName
   triggerBlobDownload(blob, filename)
+}
+
+// 下载详情长图（已完成的图按顺序竖向拼接）
+export async function downloadEcomSetLong(id: number, fallbackName: string): Promise<void> {
+  const response = await requestResponse(`${BASE}/${id}/long`, undefined, errorHandler('下载长图失败', false))
+  const blob = await response.blob()
+  triggerBlobDownload(blob, parseDispositionFilename(response.headers.get('Content-Disposition')) || fallbackName)
+}
+
+// 同款换色：沿用方案换另一个颜色款，返回新建的待生成套图
+export function recolorEcomSet(id: number, colorIndex: number): Promise<EcomSet> {
+  return requestEcom(`/${id}/recolor`, '换色失败', { method: 'POST', body: JSON.stringify({ color_index: colorIndex }) })
 }
 
 // 用套图建带货视频项目（同一套图重复调用返回同一项目）

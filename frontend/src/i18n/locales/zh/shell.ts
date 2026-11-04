@@ -129,7 +129,7 @@ export const zhShell = {
     kepu: 'AI短视频',
     kepuHint: '输入想法 · 文案分镜 · 画面配音 · 合成成片',
     ecom: '电商图',
-    ecomHint: '商品图 + 模特 · 上身图 · 自动校色',
+    ecomHint: '选商品和模特 · 整套详情页或单张上身图 · 不用写提示词',
     daihuo: '商品带货',
     daihuoHint: '一图出套图 · 丝巾详情页 · 打包下载',
     toolsFootPrefix: '也可以先去',

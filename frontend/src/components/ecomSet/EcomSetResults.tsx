@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { AlertCircle, Download, Loader2, Pencil, RefreshCw } from 'lucide-react'
 import type { EcomSet, EcomSetItem } from '../../api/ecomSet'
 import { resolveToolMediaUrl } from '../../api/tools'
@@ -19,11 +20,13 @@ type Props = {
   onRetry: (item: EcomSetItem) => void
   onDownload: () => void
   onNew: () => void
+  /** 额外操作（长图、同款换色等），放在下载按钮前 */
+  extraActions?: ReactNode
 }
 
 /** 第③④步：成图网格，生成中显示占位，完成后可改文案 / 重新生成 / 打包下载 */
 export default function EcomSetResults(props: Props) {
-  const { set, busyIdx, downloading, error, onDownload, onNew } = props
+  const { set, busyIdx, downloading, error, onDownload, onNew, extraActions } = props
   const { t } = useI18n()
   const progress = countEcomItems(set.items)
   const generating = set.status === 'generating'
@@ -43,6 +46,7 @@ export default function EcomSetResults(props: Props) {
           <Button variant="text" size="sm" onClick={onNew}>
             {t('ecomSet.result.newSet')}
           </Button>
+          {extraActions}
           <Button variant="lime" size="sm" disabled={!canDownloadSet(set) || downloading} onClick={onDownload}>
             {downloading ? (
               <Loader2 size={14} className="pf-tool-spin" aria-hidden />

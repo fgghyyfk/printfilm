@@ -52,7 +52,7 @@ export default function CreateChoiceModal({ open, onClose }: Props) {
           <strong>{t('create.kepu')}</strong>
           <span className="pf-muted">{t('create.kepuHint')}</span>
         </button>
-        <button type="button" className="pf-create-choice-card" onClick={() => go('/tools/image')}>
+        <button type="button" className="pf-create-choice-card" onClick={() => go('/ecom')}>
           <span className="pf-ws-product-icon" aria-hidden>
             <ShoppingBag size={24} strokeWidth={1.6} />
           </span>

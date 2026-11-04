@@ -28,6 +28,8 @@ import Button from '../components/ui/Button'
 import Stepper from '../components/ui/Stepper'
 import { useEcomSetPolling } from '../hooks/useEcomSetPolling'
 import { useI18n } from '../i18n'
+import EcomSetExtras from '../components/ecomSet/EcomSetExtras'
+import '../styles/tools-base.css'
 import { dialog } from '../lib/dialog'
 import {
   canMakeDaihuoVideo,
@@ -385,6 +387,7 @@ function EcomSetWorkspace() {
             onRetry={onRetry}
             onDownload={onDownload}
             onNew={() => backToForm()}
+            extraActions={<EcomSetExtras set={set} onOpenSet={(id) => setParams({ id: String(id) })} onError={setActionError} />}
           />
           {canMakeDaihuoVideo(set) ? <DaihuoVideoPanel key={set.id} set={set} /> : null}
         </>

@@ -51,7 +51,7 @@ export default function HomePage() {
           <Link className="kk-pill is-line" to={loggedIn ? AVATAR_PATH : '/auth?mode=register&next=/'}>
             {t('home.trial')}
           </Link>
-          <button type="button" className="kk-pill is-line" onClick={() => goAuthOr('/tools/image')}>
+          <button type="button" className="kk-pill is-line" onClick={() => goAuthOr('/ecom')}>
             {t('home.ecom')}
           </button>
         </div>

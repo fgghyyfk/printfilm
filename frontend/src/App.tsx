@@ -40,6 +40,7 @@ const EpisodeStoryboardPage = lazy(() => import('./pages/drama/episodeCanvas/Epi
 const TeamInvitationPage = lazy(() => import('./features/teams/TeamInvitationPage'))
 const TeamPage = lazy(() => import('./features/teams/TeamPage'))
 const DaihuoPage = lazy(() => import('./pages/DaihuoPage'))
+const EcomStudioPage = lazy(() => import('./pages/EcomStudioPage'))
 const Marketplace = lazy(() => import('./features/marketplace/Marketplace'))
 
 /** 页面代码加载中的占位 */
@@ -76,6 +77,7 @@ export default function App() {
         <Route path="/tools/video" element={<RequireAuth><GenerationPage kind="video" /></RequireAuth>} />
         <Route path="/tools/image" element={<RequireAuth><GenerationPage kind="image" /></RequireAuth>} />
         <Route path="/daihuo" element={<RequireAuth><DaihuoPage /></RequireAuth>} />
+        <Route path="/ecom" element={<RequireAuth><EcomStudioPage /></RequireAuth>} />
         <Route path="/tools/ecom-set" element={<ToDaihuo />} />
         <Route path="/tools/audio" element={<RequireAuth><GenerationPage kind="audio" /></RequireAuth>} />
         <Route path="/tasks" element={<RequireAuth><GenerationTasksPage /></RequireAuth>} />

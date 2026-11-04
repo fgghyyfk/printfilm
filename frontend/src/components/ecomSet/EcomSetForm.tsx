@@ -35,7 +35,7 @@ export default function EcomSetForm({ options, initial, busy, error, onSubmit }:
   const [count, setCount] = useState(initial?.count || (options.counts.includes(6) ? 6 : options.counts[0] || 6))
   const [notes, setNotes] = useState(initial?.notes || '')
   /* 丝巾详情页：品类、尺寸、模特（默认选中模特库里的默认模特） */
-  const [category, setCategory] = useState<'general' | 'scarf'>(initial?.category || 'general')
+  const [category, setCategory] = useState<'general' | 'scarf'>(initial?.category === 'scarf' ? 'scarf' : 'general')
   const [scarfSize, setScarfSize] = useState(initial?.scarfSize || '88')
   const [scarfMaterial, setScarfMaterial] = useState(initial?.scarfMaterial || 'silk')
   const [scarfCount, setScarfCount] = useState(initial?.category === 'scarf' && initial.count ? initial.count : 8)

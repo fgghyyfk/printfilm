@@ -11,7 +11,7 @@ export const CREATION_NAV = [
   { key: 'drama', path: '/drama', label: 'nav.drama' },
   { key: 'canvas', path: '/canvas', label: 'nav.canvas' },
   { key: 'kepu', path: SHORT_VIDEO_LIST_PATH, label: 'nav.kepu' },
-  { key: 'image', path: '/tools/image', label: 'nav.ecom' },
+  { key: 'image', path: '/ecom', label: 'nav.ecom' },
 ] as const
 
 export const RESOURCE_NAV = [
@@ -34,7 +34,7 @@ export function resolveNavActive(pathname: string, active?: NavActive): NavActiv
   if (within('/drama')) return 'drama'
   if (['/studio', '/templates', '/history'].some(within)) return 'kepu'
   if (within('/tools/video')) return 'video'
-  if (within('/tools/image')) return 'image'
+  if (within('/tools/image') || within('/ecom')) return 'image'
   if (within('/tools/audio')) return 'audio'
   if (within('/tasks')) return 'tasks'
   if (within('/pricing')) return 'pricing'
