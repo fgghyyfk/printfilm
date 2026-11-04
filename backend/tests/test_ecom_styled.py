@@ -138,3 +138,13 @@ async def test_generate_model(db_session, monkeypatch, tmp_path):
 
 async def _noop_usage(*a, **kw):
     return None
+
+
+# 接口出参：options 的 styled / frames 与套图的 styled 字段不能被 schema 过滤掉
+def test_schemas_keep_styled_fields():
+    from app.schemas_ecom import EcomScarfOut, EcomSetOptionsOut
+
+    opts = EcomSetOptionsOut(platforms=[], styles=[], counts=[], plan_fen=1, image_fen=1, billing_enabled=False,
+                             styled=categories.options(), frames=[{"id": "main_11", "name": "主图"}])
+    assert opts.styled and opts.frames[0].id == "main_11"
+    assert EcomScarfOut(product_id=3, color_name="米白", frame="main_11").product_id == 3

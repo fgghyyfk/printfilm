@@ -25,14 +25,21 @@ class EcomSetItemOut(BaseModel):
 
 
 class EcomScarfOut(BaseModel):
-    """丝巾详情页：尺寸与模特。"""
+    """「模特上身」套图信息：品类、尺寸、材质、画幅、模特、商品库颜色款与面料图。"""
 
-    size: str
-    size_label: str
+    category: str = "scarf"
+    size: str = ""
+    size_label: str = ""
     material: str = "silk"
+    material_label: str = ""
+    frame: str = "taobao_34"
     model_asset_id: int | None = None
     model_name: str = ""
     model_url: str = ""
+    product_id: int | None = None
+    color_index: int = 0
+    color_name: str = ""
+    fabric_url: str = ""
 
 
 class EcomProductOut(BaseModel):
@@ -63,6 +70,7 @@ class EcomSetOut(BaseModel):
     project_id: int | None = None
     category: str = "general"
     scarf: EcomScarfOut | None = None
+    styled: EcomScarfOut | None = None
 
 
 class EcomSetListOut(BaseModel):
@@ -91,6 +99,8 @@ class EcomSetOptionsOut(BaseModel):
     scarf_sizes: list[EcomOptionOut] = []
     scarf_counts: list[int] = []
     scarf_materials: list[EcomOptionOut] = []
+    styled: list[dict] = []
+    frames: list[EcomOptionOut] = []
     plan_fen: int
     image_fen: int
     billing_enabled: bool
