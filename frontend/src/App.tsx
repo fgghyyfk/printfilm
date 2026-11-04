@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import DialogHost from './components/ui/DialogHost'
 import BillingAlertHost from './components/billing/BillingAlertHost'
+import MyTasks from './components/MyTasks'
 import { DramaGenQueuePanel } from './components/drama/DramaGenQueuePanel'
 import AuthPage from './pages/AuthPage'
 import HistoryPage from './pages/HistoryPage'
@@ -76,6 +77,7 @@ export default function App() {
         <Route path="/drama/projects/:projectId/canvas" element={<CanvasPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      <MyTasks />
       <DramaGenQueuePanel />
       <BillingAlertHost />
       <DialogHost />

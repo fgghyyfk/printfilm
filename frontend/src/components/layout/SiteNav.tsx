@@ -10,6 +10,7 @@ import CreateChoiceModal from '../ui/CreateChoiceModal'
 import { USER_UPDATED_EVENT } from '../../lib/userEvents'
 import { useI18n } from '../../i18n'
 import LanguageSwitch from './LanguageSwitch'
+import { MyTasksButton } from '../MyTasks'
 
 export type NavActive = 'home' | 'kaikou' | 'drama' | 'kepu' | 'tools' | 'assets' | 'pricing' | 'templates' | 'studio' | 'history'
 
@@ -116,6 +117,7 @@ export default function SiteNav({ active }: Props) {
       </nav>
       <div className="pf-nav-right">
         <LanguageSwitch />
+        {user || localStorage.getItem('token') ? <MyTasksButton /> : null}
         <button type="button" className="pf-nav-help-btn" title={t('nav.helpCenter')} onClick={() => nav('/help')}>
           <IconHelp size={18} className="pf-nav-help-icon" />
           <span>{t('nav.help')}</span>

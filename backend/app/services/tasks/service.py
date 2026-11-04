@@ -979,6 +979,7 @@ async def list_tasks_for_user(
     page_size: int,
     domain: str | None = None,
     status: str | None = None,
+    active_only: bool = False,
     task_type: str | None = None,
     target_type: str | None = None,
     target_id: int | None = None,
@@ -990,6 +991,8 @@ async def list_tasks_for_user(
         filters.append(TaskRun.domain == domain)
     if status:
         filters.append(TaskRun.status == status)
+    if active_only:
+        filters.append(TaskRun.status.in_(tuple(ACTIVE_TASK_STATUSES)))
     if task_type:
         filters.append(TaskRun.task_type == task_type)
     if project_id:

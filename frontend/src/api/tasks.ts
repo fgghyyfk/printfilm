@@ -36,6 +36,9 @@ export type TaskRunOut = {
   error_message?: string | null
   result_payload?: Record<string, unknown> | null
   provider_task_id?: string | null
+  project_id?: number | null
+  cancelable?: boolean
+  cancel_requested?: boolean
   episode_id?: number | null
   fragment_id?: number | null
   drama_project_id?: number | null
@@ -57,7 +60,7 @@ export type TaskListOut = {
 
 export const tasksApi = {
   // 单任务详情（含 steps / events）
-  get: (taskId: number) => request<TaskRunOut>(`/api/tasks/${taskId}`),
+  get: (taskId: number, options?: { signal?: AbortSignal }) => request<TaskRunOut>(`/api/tasks/${taskId}`, options),
 
   // 按目标筛选最近任务（如 fragment）
   list: (params: {
@@ -66,6 +69,8 @@ export const tasksApi = {
     domain?: string
     task_type?: string
     status?: string
+    active_only?: boolean
+    signal?: AbortSignal
     target_type?: string
     target_id?: number
     drama_project_id?: number
@@ -76,10 +81,11 @@ export const tasksApi = {
     if (params.domain) q.set('domain', params.domain)
     if (params.task_type) q.set('task_type', params.task_type)
     if (params.status) q.set('status', params.status)
+    if (params.active_only) q.set('active_only', 'true')
     if (params.target_type) q.set('target_type', params.target_type)
     if (params.target_id) q.set('target_id', String(params.target_id))
     if (params.drama_project_id) q.set('drama_project_id', String(params.drama_project_id))
     const qs = q.toString()
-    return request<TaskListOut>(`/api/tasks${qs ? `?${qs}` : ''}`)
+    return request<TaskListOut>(`/api/tasks${qs ? `?${qs}` : ''}`, { signal: params.signal })
   },
 }
