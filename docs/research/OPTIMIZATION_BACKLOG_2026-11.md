@@ -256,6 +256,7 @@
 ### [ ] 31. 本地生成目录清理
 - 背景：只有删科普项目时清理（`pipeline.py` 约 670 行），`static/generated` 无过期清理；漫剧/工具产物是否清理待验证。
 - 改法：OSS 回填成功后删本地副本（FFmpeg 需要时再拉回），或按天数清理无引用文件。
+- 实施进度（2026-11-04）：已实施，**待 30–32 项最终集中验证**。采用保守无引用孤儿方案，绝不因OSS成功删除；新增默认dry-run CLI，显式apply且两域项目/历史归属均不存在、完整分页引用审计无命中、mtime/ctime过保留期才逐文件回收。审计覆盖全部ORM列/嵌套及编码JSON（含终态任务、所有历史与全局配置），未知表/列或查询失败fail-closed；每文件apply前完整重审+stat身份核对，拒symlink/.part，活项目整轨/FFmpeg/中间素材保留，p0/tools/users等共享布局默认排除。已停止Project.DELETE提交前rmtree共享p目录，移除孤儿helper/import，原Project/Work数据库语义不变；中英文确认同步“不立即清除媒体”。最小检查真实DELETE成功/回滚2通过；tmp根孤儿/全部引用/外链/新文件及并发新增引用/审计失败2通过（签名测试值修正后精准复验），仅删除测试临时根中证明无引用的老孤儿，**没有扫描/删除用户真实generated或执行真实apply**。物理回收仅用于暂停媒体写入的维护窗口，不引入全局writer锁。
 
 ### [ ] 32. i18n 漏翻
 - 背景：pages/components 中 119 个 tsx 含中文，仅 49 个接入 i18n。重灾区：`CreateProjectPage.tsx`（~136 处）、`EpisodeEditPage.tsx`（~90）、`StoryboardPage.tsx`（~82）、`DramaListPage.tsx`、`lib/billingError.ts` 余额不足弹窗。

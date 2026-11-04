@@ -407,7 +407,7 @@ export const zhPages = {
     templateMeta: '模板 {name} · {when}',
     continueEdit: '继续编辑',
     deleteTitle: '删除项目',
-    deleteMessage: '确定删除该项目？素材与成片将一并清除。',
+    deleteMessage: '删除此项目；相关媒体按保留规则处理，不会立即清除',
     deleteFailed: '删除失败',
     downloadFailed: '下载失败',
     packFailed: '打包失败',

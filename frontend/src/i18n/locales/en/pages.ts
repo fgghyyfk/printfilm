@@ -414,7 +414,7 @@ export const enPages = {
     templateMeta: 'Template {name} · {when}',
     continueEdit: 'Continue',
     deleteTitle: 'Delete project',
-    deleteMessage: 'Delete this project? Media and the finished film will be removed.',
+    deleteMessage: 'Delete this project? Related media follow the retention policy and will not be removed immediately.',
     deleteFailed: 'Delete failed',
     downloadFailed: 'Download failed',
     packFailed: 'Zip failed',

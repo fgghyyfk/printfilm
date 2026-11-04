@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import shutil
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
@@ -674,12 +673,6 @@ async def run_pipeline(project_id: int, *, phase: str | None = None, restart: bo
         raise
     finally:
         _cancelled.discard(project_id)
-
-
-async def delete_project_assets(project_id: int) -> None:
-    pdir = storage.GENERATED_ROOT / f"p{project_id}"
-    if pdir.exists():
-        shutil.rmtree(pdir, ignore_errors=True)
 
 
 async def _final_url(project_id: int) -> str | None:

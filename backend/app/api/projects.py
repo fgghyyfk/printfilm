@@ -663,7 +663,7 @@ async def delete_project(
     if work:
         await db.delete(work)
 
-    await pipeline.delete_project_assets(project_id)
+    # 共享p目录可能仍被漫剧或历史引用使用；物理回收交保留期引用审计。
     await db.delete(project)
     await db.commit()
     return {"ok": True, "id": project_id}
