@@ -17,6 +17,7 @@ import {
 } from '../../components/ui/Icons'
 import { scenePromptForDisplay } from '../../promptDisplay'
 import { dialog } from '../../lib/dialog'
+import { hasActiveUnifiedTasks, isProjectBusy, requestProjectCancellation } from '../../lib/kepuTaskControls'
 import { handleBillingError } from '../../lib/billingError'
 import BillingErrorNotice from '../../components/billing/BillingErrorNotice'
 import ComplianceNotice from '../../components/compliance/ComplianceNotice'
@@ -27,7 +28,6 @@ import { useI18n } from '../../i18n'
 import {
   effectiveStatus,
   formatMmSs,
-  isRunning,
   kepuBillingPhase,
   kepuPhaseHint,
   kepuStepIndex,
@@ -109,25 +109,6 @@ function shotCaption(shot: Shot) {
   return shot.narration
 }
 
-function hasActiveUnifiedTasks(project: Project | null): boolean {
-  const activeStatuses = ['pending', 'leased', 'running', 'awaiting_poll', 'awaiting_review']
-  return Boolean(
-    project?.active_tasks?.some(
-      (task) => !task.cancel_requested && activeStatuses.includes(task.status),
-    ),
-  )
-}
-
-/** 有任务平台数据时以 active_tasks 为准；COMPOSING 无任务视为拼接失败残留，可重试 */
-function isProjectBusy(project: Project | null): boolean {
-  if (!project) return false
-  if (hasActiveUnifiedTasks(project)) return true
-  if (Array.isArray(project.active_tasks) && project.active_tasks.length === 0) {
-    return false
-  }
-  return isRunning(project.status)
-}
-
 export default function StoryboardPage() {
   const { id } = useParams()
   const projectId = Number(id)
@@ -201,6 +182,10 @@ export default function StoryboardPage() {
 
   // complianceKey 文案签名：保存分镜/重新拆镜后变化即自动重新做广告法检查
   const complianceKey = useMemo(() => projectComplianceKey(project), [project])
+  // 等待所有已请求取消的活动任务真正停止；轮询期间保持编辑和生成门禁。
+  const cancellationPending = hasActiveUnifiedTasks(project) && Boolean(
+    project?.active_tasks?.some((task) => task.cancel_requested || task.status === 'cancel_requested'),
+  )
   const running = isProjectBusy(project)
   const step = project ? kepuStepIndex('board', project) : 2
   const totalDuration = useMemo(
@@ -342,6 +327,21 @@ export default function StoryboardPage() {
       }
       setError(msg)
       await handleBillingError(err, nav)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** 二次确认取消当前项目任务，失败显示原因并保留原来的运行态。 */
+  async function cancelGenerate() {
+    if (!project) return
+    setBusy(true)
+    setError('')
+    try {
+      const result = await requestProjectCancellation(project.id, dialog.confirm, api.cancelProject)
+      if (result) setProject(result)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '取消生成失败')
     } finally {
       setBusy(false)
     }
@@ -755,6 +755,16 @@ export default function StoryboardPage() {
                 {generateLabel}
               </button>
             )}
+            {hasActiveUnifiedTasks(project) ? (
+              <button
+                type="button"
+                className="pf-btn pf-btn-outline pf-btn-sm"
+                disabled={busy || cancellationPending}
+                onClick={cancelGenerate}
+              >
+                {cancellationPending ? '等待停止…' : '取消生成'}
+              </button>
+            ) : null}
             <button
               type="button"
               className="pf-btn-text"

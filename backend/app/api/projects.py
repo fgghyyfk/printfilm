@@ -194,21 +194,11 @@ def _ensure_side_task_allowed(project: Project) -> None:
             raise HTTPException(status_code=409, detail="整片生成进行中，请稍后")
 
 
-# COMPOSING 且无进行中任务时视为拼接已失败卡住，允许重新发起
-async def _ensure_compose_allowed(db: AsyncSession, user: User, project: Project) -> None:
-    active = await list_active_tasks_for_owner(db, user.id, project_id=project.id)
-    if active:
-        raise HTTPException(status_code=409, detail="生成进行中，请稍后")
-    running = {
-        ProjectStatus.SCRIPTING,
-        ProjectStatus.IMAGING,
-        ProjectStatus.VIDEOING,
-        ProjectStatus.AUDIOING,
-        ProjectStatus.AUDITING,
-    }
-    if project.status in running:
-        raise HTTPException(status_code=409, detail="生成进行中，请稍后")
-    # COMPOSING / FAILED / VIDEO_READY / DONE 等均可重试拼接（无 active task）
+# 活跃任务是忙碌真相源；旧运行状态不能阻止失败后的重试。
+def _ensure_project_idle(project: Project, *, detail: str = "生成进行中，请稍后") -> None:
+    """整片操作在任何活跃任务（含取消请求）存在时拒绝执行。"""
+    if getattr(project, "active_tasks", []):
+        raise HTTPException(status_code=409, detail=detail)
 
 
 # 为科普项目/镜头创建统一任务，由平台调度器自动执行
@@ -237,7 +227,9 @@ async def _create_kepu_task(
                 shot_id=shot_id,
                 targets=targets,
             ),
+            commit=False,
         )
+        await db.commit()
     except ValueError as exc:
         await db.rollback()
         raise http_exception_for_value_error(exc) from exc
@@ -425,15 +417,7 @@ async def update_project(
     user: User = Depends(get_current_user),
 ) -> Project:
     project = await _get_owned_project(db, project_id, user)
-    if project.status in {
-        ProjectStatus.SCRIPTING,
-        ProjectStatus.IMAGING,
-        ProjectStatus.VIDEOING,
-        ProjectStatus.AUDIOING,
-        ProjectStatus.COMPOSING,
-        ProjectStatus.AUDITING,
-    }:
-        raise HTTPException(status_code=409, detail="生成进行中，无法修改")
+    _ensure_project_idle(project, detail="生成进行中，无法修改")
 
     data = body.model_dump(exclude_unset=True)
     if "template_id" in data:
@@ -543,15 +527,7 @@ async def generate_project(
     - restart=true: wipe shots/media and regenerate storyboard from scratch.
     """
     project = await _get_owned_project(db, project_id, user)
-    if project.status in {
-        ProjectStatus.SCRIPTING,
-        ProjectStatus.IMAGING,
-        ProjectStatus.VIDEOING,
-        ProjectStatus.AUDIOING,
-        ProjectStatus.COMPOSING,
-        ProjectStatus.AUDITING,
-    }:
-        raise HTTPException(status_code=409, detail="生成进行中，请稍后")
+    _ensure_project_idle(project, detail="生成进行中，请稍后")
 
     if restart:
         for shot in list(project.shots):
@@ -611,16 +587,8 @@ async def cancel_project(
     user: User = Depends(get_current_user),
 ) -> Project:
     project = await _get_owned_project(db, project_id, user)
-    running = {
-        ProjectStatus.SCRIPTING,
-        ProjectStatus.IMAGING,
-        ProjectStatus.VIDEOING,
-        ProjectStatus.AUDIOING,
-        ProjectStatus.COMPOSING,
-        ProjectStatus.AUDITING,
-    }
-    if project.status not in running:
-        raise HTTPException(status_code=400, detail="当前状态不可取消")
+    if not project.active_tasks:
+        raise HTTPException(status_code=400, detail="当前没有可取消的生成任务")
 
     await cancel_tasks_for_scope(db, user.id, project_id=project_id)
     pipeline.cancel_pipeline(project_id)
@@ -942,7 +910,6 @@ async def regen_image(
         raise HTTPException(status_code=404, detail="分镜不存在")
     project.status = ProjectStatus.IMAGING
     project.error_msg = None
-    await db.commit()
     await _create_kepu_task(
         db,
         user,
@@ -970,7 +937,6 @@ async def regen_video(
         raise HTTPException(status_code=400, detail=detail)
     project.status = ProjectStatus.VIDEOING
     project.error_msg = None
-    await db.commit()
     await _create_kepu_task(
         db,
         user,
@@ -995,7 +961,6 @@ async def regen_audio(
         raise HTTPException(status_code=404, detail="分镜不存在")
     project.status = ProjectStatus.AUDIOING
     project.error_msg = None
-    await db.commit()
     await _create_kepu_task(
         db,
         user,
@@ -1014,22 +979,13 @@ async def regen_all_audio(
 ) -> Project:
     """Re-TTS all shots with current voice_id, then recompose final video."""
     project = await _get_owned_project(db, project_id, user)
-    if project.status in {
-        ProjectStatus.SCRIPTING,
-        ProjectStatus.IMAGING,
-        ProjectStatus.VIDEOING,
-        ProjectStatus.AUDIOING,
-        ProjectStatus.COMPOSING,
-        ProjectStatus.AUDITING,
-    }:
-        raise HTTPException(status_code=409, detail="生成进行中，请稍后")
+    _ensure_project_idle(project, detail="生成进行中，请稍后")
     if not project.shots:
         raise HTTPException(status_code=400, detail="暂无分镜，请先生成")
     project.status = ProjectStatus.AUDIOING
     project.progress = 80
     project.error_msg = None
     project.final_video_url = None
-    await db.commit()
     await _create_kepu_task(
         db,
         user,
@@ -1047,7 +1003,7 @@ async def compose_only(
 ) -> Project:
     """Recompose final video from existing images/audio/(videos)."""
     project = await _get_owned_project(db, project_id, user)
-    await _ensure_compose_allowed(db, user, project)
+    _ensure_project_idle(project)
     if not project.shots or not (
         any(s.image_url for s in project.shots) or any(s.video_url for s in project.shots)
     ):
@@ -1055,7 +1011,6 @@ async def compose_only(
     project.status = ProjectStatus.COMPOSING
     project.progress = 90
     project.error_msg = None
-    await db.commit()
     await _create_kepu_task(
         db,
         user,

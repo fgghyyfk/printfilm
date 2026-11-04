@@ -180,11 +180,33 @@ async def _fail_task_before_start(db, task, step, *, error_code: str, message: s
     )
     # 资产生图/视频：同步写回 asset.params.generation，避免前端只看到空的「生图失败」
     await _fail_drama_asset_generation_if_needed(db, task, task.error_message)
+    await _fail_kepu_project_if_needed(db, task)
     try:
         await settle_task(db, task.id)
     except Exception:  # noqa: BLE001
         logger.exception("settle_task failed task_id=%s", task.id)
     await db.commit()
+
+
+# 预扣或执行失败时同步恢复科普项目，避免遗留无法编辑的生成状态。
+async def _fail_kepu_project_if_needed(db, task) -> None:
+    """恢复运行态并写回失败原因，保留可编辑稳定态及已取消、已完成项目。"""
+    if task.domain == "kepu" and task.project_id:
+        from app.models import Project, ProjectStatus
+
+        running = {
+            ProjectStatus.SCRIPTING,
+            ProjectStatus.IMAGING,
+            ProjectStatus.VIDEOING,
+            ProjectStatus.AUDIOING,
+            ProjectStatus.COMPOSING,
+            ProjectStatus.AUDITING,
+        }
+        project = await db.get(Project, int(task.project_id))
+        if project and project.status not in {ProjectStatus.CANCELLED, ProjectStatus.DONE}:
+            if project.status in running:
+                project.status = ProjectStatus.FAILED
+            project.error_msg = f"生成失败：{task.error_message or '未知错误'}"[:2000]
 
 
 # 把任务收敛到失败态。
@@ -222,21 +244,7 @@ async def _fail_task(db, task, exc: Exception) -> None:
                 task.error_message or str(exc),
             )
             frag.params = params
-    if task.domain == "kepu" and task.project_id:
-        from app.models import Project, ProjectStatus
-
-        running = {
-            ProjectStatus.SCRIPTING,
-            ProjectStatus.IMAGING,
-            ProjectStatus.VIDEOING,
-            ProjectStatus.AUDIOING,
-            ProjectStatus.COMPOSING,
-            ProjectStatus.AUDITING,
-        }
-        project = await db.get(Project, int(task.project_id))
-        if project and project.status in running:
-            project.status = ProjectStatus.FAILED
-            project.error_msg = (task.error_message or str(exc))[:2000]
+    await _fail_kepu_project_if_needed(db, task)
     payload = task.payload if isinstance(task.payload, dict) else {}
     if payload.get("sequential") and task.batch_key:
         from app.services.tasks.service import fail_remaining_sequential_batch

@@ -38,7 +38,7 @@
 - 完成（2026-11-04）：按真实画面变化及流水线实际使用的脚本比较；同值、叠字和旁白保存保留画面/视频/尾帧，真实改图同时清除 `image_ark_url`。历史空脚本、独立首帧与视频动作的前端同步路径有回归，保留数字人与阶段语义。
 - 验证：`backend/.venv/bin/python .tmp/optimization-20261104/run_tests.py -q tests/test_kepu_shot_edits.py tests/test_kepu_shot_edit_demote.py tests/test_kepu_phase_billing.py tests/test_kepu_native_audio.py tests/test_seedance_segments.py` → **86 passed**（5 条已有依赖弃用警告）；规格与质量复审通过，`git diff --check` 通过。未部署、未调用真实付费上游。
 
-### [ ] 2. 科普：单镜重绘/重配音失败后项目卡死在「生成中」
+### [x] 2. 科普：单镜重绘/重配音失败后项目卡死在「生成中」
 - 位置：`backend/app/api/projects.py` 约 932/960/985 行（先把项目 status 提交成 IMAGING/VIDEOING/AUDIOING 再建任务）；`backend/app/services/pipeline.py` 约 1606/1668/1769 行 `regen_shot_*` 无 except；executor 预扣失败也不回写项目状态。
 - 现象：失败后前端无 active_tasks，按钮可点；但后端 generate/PATCH 只看 status，一律 409「生成进行中」。前端从未调用 `api.cancelProject`（`frontend/src/api.ts` 约 542 行）。
 - 改法：
@@ -47,6 +47,8 @@
   3. generate / PATCH 的忙碌守卫改为「是否存在活跃 TaskRun」，参照现有 `_ensure_compose_allowed`。
   4. 分镜页加「取消生成」按钮（二次确认），调用 `cancelProject`。
 - 验收：模拟 regen 抛异常 → 项目可再次编辑/生成，页面显示中文原因。
+- 完成（2026-11-04）：重绘、配音与合成的任务和项目状态同事务提交；预扣失败与已有 handler 失败路径共用恢复逻辑，并行镜头一成功一失败仍保留中文原因。生成、项目编辑与取消以用户隔离的活跃任务为准，取消请求未终态前保持忙碌；分镜页接入二次确认取消与等待停止。
+- 验证：`backend/.venv/bin/python .tmp/optimization-20261104/run_tests.py -q tests/test_kepu_task_recovery.py tests/test_task_executor_freeze_steps.py tests/test_kepu_cancel_propagation.py tests/test_side_task_gate.py tests/test_project_runtime_view.py` → **75 passed**（5 条已有依赖弃用警告）；前端 `npm test` **13 passed**，lint 0 error（39 条既有 warning），`npx tsc -b --noEmit` 通过。规格复审与质量审查通过；未部署、未真实收费。重做磁盘清理与单镜编辑合成门禁留第 18 项。
 
 ### [ ] 3. 漫剧：保存分镜覆盖服务端写的视频历史版本与尾帧
 - 位置：`backend/app/api/drama/episodes.py` 约 575-577 行，用客户端 `video` / `params` 整体覆盖。
