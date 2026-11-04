@@ -61,7 +61,7 @@ export function createFragmentAutosave(options: Options) {
   function edit(update: RowsUpdate) {
     if (!active) return
     const next = keyed(typeof update === 'function' ? update(rows) : update)
-    const remaining = new Set(next.map((row) => row.clientKey))
+    const remaining = new Set<string | undefined>(next.map((row) => row.clientKey))
     for (const row of rows) if (row.id > 0 && !remaining.has(row.clientKey)) deletedIds.add(row.id)
     rows = next
     epoch += 1
