@@ -260,6 +260,8 @@ async def _apply_schema_patches() -> None:
 
         # Task platform additive columns
         trcols = await _pg_columns(conn, "task_runs")
+        if "recovery_count" not in trcols:
+            await conn.execute(text("ALTER TABLE task_runs ADD COLUMN recovery_count INTEGER DEFAULT 0"))
         if "dedupe_key" not in trcols:
             await conn.execute(text("ALTER TABLE task_runs ADD COLUMN dedupe_key VARCHAR(128)"))
         if "batch_key" not in trcols:

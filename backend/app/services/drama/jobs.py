@@ -192,6 +192,7 @@ async def _enqueue_drama_task(
     episode_id: int | None = None,
     fragment_id: int | None = None,
     commit: bool = True,
+    prepared_estimate_fen: int | None = None,
 ) -> int:
     """通过统一任务平台入队漫剧任务，返回 task_run_id。"""
     from app.schemas_tasks import TaskCreateRequest, TaskTargetBind
@@ -212,6 +213,7 @@ async def _enqueue_drama_task(
             targets=[TaskTargetBind(target_type="drama_project", target_id=project_id)],
         ),
         commit=commit,
+        **({"prepared_estimate_fen": prepared_estimate_fen} if prepared_estimate_fen is not None else {}),
     )
     return int(task.id)
 
@@ -2053,8 +2055,21 @@ async def dispatch_episode_fragment_plan(
     force: bool = True,
     fallback_rules: bool = True,
     commit: bool = True,
+    prepared_estimate_fen: int | None = None,
+    expected_revision: int | None = None,
 ) -> int | None:
     """标记分集分镜中并入队 LLM 分镜任务；已在 generating 且非 force 时跳过。"""
+    from app.services.drama.fragment_plan_queue import prepare_fragment_plan_estimate
+
+    # 批次或独立请求原先授权的版本；锁外等待后发现新稿只跳过，不改新稿状态。
+    requested_revision = int(episode.revision if expected_revision is None else expected_revision)
+    # 批次调用方已锁外准备价目并按 ID 锁全部分集；独立调用在此先估价再锁。
+    if prepared_estimate_fen is None:
+        prepared_estimate_fen = await prepare_fragment_plan_estimate(db)
+    await db.refresh(episode, attribute_names=["params", "revision"], with_for_update=True)
+    if episode.revision != requested_revision:
+        logger.info("自动分镜跳过：版本已变化 episode_id=%s", episode.id)
+        return None
     params = dict(episode.params or {}) if isinstance(episode.params, dict) else {}
     existing = str(params.get("fragment_plan_status") or "")
     if existing == "generating" and not force:
@@ -2062,6 +2077,7 @@ async def dispatch_episode_fragment_plan(
         return None
 
     params["fragment_plan_status"] = "generating"
+    params["fragment_plan_revision"] = requested_revision
     params.pop("fragment_plan_error", None)
     params["fragment_plan_mode"] = "llm"
     params["fragment_plan_auto"] = True
@@ -2081,9 +2097,14 @@ async def dispatch_episode_fragment_plan(
             "fallback_rules": bool(fallback_rules),
             "force": bool(force),
             "auto": True,
+            "expected_revision": requested_revision,
         },
-        commit=commit,
+        commit=False,
+        prepared_estimate_fen=prepared_estimate_fen,
     )
+    episode.params = {**params, "fragment_plan_task_id": task_id}
+    if commit:
+        await db.commit()
     logger.info(
         "自动入队 LLM 分镜 episode_id=%s force=%s task_id=%s",
         episode.id,
@@ -2317,6 +2338,8 @@ async def kickoff_fragment_plans(
                 queued_ids.add(int(episode.id))
 
         queued: list[int] = []
+        # 在锁外估价与批量锁等待之前保留每集原先选中的版本。
+        plan_revisions = {int(ep.id): int(ep.revision) for ep in need_queue}
         for episode in need_queue:
             ep_params = dict(episode.params or {}) if isinstance(episode.params, dict) else {}
             ep_params["fragment_plan_status"] = "generating"
@@ -2326,6 +2349,14 @@ async def kickoff_fragment_plans(
             episode.params = ep_params
         await db.commit()
 
+        from app.services.drama.fragment_plan_queue import prepare_fragment_plan_estimate
+
+        # 钱包锁之前按 ID 取得本批分集锁，避免跨集入队持 User 再等下一分集。
+        plan_estimate = await prepare_fragment_plan_estimate(db) if need_queue else 0
+        if need_queue:
+            await db.execute(select(DramaEpisode.id).where(
+                DramaEpisode.id.in_([int(ep.id) for ep in need_queue]),
+            ).order_by(DramaEpisode.id).with_for_update())
         for episode in need_queue:
             try:
                 task_id = await dispatch_episode_fragment_plan(
@@ -2335,9 +2366,13 @@ async def kickoff_fragment_plans(
                     force=True,
                     fallback_rules=True,
                     commit=False,
+                    prepared_estimate_fen=plan_estimate,
+                    expected_revision=plan_revisions[int(episode.id)],
                 )
                 if task_id:
                     queued.append(int(episode.id))
+                else:
+                    skipped.append(int(episode.id))
             except Exception:  # noqa: BLE001
                 logger.exception(
                     "自动入队分镜失败 project_id=%s episode_id=%s",

@@ -19,6 +19,8 @@ class TaskRun(Base):
     domain: Mapped[str] = mapped_column(String(32), index=True, default="drama")
     task_type: Mapped[str] = mapped_column(String(64), index=True)
     status: Mapped[str] = mapped_column(String(32), index=True, default="pending")
+    # 已观察到的执行中断次数，与步骤生成尝试独立。
+    recovery_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     priority: Mapped[int] = mapped_column(Integer, default=100)
     requested_by: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     client_request_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)

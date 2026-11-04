@@ -144,7 +144,9 @@ async def pending_task_commitment_fen(
     return total
 
 
-async def ensure_balance_for_task(db: AsyncSession, user: User, task: TaskRun) -> int:
+async def ensure_balance_for_task(
+    db: AsyncSession, user: User, task: TaskRun, *, prepared_estimate_fen: int | None = None,
+) -> int:
     """入队前同步校验余额（含排队中未冻结估算），不足抛 ValueError；返回本任务估算分。"""
     if not billing_active(user):
         return 0
@@ -154,7 +156,8 @@ async def ensure_balance_for_task(db: AsyncSession, user: User, task: TaskRun) -
     # 同步调用方持有的 user 对象余额
     user.balance_fen = int(locked.balance_fen or 0)
     user.frozen_fen = int(locked.frozen_fen or 0)
-    need = await estimate_task_fen(db, task)
+    need = (int(prepared_estimate_fen) if prepared_estimate_fen is not None
+            else await estimate_task_fen(db, task))
     pending = await pending_task_commitment_fen(db, int(user.id))
     available = int(locked.balance_fen or 0)
     required = pending + need

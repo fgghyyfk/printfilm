@@ -126,6 +126,8 @@ class Settings(BaseSettings):
     task_poll_max_concurrency: int = 20
     # 孤儿恢复：leased/running 超过该秒数无更新、且本进程无执行协程时重排队。
     task_runtime_recover_grace_sec: int = 30
+    # 第几次执行中断后终止任务，避免崩溃任务无限占槽。
+    task_runtime_max_recoveries: int = 3
     # 运行中每隔多少秒扫描一次孤儿任务（调度 tick 内执行）。
     task_runtime_orphan_check_sec: int = 30
     # 调度 tick 心跳超过该秒数未刷新 → 看门狗软重启调度循环。

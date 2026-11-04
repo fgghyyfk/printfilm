@@ -476,8 +476,17 @@ async def plan_episode_fragments(
     # 入队单集 LLM 分镜；前端轮询 episode.params.fragment_plan_status
     req = body or DramaPlanFragmentsRequest()
     ep = await get_owned_episode(db, episode_id, user)
+    # force 只授权本次读到的版本，锁外等待后不能静默改用新稿。
+    requested_revision = int(ep.revision)
     await get_owned_drama_project(db, ep.project_id, user)
 
+    from app.services.drama.fragment_plan_queue import prepare_fragment_plan_estimate
+
+    # 价目先锁外准备；锁分集后刷新当前归属，再按分集→钱包顺序建档。
+    prepared_estimate = await prepare_fragment_plan_estimate(db)
+    await db.refresh(ep, attribute_names=["params", "revision"], with_for_update=True)
+    if ep.revision != requested_revision:
+        raise HTTPException(status_code=409, detail=EDIT_CONFLICT)
     params = dict(ep.params or {})
     existing = str(params.get("fragment_plan_status") or "")
     # force 时允许重入队（避免旧任务异常后卡在 generating）
@@ -501,7 +510,7 @@ async def plan_episode_fragments(
             )
 
     params["fragment_plan_status"] = "generating"
-    params["fragment_plan_revision"] = ep.revision
+    params["fragment_plan_revision"] = requested_revision
     params.pop("fragment_plan_error", None)
     params["fragment_plan_mode"] = "llm"
     if req.subtitle_enabled is not None:
@@ -526,7 +535,7 @@ async def plan_episode_fragments(
                     "episode_id": episode_id,
                     "fallback_rules": bool(req.fallback_rules),
                     "force": bool(req.force),
-                    "expected_revision": ep.revision,
+                    "expected_revision": requested_revision,
                     "skill_ids": parse_skill_ids(req.skill_ids) if req.skill_ids is not None else None,
                     "subtitle_enabled": bool(req.subtitle_enabled) if req.subtitle_enabled is not None else None,
                 },
@@ -537,7 +546,12 @@ async def plan_episode_fragments(
                     TaskTargetBind(target_type="episode", target_id=episode_id),
                 ],
             ),
+            commit=False,
+            prepared_estimate_fen=prepared_estimate,
         )
+        # force 可共享 revision，唯一任务号与任务建档同事务提交以区分当前规划。
+        ep.params = {**params, "fragment_plan_task_id": task.id}
+        await db.commit()
     except ValueError as exc:
         await db.rollback()
         raise http_exception_for_value_error(exc) from exc

@@ -99,6 +99,7 @@ async def create_task(
     body: TaskCreateRequest,
     *,
     commit: bool = True,
+    prepared_estimate_fen: int | None = None,
 ) -> TaskRun:
     """创建任务并预写步骤。commit=False 时仅 flush，由调用方与业务状态同事务提交。"""
     await _validate_task_scope(db, user, body)
@@ -119,7 +120,12 @@ async def create_task(
         asset_id=body.asset_id,
         shot_id=body.shot_id,
     )
-    estimate_fen = await ensure_balance_for_task(db, user, balance_probe)
+    if prepared_estimate_fen is None:
+        estimate_fen = await ensure_balance_for_task(db, user, balance_probe)
+    else:
+        estimate_fen = await ensure_balance_for_task(
+            db, user, balance_probe, prepared_estimate_fen=prepared_estimate_fen,
+        )
     planned_steps = handler.plan_steps(body)
     first_step = planned_steps[0] if planned_steps else None
     now = datetime.now(UTC)

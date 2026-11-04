@@ -119,10 +119,7 @@ async def execute_task_run(task_id: int) -> None:
         async with AsyncSessionLocal() as db:
             task = await get_task_for_runtime(db, task_id)
             if task:
-                if task.cancel_requested:
-                    await _mark_cancelled(db, task)
-                else:
-                    await _requeue_interrupted_task(db, task)
+                await _requeue_interrupted_task(db, task)
         raise
     except Exception as exc:  # noqa: BLE001
         async with AsyncSessionLocal() as db:
@@ -379,25 +376,6 @@ async def _requeue_video_download(db, task, result: dict) -> None:
 
 # 应用重启或热更新中断时，把任务重新放回待执行状态。
 async def _requeue_interrupted_task(db, task) -> None:
-    now = datetime.now(UTC)
-    step = task.steps[0] if task.steps else None
-    set_task_step_state(task, step, status="pending", now=now)
-    payload = dict(task.payload or {}) if isinstance(task.payload, dict) else {}
-    provider_task_id = str(task.provider_task_id or payload.get("provider_task_id") or "").strip()
-    if provider_task_id:
-        payload["provider_task_id"] = provider_task_id
-        task.payload = payload
-        task.provider_task_id = provider_task_id
-    task.status = "pending"
-    task.next_action_at = now
-    task.lease_token = None
-    task.lease_until = None
-    await append_task_event(
-        db,
-        task.id,
-        event_type="task.requeued",
-        status=task.status,
-        phase=task.current_step_key,
-        message="任务被中断，已重新排队",
-    )
-    await db.commit()
+    from app.services.tasks.recovery import recover_interrupted_task
+
+    await recover_interrupted_task(db, int(task.id))

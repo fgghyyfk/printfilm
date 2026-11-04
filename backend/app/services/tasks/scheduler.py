@@ -402,73 +402,26 @@ async def recover_orphaned_tasks() -> int:
     now = datetime.now(UTC)
     grace_sec = max(5, int(get_settings().task_runtime_recover_grace_sec))
     stale_before = now - timedelta(seconds=grace_sec)
-    async with AsyncSessionLocal() as db:
-        stmt = select(TaskRun).where(
-            or_(
-                and_(
-                    TaskRun.status == "leased",
-                    or_(
-                        and_(TaskRun.updated_at.is_not(None), TaskRun.updated_at < stale_before),
-                        and_(TaskRun.lease_until.is_not(None), TaskRun.lease_until < now),
-                    ),
-                ),
-                and_(
-                    TaskRun.status == "running",
-                    TaskRun.updated_at.is_not(None),
-                    TaskRun.updated_at < stale_before,
-                ),
-            )
-        )
-        rows = list((await db.execute(stmt)).scalars().all())
-        changed = 0
-        for task in rows:
-            if _job_alive(int(task.id)):
-                continue
-            if isinstance(task.result_payload, dict) and task.result_payload.get("voice_billing_reservation"):
-                from app.services.billing.ephemeral import durable_voice_request_alive
+    from app.services.tasks.recovery import recover_interrupted_task
 
-                if durable_voice_request_alive(int(task.id)):
-                    continue
-                # bulk 扫描后 HTTP 可能已完成；只在 TaskRun 行锁内按当前状态重判，禁止旧快照覆盖终态。
-                task = (await db.execute(
-                    stmt.where(TaskRun.id == task.id).with_for_update()
-                    .execution_options(populate_existing=True)
-                )).scalar_one_or_none()
-                if (task is None or not isinstance(task.result_payload, dict)
-                        or not task.result_payload.get("voice_billing_reservation")
-                        or durable_voice_request_alive(int(task.id))):
-                    continue
-                # HTTP 请求已消失，上游结果和费用未知；禁止 noop 重排后按零成本退款。
-                task.result_payload = {**task.result_payload, "tts_billing_pending": {
-                    "reason": "voice_request_interrupted", "cost_unknown": True,
-                }}
-                task.status = "awaiting_review"
-                task.error_code = "tts_billing_pending"
-                task.error_message = "音色合成请求中断，结果和费用待核对，请勿重新生成"
-                task.current_step_status = "awaiting_review"
-                task.progress_percent = min(int(task.progress_percent or 0), 99)
-                task.finished_at = None
-                task.next_action_at = None
-                task.lease_token = None
-                task.lease_until = None
-                await append_task_event(db, task.id, event_type="task.awaiting_review",
-                                        status=task.status, message=task.error_message)
+    # 只扫描 ID；失败结算会提交事务，不能持有整批 ORM 快照或行锁逐条消费。
+    stale_clause = or_(
+        and_(TaskRun.status == "leased", or_(
+            and_(TaskRun.updated_at.is_not(None), TaskRun.updated_at < stale_before),
+            and_(TaskRun.lease_until.is_not(None), TaskRun.lease_until < now),
+        )),
+        and_(TaskRun.status == "running", TaskRun.updated_at.is_not(None), TaskRun.updated_at < stale_before),
+    )
+    async with AsyncSessionLocal() as db:
+        task_ids = list((await db.execute(select(TaskRun.id).where(stale_clause).order_by(TaskRun.id))).scalars().all())
+    changed = 0
+    for task_id in task_ids:
+        if _job_alive(int(task_id)):
+            continue
+        async with AsyncSessionLocal() as db:
+            if await recover_interrupted_task(db, int(task_id), stale_clause=stale_clause,
+                                              job_alive=_job_alive, event_type="task.recovered"):
                 changed += 1
-                continue
-            task.status = "cancel_requested" if task.cancel_requested else "pending"
-            task.next_action_at = now
-            task.lease_token = None
-            task.lease_until = None
-            await append_task_event(
-                db,
-                task.id,
-                event_type="task.recovered",
-                status=task.status,
-                phase=task.current_step_key,
-                message="检测到任务执行中断或租约过期，已重新排队",
-            )
-            changed += 1
-        if changed:
-            await db.commit()
-            logger.warning("recovered orphaned task runs count=%s", changed)
-        return changed
+    if changed:
+        logger.warning("recovered orphaned task runs count=%s", changed)
+    return changed
