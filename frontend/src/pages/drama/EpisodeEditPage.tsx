@@ -1,4 +1,5 @@
 /** 分集编辑：复刻原项目四栏布局（资产 / 脚本 / 预览 / 故事板） */
+import { MyTasksButton } from '../../components/MyTasks'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
@@ -1459,6 +1460,7 @@ function EpisodeEditInner() {
           <h1>{episode.name}</h1>
         </div>
         <div className="drama-ep-header-controls">
+          <MyTasksButton />
           <EpisodeEditHeaderControls
             styleId={videoStyleId}
             modelId={modelId}

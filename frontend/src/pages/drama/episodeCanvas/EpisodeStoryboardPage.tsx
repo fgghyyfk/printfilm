@@ -1,3 +1,4 @@
+import { MyTasksButton } from '../../../components/MyTasks'
 /** 分集分镜故事板全屏画布：按分镜连线，节点含视频 / 出境资产 / 提示词 */
 import { createFragmentEditSnapshot, type FragmentEditSnapshot } from '../../../lib/dramaFragmentEditing'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -352,6 +353,7 @@ function EpisodeStoryboardInner() {
             {busy ? '保存中…' : '保存'}
           </button>
         </div>
+        <MyTasksButton />
       </header>
 
       <div className="ep-storyboard-flow">

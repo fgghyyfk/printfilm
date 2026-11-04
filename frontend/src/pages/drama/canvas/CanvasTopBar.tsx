@@ -1,4 +1,5 @@
 /** 画布顶栏：返回、标题、保存状态、设置占位 */
+import { MyTasksButton } from '../../../components/MyTasks'
 import { useState } from 'react'
 import { ChevronLeft, Maximize2, Settings } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
@@ -70,6 +71,7 @@ export function CanvasTopBar({ variant = 'fullscreen' }: Props) {
         </div>
 
         <div className="fc-topbar-right">
+          <MyTasksButton />
           {embedded ? (
             <button
               type="button"

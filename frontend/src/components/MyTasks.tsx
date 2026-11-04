@@ -142,8 +142,7 @@ export default function MyTasks() {
     const wake = () => {
       clearTimeout(timer)
       controller?.abort()
-      // 恢复后重新建立观察基线，不把隐藏期间历史终态批量当作新完成。
-      trackedRef.current.clear()
+      // 同账号恢复仍核对已观察的在途任务；从未观察的历史终态不提醒。
       resetAccount(localStorage.getItem('token'))
       if (!document.hidden) void poll()
     }
