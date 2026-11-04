@@ -227,19 +227,39 @@ def build_media_catalog(
     }
 
 
-def catalog_payload() -> dict[str, Any]:
-    """公开目录 JSON，供前台 /api/media-models。"""
+def catalog_payload(scope: str = "") -> dict[str, Any]:
+    """公开目录 JSON，供前台 /api/media-models。scope=tools（图片生成页）时附加已开启的 OpenAI 生图模型并设为默认。"""
     from app.services.model_settings import get_routing_snapshot
 
     snap = get_routing_snapshot()
     settings = get_settings()
-    return build_media_catalog(
+    payload = build_media_catalog(
         logical_models=list(snap.logical_models),
         channels=list(snap.channels),
         defaults=snap.default_models,
         fallback_image=settings.model_image,
         fallback_video=settings.model_video,
     )
+    if scope == "tools":
+        _add_openai_image_option(payload, settings)
+    return payload
+
+
+def _add_openai_image_option(payload: dict[str, Any], settings) -> None:
+    """图片生成页：后台开启 OpenAI 生图时，把它放在模型列表第一位并设为默认。"""
+    from app.services.openai_image import openai_image_configured
+
+    if not openai_image_configured(settings):
+        return
+    mid = (settings.openai_image_model or "gpt-image-2").strip()
+    images = [row for row in payload["image_models"] if normalize_model_name(str(row.get("id") or "")) != normalize_model_name(mid)]
+    row = _row(model_id=mid, label=mid, recommended=True, capability="image")
+    row["provider"] = "openai"
+    row["label"] = f"OpenAI · {row['label']}"
+    for other in images:
+        other["recommended"] = False
+    payload["image_models"] = [row, *images]
+    payload["defaults"]["image_model"] = mid
 
 
 def is_valid_project_media_model(model_id: str | None, capability: LogicalModelCapability) -> bool:

@@ -453,8 +453,9 @@ export const api = {
       body: JSON.stringify(body),
     })
   },
-  mediaModels() {
-    return request<MediaModelsCatalog>('/api/media-models')
+  /** 图/视频模型目录；scope=tools 时附加图片生成页可用的 OpenAI 生图模型 */
+  mediaModels(scope: '' | 'tools' = '') {
+    return request<MediaModelsCatalog>(scope ? `/api/media-models?scope=${scope}` : '/api/media-models')
   },
   /** 上传科普项目封面并返回项目。 */
   uploadCover(id: number, file: File) {

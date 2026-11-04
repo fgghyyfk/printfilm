@@ -138,7 +138,8 @@ async def execute_generation(task: TaskRun) -> dict:
             data = await run_image_tool(db, user, tool_id=row.tool_id, prompt=row.prompt,
                 negative=str(params.get("negative") or ""), ratio=params.get("ratio"),
                 strength=params.get("strength"), mode=params.get("mode"), pack=params.get("pack"),
-                files=files, output_no=row.id, color_ref=_color_ref_file(params, files))
+                files=files, output_no=row.id, color_ref=_color_ref_file(params, files),
+                model_id=params.get("model_id") or None)
         urls = ensure_public_urls(data.get("urls"))
         if not urls or not all(urls):
             raise RuntimeError("上游未返回生成结果")

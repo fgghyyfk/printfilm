@@ -148,6 +148,7 @@ async def run_image_tool(
     files: list[Path],
     output_no: int | None = None,
     color_ref: Path | None = None,
+    model_id: str | None = None,
 ) -> dict:
     ark = get_ark()
     size = ratio_to_size(ratio)
@@ -196,11 +197,12 @@ async def run_image_tool(
         size=size,
         purpose="tools",
         ratio_hint=ratio,
+        image_provider=_image_provider_for(model_id),
     )
     await record_seedream_image_usage(
         db,
         user_id=user.id,
-        model=get_settings().model_image,
+        model=(model_id or "").strip() or get_settings().model_image,
         domain="studio",
         image_result=result,
         extra_raw={"tool_id": tool_id},
@@ -212,6 +214,15 @@ async def run_image_tool(
     if url:
         url = ensure_public_url(url) or url
     return {"kind": "image", "urls": [url], "status": "succeeded", **extra}
+
+
+def _image_provider_for(model_id: str | None) -> str | None:
+    """前台所选模型 → 生图通道：gpt-image-* 走 OpenAI，其它模型走主渠道；未选时按后台作用范围。"""
+    from app.services.openai_image import is_openai_image_model
+
+    if not (model_id or "").strip():
+        return None
+    return "openai" if is_openai_image_model(model_id) else "ark"
 
 
 async def _apply_color_match(user_id: int, url: str, color_ref: Path) -> tuple[str, dict]:

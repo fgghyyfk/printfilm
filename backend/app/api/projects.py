@@ -92,12 +92,15 @@ async def get_voices() -> list[dict]:
     description="无需登录，返回前台可用的图像、视频模型及对应价格目录，供项目选择生成模型。",
     response_description="媒体模型与价格目录",
 )
-async def get_media_models(db: AsyncSession = Depends(get_db)) -> dict:
+async def get_media_models(
+    scope: str = Query("", pattern=r"^(|tools)$", description="tools=图片生成页（附加已开启的 OpenAI 生图模型）"),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
     """无需登录，返回前台可用的图像、视频模型及对应价格目录，供项目选择生成模型。"""
     from app.services.media_catalog import catalog_payload
 
     from app.services.media_models.catalog import priced_catalog
-    return await priced_catalog(db, catalog_payload())
+    return await priced_catalog(db, catalog_payload(scope))
 
 
 @router.post(

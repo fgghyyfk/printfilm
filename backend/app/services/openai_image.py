@@ -30,6 +30,17 @@ MAX_REFS = 16
 REF_MAX_EDGE = 2048                  # 参考图长边上限（线上到 OpenAI 带宽充足，保留细节）
 
 
+def is_openai_image_model(model_id: str | None) -> bool:
+    """前台所选模型是否为 OpenAI 生图（gpt-image-*）。"""
+    return (model_id or "").strip().lower().startswith("gpt-image")
+
+
+def openai_image_configured(settings: Settings | None = None) -> bool:
+    """后台已开启 OpenAI 生图且填了 Key（与作用范围无关）。"""
+    s = settings or get_settings()
+    return bool(s.openai_image_enabled and (s.openai_image_api_key or "").strip())
+
+
 def openai_image_active(purpose: str, settings: Settings | None = None) -> bool:
     """当前这次生图是否改走 OpenAI：已开启、填了 Key，且作用范围覆盖本次用途（tools=工具中心）。"""
     s = settings or get_settings()

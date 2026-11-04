@@ -3,36 +3,42 @@ import { useEffect, useState } from 'react'
 import { api, type MediaModelOption, type MediaModelsCatalog } from '../api'
 export { resolveCatalogModelSelection } from '../lib/mediaCatalogSelection'
 
-let cached: MediaModelsCatalog | null = null
-let inflight: Promise<MediaModelsCatalog> | null = null
-let fetchedAt = 0
-const listeners = new Set<(value: MediaModelsCatalog) => void>()
-
-function loadCatalog(force = false): Promise<MediaModelsCatalog> {
-  if (!force && cached && Date.now() - fetchedAt < 60_000) return Promise.resolve(cached)
-  if (!inflight) {
-    inflight = api.mediaModels().then((cat) => {
-      cached = cat
-      fetchedAt = Date.now()
-      listeners.forEach(listener => listener(cat))
-      return cat
-    }).finally(() => { inflight = null })
-  }
-  return inflight
+type CatalogScope = '' | 'tools'
+/* 按 scope 分别缓存：默认目录（短视频/漫剧）与图片生成页目录（可含 OpenAI 生图） */
+type CacheEntry = { cached: MediaModelsCatalog | null; inflight: Promise<MediaModelsCatalog> | null; fetchedAt: number; listeners: Set<(value: MediaModelsCatalog) => void> }
+const caches: Record<CatalogScope, CacheEntry> = {
+  '': { cached: null, inflight: null, fetchedAt: 0, listeners: new Set() },
+  tools: { cached: null, inflight: null, fetchedAt: 0, listeners: new Set() },
 }
 
-export function useMediaModelsCatalog() {
-  const [catalog, setCatalog] = useState<MediaModelsCatalog | null>(cached)
+function loadCatalog(scope: CatalogScope, force = false): Promise<MediaModelsCatalog> {
+  const entry = caches[scope]
+  if (!force && entry.cached && Date.now() - entry.fetchedAt < 60_000) return Promise.resolve(entry.cached)
+  if (!entry.inflight) {
+    entry.inflight = api.mediaModels(scope).then((cat) => {
+      entry.cached = cat
+      entry.fetchedAt = Date.now()
+      entry.listeners.forEach(listener => listener(cat))
+      return cat
+    }).finally(() => { entry.inflight = null })
+  }
+  return entry.inflight
+}
+
+/** 订阅模型目录；scope='tools' 用于图片生成页（含后台开启的 OpenAI 生图模型） */
+export function useMediaModelsCatalog(scope: CatalogScope = '') {
+  const [catalog, setCatalog] = useState<MediaModelsCatalog | null>(caches[scope].cached)
 
   useEffect(() => {
     let cancelled = false
+    const entry = caches[scope]
     const receive = (value: MediaModelsCatalog) => { if (!cancelled) setCatalog(value) }
-    listeners.add(receive)
-    const refresh = () => { void loadCatalog(true).catch(() => {}) }
-    const timer = setInterval(() => { void loadCatalog().catch(() => {}) }, 60_000)
+    entry.listeners.add(receive)
+    const refresh = () => { void loadCatalog(scope, true).catch(() => {}) }
+    const timer = setInterval(() => { void loadCatalog(scope).catch(() => {}) }, 60_000)
     window.addEventListener('focus', refresh)
     window.addEventListener('media-prices-changed', refresh)
-    loadCatalog()
+    loadCatalog(scope)
       .then((cat) => {
         if (!cancelled) setCatalog(cat)
       })
@@ -41,12 +47,12 @@ export function useMediaModelsCatalog() {
       })
     return () => {
       cancelled = true
-      listeners.delete(receive)
+      entry.listeners.delete(receive)
       clearInterval(timer)
       window.removeEventListener('focus', refresh)
       window.removeEventListener('media-prices-changed', refresh)
     }
-  }, [])
+  }, [scope])
 
   return catalog
 }

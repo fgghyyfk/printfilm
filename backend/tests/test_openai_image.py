@@ -152,3 +152,49 @@ async def test_gen_image_routes_by_purpose(tmp_path, monkeypatch):
     called.clear()
     await gw.gen_image("场景", "", None)
     assert called.get("seedream") and "openai" not in called
+
+
+# 前台所选模型 → 通道：gpt-image 走 OpenAI，其它走主渠道，未选按后台
+def test_image_provider_for_model():
+    from app.services.studio_tools import _image_provider_for
+
+    assert _image_provider_for("gpt-image-2") == "openai"
+    assert _image_provider_for("doubao-seedream-5-0-pro-260628") == "ark"
+    assert _image_provider_for("") is None and _image_provider_for(None) is None
+
+
+# 显式 ark 时即使开启 OpenAI 也走 Seedream；显式 openai 但未开启时报中文错误
+async def test_gen_image_explicit_provider(tmp_path, monkeypatch):
+    from app.services import ark as ark_mod
+
+    called = {}
+
+    async def fake_seedream(self, *a, **kw):
+        called["seedream"] = True
+        return ark_mod.ImageResult(local_url="/static/s.png")
+
+    monkeypatch.setattr(ark_mod.ArkGateway, "_seedream_once", fake_seedream)
+    monkeypatch.setattr(ark_mod.ArkGateway, "mock", property(lambda self: False))
+    gw = ark_mod.ArkGateway(settings=_settings(ark_mock=False))
+    await gw.gen_image("x", "", None, purpose="tools", image_provider="ark")
+    assert called.get("seedream")
+    off = ark_mod.ArkGateway(settings=_settings(ark_mock=False, openai_image_enabled=False))
+    with pytest.raises(RuntimeError, match="未开启"):
+        await off.gen_image("x", "", None, purpose="tools", image_provider="openai")
+
+
+# 图片生成页目录：开启时 OpenAI 模型排第一并设为默认；未开启时不出现
+def test_tools_catalog_adds_openai_option(monkeypatch):
+    from app.services import media_catalog
+
+    base = {"image_models": [{"id": "seedream-5.0-pro", "label": "Seedream", "recommended": True}],
+            "video_models": [], "defaults": {"image_model": "seedream-5.0-pro", "video_model": ""}}
+    payload = {**base, "image_models": [dict(r) for r in base["image_models"]], "defaults": dict(base["defaults"])}
+    media_catalog._add_openai_image_option(payload, _settings())
+    assert payload["image_models"][0]["id"] == "gpt-image-2"
+    assert payload["image_models"][0]["provider"] == "openai" and payload["image_models"][0]["label"].startswith("OpenAI")
+    assert payload["defaults"]["image_model"] == "gpt-image-2"
+    assert payload["image_models"][1]["recommended"] is False
+    payload2 = {**base, "image_models": [dict(r) for r in base["image_models"]], "defaults": dict(base["defaults"])}
+    media_catalog._add_openai_image_option(payload2, _settings(openai_image_enabled=False))
+    assert [r["id"] for r in payload2["image_models"]] == ["seedream-5.0-pro"]

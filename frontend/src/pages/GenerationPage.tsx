@@ -74,7 +74,8 @@ function GenerationWorkspace({ kind }: { kind: MediaKind }) {
   const [historyError, setHistoryError] = useState('')
   const [model, setModel] = useState('')
   const [resolution, setResolution] = useState(kind === 'image' ? '2K' : '480p')
-  const catalog = useMediaModelsCatalog()
+  // 图片生成页用 tools 目录（后台开启 OpenAI 生图时含 gpt-image 并默认选中）
+  const catalog = useMediaModelsCatalog(kind === 'image' ? 'tools' : '')
   const models = useMemo(() => (kind === 'image' ? catalog?.image_models : catalog?.video_models) ?? [], [catalog, kind])
   const selectedModel = models.find(item => item.id === model)
   const referenceImageLimit = selectedModel?.reference_limits?.images ?? 9
@@ -234,7 +235,7 @@ function GenerationWorkspace({ kind }: { kind: MediaKind }) {
     </header>
     <form className="gen-composer" onSubmit={submit}>
       {kind === 'image' && catalog?.billing_mode === 'fixed_media' && <div className="gen-price-summary">
-        <MediaCostNotice modelId={model} resolution={resolution} />
+        <MediaCostNotice modelId={model} resolution={resolution} scope="tools" />
       </div>}
       {catalog && invalidParameters && <p className="gen-inline-error" role="alert">{text('当前模型不支持所选参数，请重新选择分辨率、画幅或时长。', 'These settings are not supported by the selected model. Please adjust them.')}</p>}
       <div className="gen-composer-heading"><span><Sparkles size={15} />{text(kind === 'audio' ? '朗读内容' : '创作描述', kind === 'audio' ? 'Your script' : 'Your creative brief')}</span><small>{text('把想象，写成下一件作品', 'A little detail goes a long way')}</small></div>

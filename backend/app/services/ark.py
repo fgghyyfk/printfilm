@@ -949,11 +949,13 @@ class ArkGateway:
         style_ref_urls: list[str] | None = None,
         purpose: str = "all",
         ratio_hint: str | None = None,
+        image_provider: str | None = None,
     ) -> ImageResult:
         """调用 TokenFree 生图（Seedream 家族在网关侧重映射）。
 
         purpose：调用方用途（tools=工具中心）。后台开启「生图改走 OpenAI」且作用范围覆盖时，改用 gpt-image；
         ratio_hint：如「3:4」，仅 OpenAI 分支用于决定输出尺寸。
+        image_provider：前台按所选模型显式指定 openai / ark；None 时按后台作用范围自动判断。
 
         只软化用户正文并保留设定板前缀；InputTextSensitive 时仍用简化三视图重试，
         最后一档才缩成「三视图+服装风格」。不做空主体 / CG 厚涂兜底。
@@ -964,10 +966,18 @@ class ArkGateway:
         else:
             ark_model = resolved
 
-        from app.services.openai_image import openai_image_active
+        from app.services.openai_image import openai_image_active, openai_image_configured
 
+        if image_provider == "openai":
+            if not openai_image_configured(self.settings):
+                raise RuntimeError("OpenAI 生图未开启，请在后台「系统设置 → 生图」填写 Key 并启用，或改选其它模型")
+            use_openai = True
+        elif image_provider == "ark":
+            use_openai = False
+        else:
+            use_openai = openai_image_active(purpose, self.settings)
         # 生图旁路优先于主渠道 Key 检查（主渠道没 Key 也能用 OpenAI 出图）；全局 ARK_MOCK 仍最优先
-        if not self.settings.ark_mock and openai_image_active(purpose, self.settings):
+        if not self.settings.ark_mock and use_openai:
             return await self._openai_image(prompt, negative, ref_urls, style_ref_urls,
                                             project_id=project_id, shot_no=shot_no, size=size, ratio_hint=ratio_hint)
 
