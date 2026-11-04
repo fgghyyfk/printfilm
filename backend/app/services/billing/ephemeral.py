@@ -337,6 +337,7 @@ async def settle_deferred_video_poll(
     error: str | None = None,
     billing_task_id: int | None = None,
     usage_tokens: int = 0,
+    upstream_cost_fen: int | None = None,
     completion_tokens: int = 0,
     raw_usage: dict | None = None,
     billing_key: str | None = None,
@@ -368,7 +369,15 @@ async def settle_deferred_video_poll(
         return None
 
     task_id = int(probe.id)
-    if failure_code == "poll_timeout" or (terminal != "succeeded" and not int(usage_tokens or 0)):
+    from app.services.video_recovery import confirmed_video_cost_fen
+
+    confirmed_cost = confirmed_video_cost_fen(raw_usage, upstream_cost_fen)
+    if failure_code == "poll_timeout" or (terminal != "succeeded" and not int(usage_tokens or 0) and confirmed_cost is None):
+        # 另一轮询或人工核对可能已收尾；迟到响应不能重新冻结已结算任务。
+        probe = await _lock_task(db, task_id)
+        if (not probe or probe.status != "awaiting_poll" or probe.billing_status not in {"frozen", "skipped"}
+                or probe.requested_by != user.id or probe.provider_task_id != provider_task_id.strip()):
+            return None
         probe.result_payload = {**(probe.result_payload or {}), "video_billing_pending": {
             "reason": "poll_timeout" if failure_code == "poll_timeout" else "upstream_terminal_cost_unknown", "provider_task_id": provider_task_id,
         }}
@@ -387,11 +396,11 @@ async def settle_deferred_video_poll(
     ))).all())
     prepared_usage = None
     async with billing_scope(task_id):
-        if terminal == "succeeded" or int(usage_tokens or 0) > 0:
+        if terminal == "succeeded" or int(usage_tokens or 0) > 0 or confirmed_cost is not None:
             from app.services.ark import TaskResult
 
             result = TaskResult(status="succeeded", total_tokens=int(usage_tokens),
-                                completion_tokens=int(completion_tokens or usage_tokens), raw_usage=raw_usage)
+                                completion_tokens=int(completion_tokens or usage_tokens), raw_usage=raw_usage, upstream_cost_fen=confirmed_cost)
             prepared_usage = await prepare_seedance_video_usage(
                 user_id=user.id, billing_key=key, model=model, domain=probe.domain,
                 task_result=result, fallback_duration_sec=payload.get("duration"),

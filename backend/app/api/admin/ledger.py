@@ -1,5 +1,6 @@
 # Admin wallet ledger list
 from datetime import datetime
+import json
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
@@ -56,10 +57,20 @@ async def list_ledger(
         )
     ).all()
 
+    def operator_id(entry):
+        if entry.ref_type == "admin" and str(entry.ref_id or "").isdigit():
+            return int(entry.ref_id)
+        if entry.kind == "billing_review":
+            try:
+                return int(json.loads(entry.note).get("admin_id"))
+            except (ValueError, TypeError, json.JSONDecodeError):
+                return None
+        return None
+
     operator_ids: set[int] = set()
     for entry, _email in rows:
-        if entry.ref_type == "admin" and str(entry.ref_id or "").isdigit():
-            operator_ids.add(int(entry.ref_id))
+        if (uid := operator_id(entry)) is not None:
+            operator_ids.add(uid)
 
     operator_emails: dict[int, str] = {}
     if operator_ids:
@@ -72,8 +83,8 @@ async def list_ledger(
     for entry, email in rows:
         data = AdminLedgerOut.model_validate(entry)
         data.user_email = email
-        if entry.ref_type == "admin" and str(entry.ref_id or "").isdigit():
-            data.operator_email = operator_emails.get(int(entry.ref_id)) or None
+        if (uid := operator_id(entry)) is not None:
+            data.operator_email = operator_emails.get(uid) or None
         items.append(data)
 
     return AdminLedgerListOut(

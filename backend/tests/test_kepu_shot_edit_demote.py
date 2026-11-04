@@ -63,7 +63,7 @@ async def _make_done_project(db: AsyncSession, user, tmp_path: Path) -> tuple[Pr
 async def test_narration_edit_invalidates_continuous_audio(
     db_session: AsyncSession, monkeypatch, tmp_path, native_audio, full_payload, legacy_script
 ) -> None:
-    """改旁白后：旧整片音轨删除、所有镜头 audio_url 清空、成片作废、状态回退。"""
+    """旁白真实改变后失效对应制作输入，native 模式不清其他镜头备用音轨。"""
     user = await make_user(db_session)
     project, shot1, shot2 = await _make_done_project(db_session, user, tmp_path)
     if legacy_script:
@@ -91,12 +91,15 @@ async def test_narration_edit_invalidates_continuous_audio(
     await db_session.refresh(shot1)
     await db_session.refresh(shot2)
     assert shot1.audio_url is None
-    assert shot2.audio_url is None  # 整片连贯音轨，姊妹镜同步失效
-    assert (shot1.image_url, shot1.image_ark_url, shot1.video_url, shot1.last_frame_url) == media
+    assert shot2.audio_url == (media[0].rsplit("/", 1)[0] + "/full_narration.mp3" if native_audio else None)
+    assert (shot1.image_url, shot1.image_ark_url) == media[:2]
+    assert (shot1.video_url, shot1.last_frame_url) == ((None, None) if native_audio else media[2:])
+    if not legacy_script:
+        assert "这是全新的旁白内容" in shot1.segment_script
     await db_session.refresh(project)
     assert project.final_video_url is None
-    # full 内置口播无需外部 TTS；外部配音模式才返回 assets 阶段。
-    assert project.status == (ProjectStatus.VIDEO_READY if native_audio else ProjectStatus.SCRIPT_READY)
+    # 内置口播需重做视频；外部配音需重做音频素材。
+    assert project.status == (ProjectStatus.IMAGE_READY if native_audio else ProjectStatus.SCRIPT_READY)
 
 
 def _full_edit_payload(shot: Shot) -> dict:
@@ -135,10 +138,10 @@ async def test_full_payload_preserves_existing_media(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("native_audio", [False, True])
 @pytest.mark.parametrize("independent_image", [False, True])
-async def test_frontend_narration_sync_preserves_legacy_video(
+async def test_frontend_narration_sync_respects_native_audio(
     db_session: AsyncSession, monkeypatch, tmp_path, native_audio, independent_image
 ) -> None:
-    """前端从历史 video_prompt 回填脚本并同步旁白时，保留已有视频和尾帧。"""
+    """前端从历史 video_prompt 回填脚本时，依实际口播模式失效视频并保留图。"""
     user = await make_user(db_session)
     project, shot, sibling = await _make_done_project(db_session, user, tmp_path)
     shot.segment_script = ""
@@ -157,14 +160,15 @@ async def test_frontend_narration_sync_preserves_legacy_video(
     await db_session.flush()  # 模拟请求开始前已持久化的历史项目/镜头。
     await update_shot(project.id, shot.id, ShotUpdate(**fields), db=db_session, user=user)
 
-    assert (shot.image_url, shot.image_ark_url, shot.video_url, shot.last_frame_url) == media
+    assert (shot.image_url, shot.image_ark_url) == media[:2]
+    assert (shot.video_url, shot.last_frame_url) == ((None, None) if native_audio else media[2:])
     if independent_image:
         assert shot.img_prompt == "主体静立的首帧"
         assert "主体静立的首帧" not in shot.segment_script
     assert not (tmp_path / "full_narration.mp3").exists()
     assert shot.audio_url is None
-    assert sibling.audio_url is None
-    assert project.status == (ProjectStatus.VIDEO_READY if native_audio else ProjectStatus.SCRIPT_READY)
+    assert sibling.audio_url == (media[0].rsplit("/", 1)[0] + "/full_narration.mp3" if native_audio else None)
+    assert project.status == (ProjectStatus.IMAGE_READY if native_audio else ProjectStatus.SCRIPT_READY)
 
 
 @pytest.mark.asyncio
@@ -287,3 +291,16 @@ async def test_img_prompt_edit_demotes_done_project(db_session: AsyncSession) ->
     await db_session.refresh(project)
     assert project.final_video_url is None
     assert project.status != ProjectStatus.DONE
+
+
+async def test_narration_only_patch_updates_legacy_spoken_video_prompt(db_session, monkeypatch, tmp_path):
+    user = await make_user(db_session)
+    project, shot, _ = await _make_done_project(db_session, user, tmp_path)
+    shot.video_prompt, shot.segment_script = shot.segment_script, ""
+    await db_session.commit()
+    monkeypatch.setattr(get_settings(), "kepu_seedance_native_audio", True)
+    monkeypatch.setattr("app.services.storage.project_dir", lambda _: tmp_path)
+    await update_shot(project.id, shot.id, ShotUpdate(narration="历史输入也同步新旁白"), db_session, user)
+    assert shot.segment_script == ""
+    assert "历史输入也同步新旁白" in shot.video_prompt
+    assert shot.video_url is None

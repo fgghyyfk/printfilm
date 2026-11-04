@@ -257,6 +257,11 @@ async def settle_task(
     task = await _lock_task(db, task_id)
     if not task:
         return {"charged": 0, "refunded": 0}
+    if task.billing_status == "settled":
+        return {
+            "charged": int(task.billing_charged_fen or 0),
+            "refunded": int(task.billing_refunded_fen or 0),
+        }
     from app.services.video_recovery import video_cost_unconfirmed
 
     result = task.result_payload if isinstance(task.result_payload, dict) else {}
@@ -283,11 +288,7 @@ async def settle_task(
         task.progress_percent = min(int(task.progress_percent or 0), 99)
         await db.flush()
         return {"charged": 0, "refunded": 0}
-    if task.billing_status == "settled":
-        return {
-            "charged": int(task.billing_charged_fen or 0),
-            "refunded": int(task.billing_refunded_fen or 0),
-        }
+
 
     # 钱包侧幂等：已有 unfreeze/settle 流水则只对齐状态，禁止二次退还
     if task.billing_status == "frozen":

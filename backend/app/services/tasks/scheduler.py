@@ -41,6 +41,7 @@ _last_success_mono: float = 0.0
 _loop_started_mono: float = 0.0
 _consecutive_failures: int = 0
 _intentionally_stopped: bool = True
+_planned_stop_task_ids: set[int] = set()
 _MAINTENANCE_TIMEOUT_SEC = 5.0
 _MAX_CLAIM_PAGES = 4
 _MAX_CANDIDATES_PER_PAGE = 128
@@ -78,14 +79,19 @@ async def stop_scheduler() -> None:
     if _maintenance_task and not _maintenance_task.done():
         _maintenance_task.cancel()
         await asyncio.gather(_maintenance_task, return_exceptions=True)
-    running_jobs = list(_running_jobs.values()) + list(_cancel_jobs.values())
-    for task in running_jobs:
-        if not task.done():
-            task.cancel()
-    if running_jobs:
-        await asyncio.gather(*running_jobs, return_exceptions=True)
-    _running_jobs.clear()
-    _cancel_jobs.clear()
+    jobs = {**_running_jobs, **_cancel_jobs}
+    stopping_ids = {task_id for task_id, job in jobs.items() if not job.done()}
+    _planned_stop_task_ids.update(stopping_ids)
+    try:
+        for job in jobs.values():
+            if not job.done():
+                job.cancel()
+        if jobs:
+            await asyncio.gather(*jobs.values(), return_exceptions=True)
+    finally:
+        _planned_stop_task_ids.difference_update(stopping_ids)
+        _running_jobs.clear()
+        _cancel_jobs.clear()
 
 
 # 仅重启调度循环（保留进程内仍在跑的 job），用于看门狗拉起卡死 tick。

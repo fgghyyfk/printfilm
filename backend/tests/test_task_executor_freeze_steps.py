@@ -20,7 +20,8 @@ from tests.conftest import make_task, make_user
 
 def test_execute_task_run_source_reads_steps_before_freeze() -> None:
     """源码顺序守卫：steps 必须在 freeze_for_task 之前读取，避免 MissingGreenlet。"""
-    src = inspect.getsource(execute_task_run)
+    from app.services.tasks.executor import _execute_task_run
+    src = inspect.getsource(_execute_task_run)
     i_steps = src.find("step = task.steps[0]")
     i_freeze = src.find("await freeze_for_task")
     assert i_steps != -1 and i_freeze != -1

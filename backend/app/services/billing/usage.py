@@ -53,6 +53,24 @@ async def record_line(
     return event
 
 
+def prepare_confirmed_cost_line(*, user_id: int, task_run_id: int | None, cost_fen: int,
+                                billing_key: str, domain: str, provider: str,
+                                model: str = "", raw: dict | None = None,
+                                project_id=None, drama_project_id=None, shot_id=None,
+                                tokens: int = 0, completion_tokens: int = 0) -> UsageEvent:
+    """已核定费用不走缺 token 估算；保留来源，交现有任务账本结算。"""
+    from app.services.billing.pricing import billing_key_to_capability, user_charge_fen
+
+    cost = max(0, int(cost_fen))
+    return UsageEvent(user_id=user_id, task_run_id=task_run_id, cost_fen=cost,
+                      charge_fen=user_charge_fen(cost), billing_key=billing_key,
+                      domain=domain, provider=provider, model=model,
+                      project_id=project_id, drama_project_id=drama_project_id, shot_id=shot_id,
+                      capability=billing_key_to_capability(billing_key), estimated=False, settled=False,
+                      prompt_tokens=0, completion_tokens=completion_tokens, total_tokens=tokens,
+                      raw_usage_json=json.dumps(raw or {}, ensure_ascii=False), created_at=datetime.now(UTC))
+
+
 async def prepare_usage_line(
     *,
     user_id: int,

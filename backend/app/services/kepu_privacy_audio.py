@@ -48,18 +48,22 @@ async def ensure_privacy_audio(project_id: int, shot_id: int) -> None:
         shot_no = shot.shot_no
 
     await _ensure_not_cancelled(project_id)
-    result = await get_ark().tts_with_result(
-        narration, voice, project_id=project_id,
-        # 每次输出隔离，不覆盖普通分镜配音或同号漫剧音色。
-        shot_no=int(hashlib.sha256(str(dest).encode()).hexdigest()[:12], 16),
-        duration_hint=duration, billing_tokens=get_settings().billing_est_tts_tokens,
-        billing_shot_id=shot_id,
-    )
-    source = storage.local_path_from_url(result.url)
-    if not source or not source.is_file() or await asyncio.to_thread(is_near_silent_audio, source):
-        raise RuntimeError("隐私镜头备用配音生成失败，请重试配音")
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    await asyncio.to_thread(dest.write_bytes, source.read_bytes())
+    result = None
+    # URL 曾被失效时先复用本镜内容/音色指纹，最终仍在行锁内核对内容归属。
+    cached = dest.is_file() and not await asyncio.to_thread(is_near_silent_audio, dest)
+    if not cached:
+        result = await get_ark().tts_with_result(
+            narration, voice, project_id=project_id,
+            # 每次输出隔离，不覆盖普通分镜配音或同号漫剧音色。
+            shot_no=int(hashlib.sha256(str(dest).encode()).hexdigest()[:12], 16),
+            duration_hint=duration, billing_tokens=get_settings().billing_est_tts_tokens,
+            billing_shot_id=shot_id,
+        )
+        source = storage.local_path_from_url(result.url)
+        if not source or not source.is_file() or await asyncio.to_thread(is_near_silent_audio, source):
+            raise RuntimeError("隐私镜头备用配音生成失败，请重试配音")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(dest.write_bytes, source.read_bytes())
     await _ensure_not_cancelled(project_id)
     async with AsyncSessionLocal() as db:
         project = (await db.execute(select(Project).where(Project.id == project_id).with_for_update()
@@ -71,5 +75,8 @@ async def ensure_privacy_audio(project_id: int, shot_id: int) -> None:
         from app.services.tts_metadata import audio_metadata
 
         shot.audio_url = storage.publish_local(dest)
-        shot.tts_metadata = audio_metadata(result, text=narration, voice=voice, audio_url=shot.audio_url)
+        if result is not None:
+            shot.tts_metadata = audio_metadata(result, text=narration, voice=voice, audio_url=shot.audio_url)
+        elif shot.tts_metadata and shot.tts_metadata.get("audio_url") != shot.audio_url:
+            shot.tts_metadata = None
         await db.commit()

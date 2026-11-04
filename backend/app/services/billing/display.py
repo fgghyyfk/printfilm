@@ -18,6 +18,7 @@ _BASIS_LABELS = {
     "upstream_cost": "实测(费用)",
     "official_rule": "官方价目",
     "newapi_log": "New API 账单",
+    "manual_review": "人工核对",
     "unknown": "实测(未分类)",
 }
 
@@ -50,7 +51,7 @@ def resolve_billing_basis(*, estimated: bool, raw_usage_json: str | None = None)
             raw = None
     if isinstance(raw, dict):
         basis = str(raw.get("billing_basis") or "")
-        if basis in {"official_rule", "newapi_log"}:
+        if basis in {"official_rule", "newapi_log", "manual_review"}:
             return basis
     usage = raw.get("usage") if isinstance(raw, dict) and isinstance(raw.get("usage"), dict) else raw
     if isinstance(usage, dict):

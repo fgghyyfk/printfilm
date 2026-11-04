@@ -100,7 +100,8 @@ async def test_null_counter_and_configured_limit(recovery_session, monkeypatch):
     db = recovery_session
     user = await make_user(db)
     task = await make_task(db, user, status="running")
-    # additive DDL 的旧表列允许 NULL，直接 SQL 模拟历史数据。
+    # 本用例外层事务内模拟升级旧表；结束回滚恢复新库 NOT NULL。
+    await db.execute(text("ALTER TABLE task_runs ALTER COLUMN recovery_count DROP NOT NULL"))
     await db.execute(text("UPDATE task_runs SET recovery_count=NULL WHERE id=:id"), {"id": task.id})
     await db.commit()
     monkeypatch.setattr(get_settings(), "task_runtime_max_recoveries", 1)

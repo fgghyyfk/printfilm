@@ -466,6 +466,7 @@ async def poll_video_task(user: User, task_id: str) -> dict:
             "urls": [url],
             "usage": usage,
             "raw_usage": result.raw_usage,
+            "upstream_cost_fen": result.upstream_cost_fen,
         }
     if result.status == "failed":
         return {
@@ -475,6 +476,7 @@ async def poll_video_task(user: User, task_id: str) -> dict:
             "error": result.error or "生成失败",
             "usage": usage,
             "raw_usage": result.raw_usage,
+            "upstream_cost_fen": result.upstream_cost_fen,
         }
     return {"status": "running", "kind": "video", "urls": [], "usage": usage}
 

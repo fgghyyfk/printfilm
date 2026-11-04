@@ -41,6 +41,8 @@ def mark_video_billing_pending(task, exc: BaseException) -> bool:
 
 def video_cost_unconfirmed(task) -> bool:
     result = task.result_payload if isinstance(task.result_payload, dict) else {}
+    if result.get("billing_review_resolved"):
+        return False
     if result.get("video_billing_pending") or result.get("video_submission_pending"):
         return True
     video_type = task.task_type in {"fragment_video", "asset_video", "shot_regen_video", "tool_video", "v1_video", "v1_seedance"}
@@ -96,3 +98,41 @@ async def finish_current_video_task() -> None:
                                if k not in {"video_submission_pending", "video_billing_pending"}}
         task.result_payload = {**task.result_payload, "video_terminal_confirmed": True}
         await db.commit()
+
+
+def confirmed_video_cost_fen(raw_usage: dict | None, upstream_cost_fen: int | None = None) -> int | None:
+    """终态费用证据；缺字段和默认 token=0 都不能视为免费。"""
+    from math import isfinite
+    from app.services.billing.pricing import parse_upstream_cost_fen
+
+    def nonnegative(value):
+        try:
+            number = float(value)
+            return number if not isinstance(value, bool) and isfinite(number) and number >= 0 else None
+        except (TypeError, ValueError, OverflowError):
+            return None
+
+    if upstream_cost_fen is not None:
+        value = nonnegative(upstream_cost_fen)
+        return int(value) if value is not None and value.is_integer() else None
+    raw = raw_usage if isinstance(raw_usage, dict) else {}
+    usage = raw.get("usage") if isinstance(raw.get("usage"), dict) else raw
+    # 负值和非法值不因旧解析器的 max(0, value) 被解释成明确免费。
+    for key in ("cost_fen", "cost_cents"):
+        if key in usage:
+            value = nonnegative(usage[key])
+            return int(value) if value is not None and value.is_integer() else None
+    for key in ("quota", "quota_consumed", "consumed_quota"):
+        value = usage.get(key, raw.get(key))
+        if value is not None:
+            number = nonnegative(value)
+            if number is None or not number.is_integer():
+                return None
+            from app.services.tokenfree_usage import quota_to_cost_fen
+            return quota_to_cost_fen(int(number))
+    parsed = parse_upstream_cost_fen({"usage": usage})
+    if parsed == 0:
+        return 0 if any(nonnegative(usage.get(key)) == 0 for key in (
+            "cost_yuan", "total_cost_yuan", "cost", "total_cost", "amount",
+        )) else None
+    return parsed

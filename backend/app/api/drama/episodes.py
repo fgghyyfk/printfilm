@@ -745,6 +745,8 @@ async def generate_episode(
             detail="所选分镜正在生成，请等待完成后再试",
         )
 
+    prepared_sequential = project_link_last_frame_enabled(project)
+    prepared_revision = ep.revision
     # 尾帧衔接：上一镜在生成/排队时可先入队本镜，由任务队列按镜序等待；未开上一镜则仍拒绝
     if project_link_last_frame_enabled(project):
         all_sorted = sorted(all_frags, key=lambda f: (int(f.sort_order or 0), int(f.id or 0)))
@@ -771,9 +773,31 @@ async def generate_episode(
                     detail="已开启尾帧衔接：请先生成上一镜并等待尾帧就绪后，再点本镜生成",
                 )
 
+    # 上游价目与尾帧准备在锁外；余额锁之前锁定本集，防止同时入队同一镜。
+    prepared_quote = await quote_fragment_videos(db, user, ep, project, idle_frags, body.model_id)
+    prepared_inputs = {row["fragment_id"]: row for row in prepared_quote["fragments"]}
+    ep = (await db.execute(select(DramaEpisode).where(DramaEpisode.id == episode_id)
+                          .with_for_update().execution_options(populate_existing=True))).scalar_one_or_none()
+    if ep is None or ep.revision != prepared_revision:
+        raise HTTPException(status_code=409, detail="分镜已更新，请刷新后重新报价确认")
+    active_ids = collect_active_fragment_ids_from_tasks(await list_active_tasks_for_owner(db, user.id, drama_project_id=ep.project_id))
+    selected_ids = {fragment.id for fragment in idle_frags}
+    current_fragments = list(await db.scalars(select(DramaEpisodeFragment).where(
+        DramaEpisodeFragment.episode_id == episode_id, DramaEpisodeFragment.id.in_(selected_ids),
+    ).execution_options(populate_existing=True)))
+    if {fragment.id for fragment in current_fragments} != selected_ids:
+        raise HTTPException(status_code=409, detail="分镜已更新，请刷新后重新报价确认")
+    idle_frags = [fragment for fragment in current_fragments if fragment.id not in active_ids
+                  and fragment_generation_status(fragment).get("status") not in {"queued", "running", "generating"}]
+    if not idle_frags:
+        raise HTTPException(status_code=409, detail="所选分镜正在生成，请等待完成后再试")
+
     # 报价后的设置修改也会改变费用；实际规格刷新核对后冻结为此次入队输入。
     await db.refresh(ep, attribute_names=["params"])
     await db.refresh(project, attribute_names=["params"])
+    if project_link_last_frame_enabled(project) != prepared_sequential:
+        raise HTTPException(status_code=409, detail="衔接设置已变化，请重新报价确认")
+    idle_frags.sort(key=lambda fragment: int(fragment.sort_order or 0))
     inputs_by_id = {}
     quoted = {item.fragment_id: item.model_dump() for item in body.quoted_inputs or []}
     if body.quoted_inputs is not None and (
@@ -789,6 +813,9 @@ async def generate_episode(
             )}}
             if actual != quoted.get(fragment.id):
                 raise HTTPException(status_code=409, detail="生成规格已变化，请重新报价确认")
+        prepared_input = prepared_inputs[fragment.id]
+        if any(inputs[key] != prepared_input[key] for key in inputs):
+            raise HTTPException(status_code=409, detail="生成规格已变化，请重新报价确认")
         inputs_by_id[fragment.id] = inputs
 
     # 全部入队；超过单用户并发上限的镜保持 pending 排队，由调度器按空位激活
@@ -842,6 +869,7 @@ async def generate_episode(
                     ],
                 ),
                 commit=False,
+                prepared_estimate_fen=prepared_inputs[f.id]["estimate_fen"],
             )
         except ValueError as exc:
             await db.rollback()

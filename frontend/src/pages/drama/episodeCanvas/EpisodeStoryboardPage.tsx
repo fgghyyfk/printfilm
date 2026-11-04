@@ -1,7 +1,9 @@
 import { useI18n } from '../../../i18n'
+import { translate as translateMessage } from '../../../i18n/runtime'
 import { MyTasksButton } from '../../../components/MyTasks'
 /** 分集分镜故事板全屏画布：按分镜连线，节点含视频 / 出境资产 / 提示词 */
-import { createFragmentEditSnapshot, type FragmentEditSnapshot } from '../../../lib/dramaFragmentEditing'
+import { createFragmentAutosave, type FragmentSaveState } from '../../../lib/dramaFragmentAutosave'
+import { useFragmentNavigationGuard } from '../../../lib/useFragmentNavigationGuard'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Background,
@@ -86,21 +88,31 @@ function EpisodeStoryboardInner() {
    * dirty / busy / error / status 状态
    */
   // 与当前画布列表绑定的版本，独立于运行态刷新。
-  const editSnapshot = useRef<FragmentEditSnapshot | null>(null)
   const [episode, setEpisode] = useState<DramaEpisode | null>(null)
-  const [fragments, setFragments] = useState<DramaFragment[]>([])
+  const [fragments, setFragmentState] = useState<DramaFragment[]>([])
   const [assets, setAssets] = useState<DramaAsset[]>([])
   const [linkTargetFragId, setLinkTargetFragId] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [status, setStatus] = useState('')
-  const [dirty, setDirty] = useState(false)
+  const [saveState, setSaveState] = useState<FragmentSaveState>({ dirty: false, saving: false, conflict: false })
+  const dirty = saveState.dirty
   const fittedRef = useRef(false)
   const fragmentsRef = useRef<DramaFragment[]>([])
   const assetsRef = useRef<DramaAsset[]>([])
-  const saveTimer = useRef<number | null>(null)
-  // 防抖期间的新编辑应留在本地，当前请求成功后再提交下一快照。
-  const saveInFlight = useRef(false)
+  const autosave = useMemo(() => createFragmentAutosave({
+    persist: (next, snapshot) => dramaApi.saveFragments(eid, next.map((f, index) => ({
+      id: f.id > 0 ? f.id : undefined, sort_order: index,
+      content: f.content || '', cover: f.cover || '', video: f.video || '',
+      duration_sec: f.duration_sec ?? 8, params: f.params || {}, asset_ids: collectFragmentAssetIds(f),
+    })), snapshot),
+    onRows: setFragmentState,
+    onSaved: setEpisode,
+    onState: setSaveState,
+    onError: (err) => setError(err instanceof Error ? err.message : translateMessage("workflow.couldNotSave")),
+    delay: SAVE_DEBOUNCE_MS,
+  }), [eid])
+  useEffect(() => { autosave.activate(); return () => autosave.dispose() }, [autosave])
+  useFragmentNavigationGuard(autosave)
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<EpisodeFlowNodeData>>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
@@ -146,80 +158,20 @@ function EpisodeStoryboardInner() {
     Promise.all([dramaApi.getEpisode(eid), dramaApi.listAssets(pid)])
       .then(([ep, assetList]) => {
         if (cancelled) return
-        editSnapshot.current = createFragmentEditSnapshot(ep)
         setEpisode(ep)
-        setFragments(ep.fragments || [])
+        autosave.load(ep)
         setAssets(assetList || [])
       })
       .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : translateUi("workflow.couldNotLoadTheEpisode"))
+        if (!cancelled) setError(err instanceof Error ? err.message : translateMessage("workflow.couldNotLoadTheEpisode"))
       })
       .finally(() => {
         if (!cancelled) setBusy(false)
       })
     return () => {
       cancelled = true
-      if (saveTimer.current) window.clearTimeout(saveTimer.current)
     }
-  }, [eid, pid])
-
-  // 持久化全部分镜（保序，保留成片与引用）
-  const persistFragments = useCallback(
-    async (next: DramaFragment[]) => {
-      if (!eid || !editSnapshot.current || saveInFlight.current) return
-      saveInFlight.current = true
-      setBusy(true)
-      setError('')
-      try {
-        const saved = await dramaApi.saveFragments(
-          eid,
-          next.map((f, index) => {
-            const prevParams =
-              f.params && typeof f.params === 'object' && !Array.isArray(f.params)
-                ? (f.params as Record<string, unknown>)
-                : {}
-            return {
-              id: typeof f.id === 'number' && f.id > 0 ? f.id : undefined,
-              sort_order: index,
-              content: f.content || '',
-              cover: f.cover || '',
-              video: f.video || '',
-              duration_sec: f.duration_sec ?? 8,
-              params: prevParams,
-              asset_ids: collectFragmentAssetIds(f),
-            }
-          }),
-          editSnapshot.current!,
-        )
-        editSnapshot.current = createFragmentEditSnapshot(saved)
-        setEpisode(saved)
-        const changedWhileSaving = fragmentsRef.current !== next
-        if (!changedWhileSaving) setFragments(saved.fragments || [])
-        setDirty(changedWhileSaving)
-        setStatus(changedWhileSaving ? '' : translateUi("ecomSet.plan.saved"))
-        if (changedWhileSaving) {
-          if (saveTimer.current) window.clearTimeout(saveTimer.current)
-          saveTimer.current = window.setTimeout(() => { void persistFragments(fragmentsRef.current) }, SAVE_DEBOUNCE_MS)
-        }
-        window.setTimeout(() => setStatus(''), 1600)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : translateUi("workflow.couldNotSave"))
-      } finally {
-        saveInFlight.current = false
-        setBusy(false)
-      }
-    },
-    [eid],
-  )
-
-  // 防抖保存
-  const scheduleSave = useCallback(() => {
-    setDirty(true)
-    if (saveTimer.current) window.clearTimeout(saveTimer.current)
-    saveTimer.current = window.setTimeout(() => {
-      void persistFragments(fragmentsRef.current)
-    }, SAVE_DEBOUNCE_MS)
-  }, [persistFragments])
+  }, [eid, pid, autosave])
 
   // 刷新单个分镜节点提示词（关联资产变化靠 structureKey 重建）
   const patchFragmentPrompt = useCallback(
@@ -239,7 +191,7 @@ function EpisodeStoryboardInner() {
   // 改提示词
   const handlePromptChange = useCallback(
     (fragmentId: number, content: string) => {
-      setFragments((prev) =>
+      autosave.edit((prev) =>
         prev.map((f) => {
           if (f.id !== fragmentId) return f
           const updated = { ...f, content }
@@ -247,15 +199,14 @@ function EpisodeStoryboardInner() {
         }),
       )
       patchFragmentPrompt(fragmentId, content)
-      scheduleSave()
     },
-    [patchFragmentPrompt, scheduleSave],
+    [patchFragmentPrompt, autosave],
   )
 
   // 取消关联出境资产
   const handleUnlinkAsset = useCallback(
     (fragmentId: number, assetId: number) => {
-      setFragments((prev) =>
+      autosave.edit((prev) =>
         prev.map((f) => {
           if (f.id !== fragmentId) return f
           const content = removeAssetMention(f.content || '', assetId)
@@ -263,9 +214,8 @@ function EpisodeStoryboardInner() {
           return { ...f, content, asset_ids }
         }),
       )
-      scheduleSave()
     },
-    [scheduleSave],
+    [autosave],
   )
 
   // 打开关联选择
@@ -278,7 +228,7 @@ function EpisodeStoryboardInner() {
     (asset: DramaAsset) => {
       if (linkTargetFragId == null) return
       const fragmentId = linkTargetFragId
-      setFragments((prev) =>
+      autosave.edit((prev) =>
         prev.map((f) => {
           if (f.id !== fragmentId) return f
           const content = ensureAssetMention(f.content || '', asset.id)
@@ -287,9 +237,8 @@ function EpisodeStoryboardInner() {
         }),
       )
       setLinkTargetFragId(null)
-      scheduleSave()
     },
-    [linkTargetFragId, scheduleSave],
+    [linkTargetFragId, autosave],
   )
 
   const nodeTypes: NodeTypes = useMemo(
@@ -333,7 +282,7 @@ function EpisodeStoryboardInner() {
           <div className="ep-storyboard-title">
             <strong>{episode?.name || translateUi("workflow.episode_ebaa6d", { v1: String(eid) })}</strong>
             <span>
-              {translateUi("workflow.storyboardShots_0dd76e", { v1: fragments.length, v2: dirty ? translateUi("workflow.unsaved_b01c72") : status ? ` · ${status}` : '' })}</span>
+              {translateUi("workflow.storyboardShots_0dd76e", { v1: fragments.length, v2: dirty ? translateUi("workflow.unsaved_b01c72") : '' })}</span>
           </div>
         </div>
         <div className="ep-storyboard-actions">
@@ -347,10 +296,10 @@ function EpisodeStoryboardInner() {
           <button
             type="button"
             className="ep-storyboard-btn dark"
-            disabled={busy || !dirty}
-            onClick={() => void persistFragments(fragments)}
+            disabled={busy || saveState.saving || !dirty}
+            onClick={() => void autosave.flush().catch(() => undefined)}
           >
-            {busy ? translateUi("workflow.saving") : translateUi("workflow.save")}
+            {busy || saveState.saving ? translateUi("workflow.saving") : translateUi("workflow.save")}
           </button>
         </div>
         <MyTasksButton />

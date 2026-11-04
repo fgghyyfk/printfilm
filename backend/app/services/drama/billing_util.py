@@ -176,19 +176,36 @@ async def prepare_seedance_video_usage(
 
     model = canonicalize_channel_model_id((model or "").strip()) or (model or "").strip() or "seedance-2.5"
     provider_id = (provider_task_id or "").strip()
+    from app.services.video_recovery import confirmed_video_cost_fen
+    from app.services.billing.usage import prepare_confirmed_cost_line
+
+    known_cost = confirmed_video_cost_fen(getattr(task_result, "raw_usage", None), getattr(task_result, "upstream_cost_fen", None))
     if (
         (not task_result or int(getattr(task_result, "total_tokens", 0) or 0) <= 0)
-        and provider_id
+        and provider_id and known_cost is None
     ):
         from app.services.ark import get_ark
 
         try:
             refreshed = await get_ark().fetch_task_once(provider_id)
-            if int(getattr(refreshed, "total_tokens", 0) or 0) > 0 or refreshed.raw_usage:
+            if (int(getattr(refreshed, "total_tokens", 0) or 0) > 0 or refreshed.raw_usage
+                    or getattr(refreshed, "upstream_cost_fen", None) is not None):
                 task_result = refreshed
         except Exception:  # noqa: BLE001
             pass
 
+    known_cost = confirmed_video_cost_fen(getattr(task_result, "raw_usage", None), getattr(task_result, "upstream_cost_fen", None))
+    if known_cost is not None:
+        raw = dict(getattr(task_result, "raw_usage", None) or {})
+        usage = raw.get("usage") if isinstance(raw.get("usage"), dict) else raw
+        return prepare_confirmed_cost_line(
+            user_id=user_id, task_run_id=get_current_task_run_id(), cost_fen=known_cost,
+            billing_key=billing_key, domain=domain, provider="ark", model=model,
+            raw={**raw, "billing_basis": "upstream_cost", "usage": {**usage, "cost_fen": known_cost}, "provider_task_id": provider_id},
+            tokens=int(getattr(task_result, "total_tokens", 0) or 0),
+            completion_tokens=int(getattr(task_result, "completion_tokens", 0) or 0),
+            project_id=project_id, drama_project_id=drama_project_id, shot_id=shot_id,
+        )
     total_tokens = int(getattr(task_result, "total_tokens", 0) or 0)
     completion_tokens = int(getattr(task_result, "completion_tokens", 0) or 0)
     raw_usage = getattr(task_result, "raw_usage", None)

@@ -50,7 +50,7 @@ from app.services.tasks.service import (
     list_active_tasks_for_owner,
 )
 from app.services.voices import ensure_voice_preview, list_voices
-from app.services.kepu_stages import resolve_kepu_billing_phase
+from app.services.kepu_stages import VIDEO_SKIP_REASON_PRIVACY, resolve_kepu_billing_phase
 from app.services.kepu_projects import list_project_page, project_runtime_view
 from app.services.kepu_shot_edits import shot_video_content_changed
 
@@ -847,6 +847,21 @@ async def update_shot(
         })
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    # 仅提交旁白时也同步已有制作脚本，避免重生视频仍朗读旧稿。
+    if (not is_undo and not is_suggestion and "segment_script" not in data
+            and data.get("narration") is not None
+            and str(data["narration"]).strip() != str(shot.narration or "").strip()
+            and (shot.segment_script or "").strip()):
+        data["segment_script"] = shot.segment_script
+    # 历史仅 video_prompt 承载旁白时同步该有效输入；没有旁白的旧空脚本保持原样。
+    if (not is_undo and not is_suggestion and not (data.get("segment_script", shot.segment_script) or "").strip()
+            and data.get("narration") is not None
+            and str(data["narration"]).strip() != str(shot.narration or "").strip()):
+        from app.services.seedance_segments import narration_from_script, replace_narration_in_script
+
+        effective_prompt = data.get("video_prompt", shot.video_prompt) or ""
+        if narration_from_script(effective_prompt):
+            data["video_prompt"] = replace_narration_in_script(effective_prompt, str(data["narration"]))
     # 同值全字段保存无需重新规范化；历史空脚本只改旁白时也不凭空生成制作脚本。
     if not is_undo and not is_suggestion and "segment_script" in data and data["segment_script"] is not None and (
         data["segment_script"] != shot.segment_script
@@ -902,8 +917,12 @@ async def update_shot(
         "img_prompt" in data
         and str(data["img_prompt"] or "").strip() != str(shot.img_prompt or "").strip()
     )
-    # 在覆盖旧字段前比较真实制作变化，旁白同步脚本不应删除已有视频。
-    video_dirty = shot_video_content_changed(shot, data)
+    # 在覆盖旧字段前比较真实制作变化，内置口播也是视频输入。
+    from app.services.pipeline import _kepu_seedance_native_audio
+
+    native_audio = _kepu_seedance_native_audio(project)
+    visual_video_dirty = shot_video_content_changed(shot, data)
+    video_dirty = shot_video_content_changed(shot, data, native_audio=native_audio) or (native_audio and audio_dirty)
     for k, v in data.items():
         setattr(shot, k, v)
     if (project.pipeline_mode or "") == "avatar":
@@ -927,11 +946,13 @@ async def update_shot(
     elif video_dirty:
         shot.video_url = None
         shot.last_frame_url = None
-        shot.video_skip_reason = None
+        # 仅口播变化不撤销同一画面的隐私降级结论，按新旁白补本镜音轨即可。
+        if visual_video_dirty or shot.video_skip_reason != VIDEO_SKIP_REASON_PRIVACY:
+            shot.video_skip_reason = None
     if audio_dirty and (project.pipeline_mode or "") != "avatar":
         full_narration = storage.project_dir(project_id) / "full_narration.mp3"
         full_narration.unlink(missing_ok=True)
-        for sibling in project.shots:
+        for sibling in ([shot] if native_audio else project.shots):
             sibling.audio_url = None
             sibling.tts_metadata = None
     # 统一按素材进度把终态打回对应阶段并作废成片（本端点此前漏调，状态会卡在 DONE）

@@ -130,6 +130,10 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<DetailTab>("overview");
   const [cancelling, setCancelling] = useState(false);
+  const [reviewCost, setReviewCost] = useState("");
+  const [reviewNote, setReviewNote] = useState("");
+  const [reviewConfirmed, setReviewConfirmed] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
   const now = useTaskClock(open && Boolean(task) && !TERMINAL.has(task?.status || ""));
   const billing = taskBilling(task || {});
 
@@ -151,6 +155,7 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
       setTab("overview");
       return;
     }
+    setReviewCost(""); setReviewNote(""); setReviewConfirmed(false);
     void loadDetail(taskId);
   }, [open, taskId]);
 
@@ -187,6 +192,21 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
   }, [task]);
 
   const payloadRows = useMemo(() => payloadSummaryRows(redactTaskData(task?.payload) as Record<string, unknown> | null), [task?.payload]);
+
+  async function handleBillingReview() {
+    if (!task || reviewing || !reviewConfirmed || !/^\d+$/.test(reviewCost) || reviewNote.trim().length < 2) return;
+    if (!window.confirm(`将补记尚未入账的费用 ${reviewCost} 分，并按已有用量结算、结束本地任务。已记录费用保持不变。确认已核对最终费用？`)) return;
+    setReviewing(true);
+    try {
+      setTask(await api<AdminTaskDetail>(`/api/admin/tasks/${task.id}/billing-review`, {
+        method: "POST", body: JSON.stringify({ missing_cost_fen: Number(reviewCost), final_cost_confirmed: true, note: reviewNote.trim() }),
+      }));
+      toast.success("费用已核对并结算");
+      onCancelled?.();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "核对结算失败");
+    } finally { setReviewing(false); }
+  }
 
   async function handleCancel() {
     if (!task || !canCancel) return;
@@ -412,6 +432,21 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
                     </div>
                   </dl>
                 </section>
+
+                {task.status === "awaiting_review" && task.billing_status !== "settled" ? (
+                  <section className="task-detail-section task-detail-section--full">
+                    <h4>核对后结算</h4>
+                    <p className="mb-3 text-xs text-[var(--admin-muted)]">按原上游任务核实最终费用。仅补记缺失调用费用，已有费用继续计入；填写 0 也须有明确依据。此操作结束本地处理，保留原任务和媒体。</p>
+                    <label className="block mb-3">尚未记账的缺失费用（分）
+                      <input aria-label="尚未记账的缺失费用（分）" className="admin-input block mt-1" type="number" min="0" max="100000000" step="1" value={reviewCost} onChange={(e) => setReviewCost(e.target.value)} />
+                    </label>
+                    <label className="block mb-3">核对依据（仅管理员可见）
+                      <textarea aria-label="核对依据" className="admin-input block mt-1 w-full" maxLength={120} value={reviewNote} onChange={(e) => setReviewNote(e.target.value)} />
+                    </label>
+                    <label className="block mb-3"><input type="checkbox" checked={reviewConfirmed} onChange={(e) => setReviewConfirmed(e.target.checked)} /> 已确认最终费用，缺失费用不包含已有用量</label>
+                    <Button disabled={reviewing || !reviewConfirmed || !/^\d+$/.test(reviewCost) || Number(reviewCost) > 100000000 || reviewNote.trim().length < 2} onClick={() => void handleBillingReview()}>{reviewing ? "结算中…" : "确认核对并结算"}</Button>
+                  </section>
+                ) : null}
 
                 <section className="task-detail-section task-detail-section--full">
                   <h4>用量明细</h4>

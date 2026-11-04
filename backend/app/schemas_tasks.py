@@ -362,3 +362,11 @@ class AdminTaskStatsOut(BaseModel):
     scheduler_consecutive_failures: int = 0
     domains: list[AdminTaskDomainStatsOut] = Field(default_factory=list)
     fetched_at: datetime | None = None
+
+
+class AdminTaskBillingReviewRequest(BaseModel):
+    """只补核定的未记账费用；已记录调用费用不被覆盖。"""
+
+    missing_cost_fen: int = Field(ge=0, le=100_000_000, strict=True)
+    final_cost_confirmed: bool
+    note: str = Field(min_length=2, max_length=120)

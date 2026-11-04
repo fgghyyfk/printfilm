@@ -1,4 +1,4 @@
-import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { createBrowserRouter, RouterProvider, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import DialogHost from './components/ui/DialogHost'
 import BillingAlertHost from './components/billing/BillingAlertHost'
 import MyTasks from './components/MyTasks'
@@ -37,9 +37,9 @@ function ToDaihuo() {
   return <Navigate to={`/daihuo${search}`} replace />
 }
 
-export default function App() {
+function AppRoutes() {
   return (
-    <BrowserRouter>
+    <>
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/method" element={<MethodPage />} />
@@ -81,6 +81,13 @@ export default function App() {
       <DramaGenQueuePanel />
       <BillingAlertHost />
       <DialogHost />
-    </BrowserRouter>
+    </>
   )
+}
+
+// 路由实例稳定，切换语言不会重建保存器或浏览器历史。
+const router = createBrowserRouter([{ path: "*", element: <AppRoutes /> }])
+
+export default function App() {
+  return <RouterProvider router={router} />
 }

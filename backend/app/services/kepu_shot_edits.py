@@ -6,14 +6,16 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Project, Shot
-from app.services.seedance_segments import seedance_timeline_without_voice
+from app.services.seedance_segments import narration_from_script, seedance_timeline_without_voice
 
 
-def shot_video_content_changed(shot: Shot, data: dict[str, Any]) -> bool:
-    """比较保存前后的视频输入；旁白或后期字幕变化保留已生成的视频。"""
+def shot_video_content_changed(shot: Shot, data: dict[str, Any], *, native_audio: bool = False) -> bool:
+    """比较保存前后的视频输入；仅外部配音可保留旁白改变后的原视频。"""
     # before / after 与流水线一样优先使用逐段脚本，历史镜头回退 video_prompt。
     before = shot.segment_script or shot.video_prompt or ""
     after = data.get("segment_script", shot.segment_script) or data.get("video_prompt", shot.video_prompt) or ""
+    if native_audio and narration_from_script(before) != narration_from_script(after):
+        return True
     if seedance_timeline_without_voice(before) != seedance_timeline_without_voice(after):
         return True
     if "duration" in data and data["duration"] != shot.duration:

@@ -1,3 +1,4 @@
+import { translate as translateMessage } from '../../i18n/runtime'
 import { applyComplianceSuggestion } from '../../lib/complianceChanges'
 /** 分集编辑：复刻原项目四栏布局（资产 / 脚本 / 预览 / 故事板） */
 import { MyTasksButton } from '../../components/MyTasks'
@@ -13,6 +14,7 @@ import {
 import {
   duplicateEditableFragment, mergeFragmentRuntime,
 } from '../../lib/dramaFragmentEditing'
+import { useFragmentNavigationGuard } from '../../lib/useFragmentNavigationGuard'
 import { createFragmentAutosave, type FragmentSaveState } from '../../lib/dramaFragmentAutosave'
 import { type ImageStyleId } from '../../lib/dramaImageStyles'
 import { selectedFragmentAssetIds, fragmentReferenceFreshness, fragmentReferenceStatusLabel } from '../../lib/dramaFragmentReferences'
@@ -216,7 +218,7 @@ function EpisodeEditInner() {
     onRows: setFragmentState,
     onSaved: setEpisode,
     onState: setSaveState,
-    onError: (err) => setError(err instanceof Error ? err.message : translateUi("workflow.couldNotSave")),
+    onError: (err) => setError(err instanceof Error ? err.message : translateMessage("workflow.couldNotSave")),
   }), [eid])
   // 自动保存不把尚未重生的视频当成最新创作输入；旧视频保留本页初载基线。
   const videoBaselines = useRef(new Map<number, DramaFragment>())
@@ -233,12 +235,7 @@ function EpisodeEditInner() {
   const setFragments = (update: DramaFragment[] | ((rows: DramaFragment[]) => DramaFragment[])) => autosave.runtime(update)
   const editFragments = (update: DramaFragment[] | ((rows: DramaFragment[]) => DramaFragment[])) => autosave.edit(update)
   useEffect(() => { autosave.activate(); return () => autosave.dispose() }, [autosave])
-  useEffect(() => {
-    if (!saveState.dirty && !saveState.saving) return
-    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
-    window.addEventListener('beforeunload', warn)
-    return () => window.removeEventListener('beforeunload', warn)
-  }, [saveState.dirty, saveState.saving])
+  useFragmentNavigationGuard(autosave)
 
   useEffect(() => {
     // 目录到达后，把旧 Kie/方舟 id 换成后台默认视频模型

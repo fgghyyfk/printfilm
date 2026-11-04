@@ -307,13 +307,14 @@ def _extract_task_quota(payload: dict[str, Any], usage: dict[str, Any] | None) -
             continue
         for key in ("quota", "quota_consumed", "consumed_quota"):
             raw = block.get(key)
-            if raw is None:
+            if raw is None or isinstance(raw, bool):
                 continue
             try:
                 value = int(raw)
-            except (TypeError, ValueError):
+                numeric = float(raw)
+            except (TypeError, ValueError, OverflowError):
                 continue
-            if value > 0:
+            if value >= 0 and numeric == value:
                 return value
     return None
 
@@ -358,7 +359,7 @@ def _build_task_result_from_payload(data: dict[str, Any]) -> TaskResult:
         from app.services.tokenfree_usage import quota_to_cost_fen
 
         cost = quota_to_cost_fen(quota)
-        if cost > 0:
+        if cost >= 0:
             upstream_cost_fen = cost
             merged_usage = dict(raw_usage or {})
             merged_usage["quota"] = quota

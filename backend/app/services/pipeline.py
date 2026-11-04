@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
@@ -58,7 +60,9 @@ logger = logging.getLogger(__name__)
 # 成片 FFmpeg 被 SIGTERM 打断时的自动重试次数
 _COMPOSE_SIGTERM_MAX_ATTEMPTS = 3
 
-_cancelled: set[int] = set()
+_cancelled: set[tuple[int, int]] = set()
+_active_executions: set[tuple[int, int]] = set()
+_execution: ContextVar[tuple[int, int] | None] = ContextVar("kepu_execution", default=None)
 
 
 async def _record_usage_est(
@@ -176,14 +180,29 @@ class PipelineCancelled(Exception):
     """Raised when user cancels a running pipeline."""
 
 
+@contextmanager
+def kepu_execution(project_id: int, task_id: int):
+    """取消信号只属于真实执行；退出不清除其他在途单镜的信号。"""
+    key = (project_id, task_id)
+    token = _execution.set(key)
+    _active_executions.add(key)
+    try:
+        yield
+    finally:
+        _active_executions.discard(key)
+        _cancelled.discard(key)
+        _execution.reset(token)
+
+
 def cancel_pipeline(project_id: int) -> bool:
-    """标记项目取消；流水线由任务平台 executor 驱动，无进程内任务可停，恒返回 False。"""
-    _cancelled.add(project_id)
+    """排队任务由数据库取消状态保护；内存信号仅通知已进入 handler 的执行。"""
+    _cancelled.update(key for key in _active_executions if key[0] == project_id)
     return False
 
 
 def is_cancelled(project_id: int) -> bool:
-    return project_id in _cancelled
+    key = _execution.get()
+    return bool(key and key[0] == project_id and key in _cancelled)
 
 
 def _is_image_text(project: Project) -> bool:
@@ -295,13 +314,12 @@ def _kepu_video_prompt(
 
 async def _ensure_not_cancelled(project_id: int) -> None:
     if is_cancelled(project_id):
-        raise PipelineCancelled(f"project {project_id} cancelled")
+        raise PipelineCancelled("任务已取消")
     # Cross-process (Celery worker): cancel API writes CANCELLED to DB
     async with AsyncSessionLocal() as db:
         project = await db.get(Project, project_id)
         if project and project.status == ProjectStatus.CANCELLED:
-            _cancelled.add(project_id)
-            raise PipelineCancelled(f"project {project_id} cancelled")
+            raise PipelineCancelled("任务已取消")
 
 
 def _full_narration_path(project_id: int) -> Path:
@@ -535,12 +553,12 @@ async def run_pipeline(project_id: int, *, phase: str | None = None, restart: bo
         if requested == "compose":
             await _compose_stage(project_id)
             if is_cancelled(project_id):
-                raise PipelineCancelled(f"project {project_id} cancelled")
+                raise PipelineCancelled("任务已取消")
             async with AsyncSessionLocal() as db:
                 project = await db.get(Project, project_id)
                 if project:
                     if project.status == ProjectStatus.CANCELLED:
-                        raise PipelineCancelled(f"project {project_id} cancelled")
+                        raise PipelineCancelled("任务已取消")
                     project.status = ProjectStatus.DONE
                     project.progress = 100
                     project.error_msg = None
@@ -587,13 +605,13 @@ async def run_pipeline(project_id: int, *, phase: str | None = None, restart: bo
         await _compose_stage(project_id)
 
         if is_cancelled(project_id):
-            raise PipelineCancelled(f"project {project_id} cancelled")
+            raise PipelineCancelled("任务已取消")
 
         async with AsyncSessionLocal() as db:
             project = await db.get(Project, project_id)
             if project:
                 if project.status == ProjectStatus.CANCELLED:
-                    raise PipelineCancelled(f"project {project_id} cancelled")
+                    raise PipelineCancelled("任务已取消")
                 project.status = ProjectStatus.DONE
                 project.progress = 100
                 project.error_msg = None
@@ -602,7 +620,13 @@ async def run_pipeline(project_id: int, *, phase: str | None = None, restart: bo
             project_id,
             {"event": "done", "percent": 100, "video_url": await _final_url(project_id)},
         )
-    except (PipelineCancelled, asyncio.CancelledError):
+    except (PipelineCancelled, asyncio.CancelledError) as exc:
+        from app.services.tasks.scheduler import _planned_stop_task_ids
+
+        execution = _execution.get()
+        if isinstance(exc, asyncio.CancelledError) and execution and execution[1] in _planned_stop_task_ids:
+            # 正常停服由任务恢复边界接管，不能写成用户取消导致恢复后再次自我取消。
+            raise
         # 落项目态、推 SSE 后必须 re-raise：本函数由任务平台 executor 驱动，
         # 吞掉会让 TaskRun 误判 succeeded 扣费，并破坏 asyncio 任务取消语义。
         logger.info("pipeline cancelled project=%s", project_id)
@@ -671,8 +695,6 @@ async def run_pipeline(project_id: int, *, phase: str | None = None, restart: bo
             },
         )
         raise
-    finally:
-        _cancelled.discard(project_id)
 
 
 async def _final_url(project_id: int) -> str | None:
@@ -1593,7 +1615,21 @@ async def _run_ffmpeg_compose_with_retry(project_id: int, work) -> None:
     last_exc: BaseException | None = None
     for attempt in range(1, _COMPOSE_SIGTERM_MAX_ATTEMPTS + 1):
         try:
-            await asyncio.to_thread(work)
+            worker = asyncio.create_task(asyncio.to_thread(work))
+            try:
+                await asyncio.shield(worker)
+            except asyncio.CancelledError:
+                # 取消 await 不会停止 FFmpeg 线程；真实写入退出前保持任务忙碌。
+                while not worker.done():
+                    try:
+                        await asyncio.shield(worker)
+                    except asyncio.CancelledError:
+                        continue
+                    except Exception:
+                        break
+                if not worker.cancelled():
+                    worker.exception()  # 取消优先，取走线程异常，避免脱离任务的未处理错误。
+                raise
             return
         except FfmpegInterrupted as exc:
             last_exc = exc

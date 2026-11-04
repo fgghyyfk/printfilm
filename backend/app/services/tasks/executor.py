@@ -18,6 +18,20 @@ logger = logging.getLogger(__name__)
 
 # 执行单个任务并回写平台状态。
 async def execute_task_run(task_id: int) -> None:
+    """连同预扣阶段一起处理取消；原会话退出回滚后才恢复任务。"""
+    try:
+        await _execute_task_run(task_id)
+    except asyncio.CancelledError:
+        from app.services.tasks.scheduler import _planned_stop_task_ids
+
+        async with AsyncSessionLocal() as db:
+            task = await get_task_for_runtime(db, task_id)
+            if task:
+                await _requeue_interrupted_task(db, task, count_recovery=task_id not in _planned_stop_task_ids)
+        raise
+
+
+async def _execute_task_run(task_id: int) -> None:
     async with AsyncSessionLocal() as db:
         task = await get_task_for_runtime(db, task_id)
         if not task:
@@ -116,12 +130,6 @@ async def execute_task_run(task_id: int) -> None:
                     await _fail_task(db, task, RuntimeError(err_text))
                     return
                 await _complete_task(db, task, result or {"ok": True})
-    except asyncio.CancelledError:
-        async with AsyncSessionLocal() as db:
-            task = await get_task_for_runtime(db, task_id)
-            if task:
-                await _requeue_interrupted_task(db, task)
-        raise
     except Exception as exc:  # noqa: BLE001
         logger.exception("task execution failed task_id=%s", task_id)
         async with AsyncSessionLocal() as db:
@@ -428,7 +436,7 @@ async def _requeue_video_download(db, task, result: dict) -> None:
 
 
 # 应用重启或热更新中断时，把任务重新放回待执行状态。
-async def _requeue_interrupted_task(db, task) -> None:
+async def _requeue_interrupted_task(db, task, *, count_recovery: bool = True) -> None:
     from app.services.tasks.recovery import recover_interrupted_task
 
-    await recover_interrupted_task(db, int(task.id))
+    await recover_interrupted_task(db, int(task.id), count_recovery=count_recovery)

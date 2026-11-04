@@ -11,7 +11,7 @@ from app.services.tasks.service import append_task_event, set_task_step_state, t
 
 
 async def recover_interrupted_task(db, task_id: int, *, stale_clause=None, job_alive=None,
-                                   event_type: str = "task.requeued") -> bool:
+                                   event_type: str = "task.requeued", count_recovery: bool = True) -> bool:
     """逐任务锁内重核后恢复；第三次中断失败，已提交费用通过标准失败路径结算。"""
     from app.services.tasks.executor import _mark_cancelled
 
@@ -65,7 +65,7 @@ async def recover_interrupted_task(db, task_id: int, *, stale_clause=None, job_a
         return True
 
     # 两入口共享累计次数；兼容旧表中曾写入的 NULL。
-    task.recovery_count = int(task.recovery_count or 0) + 1
+    task.recovery_count = int(task.recovery_count or 0) + int(count_recovery)
     limit = max(1, int(get_settings().task_runtime_max_recoveries))
     payload = dict(task.payload or {}) if isinstance(task.payload, dict) else {}
     provider_id = str(task.provider_task_id or payload.get("provider_task_id") or "").strip()
@@ -76,7 +76,7 @@ async def recover_interrupted_task(db, task_id: int, *, stale_clause=None, job_a
     task.lease_token = None
     task.lease_until = None
     task.next_action_at = None
-    if task.recovery_count >= limit:
+    if count_recovery and task.recovery_count >= limit:
         await _fail_recovered_task(db, task, f"任务执行中断已达 {limit} 次，已停止重试，按实际用量结算并退回剩余冻结金额")
         return True
     if provider_id and not ((task.domain == "drama" and task.task_type in {"fragment_video", "asset_video"})

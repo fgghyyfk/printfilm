@@ -36,6 +36,12 @@ async def test_privacy_fallback_keeps_actual_tts_once_and_changes_cache_with_tex
     assert shot.tts_metadata['audio_url'] == first
     await fallback.ensure_privacy_audio(project.id, shot.id)
     assert ark.tts_with_result.await_count == 1
+    shot.audio_url = None
+    shot.tts_metadata = None
+    await db_session.commit()
+    await fallback.ensure_privacy_audio(project.id, shot.id)
+    assert shot.audio_url == first
+    assert ark.tts_with_result.await_count == 1
     shot.narration = "改过的本镜旁白"
     await db_session.commit()
     await fallback.ensure_privacy_audio(project.id, shot.id)
@@ -46,3 +52,37 @@ async def test_privacy_fallback_keeps_actual_tts_once_and_changes_cache_with_tex
     await db_session.commit()
     await fallback.ensure_privacy_audio(project.id, shot.id)
     assert ark.tts_with_result.await_count == 2
+
+
+async def test_edit_one_privacy_shot_does_not_repay_unchanged_sibling(db_session, tmp_path, monkeypatch):
+    from app.api.projects import update_shot
+    from app.models import Shot
+    from app.schemas import ShotUpdate
+    user, project, first = await seed_project(db_session)
+    project.pipeline_mode = 'full'
+    first.video_skip_reason = 'privacy'
+    second = Shot(project_id=project.id, shot_no=2, narration='第二镜旁白', image_url='/static/sibling.png', video_skip_reason='privacy')
+    db_session.add(second)
+    await db_session.commit()
+    source = tmp_path / 'tts.mp3'; source.write_bytes(b'audible')
+    ark = SimpleNamespace(tts_with_result=AsyncMock(return_value=TTSResult(str(source), 'edge', 'test', True)))
+    monkeypatch.setattr(get_settings(), 'kepu_seedance_native_audio', True)
+    monkeypatch.setattr(fallback, 'AsyncSessionLocal', lambda: _same_session(db_session))
+    monkeypatch.setattr(pipeline, '_ensure_not_cancelled', AsyncMock())
+    monkeypatch.setattr(pipeline, '_project_voice', lambda _: 'voice-a')
+    monkeypatch.setattr('app.services.ark.get_ark', lambda: ark)
+    monkeypatch.setattr(storage, 'project_dir', lambda _: tmp_path)
+    monkeypatch.setattr(storage, 'local_path_from_url', lambda url: __import__('pathlib').Path(url))
+    monkeypatch.setattr(storage, 'publish_local', str)
+    monkeypatch.setattr(fallback, 'is_near_silent_audio', lambda _: False)
+    await fallback.ensure_privacy_audio(project.id, first.id)
+    await fallback.ensure_privacy_audio(project.id, second.id)
+    assert ark.tts_with_result.await_count == 2
+    sibling_audio = second.audio_url
+    await update_shot(project.id, first.id, ShotUpdate(narration='只修改第一镜旁白'), db_session, user)
+    assert first.video_skip_reason == second.video_skip_reason == 'privacy'
+    assert second.audio_url == sibling_audio
+    await fallback.ensure_privacy_audio(project.id, second.id)
+    assert ark.tts_with_result.await_count == 2
+    await fallback.ensure_privacy_audio(project.id, first.id)
+    assert ark.tts_with_result.await_count == 3

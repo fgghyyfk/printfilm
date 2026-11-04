@@ -169,15 +169,16 @@ async def _run_drama_seed_assets(task: TaskRun) -> dict[str, Any] | None:
 # 执行科普可取消子流程：项目已被用户请求取消时，PipelineCancelled 收敛为
 # {"cancelled": True}（executor 据此落取消态并退回冻结）；其余异常照常抛出。
 async def _await_kepu(task: TaskRun, aw: Awaitable[Any], **extra: Any) -> dict[str, Any]:
-    from app.services.pipeline import PipelineCancelled
+    from app.services.pipeline import PipelineCancelled, kepu_execution
 
-    try:
-        await aw
-    except PipelineCancelled:
-        if task.cancel_requested:
-            return {"cancelled": True, "project_id": task.project_id, **extra}
-        raise
-    return {"ok": True, "project_id": task.project_id, **extra}
+    with kepu_execution(int(task.project_id), int(getattr(task, "id", id(task)))):
+        try:
+            await aw
+        except PipelineCancelled:
+            if task.cancel_requested:
+                return {"cancelled": True, "project_id": task.project_id, **extra}
+            raise
+        return {"ok": True, "project_id": task.project_id, **extra}
 
 
 # 执行科普分阶段流水线（严格按 payload.phase 预扣对应阶段）。

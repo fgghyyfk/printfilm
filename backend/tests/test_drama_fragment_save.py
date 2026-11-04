@@ -135,6 +135,10 @@ async def committed_episode(db_session):
         await db.commit()
         yield engine, user, project, ep, rows
     async with AsyncSession(engine) as cleanup:
+        from app.models_tasks import TaskRun
+        from app.models import WalletLedger
+        await cleanup.execute(delete(TaskRun).where(TaskRun.requested_by == user.id))
+        await cleanup.execute(delete(WalletLedger).where(WalletLedger.user_id == user.id))
         await cleanup.execute(delete(UsageEvent).where(UsageEvent.user_id == user.id))
         await cleanup.execute(delete(User).where(User.id == user.id))
         await cleanup.commit()
@@ -456,3 +460,73 @@ def test_missing_or_negative_revision_is_rejected_before_save():
     for body in [{'fragments': []}, {'fragments': [], 'revision': -1}]:
         with pytest.raises(ValidationError):
             DramaSaveFragmentsRequest.model_validate(body)
+
+
+async def test_concurrent_generate_same_fragment_has_one_task_commitment(committed_episode, monkeypatch):
+    """报价屏障模拟两个请求同时通过最初只读检查，入队边界只能有一个成功。"""
+    from app.api.drama.episodes import generate_episode
+    from app.schemas_drama import DramaGenerateRequest
+    from app.models_tasks import TaskRun
+    from app.services.billing import estimates
+    engine, user, _, ep, rows = committed_episode
+    arrived, both = 0, asyncio.Event()
+    async def estimate(*_args, **_kwargs):
+        nonlocal arrived
+        arrived += 1
+        if arrived == 2: both.set()
+        await both.wait()
+        return 100
+    monkeypatch.setattr(estimates, 'estimate_task_fen', estimate)
+    monkeypatch.setattr('app.services.drama.fragment_video_quote.estimate_task_fen', estimate)
+    async def attempt():
+        async with AsyncSession(engine, expire_on_commit=False) as db:
+            try:
+                return await generate_episode(ep.id, DramaGenerateRequest(fragment_ids=[rows[0].id]), db, user)
+            except HTTPException as exc:
+                await db.rollback()
+                return exc
+    results = await asyncio.wait_for(asyncio.gather(attempt(), attempt()), timeout=10)
+    assert sum(isinstance(value, HTTPException) and value.status_code == 409 for value in results) == 1
+    async with AsyncSession(engine) as db:
+        tasks = list(await db.scalars(select(TaskRun).where(TaskRun.fragment_id == rows[0].id, TaskRun.task_type == 'fragment_video')))
+        assert len(tasks) == 1 and tasks[0].billing_estimate_fen == 100
+
+
+@pytest.mark.parametrize('change', ['delete_fragment', 'link_setting'])
+async def test_generate_rechecks_content_during_quote_before_lock(committed_episode, monkeypatch, change):
+    from app.api.drama import episodes as api
+    from app.schemas_drama import DramaGenerateRequest
+    from app.models_tasks import TaskRun
+    engine, user, project, ep, rows = committed_episode
+    async with AsyncSession(engine) as db:
+        current = await db.get(DramaProject, project.id)
+        current.params = {'linkLastFrame': False}
+        await db.commit()
+    entered, resume = asyncio.Event(), asyncio.Event()
+    original = api.quote_fragment_videos
+    async def quote(*args, **kwargs):
+        entered.set()
+        await resume.wait()
+        return await original(*args, **kwargs)
+    monkeypatch.setattr(api, 'quote_fragment_videos', quote)
+    async def attempt():
+        async with AsyncSession(engine, expire_on_commit=False) as db:
+            try:
+                return await api.generate_episode(ep.id, DramaGenerateRequest(fragment_ids=[rows[0].id]), db, user)
+            except HTTPException as exc:
+                await db.rollback()
+                return exc
+    job = asyncio.create_task(attempt())
+    await entered.wait()
+    async with AsyncSession(engine) as db:
+        if change == 'delete_fragment':
+            await db.execute(delete(DramaEpisodeFragment).where(DramaEpisodeFragment.id == rows[0].id))
+        else:
+            current = await db.get(DramaProject, project.id)
+            current.params = {'linkLastFrame': True}
+        await db.commit()
+    resume.set()
+    result = await asyncio.wait_for(job, 10)
+    assert isinstance(result, HTTPException) and result.status_code == 409
+    async with AsyncSession(engine) as db:
+        assert not list(await db.scalars(select(TaskRun).where(TaskRun.episode_id == ep.id)))

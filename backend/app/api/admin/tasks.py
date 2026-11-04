@@ -9,8 +9,9 @@ from app.config import get_settings
 from app.database import get_db
 from app.deps import get_current_admin
 from app.models import UsageEvent, User
+from app.models_tasks import TaskRun
 from app.schemas import PageMeta
-from app.schemas_tasks import AdminTaskEventListOut, AdminTaskListOut, AdminTaskRunOut, AdminTaskStatsOut, AdminUsageEventBriefOut, TaskRunOut
+from app.schemas_tasks import AdminTaskBillingReviewRequest, AdminTaskEventListOut, AdminTaskListOut, AdminTaskRunOut, AdminTaskStatsOut, AdminUsageEventBriefOut, TaskRunOut
 from app.services.billing.display import billing_basis_label, resolve_billing_basis
 from app.services.tasks.admin_events import AdminEventSummary, list_admin_task_events, load_admin_event_summaries
 from app.services.tasks.runtime import runtime_summary
@@ -183,3 +184,166 @@ async def admin_cancel_task(
     usage_lines = await _load_usage_lines(db, task.id)
     summary = (await load_admin_event_summaries(db, [task.id], include_recent=True))[task.id]
     return _task_to_admin_out(task, email, usage_lines, event_summary=summary)
+
+
+async def _review_lock(db: AsyncSession, statement):
+    """人工核对宁可短暂冲突重试，也不持新锁等待旧执行器的相反锁序。"""
+    from sqlalchemy.exc import DBAPIError
+
+    try:
+        return (await db.scalars(statement.with_for_update(nowait=True)
+                                 .execution_options(populate_existing=True))).first()
+    except DBAPIError as exc:
+        if getattr(exc.orig, 'sqlstate', None) == '55P03':
+            await db.rollback()
+            raise HTTPException(status_code=409, detail='任务或钱包正在处理，请稍后重试核对') from exc
+        raise
+
+
+async def _close_review_business_state(db: AsyncSession, task: TaskRun) -> None:
+    """只结束当前目标的本地生成展示，已有新任务时不覆盖新状态或媒体。"""
+    from sqlalchemy import or_
+    from app.services.tasks.service import ACTIVE_TASK_STATUSES
+    from app.services.tasks.executor import _fail_drama_asset_generation_if_needed, _fail_kepu_project_if_needed
+
+    scope = None
+    if task.domain == 'kepu' and task.project_id:
+        scope = TaskRun.project_id == task.project_id
+    elif task.domain == 'drama' and task.fragment_id:
+        scope = TaskRun.fragment_id == task.fragment_id
+    elif task.domain == 'drama' and task.asset_id:
+        scope = TaskRun.asset_id == task.asset_id
+    if scope is None:
+        return
+    other = await db.scalar(select(TaskRun.id).where(
+        scope, TaskRun.id != task.id,
+        or_(TaskRun.id > task.id, TaskRun.status.in_(tuple(ACTIVE_TASK_STATUSES))),
+    ).limit(1))
+    if other is not None:
+        return
+    if task.domain == 'kepu':
+        await _fail_kepu_project_if_needed(db, task)
+    elif task.fragment_id:
+        from app.models_drama import DramaEpisodeFragment
+        from app.services.drama.fragment_editing import patch_fragment_params
+        from app.services.drama.generation import build_failed_generation_params
+
+        fragment = await _review_lock(db, select(DramaEpisodeFragment).where(DramaEpisodeFragment.id == task.fragment_id))
+        if fragment:
+            await patch_fragment_params(db, fragment, {'generation': build_failed_generation_params(
+                (fragment.params or {}).get('generation'), task.error_message,
+            )})
+    elif task.asset_id:
+        from app.models_drama import DramaAsset
+        await _review_lock(db, select(DramaAsset).where(DramaAsset.id == task.asset_id))
+        await _fail_drama_asset_generation_if_needed(db, task, task.error_message)
+
+
+@router.post('/tasks/{task_id}/billing-review', response_model=AdminTaskRunOut)
+async def admin_review_task_billing(
+    task_id: int,
+    body: 'AdminTaskBillingReviewRequest',
+    _admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+) -> AdminTaskRunOut:
+    """人工核定未记账费用后结束本地处理；不改变上游任务或已有用量。"""
+    import json
+    from app.models import WalletLedger
+    from app.services.billing.ephemeral import durable_voice_request_alive
+    from app.services.billing.settlement import PreparedTaskSettlements, settle_task, finish_prepared_task_settlements
+    from app.services.billing.usage import prepare_confirmed_cost_line
+    from app.services.tasks import scheduler, poller
+    from app.services.tasks.service import append_task_event, task_finalizing_window_open
+
+    if not body.final_cost_confirmed or not body.note.strip():
+        raise HTTPException(status_code=422, detail='请明确确认最终费用并填写核对依据')
+    audit_note = json.dumps({'admin_id': _admin.id, 'missing_cost_fen': body.missing_cost_fen,
+                             'note': body.note.strip()}, ensure_ascii=False)
+    if len(audit_note) > 255:
+        raise HTTPException(status_code=422, detail='核对依据过长，请精简后重试')
+    # 先判断适用性，再沿创作 API 的目标→Task→钱包顺序尝试拿锁。
+    # 旧执行器可能有相反锁序，因此所有新增等待使用 NOWAIT 并回滚返回 409。
+    probe = await db.get(TaskRun, task_id)
+    expected_review = bool(probe and probe.status == 'awaiting_review' and probe.billing_status in {'frozen', 'skipped', 'none'})
+    if expected_review and probe.domain == 'kepu' and probe.project_id:
+        from app.models import Project
+        await _review_lock(db, select(Project).where(Project.id == probe.project_id))
+    elif expected_review and probe.domain == 'drama' and probe.episode_id:
+        from app.models_drama import DramaEpisode
+        await _review_lock(db, select(DramaEpisode).where(DramaEpisode.id == probe.episode_id))
+    task = await _review_lock(db, select(TaskRun).where(TaskRun.id == task_id))
+    if not task:
+        raise HTTPException(status_code=404, detail='任务不存在')
+    prior = (await db.scalars(select(WalletLedger).where(
+        WalletLedger.kind == 'billing_review', WalletLedger.ref_type == 'task_billing_review',
+        WalletLedger.ref_id == str(task_id),
+    ))).first()
+    if prior:
+        record = json.loads(prior.note)
+        if record['missing_cost_fen'] != body.missing_cost_fen or record['note'] != body.note.strip():
+            raise HTTPException(status_code=409, detail='本任务已按另一份核对结果结算，请刷新查看')
+        await db.commit()
+        return await admin_get_task(task_id, _admin, db)
+    if not expected_review or task.status != 'awaiting_review' or task.billing_status not in {'frozen', 'skipped', 'none'}:
+        raise HTTPException(status_code=409, detail='只能处理尚未结算的待核对任务')
+    now = datetime.now(UTC)
+    lease = task.lease_until
+    if lease and lease.tzinfo is None:
+        lease = lease.replace(tzinfo=UTC)
+    cancel_job = scheduler._cancel_jobs.get(task_id)
+    if (scheduler._job_alive(task_id) or (cancel_job and not cancel_job.done())
+            or task_id in poller._poll_inflight or durable_voice_request_alive(task_id)
+            or task_finalizing_window_open(task) or (lease and lease > now)):
+        raise HTTPException(status_code=409, detail='本地请求或收尾仍在执行，请等待其退出后核对')
+    # UsageEvent 的 User 外键也会加 KEY SHARE；先锁钱包，避免两个任务同时升级锁死锁。
+    owner = await _review_lock(db, select(User).where(User.id == task.requested_by))
+    events = list(await db.scalars(select(UsageEvent).where(
+        UsageEvent.task_run_id == task_id, UsageEvent.settled.is_(False),
+    )))
+    if body.missing_cost_fen:
+        usage = prepare_confirmed_cost_line(
+            user_id=task.requested_by, task_run_id=task_id, cost_fen=body.missing_cost_fen,
+            billing_key='manual_review', domain=task.domain, provider='manual_review',
+            raw={'billing_basis': 'manual_review'}, project_id=task.project_id,
+            drama_project_id=task.drama_project_id, shot_id=task.shot_id,
+        )
+        db.add(usage)
+        await db.flush()
+        events.append(usage)
+    # 私有依据仅存在管理员账本中；用户事件只表达核对和本地结束。
+    task.result_payload = {k: v for k, v in (task.result_payload or {}).items() if k not in {
+        'video_billing_pending', 'video_submission_pending', 'tts_billing_pending', 'voice_billing_reservation',
+    }}
+    task.result_payload = {**task.result_payload, 'billing_review_resolved': True}
+    task.status = 'failed'
+    from app.models_tasks import TaskStep
+    from sqlalchemy import update
+
+    await db.execute(update(TaskStep).where(
+        TaskStep.task_id == task_id, TaskStep.status.not_in(('done', 'failed', 'cancelled')),
+    ).values(status='failed', finished_at=now, next_poll_at=None,
+             error_code='billing_review_resolved', error_message='费用已核对，本地处理结束'))
+    task.current_step_status = 'failed'
+    task.error_code = 'billing_review_resolved'
+    task.error_message = '费用已核对，本地任务已结束；原上游任务及已有媒体保留'
+    task.finished_at = now
+    task.next_action_at = task.lease_until = task.lease_token = None
+    await db.flush()
+    prepared = PreparedTaskSettlements(event_ids={task_id: {int(event.id) for event in events}}, newapi_logs={task_id: []})
+    await settle_task(db, task_id, prepared_settlements=prepared)
+    owner = await db.get(User, task.requested_by)
+    db.add(WalletLedger(user_id=task.requested_by, delta_fen=0, balance_after=owner.balance_fen,
+                        kind='billing_review', ref_type='task_billing_review', ref_id=str(task_id),
+                        note=audit_note))
+    await _close_review_business_state(db, task)
+    if task.domain == 'studio' and task.task_type == 'tool_video' and task.provider_task_id:
+        from app.services.studio_tools import update_tool_run_task
+
+        await update_tool_run_task(db, task.requested_by, task.provider_task_id, {
+            'status': 'failed', 'error': task.error_message,
+        }, billing_task_id=task_id)
+    await append_task_event(db, task_id, event_type='task.billing_review_resolved', status=task.status,
+                            message='管理员已核对费用并完成结算，原任务记录已保留')
+    await db.commit()
+    await finish_prepared_task_settlements(db, prepared)
+    return await admin_get_task(task_id, _admin, db)

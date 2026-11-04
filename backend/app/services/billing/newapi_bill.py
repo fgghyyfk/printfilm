@@ -164,7 +164,8 @@ def _provider_task_id(event: UsageEvent) -> str:
 
 def _already_billed(event: UsageEvent) -> bool:
     raw = _load_raw(event)
-    return raw.get("newapi_log_id") is not None or raw.get("billing_basis") == "newapi_log"
+    return (raw.get("newapi_log_id") is not None or raw.get("billing_basis") in {"newapi_log", "manual_review"}
+            or (raw.get("billing_basis") == "upstream_cost" and (raw.get("usage") or {}).get("cost_fen") == 0))
 
 
 def _load_raw(event: UsageEvent) -> dict[str, Any]:

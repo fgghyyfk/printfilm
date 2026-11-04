@@ -58,7 +58,7 @@ async def test_await_kepu_success_payload() -> None:
 def test_run_pipeline_reraises_after_cancel_side_effects() -> None:
     """源码守卫：run_pipeline 取消分支落库/推 SSE 后必须 re-raise（旧实现吞异常致误扣费）。"""
     source = inspect.getsource(pipeline.run_pipeline)
-    cancel_block = source.split("except (PipelineCancelled, asyncio.CancelledError):")[-1]
+    cancel_block = source.split("except (PipelineCancelled, asyncio.CancelledError) as exc:")[-1]
     cancel_block = cancel_block.split("except Exception", 1)[0]
     assert "raise" in cancel_block
 
@@ -115,3 +115,23 @@ async def test_regen_image_does_not_revive_cancelled_project(
     ).scalar_one()
     assert status == ProjectStatus.CANCELLED  # 未复活
     record.assert_awaited_once()  # 上游真实成本仍记账
+
+
+async def test_queued_cancel_never_enters_handler_and_retry_has_no_signal(db_session, monkeypatch):
+    from app.api import projects
+    from app.services.tasks import executor
+    from tests.test_kepu_task_recovery import seed_project, call_regen
+    from tests.conftest import make_task
+    user, project, _ = await seed_project(db_session)
+    task = await make_task(db_session, user, domain='kepu', task_type='project_compose_only')
+    task.project_id = project.id
+    await db_session.commit()
+    await projects.cancel_project(project.id, db_session, user)
+    monkeypatch.setattr(executor, 'AsyncSessionLocal', lambda: _same_session(db_session))
+    await executor.execute_task_run(task.id)
+    await db_session.refresh(task)
+    assert task.status == 'cancelled'
+    await projects.compose_only(project.id, db_session, user)
+    async def retry():
+        assert not pipeline.is_cancelled(project.id)
+    await _await_kepu(SimpleNamespace(id=task.id + 1, project_id=project.id, cancel_requested=False), retry())
