@@ -131,6 +131,7 @@ async def test_parallel_videos_does_not_resubmit_skipped_shot(
     )
     with (
         patch.object(pipeline, "AsyncSessionLocal", lambda: _same_session(db_session)),
+        patch("app.services.kepu_privacy_audio.AsyncSessionLocal", lambda: _same_session(db_session)),
         patch.object(pipeline, "publish_progress", _collect),
         patch.object(pipeline, "get_ark", return_value=ark),
     ):

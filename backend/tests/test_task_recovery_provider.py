@@ -78,6 +78,7 @@ async def test_recovered_provider_uses_existing_get_and_download_only(recovery_s
     monkeypatch.setattr(poller, "AsyncSessionLocal", session)
     monkeypatch.setattr(executor, "AsyncSessionLocal", session)
     monkeypatch.setattr("app.services.drama.jobs.AsyncSessionLocal", session)
+    monkeypatch.setattr("app.database.AsyncSessionLocal", session)
     if kind == "fragment_video":
         await poller._select_and_poll_due()
         download.assert_not_awaited()

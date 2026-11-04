@@ -78,6 +78,7 @@ async def test_narration_edit_invalidates_continuous_audio(
         "app.services.storage.project_dir", lambda _pid: tmp_path
     )
 
+    await db_session.flush()  # 模拟请求开始前已持久化的历史项目/镜头。
     await update_shot(
         project.id,
         shot1.id,
@@ -124,6 +125,7 @@ async def test_full_payload_preserves_existing_media(
         fields[edited_field] = "新的叠字"
     media = (shot.image_url, shot.image_ark_url, shot.video_url, shot.last_frame_url, shot.audio_url)
 
+    await db_session.flush()  # 模拟请求开始前已持久化的历史项目/镜头。
     await update_shot(project.id, shot.id, ShotUpdate(**fields), db=db_session, user=user)
 
     assert (shot.image_url, shot.image_ark_url, shot.video_url, shot.last_frame_url, shot.audio_url) == media
@@ -152,6 +154,7 @@ async def test_frontend_narration_sync_preserves_legacy_video(
     fields.update(segment_script=script, video_prompt=script)
     media = (shot.image_url, shot.image_ark_url, shot.video_url, shot.last_frame_url)
 
+    await db_session.flush()  # 模拟请求开始前已持久化的历史项目/镜头。
     await update_shot(project.id, shot.id, ShotUpdate(**fields), db=db_session, user=user)
 
     assert (shot.image_url, shot.image_ark_url, shot.video_url, shot.last_frame_url) == media
@@ -202,6 +205,7 @@ async def test_video_fields_invalidate_only_on_change(
     if changed:
         value = {"duration": 6.0, "camera": "zoom in"}.get(field, f"{value}\n镜头推进到主体特写")
 
+    await db_session.flush()  # 模拟请求开始前已持久化的历史项目/镜头。
     await update_shot(project.id, shot.id, ShotUpdate(**{field: value}), db=db_session, user=user)
 
     assert (shot.image_url, shot.image_ark_url) == before[:2]
@@ -225,6 +229,7 @@ async def test_avatar_edit_keeps_existing_invalidation_rules(
     if field:
         fields[field] = "更新后的文字"
 
+    await db_session.flush()  # 模拟请求开始前已持久化的历史项目/镜头。
     await update_shot(project.id, shot.id, ShotUpdate(**fields), db=db_session, user=user)
 
     assert shot.image_url == (project.avatar_image_url if field == "img_prompt" else before[0])

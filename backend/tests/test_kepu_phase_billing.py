@@ -23,6 +23,8 @@ def _shot(**kwargs):
         "audio_url": None,
         "video_url": None,
         "duration": 10.0,
+        "narration": "",
+        "video_skip_reason": None,
     }
     defaults.update(kwargs)
     return SimpleNamespace(**defaults)
@@ -34,6 +36,8 @@ def _project(shots, pipeline_mode="full", project_id=1, resolution_mode="preview
         shots=shots,
         pipeline_mode=pipeline_mode,
         resolution_mode=resolution_mode,
+        template=None,
+        voice_id="",
     )
 
 
@@ -56,12 +60,13 @@ def test_resolve_phase_videos_after_assets(monkeypatch) -> None:
 
 
 def test_resolve_phase_videos_when_continuous_audio_ok(monkeypatch) -> None:
-    """整片旁白文件就绪但 shot.audio_url 为空时，应与 pipeline 一样进入 videos。"""
+    """已绑定整片旁白的分镜与缓存文件均就绪时进入 videos。"""
     monkeypatch.setattr(
         "app.services.kepu_stages.continuous_narration_ok",
         lambda _pid: True,
     )
-    shots = [_shot(image_url="/i.png") for _ in range(3)]
+    monkeypatch.setattr(get_settings(), "kepu_seedance_native_audio", False)
+    shots = [_shot(image_url="/i.png", audio_url="/static/full_narration.mp3") for _ in range(3)]
     assert resolve_kepu_billing_phase(_project(shots)) == "videos"
 
 

@@ -38,6 +38,9 @@ def _task_ns(payload: object, *, status: str = "cancel_requested") -> SimpleName
     return SimpleNamespace(
         id=11,
         payload=payload,
+        result_payload={},
+        task_type="local_test",
+        provider_task_id=None,
         status=status,
         steps=[],
         current_step_key="fragment_video",
@@ -173,6 +176,7 @@ async def test_settle_cancelled_after_finalized_returns_false_without_lock() -> 
 async def test_settle_cancelled_after_finalized_marks_done_and_clears_window() -> None:
     locked = SimpleNamespace(
         id=77,
+        result_payload={},
         payload={FINALIZING_UNTIL_KEY: "2026-09-14T12:00:00+00:00", "episode_id": 3},
         status="awaiting_poll",
         cancel_requested=False,
