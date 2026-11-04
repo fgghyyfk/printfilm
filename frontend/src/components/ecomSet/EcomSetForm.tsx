@@ -2,13 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, DragEvent, FormEvent } from 'react'
 import { Loader2 } from 'lucide-react'
 import type { EcomSetOptions, EcomSetPlanPayload } from '../../api/ecomSet'
+import { listToolModels, resolveToolMediaUrl, type ToolModel } from '../../api/tools'
 import { useI18n } from '../../i18n'
 import { ECOM_UPLOAD_ACCEPT, formatFen, validateProductFile } from '../../lib/ecomSet'
 import BillingErrorNotice from '../billing/BillingErrorNotice'
 import Button from '../ui/Button'
 
 /** 表单预填值（重新规划时沿用上次的品名/平台/风格/张数） */
-export type EcomSetFormInitial = Partial<Pick<EcomSetPlanPayload, 'name' | 'platform' | 'style' | 'count' | 'notes'>>
+export type EcomSetFormInitial = Partial<Pick<EcomSetPlanPayload, 'name' | 'platform' | 'style' | 'count' | 'notes' | 'category' | 'scarfSize' | 'modelAssetId'>>
 
 type Props = {
   options: EcomSetOptions
@@ -33,7 +34,25 @@ export default function EcomSetForm({ options, initial, busy, error, onSubmit }:
   const [style, setStyle] = useState(initial?.style || options.styles[0]?.id || '')
   const [count, setCount] = useState(initial?.count || (options.counts.includes(6) ? 6 : options.counts[0] || 6))
   const [notes, setNotes] = useState(initial?.notes || '')
+  /* 丝巾详情页：品类、尺寸、模特（默认选中模特库里的默认模特） */
+  const [category, setCategory] = useState<'general' | 'scarf'>(initial?.category || 'general')
+  const [scarfSize, setScarfSize] = useState(initial?.scarfSize || '88')
+  const [scarfCount, setScarfCount] = useState(initial?.category === 'scarf' && initial.count ? initial.count : 8)
+  const [models, setModels] = useState<ToolModel[] | null>(null)
+  const [modelId, setModelId] = useState<number | null>(initial?.modelAssetId ?? null)
   const [localError, setLocalError] = useState('')
+  const isScarf = category === 'scarf'
+
+  // 选丝巾时加载模特库，未指定则用默认模特
+  useEffect(() => {
+    if (!isScarf || models) return
+    const controller = new AbortController()
+    void listToolModels(controller.signal).then(result => {
+      setModels(result.items)
+      setModelId(current => current ?? result.items.find(item => item.is_default)?.id ?? result.items[0]?.id ?? null)
+    }).catch(() => { if (!controller.signal.aborted) setModels([]) })
+    return () => controller.abort()
+  }, [isScarf, models])
   const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -75,8 +94,10 @@ export default function EcomSetForm({ options, initial, busy, error, onSubmit }:
     if (busy) return
     if (!file) return setLocalError(t('ecomSet.errors.uploadImage'))
     if (!name.trim()) return setLocalError(t('ecomSet.errors.fillName'))
+    if (isScarf && !modelId) return setLocalError(t('ecomSet.form.modelNone'))
     setLocalError('')
-    onSubmit({ file, name: name.trim(), platform, style, count, notes: notes.trim() })
+    onSubmit({ file, name: name.trim(), platform, style, count: isScarf ? scarfCount : count, notes: notes.trim(),
+      category, ...(isScarf ? { scarfSize, modelAssetId: modelId } : {}) })
   }
 
   const platformNames = m.ecomSet.platforms as Record<string, string>
@@ -85,6 +106,17 @@ export default function EcomSetForm({ options, initial, busy, error, onSubmit }:
 
   return (
     <form className="pf-tool-panel pf-ecom-form" onSubmit={submit}>
+      {options.categories?.length ? <div className="pf-tool-field">
+        <span>{t('ecomSet.form.category')}</span>
+        <div className="pf-tool-chips">
+          {options.categories.map((opt) => (
+            <button key={opt.id} type="button" disabled={busy} className={category === opt.id ? 'active' : ''}
+              onClick={() => setCategory(opt.id === 'scarf' ? 'scarf' : 'general')}>{opt.name}</button>
+          ))}
+        </div>
+        {isScarf ? <span className="pf-muted">{t('ecomSet.form.categoryHint')}</span> : null}
+      </div> : null}
+
       <div className="pf-tool-field">
         <span>{t('ecomSet.form.image')}</span>
         <div
@@ -118,6 +150,40 @@ export default function EcomSetForm({ options, initial, busy, error, onSubmit }:
         />
       </label>
 
+      {isScarf ? <>
+        <div className="pf-tool-field">
+          <span>{t('ecomSet.form.scarfSize')}</span>
+          <div className="pf-tool-chips">
+            {(options.scarf_sizes || []).map((opt) => (
+              <button key={opt.id} type="button" disabled={busy} className={scarfSize === opt.id ? 'active' : ''}
+                onClick={() => setScarfSize(opt.id)}>{opt.name}</button>
+            ))}
+          </div>
+        </div>
+        <div className="pf-tool-field">
+          <span>{t('ecomSet.form.model')}</span>
+          {models === null ? <span className="pf-muted"><Loader2 size={14} className="pf-tool-spin" aria-hidden /></span>
+            : models.length ? <div className="pf-ecom-models">
+              {models.map((item) => (
+                <button key={item.id} type="button" disabled={busy} title={item.name || ''}
+                  className={`pf-ecom-model${modelId === item.id ? ' active' : ''}`} aria-pressed={modelId === item.id}
+                  onClick={() => setModelId(item.id)}>
+                  <img src={resolveToolMediaUrl(item.cover || item.url)} alt={item.name || t('ecomSet.form.model')} />
+                  <span>{item.is_default ? t('ecomSet.form.modelDefault') : (item.name || t('ecomSet.form.modelPick'))}</span>
+                </button>
+              ))}
+            </div> : <span className="pf-muted">{t('ecomSet.form.modelNone')}</span>}
+        </div>
+        <div className="pf-tool-field">
+          <span>{t('ecomSet.form.count')}</span>
+          <div className="pf-tool-chips">
+            {(options.scarf_counts || [6, 8, 10]).map((n) => (
+              <button key={n} type="button" disabled={busy} className={scarfCount === n ? 'active' : ''}
+                onClick={() => setScarfCount(n)}>{t('ecomSet.form.countUnit', { count: n })}</button>
+            ))}
+          </div>
+        </div>
+      </> : <>
       <div className="pf-tool-field">
         <span>{t('ecomSet.form.platform')}</span>
         <div className="pf-tool-chips">
@@ -168,6 +234,7 @@ export default function EcomSetForm({ options, initial, busy, error, onSubmit }:
           ))}
         </div>
       </div>
+      </>}
 
       <label className="pf-tool-field">
         <span>{t('ecomSet.form.notes')}</span>

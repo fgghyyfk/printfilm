@@ -294,3 +294,9 @@
     align-items: stretch;
   }
 }
+
+/* 丝巾详情页：模特选择 */
+.pf-ecom-models { display: flex; flex-wrap: wrap; gap: 10px; }
+.pf-ecom-model { display: grid; gap: 4px; width: 88px; padding: 4px; border: 1px solid var(--pf-line, #e4e0db); border-radius: 10px; background: transparent; cursor: pointer; font-size: 12px; color: inherit; }
+.pf-ecom-model img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 7px; }
+.pf-ecom-model.active { border-color: var(--pf-accent, #ff6a3d); box-shadow: 0 0 0 2px color-mix(in srgb, var(--pf-accent, #ff6a3d) 30%, transparent); }

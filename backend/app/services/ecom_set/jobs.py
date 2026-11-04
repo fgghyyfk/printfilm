@@ -96,11 +96,20 @@ async def generate_base(db: AsyncSession, ecom: EcomSet, item: EcomSetItem) -> P
     from app.services.drama.billing_util import record_seedream_image_usage
 
     slot = SLOTS[item.slot]
-    prompt = build_scene_prompt(slot=slot, scene=item.scene, style=ecom.style, blank=item.blank)
+    scarf = scarf_info(ecom)
+    if scarf is not None:
+        from app.services.ecom_set import scarf as scarf_mod
+
+        prompt = scarf_mod.build_prompt(slot_prompt=slot.prompt, scene=item.scene, ref=slot.ref, size=scarf.get("size"))
+        refs = [scarf["model_url"], ecom.product_image_url] if slot.ref == "model" and scarf.get("model_url") \
+            else [ecom.product_image_url]
+    else:
+        prompt = build_scene_prompt(slot=slot, scene=item.scene, style=ecom.style, blank=item.blank)
+        refs = [ecom.product_image_url]
     result = await get_ark().gen_image(
         prompt,
         NEGATIVE_PROMPT,
-        [ecom.product_image_url],
+        refs,
         project_id=0,
         shot_no=ecom.user_id,
         size=GEN_SIZE.get(item.ratio, GEN_SIZE["1:1"]),
@@ -116,11 +125,48 @@ async def generate_base(db: AsyncSession, ecom: EcomSet, item: EcomSetItem) -> P
     url = result.local_url or result.remote_url or ""
     if not url:
         raise RuntimeError("生图未返回图片")
-    return await storage.ensure_local_media(url, dest)
+    path = await storage.ensure_local_media(url, dest)
+    if scarf is not None:
+        path = await asyncio.to_thread(color_fix, path, product)
+    return path
+
+
+# 丝巾详情页的附加信息（尺寸、模特）；通用商品返回 None
+def scarf_info(ecom: EcomSet) -> dict | None:
+    info = (ecom.plan or {}).get("scarf")
+    return info if isinstance(info, dict) else None
+
+
+# 按丝巾平铺图自动校色（只修正接近丝巾主色的像素）；未校色时原样返回
+def color_fix(path: Path, product: Path) -> Path:
+    from app.services.color_match import match_colors_file
+
+    out = path.with_name(path.stem + "_cm.jpg")
+    try:
+        stats = match_colors_file(path, product, out)
+    except Exception:  # noqa: BLE001
+        logger.warning("丝巾校色失败，使用原图 %s", path.name, exc_info=True)
+        return path
+    return out if stats.get("applied") and out.exists() else path
+
+
+# 不调模型的槽位（尺寸图、平铺图）：直接用商品图排版，返回成图本地路径
+def render_flat_item(ecom: EcomSet, item: EcomSetItem) -> Path:
+    from app.services.ecom_set import scarf as scarf_mod
+
+    out = set_dir(ecom.user_id, ecom.id) / f"final_{item.idx:02d}_{uuid.uuid4().hex[:6]}.jpg"
+    product = Path(ecom.product_image_path)
+    copy = item.copy_json or {}
+    if item.slot == "scarf_size":
+        return scarf_mod.render_size_spec(product, out, size_id=(scarf_info(ecom) or {}).get("size"), copy=copy)
+    return scarf_mod.render_flat(product, out, copy=copy)
 
 
 # 把底图排版成成图，返回 (本地路径, 对外 URL)
 async def render_final(ecom: EcomSet, item: EcomSetItem, base: Path) -> tuple[Path, str]:
+    if SLOTS.get(item.slot) is not None and SLOTS[item.slot].ref == "flat":
+        out = await asyncio.to_thread(render_flat_item, ecom, item)
+        return out, await asyncio.to_thread(public_url, out)
     out = set_dir(ecom.user_id, ecom.id) / f"final_{item.idx:02d}_{uuid.uuid4().hex[:6]}.jpg"
     await asyncio.to_thread(
         render,

@@ -9,6 +9,13 @@ export const enEcomSet = {
     loadFailed: 'Failed to load',
     retry: 'Retry',
     form: {
+      category: 'Category',
+      categoryHint: 'Scarf detail page follows a silk-scarf store layout: cover, held-open view, fabric, knots, size chart, back drape…',
+      scarfSize: 'Scarf size',
+      model: 'Model',
+      modelDefault: 'Default model',
+      modelNone: 'No model yet: add one in Image generation → Model and set it as default',
+      modelPick: 'Use this model',
       image: 'Product photo',
       imageHint: 'Click or drop to upload (PNG / JPG / WebP, ≤10MB)',
       imageChange: 'Click to replace',

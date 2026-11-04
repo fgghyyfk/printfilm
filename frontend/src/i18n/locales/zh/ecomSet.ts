@@ -9,6 +9,13 @@ export const zhEcomSet = {
     loadFailed: '加载失败',
     retry: '重试',
     form: {
+      category: '品类',
+      categoryHint: '丝巾详情页按真丝方巾店铺详情页的结构出图：封面、举巾展示、面料、系法、尺寸、背面披肩等',
+      scarfSize: '丝巾尺寸',
+      model: '模特',
+      modelDefault: '默认模特',
+      modelNone: '还没有模特：先到「图片生成」页的「模特」里加入一张模特图并设为默认',
+      modelPick: '用这位模特',
       image: '商品图',
       imageHint: '点击或拖拽上传（PNG / JPG / WebP，≤10MB）',
       imageChange: '点击更换',

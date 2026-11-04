@@ -23,12 +23,19 @@ from app.services.billing.settlement import billing_active, ensure_balance_for_t
 from app.services.ecom_set.jobs import (
     public_url,
     reconcile_stuck_items,
+    render_flat_item,
+    scarf_info,
     refresh_set_status,
     render_final,
     set_dir,
 )
 from app.services.ecom_set.planner import plan_set
+from app.services.ecom_set import scarf as scarf_mod
 from app.services.ecom_set.presets import (
+    CATEGORIES,
+    SLOTS,
+    normalize_category,
+    slots_for,
     COUNTS,
     PLATFORMS,
     STYLES,
@@ -37,7 +44,6 @@ from app.services.ecom_set.presets import (
     normalize_platform,
     normalize_style,
     slot_label,
-    slots_for_count,
 )
 from app.services.compliance.ad_words import Hit, summarize
 from app.services.ecom_set.prompts import clip, normalize_copy, sanitize_scene
@@ -81,6 +87,9 @@ async def get_options(db: AsyncSession) -> dict:
         "platforms": [{"id": k, "name": v[0]} for k, v in PLATFORMS.items()],
         "styles": [{"id": k, "name": v[0]} for k, v in STYLES.items()],
         "counts": list(COUNTS),
+        "categories": [{"id": k, "name": v} for k, v in CATEGORIES.items()],
+        "scarf_sizes": [{"id": k, "name": v[0]} for k, v in scarf_mod.SIZES.items()],
+        "scarf_counts": list(scarf_mod.COUNTS),
         "plan_fen": int(s.ecom_set_plan_fen),
         "image_fen": await image_unit_fen(db),
         "billing_enabled": billing_active(),
@@ -109,14 +118,23 @@ async def _record_plan_charge(db: AsyncSession, user_id: int) -> None:
 async def create_plan(
     db: AsyncSession, user: User, *, data: bytes, filename: str,
     name: str, platform: str, style: str, count: int | str | None, notes: str,
+    category: str = "general", scarf_size: str | None = None, model_asset_id: int | None = None,
 ) -> EcomSet:
-    """上传商品图 → 计费规划 → 落库套图与各张方案（status=planned）。"""
+    """上传商品图 → 计费规划 → 落库套图与各张方案（status=planned）。
+
+    category=scarf 时为丝巾详情页：按尺寸规划系法，模特槽位以模特库里的模特（默认或指定）为原型。
+    """
     name = clip(name, 60)
     if not name:
         raise ValueError("请填写品名")
-    platform, style, count = normalize_platform(platform), normalize_style(style), normalize_count(count)
+    category = normalize_category(category)
+    platform, style = normalize_platform(platform), normalize_style(style)
+    count = scarf_mod.normalize_count(count) if category == "scarf" else normalize_count(count)
+    scarf = await _scarf_setup(db, user, scarf_size, model_asset_id) if category == "scarf" else None
+    if scarf is not None:
+        notes = scarf_mod.plan_notes(scarf["size"], notes)
     path = save_product_image(user.id, data, filename)
-    slots = slots_for_count(count)
+    slots = slots_for(category, count)
 
     async def _exec() -> dict:
         result = await plan_set(
@@ -133,7 +151,8 @@ async def create_plan(
         user_id=user.id, status="planned", name=name, platform=platform, style=style, count=count,
         notes=clip(notes, 500), product_image_path=str(path),
         product_image_url=await asyncio.to_thread(public_url, path),
-        plan={"product": plan["product"], "warnings": plan["warnings"], "vision": plan["vision"]},
+        plan={"product": plan["product"], "warnings": plan["warnings"], "vision": plan["vision"],
+              **({"scarf": scarf} if scarf is not None else {})},
         plan_task_id=billing_task.id,
     )
     db.add(ecom)
@@ -146,6 +165,35 @@ async def create_plan(
         ))
     await db.commit()
     return await get_set(db, user, ecom.id)
+
+
+# 丝巾详情页：规整尺寸并取模特（指定的，或模特库默认模特）；没有模特时报错提示先设置
+async def _scarf_setup(db: AsyncSession, user: User, size: str | None, model_asset_id: int | None) -> dict:
+    from app.services import tool_models
+
+    if model_asset_id:
+        model = await tool_models.get_model(db, user.id, model_asset_id)
+    else:
+        model = next((m for m in await tool_models.list_models(db, user.id) if tool_models.is_default_model(m)), None)
+        if model is None:
+            raise ValueError("请先在图片生成页的「模特」里设置一个默认模特，或在这里选择模特")
+    return {"size": scarf_mod.normalize_size(size), "model_asset_id": model.id,
+            "model_name": model.name or "", "model_url": model.url or model.cover or ""}
+
+
+# 是否为不调模型的槽位（尺寸图、平铺图）
+def _is_flat(item: EcomSetItem) -> bool:
+    slot = SLOTS.get(item.slot)
+    return bool(slot and slot.ref == "flat")
+
+
+# 不调模型的槽位直接排版成图（免费、同步）
+async def _render_flat_items(ecom: EcomSet, items: list[EcomSetItem]) -> None:
+    for it in items:
+        out = await asyncio.to_thread(render_flat_item, ecom, it)
+        url = await asyncio.to_thread(public_url, out)
+        it.base_path, it.base_url, it.final_url = str(out), url, url
+        it.status, it.error, it.task_run_id = "succeeded", None, None
 
 
 # 读取当前用户的一套图（含各张）
@@ -227,8 +275,11 @@ async def start_generation(db: AsyncSession, user: User, set_id: int) -> EcomSet
     todo = [it for it in ecom.items if it.status in {"planned", "failed"}]
     if not todo:
         raise ValueError("没有需要生成的图片")
-    await _enqueue_items(db, user, ecom, todo)
-    ecom.status = "generating"
+    ai_items = [it for it in todo if not _is_flat(it)]
+    if ai_items:
+        await _enqueue_items(db, user, ecom, ai_items)
+    await _render_flat_items(ecom, [it for it in todo if _is_flat(it)])
+    ecom.status = "generating" if ai_items else "done"
     await db.commit()
     return await get_set(db, user, set_id)
 
@@ -243,8 +294,12 @@ async def regenerate_item(db: AsyncSession, user: User, set_id: int, idx: int, s
         clean, hits = sanitize_scene(scene)
         it.scene = clip(clean, 300)
         _set_edit_warnings(ecom, hits)
-    await _enqueue_items(db, user, ecom, [it])
-    ecom.status = "generating"
+    if _is_flat(it):
+        await _render_flat_items(ecom, [it])
+        await refresh_set_status(db, ecom.id)
+    else:
+        await _enqueue_items(db, user, ecom, [it])
+        ecom.status = "generating"
     await db.commit()
     return await get_set(db, user, set_id)
 
@@ -301,6 +356,7 @@ async def list_sets(db: AsyncSession, user: User, *, page: int, page_size: int) 
 # 序列化一套图给前端
 def to_out(ecom: EcomSet, *, image_fen: int) -> dict:
     plan = ecom.plan or {}
+    scarf = scarf_info(ecom)
     items = []
     for it in ecom.items:
         copy = it.copy_json or {}
@@ -309,13 +365,18 @@ def to_out(ecom: EcomSet, *, image_fen: int) -> dict:
             "ratio": it.ratio, "scene": it.scene or "", "title": copy.get("title") or "",
             "subtitle": copy.get("subtitle") or "", "bullets": list(copy.get("bullets") or []),
             "base_url": it.base_url, "final_url": it.final_url, "status": it.status, "error": it.error,
+            "billable": not _is_flat(it),
         })
     return {
         "id": ecom.id, "status": ecom.status, "name": ecom.name, "platform": ecom.platform,
         "style": ecom.style, "count": ecom.count, "product_image_url": ecom.product_image_url,
         "product": plan.get("product") or {"name": ecom.name, "category": "", "colors": [], "selling_points": []},
         "warnings": list(plan.get("warnings") or []), "image_fen": image_fen,
-        "total_fen": image_fen * len(items), "items": items,
+        "total_fen": image_fen * sum(1 for it in items if it["billable"]), "items": items,
+        "category": "scarf" if scarf is not None else "general",
+        "scarf": ({"size": scarf.get("size"), "size_label": scarf_mod.size_label(scarf.get("size")),
+                   "model_asset_id": scarf.get("model_asset_id"), "model_name": scarf.get("model_name") or "",
+                   "model_url": scarf.get("model_url") or ""} if scarf is not None else None),
         "created_at": ecom.created_at.isoformat() if ecom.created_at else "",
         "project_id": ecom.project_id,
     }

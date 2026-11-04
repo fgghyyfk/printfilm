@@ -26,6 +26,8 @@ export interface EcomSetItem {
   final_url: string | null
   status: EcomSetItemStatus
   error: string | null
+  /** 是否调模型收费（丝巾尺寸图、平铺图为 false） */
+  billable?: boolean
 }
 
 export interface EcomSet {
@@ -44,12 +46,18 @@ export interface EcomSet {
   /** 由这套图生成的带货视频项目（未生成为 null） */
   project_id: number | null
   created_at: string
+  /** general 通用商品；scarf 丝巾详情页 */
+  category?: 'general' | 'scarf'
+  scarf?: { size: string; size_label: string; model_asset_id: number | null; model_name: string; model_url: string } | null
 }
 
 export interface EcomSetOptions {
   platforms: { id: string; name: string }[]
   styles: { id: string; name: string }[]
   counts: number[]
+  categories?: { id: string; name: string }[]
+  scarf_sizes?: { id: string; name: string }[]
+  scarf_counts?: number[]
   plan_fen: number
   image_fen: number
   billing_enabled: boolean
@@ -70,6 +78,10 @@ export type EcomSetPlanPayload = {
   style: string
   count: number
   notes?: string
+  /** 丝巾详情页：品类、尺寸与模特（留空用默认模特） */
+  category?: 'general' | 'scarf'
+  scarfSize?: string
+  modelAssetId?: number | null
 }
 
 /** 方案编辑：单张可改字段 */
@@ -112,6 +124,11 @@ export function planEcomSet(payload: EcomSetPlanPayload): Promise<EcomSet> {
   body.append('style', payload.style)
   body.append('count', String(payload.count))
   body.append('notes', payload.notes || '')
+  body.append('category', payload.category || 'general')
+  if (payload.category === 'scarf') {
+    body.append('scarf_size', payload.scarfSize || '')
+    if (payload.modelAssetId) body.append('model_asset_id', String(payload.modelAssetId))
+  }
   return requestEcom('/plan', '方案生成失败', { method: 'POST', body }, true)
 }
 

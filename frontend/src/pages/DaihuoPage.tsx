@@ -75,7 +75,8 @@ function EcomSetWorkspace() {
   /* 操作状态：formBusy 规划中；planBusy 方案保存/生成；busyIdx 单张重试中；downloading 打包下载 */
   const [formBusy, setFormBusy] = useState(false)
   const [formError, setFormError] = useState('')
-  const [formInitial, setFormInitial] = useState<EcomSetFormInitial | undefined>(undefined)
+  // 链接带 ?category=scarf 时直接进入「丝巾详情页」
+  const [formInitial, setFormInitial] = useState<EcomSetFormInitial | undefined>(() => (params.get('category') === 'scarf' ? { category: 'scarf' } : undefined))
   const [planBusy, setPlanBusy] = useState<EcomPlanBusy>(null)
   const [busyIdx, setBusyIdx] = useState<number | null>(null)
   const [downloading, setDownloading] = useState(false)
@@ -254,7 +255,8 @@ function EcomSetWorkspace() {
       tone: 'danger',
     })
     if (!ok) return
-    backToForm({ name: set.name, platform: set.platform, style: set.style, count: set.count })
+    backToForm({ name: set.name, platform: set.platform, style: set.style, count: set.count,
+      ...(set.category === 'scarf' && set.scarf ? { category: 'scarf' as const, scarfSize: set.scarf.size, modelAssetId: set.scarf.model_asset_id } : {}) })
   }
 
   // ③ 失败单张直接重试（收费时确认）

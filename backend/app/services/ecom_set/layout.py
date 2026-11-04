@@ -166,7 +166,7 @@ def render(
 ) -> Path:
     """把文案按版式排到底图上，裁到 size 并保存为 JPEG。
 
-    layout: none | title_corner | title_sub | title_bullets | label_bar；blank: top | bottom | none。
+    layout: none | title_corner | title_sub | title_bullets | label_bar | vertical_title（丝巾封面竖排）；blank: top | bottom | none。
     """
     with Image.open(base_path) as src:
         img = cover(ImageOps.exif_transpose(src).convert("RGBA"), size)
@@ -174,7 +174,11 @@ def render(
     title = str(body.get("title") or "").strip()
     subtitle = str(body.get("subtitle") or "").strip()
     bullets = [str(b).strip() for b in body.get("bullets") or [] if str(b).strip()]
-    if layout != "none" and (title or subtitle or bullets):
+    if layout == "vertical_title" and (title or subtitle):
+        from app.services.ecom_set.scarf import draw_vertical_title
+
+        draw_vertical_title(img, title=title, subtitle=subtitle)
+    elif layout not in {"none", "vertical_title"} and (title or subtitle or bullets):
         _draw_layout(img, layout=layout, blank=blank, title=title, subtitle=subtitle, bullets=bullets)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     img.convert("RGB").save(out_path, format="JPEG", quality=92)

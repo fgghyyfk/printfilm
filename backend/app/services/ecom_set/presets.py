@@ -43,6 +43,8 @@ class Slot:
     ratio: str
     blank: str
     is_main: bool = False
+    # 底图参考：product 商品图 | model 固定模特 + 商品图（丝巾）| flat 不调模型、直接用商品图排版
+    ref: str = "product"
 
 
 SLOTS: dict[str, Slot] = {
@@ -88,6 +90,86 @@ SLOTS: dict[str, Slot] = {
     ),
 }
 
+# 丝巾详情页槽位（参照真丝方巾店铺详情页的构成）
+SCARF_SLOTS: dict[str, Slot] = {
+    "scarf_cover": Slot(
+        "scarf_cover", "封面·模特",
+        "模特半身照，脸部清晰占画面较大，丝巾对折成三角披在双肩、在胸前打一个松结，一只手轻扶丝巾；人物偏右，画面左上留出竖排文字的干净空间",
+        "vertical_title", "3:4", "none", is_main=True, ref="model",
+    ),
+    "scarf_hold": Slot(
+        "scarf_hold", "整幅图案展示",
+        "模特站在画面中央，双手捏住丝巾两角把整条丝巾完全展开平举在身前，完整展示丝巾的全部图案与四边，脸在丝巾上方，微笑看镜头",
+        "label_bar", "3:4", "bottom", is_main=True, ref="model",
+    ),
+    "scarf_texture": Slot(
+        "scarf_texture", "面料特写",
+        "丝巾自然揉褶堆叠的微距特写，展示真丝缎面的光泽、垂坠与印花细节，柔和侧光，浅景深，下半部为丝巾，上部留出浅色留白",
+        "title_bullets", "3:4", "top", ref="product",
+    ),
+    "scarf_knot": Slot(
+        "scarf_knot", "颈前打结",
+        "近景胸像，脸约占画面高度三分之一，丝巾折成三角在颈前打一个小结，两端自然垂落胸前，一只手轻捏结口",
+        "title_corner", "3:4", "top", is_main=True, ref="model",
+    ),
+    "scarf_size": Slot(
+        "scarf_size", "尺寸规格",
+        "丝巾平铺图与尺寸标注",
+        "size_spec", "3:4", "none", ref="flat",
+    ),
+    "scarf_back": Slot(
+        "scarf_back", "背面披肩",
+        "模特背对镜头、侧脸回望，丝巾展开成大三角披在肩背，三角尖垂到腰际，大面积图案在背部展开",
+        "label_bar", "3:4", "bottom", ref="model",
+    ),
+    "scarf_closeup": Slot(
+        "scarf_closeup", "近景特写",
+        "近景特写，从头顶到锁骨，脸占画面高度约三分之一，微侧脸看向镜头，丝巾在颈侧打结、结口与花纹清晰",
+        "none", "3:4", "none", ref="model",
+    ),
+    "scarf_long": Slot(
+        "scarf_long", "长条领结",
+        "模特半身，丝巾折成约 8 厘米宽的长条，在颈前打一个领结，两条长飘带垂到胸前，飘带上的图案清晰",
+        "title_corner", "3:4", "top", ref="model",
+    ),
+    "scarf_street": Slot(
+        "scarf_street", "街拍大衣",
+        "街拍半身，模特穿驼色羊毛大衣敞开，丝巾折成长条挂在脖子上、两端自然垂在大衣前襟，走在洒满午后阳光的石板街道上，背景虚化",
+        "label_bar", "3:4", "bottom", ref="model",
+    ),
+    "scarf_flat": Slot(
+        "scarf_flat", "平铺原图",
+        "丝巾平铺原图",
+        "flat", "3:4", "none", ref="flat",
+    ),
+}
+SLOTS.update(SCARF_SLOTS)
+
+SCARF_COMPOSITION: dict[int, tuple[str, ...]] = {
+    6: ("scarf_cover", "scarf_hold", "scarf_texture", "scarf_knot", "scarf_size", "scarf_back"),
+    8: ("scarf_cover", "scarf_hold", "scarf_texture", "scarf_knot", "scarf_size", "scarf_closeup", "scarf_long",
+        "scarf_back"),
+    10: ("scarf_cover", "scarf_hold", "scarf_texture", "scarf_knot", "scarf_size", "scarf_closeup", "scarf_long",
+         "scarf_back", "scarf_street", "scarf_flat"),
+}
+CATEGORIES = {"general": "通用商品", "scarf": "丝巾详情页"}
+
+
+# 规整品类，未知回落通用
+def normalize_category(value: str | None) -> str:
+    key = (value or "").strip().lower()
+    return key if key in CATEGORIES else "general"
+
+
+# 按品类与张数返回槽位列表
+def slots_for(category: str, count: int | str | None) -> list[Slot]:
+    if normalize_category(category) == "scarf":
+        from app.services.ecom_set.scarf import normalize_count as scarf_count
+
+        return [SLOTS[k] for k in SCARF_COMPOSITION[scarf_count(count)]]
+    return slots_for_count(normalize_count(count))
+
+
 # 各张数对应的槽位顺序
 SET_COMPOSITION: dict[int, tuple[str, ...]] = {
     4: ("main_white", "main_scene", "selling_1", "usage"),
@@ -124,6 +206,10 @@ def slots_for_count(count: int) -> list[Slot]:
 
 # 按平台与槽位得到最终输出像素 (宽, 高)
 def output_size(platform: str, slot_key: str) -> tuple[int, int]:
+    if slot_key.startswith("scarf_"):
+        from app.services.ecom_set.scarf import OUTPUT_SIZE
+
+        return OUTPUT_SIZE
     _, main, detail = PLATFORMS[normalize_platform(platform)]
     slot = SLOTS.get(slot_key)
     return main if slot and slot.is_main else detail

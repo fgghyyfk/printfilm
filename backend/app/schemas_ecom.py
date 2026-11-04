@@ -21,6 +21,17 @@ class EcomSetItemOut(BaseModel):
     final_url: str | None = None
     status: str
     error: str | None = None
+    billable: bool = True
+
+
+class EcomScarfOut(BaseModel):
+    """丝巾详情页：尺寸与模特。"""
+
+    size: str
+    size_label: str
+    model_asset_id: int | None = None
+    model_name: str = ""
+    model_url: str = ""
 
 
 class EcomProductOut(BaseModel):
@@ -49,6 +60,8 @@ class EcomSetOut(BaseModel):
     items: list[EcomSetItemOut]
     created_at: str
     project_id: int | None = None
+    category: str = "general"
+    scarf: EcomScarfOut | None = None
 
 
 class EcomSetListOut(BaseModel):
@@ -73,6 +86,9 @@ class EcomSetOptionsOut(BaseModel):
     platforms: list[EcomOptionOut]
     styles: list[EcomOptionOut]
     counts: list[int]
+    categories: list[EcomOptionOut] = []
+    scarf_sizes: list[EcomOptionOut] = []
+    scarf_counts: list[int] = []
     plan_fen: int
     image_fen: int
     billing_enabled: bool
