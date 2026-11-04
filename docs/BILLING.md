@@ -175,7 +175,7 @@ sequenceDiagram
 | 漫剧资产 seed（轻量同步） | `run_billed_ephemeral(domain=drama, seed_assets)` |
 | 工作室工具 | `run_billed_ephemeral(domain=studio, tool_image/tool_video)` |
 | 一图出套图·规划 | `run_billed_ephemeral(domain=studio, ecom_set_plan)`：**固定价**，写一条 `billing_key=ecom_set_plan`、`charge_fen=ECOM_SET_PLAN_FEN`（默认 10 分）的用量行，不按 token 计；规划失败不扣 |
-| 一图出套图·生图 | `create_task(domain=studio, ecom_set_image)`，一张一个 TaskRun，executor 自动 freeze/settle，handler 内 `record_seedream_image_usage`；入队前 `ensure_balance_for_task_batch` 一次校验 N 张；单张失败不扣；改文案（重新排版）不调模型、免费 |
+| 一图出套图·生图 | `create_task(domain=studio, ecom_set_image)`，一张一个 TaskRun；payload 带 `aspect_ratio` 与 `resolution=2K`，**与图片生成页同走后台媒体价目表（fixed_media）**，按张固定价预扣并结算；尺寸图、平铺图、纹样细节等免模型槽位不建任务、不收费 |
 
 ### LLM 操作全清单（`billing_key=llm_chat`）
 
@@ -259,3 +259,8 @@ EPAY_RETURN_URL=https://your-site.example.com/pricing?paid=1
 
 
 团队模式现按所有者个人账户统一付款，同时限制团队总月额度与成员月额度；任务保存受理时付款人，转让不改变旧任务扣款对象。团队充值/独立调账入口已停用，历史账目兼容规则见 [TEAM_MODE.md](TEAM_MODE.md)。
+
+
+### 电商图（/ecom）补充
+- 生成模特（`/api/tools/models/generate`）：`run_billed_ephemeral(domain=studio, tool_image)`，按 2K 张价收一次
+- 同款换色（`/{id}/recolor`）沿用原方案，不收规划费；生成时按张收费
