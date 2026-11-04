@@ -11,6 +11,7 @@ export const zhEcomSet = {
     form: {
       category: '品类',
       categoryHint: '丝巾详情页按真丝方巾店铺详情页的结构出图：封面、举巾展示、面料、系法、尺寸、背面披肩等',
+      scarfMaterial: '材质',
       scarfSize: '丝巾尺寸',
       model: '模特',
       modelDefault: '默认模特',

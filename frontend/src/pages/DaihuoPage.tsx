@@ -256,7 +256,7 @@ function EcomSetWorkspace() {
     })
     if (!ok) return
     backToForm({ name: set.name, platform: set.platform, style: set.style, count: set.count,
-      ...(set.category === 'scarf' && set.scarf ? { category: 'scarf' as const, scarfSize: set.scarf.size, modelAssetId: set.scarf.model_asset_id } : {}) })
+      ...(set.category === 'scarf' && set.scarf ? { category: 'scarf' as const, scarfSize: set.scarf.size, scarfMaterial: set.scarf.material, modelAssetId: set.scarf.model_asset_id } : {}) })
   }
 
   // ③ 失败单张直接重试（收费时确认）

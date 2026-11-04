@@ -90,6 +90,7 @@ async def get_options(db: AsyncSession) -> dict:
         "categories": [{"id": k, "name": v} for k, v in CATEGORIES.items()],
         "scarf_sizes": [{"id": k, "name": v[0]} for k, v in scarf_mod.SIZES.items()],
         "scarf_counts": list(scarf_mod.COUNTS),
+        "scarf_materials": [{"id": k, "name": v[0]} for k, v in scarf_mod.MATERIALS.items()],
         "plan_fen": int(s.ecom_set_plan_fen),
         "image_fen": await image_unit_fen(db),
         "billing_enabled": billing_active(),
@@ -119,6 +120,7 @@ async def create_plan(
     db: AsyncSession, user: User, *, data: bytes, filename: str,
     name: str, platform: str, style: str, count: int | str | None, notes: str,
     category: str = "general", scarf_size: str | None = None, model_asset_id: int | None = None,
+    scarf_material: str | None = None,
 ) -> EcomSet:
     """上传商品图 → 计费规划 → 落库套图与各张方案（status=planned）。
 
@@ -130,9 +132,9 @@ async def create_plan(
     category = normalize_category(category)
     platform, style = normalize_platform(platform), normalize_style(style)
     count = scarf_mod.normalize_count(count) if category == "scarf" else normalize_count(count)
-    scarf = await _scarf_setup(db, user, scarf_size, model_asset_id) if category == "scarf" else None
+    scarf = await _scarf_setup(db, user, scarf_size, model_asset_id, scarf_material) if category == "scarf" else None
     if scarf is not None:
-        notes = scarf_mod.plan_notes(scarf["size"], notes)
+        notes = scarf_mod.plan_notes(scarf["size"], notes, scarf["material"])
     path = save_product_image(user.id, data, filename)
     slots = slots_for(category, count)
 
@@ -162,14 +164,15 @@ async def create_plan(
             set_id=ecom.id, idx=idx, slot=slot.key, layout=slot.layout,
             ratio=gen_ratio(platform, slot.key), blank=slot.blank,
             scene=it["scene"], status="planned",
-            copy_json=scarf_mod.cover_copy(name, scarf["size"]) if scarf is not None and slot.key == "scarf_cover" else it["copy"],
+            copy_json=scarf_mod.cover_copy(name, scarf["size"], scarf["material"]) if scarf is not None and slot.key == "scarf_cover" else it["copy"],
         ))
     await db.commit()
     return await get_set(db, user, ecom.id)
 
 
 # 丝巾详情页：规整尺寸并取模特（指定的，或模特库默认模特）；没有模特时报错提示先设置
-async def _scarf_setup(db: AsyncSession, user: User, size: str | None, model_asset_id: int | None) -> dict:
+async def _scarf_setup(db: AsyncSession, user: User, size: str | None, model_asset_id: int | None,
+                       material: str | None = None) -> dict:
     from app.services import tool_models
 
     if model_asset_id:
@@ -178,7 +181,7 @@ async def _scarf_setup(db: AsyncSession, user: User, size: str | None, model_ass
         model = next((m for m in await tool_models.list_models(db, user.id) if tool_models.is_default_model(m)), None)
         if model is None:
             raise ValueError("请先在图片生成页的「模特」里设置一个默认模特，或在这里选择模特")
-    return {"size": scarf_mod.normalize_size(size), "model_asset_id": model.id,
+    return {"size": scarf_mod.normalize_size(size), "material": scarf_mod.normalize_material(material), "model_asset_id": model.id,
             "model_name": model.name or "", "model_url": model.url or model.cover or ""}
 
 
@@ -376,6 +379,7 @@ def to_out(ecom: EcomSet, *, image_fen: int) -> dict:
         "total_fen": image_fen * sum(1 for it in items if it["billable"]), "items": items,
         "category": "scarf" if scarf is not None else "general",
         "scarf": ({"size": scarf.get("size"), "size_label": scarf_mod.size_label(scarf.get("size")),
+                   "material": scarf_mod.normalize_material(scarf.get("material")),
                    "model_asset_id": scarf.get("model_asset_id"), "model_name": scarf.get("model_name") or "",
                    "model_url": scarf.get("model_url") or ""} if scarf is not None else None),
         "created_at": ecom.created_at.isoformat() if ecom.created_at else "",

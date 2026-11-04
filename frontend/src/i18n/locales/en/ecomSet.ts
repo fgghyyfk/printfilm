@@ -11,6 +11,7 @@ export const enEcomSet = {
     form: {
       category: 'Category',
       categoryHint: 'Scarf detail page follows a silk-scarf store layout: cover, held-open view, fabric, knots, size chart, back drape…',
+      scarfMaterial: 'Material',
       scarfSize: 'Scarf size',
       model: 'Model',
       modelDefault: 'Default model',

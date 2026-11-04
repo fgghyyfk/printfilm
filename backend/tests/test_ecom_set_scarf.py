@@ -106,5 +106,24 @@ async def test_scarf_plan_and_start(db_session, monkeypatch, tmp_path):
 # 封面文案：款名 + 真丝方巾，副标题为规格
 def test_cover_copy():
     c = scarf.cover_copy("国风方巾", "110")
-    assert c["title"] == "国风·真丝方巾" and c["subtitle"].startswith("110×110cm")
+    assert c["title"] == "国风·真丝方巾" and c["subtitle"] == "真丝 110cm"
     assert scarf.cover_copy("牡丹亭", "88")["title"] == "牡丹亭·真丝方巾"
+
+
+# 丝毛材质：质感改为哑光呢面、造型改秋冬；135cm 尺寸可用；封面写「丝毛方巾」
+def test_silk_wool_material_and_135():
+    assert scarf.normalize_size("135") == "135" and "135×135" in scarf.size_label("135")
+    p = scarf.build_prompt(slot_prompt="背面披肩", scene="", ref="model", size="135", material="silk_wool")
+    assert "丝毛混纺" in p and "哑光" in p and "羊绒针织" in p and "真丝吊带" not in p
+    assert "斜纹缎面" in scarf.build_prompt(slot_prompt="x", scene="", ref="product", size="88")
+    c = scarf.cover_copy("《太平有象》", "135", "silk_wool")
+    assert c["title"] == "太平有象·丝毛方巾" and c["subtitle"] == "丝毛混纺 135cm"
+    assert "丝毛混纺" in scarf.plan_notes("135", "", "silk_wool")
+
+
+# 纹样细节：从平铺图裁局部，输出 3:4
+def test_render_crop(tmp_path):
+    out = scarf.render_crop(_scarf_png(tmp_path / "flat.png"), tmp_path / "crop.jpg", copy={"title": "纹样细节"})
+    with Image.open(out) as im:
+        assert im.size == scarf.OUTPUT_SIZE
+    assert presets.SCARF_COMPOSITION[10].count("scarf_crop") == 1

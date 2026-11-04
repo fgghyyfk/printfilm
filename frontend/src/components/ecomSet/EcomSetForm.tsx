@@ -9,7 +9,7 @@ import BillingErrorNotice from '../billing/BillingErrorNotice'
 import Button from '../ui/Button'
 
 /** 表单预填值（重新规划时沿用上次的品名/平台/风格/张数） */
-export type EcomSetFormInitial = Partial<Pick<EcomSetPlanPayload, 'name' | 'platform' | 'style' | 'count' | 'notes' | 'category' | 'scarfSize' | 'modelAssetId'>>
+export type EcomSetFormInitial = Partial<Pick<EcomSetPlanPayload, 'name' | 'platform' | 'style' | 'count' | 'notes' | 'category' | 'scarfSize' | 'scarfMaterial' | 'modelAssetId'>>
 
 type Props = {
   options: EcomSetOptions
@@ -37,6 +37,7 @@ export default function EcomSetForm({ options, initial, busy, error, onSubmit }:
   /* 丝巾详情页：品类、尺寸、模特（默认选中模特库里的默认模特） */
   const [category, setCategory] = useState<'general' | 'scarf'>(initial?.category || 'general')
   const [scarfSize, setScarfSize] = useState(initial?.scarfSize || '88')
+  const [scarfMaterial, setScarfMaterial] = useState(initial?.scarfMaterial || 'silk')
   const [scarfCount, setScarfCount] = useState(initial?.category === 'scarf' && initial.count ? initial.count : 8)
   const [models, setModels] = useState<ToolModel[] | null>(null)
   const [modelId, setModelId] = useState<number | null>(initial?.modelAssetId ?? null)
@@ -97,7 +98,7 @@ export default function EcomSetForm({ options, initial, busy, error, onSubmit }:
     if (isScarf && !modelId) return setLocalError(t('ecomSet.form.modelNone'))
     setLocalError('')
     onSubmit({ file, name: name.trim(), platform, style, count: isScarf ? scarfCount : count, notes: notes.trim(),
-      category, ...(isScarf ? { scarfSize, modelAssetId: modelId } : {}) })
+      category, ...(isScarf ? { scarfSize, scarfMaterial, modelAssetId: modelId } : {}) })
   }
 
   const platformNames = m.ecomSet.platforms as Record<string, string>
@@ -157,6 +158,15 @@ export default function EcomSetForm({ options, initial, busy, error, onSubmit }:
             {(options.scarf_sizes || []).map((opt) => (
               <button key={opt.id} type="button" disabled={busy} className={scarfSize === opt.id ? 'active' : ''}
                 onClick={() => setScarfSize(opt.id)}>{opt.name}</button>
+            ))}
+          </div>
+        </div>
+        <div className="pf-tool-field">
+          <span>{t('ecomSet.form.scarfMaterial')}</span>
+          <div className="pf-tool-chips">
+            {(options.scarf_materials || []).map((opt) => (
+              <button key={opt.id} type="button" disabled={busy} className={scarfMaterial === opt.id ? 'active' : ''}
+                onClick={() => setScarfMaterial(opt.id)}>{opt.name}</button>
             ))}
           </div>
         </div>

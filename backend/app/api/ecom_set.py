@@ -69,6 +69,7 @@ async def create_plan(
     category: str = Form("general", description="general 通用商品；scarf 丝巾详情页"),
     scarf_size: str = Form("", description="丝巾尺寸：53 / 68 / 88 / 110（cm），仅 category=scarf"),
     model_asset_id: int | None = Form(default=None, ge=1, description="丝巾详情页使用的模特（模特库资产 id）；留空用默认模特"),
+    scarf_material: str = Form("", description="丝巾材质：silk 真丝 / silk_wool 丝毛混纺，仅 category=scarf"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -77,6 +78,7 @@ async def create_plan(
         db, user, data=data, filename=file.filename or "", name=name,
         platform=platform, style=style, count=count, notes=notes,
         category=category, scarf_size=scarf_size or None, model_asset_id=model_asset_id,
+        scarf_material=scarf_material or None,
     ))
     return await _out(db, ecom)
 

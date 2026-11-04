@@ -104,7 +104,7 @@ SCARF_SLOTS: dict[str, Slot] = {
     ),
     "scarf_texture": Slot(
         "scarf_texture", "面料特写",
-        "丝巾自然揉褶堆叠的微距特写，展示真丝缎面的光泽、垂坠与印花细节，柔和侧光，浅景深，下半部为丝巾，上部留出浅色留白",
+        "丝巾自然揉褶堆叠的微距特写，展示面料质感、垂坠与印花细节，柔和侧光，浅景深，下半部为丝巾，上部留出浅色留白",
         "title_bullets", "3:4", "top", ref="product",
     ),
     "scarf_knot": Slot(
@@ -137,6 +137,11 @@ SCARF_SLOTS: dict[str, Slot] = {
         "街拍半身，模特穿驼色羊毛大衣敞开，丝巾折成长条挂在脖子上、两端自然垂在大衣前襟，走在洒满午后阳光的石板街道上，背景虚化",
         "label_bar", "3:4", "bottom", ref="model",
     ),
+    "scarf_crop": Slot(
+        "scarf_crop", "纹样细节",
+        "平铺图局部放大",
+        "crop", "3:4", "none", ref="flat",
+    ),
     "scarf_flat": Slot(
         "scarf_flat", "平铺原图",
         "丝巾平铺原图",
@@ -149,7 +154,7 @@ SCARF_COMPOSITION: dict[int, tuple[str, ...]] = {
     6: ("scarf_cover", "scarf_hold", "scarf_texture", "scarf_knot", "scarf_size", "scarf_back"),
     8: ("scarf_cover", "scarf_hold", "scarf_texture", "scarf_knot", "scarf_size", "scarf_closeup", "scarf_long",
         "scarf_back"),
-    10: ("scarf_cover", "scarf_hold", "scarf_texture", "scarf_knot", "scarf_size", "scarf_closeup", "scarf_long",
+    10: ("scarf_cover", "scarf_hold", "scarf_texture", "scarf_knot", "scarf_size", "scarf_crop", "scarf_long",
          "scarf_back", "scarf_street", "scarf_flat"),
 }
 CATEGORIES = {"general": "通用商品", "scarf": "丝巾详情页"}

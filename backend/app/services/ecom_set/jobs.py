@@ -100,7 +100,8 @@ async def generate_base(db: AsyncSession, ecom: EcomSet, item: EcomSetItem) -> P
     if scarf is not None:
         from app.services.ecom_set import scarf as scarf_mod
 
-        prompt = scarf_mod.build_prompt(slot_prompt=slot.prompt, scene=item.scene, ref=slot.ref, size=scarf.get("size"))
+        prompt = scarf_mod.build_prompt(slot_prompt=slot.prompt, scene=item.scene, ref=slot.ref, size=scarf.get("size"),
+                                        material=scarf.get("material"))
         refs = [scarf["model_url"], ecom.product_image_url] if slot.ref == "model" and scarf.get("model_url") \
             else [ecom.product_image_url]
     else:
@@ -159,6 +160,8 @@ def render_flat_item(ecom: EcomSet, item: EcomSetItem) -> Path:
     copy = item.copy_json or {}
     if item.slot == "scarf_size":
         return scarf_mod.render_size_spec(product, out, size_id=(scarf_info(ecom) or {}).get("size"), copy=copy)
+    if item.slot == "scarf_crop":
+        return scarf_mod.render_crop(product, out, copy=copy)
     return scarf_mod.render_flat(product, out, copy=copy)
 
 

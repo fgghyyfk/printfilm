@@ -23,15 +23,33 @@ SIZES: dict[str, tuple[str, int, str]] = {
     "68": ("68×68cm 小方巾", 68, "小方巾：对折成三角在颈前打一个小结，或折成长条绕颈一圈"),
     "88": ("88×88cm 中方巾", 88, "中方巾：对折成三角披在肩上、胸前打结，或折成长条做领结，垂坠长度到胸口"),
     "110": ("110×110cm 大方巾", 110, "大方巾：可完全展开斜披双肩、做三角大披肩覆盖肩背，或对折后在胸前打结，面积大、垂坠感强"),
+    "135": ("135×135cm 大方巾", 135, "大尺寸方巾/披肩：可整条展开裹在肩上当披肩，对折成大三角披肩覆盖肩背，或在胸前松松打一个大结，面积大、包裹感强"),
 }
+
+# 材质：id → (名称, 质感描述, 模特造型)
+MATERIALS: dict[str, tuple[str, str, str]] = {
+    "silk": (
+        "真丝",
+        "真丝斜纹缎面质感，柔和自然的光泽与立体垂坠褶皱",
+        "模特低盘发、戴小珍珠耳钉，穿米白色真丝吊带长裙或无袖上衣，衣服素净不抢丝巾；"
+        "浅灰米色墙面背景，前景有少量虚化的绿植，柔和侧光，低饱和、通透高级",
+    ),
+    "silk_wool": (
+        "丝毛混纺",
+        "丝毛混纺面料质感：柔软细腻的羊毛呢面，哑光为主、只有很淡的柔光，表面有细微绒感，厚实温暖，垂坠柔和、褶皱圆润；"
+        "不要真丝缎面那种强反光和锐利亮面",
+        "模特低盘发、戴小珍珠耳钉，穿燕麦色或米白色羊绒针织衫、驼色大衣等秋冬素色衣着，衣服素净不抢丝巾；"
+        "暖调浅米色墙面或室内窗边，柔和侧光，低饱和、温暖高级",
+    ),
+}
+DEFAULT_MATERIAL = "silk"
 DEFAULT_SIZE = "88"
 COUNTS = (6, 8, 10)
 DEFAULT_COUNT = 8
 
-# 丝巾专用的底图约束（替代通用商品的「保持商品外形」）
+# 丝巾专用的底图约束（替代通用商品的「保持商品外形」）；质感按材质补在前面
 LOCK_SUFFIX = (
-    "丝巾的图案、配色与四边细边框必须与丝巾平铺参考图完全一致，不重画图案、不偏色、不发黄、不发灰；"
-    "真丝斜纹缎面质感，柔和自然的光泽与立体垂坠褶皱；"
+    "丝巾的图案、配色与四边边框必须与丝巾平铺参考图完全一致，不重画图案、不偏色、不发黄、不发灰；"
     "画面中不要出现任何文字、字幕、标语、价格、水印或 logo；商业时尚摄影，高清锐利，真实质感"
 )
 MODEL_PREFIX = (
@@ -39,11 +57,17 @@ MODEL_PREFIX = (
     "参考图2是丝巾的完整平铺图，是丝巾图案与颜色的唯一来源。"
 )
 PRODUCT_PREFIX = "参考图是丝巾的完整平铺图，是丝巾图案与颜色的唯一来源。"
-# 统一的模特造型与环境，保证整套图像同一组大片
-LOOK = (
-    "模特低盘发、戴小珍珠耳钉，穿米白色真丝吊带长裙或无袖上衣，衣服素净不抢丝巾；"
-    "浅灰米色墙面背景，前景有少量虚化的绿植，柔和侧光，低饱和、通透高级"
-)
+
+
+def normalize_material(value: str | None) -> str:
+    """规整材质 id，未知回落真丝。"""
+    key = str(value or "").strip().lower()
+    return key if key in MATERIALS else DEFAULT_MATERIAL
+
+
+def material_label(value: str | None) -> str:
+    """材质名称。"""
+    return MATERIALS[normalize_material(value)][0]
 
 
 def size_label(size: str | None) -> str:
@@ -71,23 +95,30 @@ def wear_hint(size: str | None) -> str:
     return SIZES[normalize_size(size)][2]
 
 
-def build_prompt(*, slot_prompt: str, scene: str, ref: str, size: str | None) -> str:
-    """拼装丝巾槽位的底图提示词。"""
+def build_prompt(*, slot_prompt: str, scene: str, ref: str, size: str | None, material: str | None = None) -> str:
+    """拼装丝巾槽位的底图提示词（质感与模特造型随材质变化）。"""
+    _, texture, look = MATERIALS[normalize_material(material)]
     prefix = MODEL_PREFIX if ref == "model" else PRODUCT_PREFIX
     parts = [prefix, slot_prompt, scene, f"丝巾规格：{size_label(size)}，{wear_hint(size)}" if ref == "model" else "",
-             LOOK if ref == "model" else "", LOCK_SUFFIX]
+             look if ref == "model" else "", texture, LOCK_SUFFIX]
     return "。".join(p.strip("。 ") for p in parts if p and p.strip())
 
 
-def cover_copy(name: str, size: str | None) -> dict:
-    """封面固定文案：竖排款名「XX·真丝方巾」+ 规格副标题（不用规划模型写的口号）。"""
-    base = (name or "").replace("真丝方巾", "").replace("方巾", "").strip(" ·") or (name or "")
-    return {"title": f"{base}·真丝方巾"[:12], "subtitle": f"{SIZES[normalize_size(size)][1]}×{SIZES[normalize_size(size)][1]}cm 原创设计", "bullets": []}
+def cover_copy(name: str, size: str | None, material: str | None = None) -> dict:
+    """封面固定文案：竖排款名「XX·真丝方巾 / 丝毛方巾」+ 规格副标题（不用规划模型写的口号）。"""
+    kind = "丝毛方巾" if normalize_material(material) == "silk_wool" else "真丝方巾"
+    base = (name or "").strip("《》 ")
+    for word in ("真丝方巾", "丝毛方巾", "方巾"):
+        base = base.replace(word, "")
+    base = base.strip(" ·") or (name or "")
+    side = SIZES[normalize_size(size)][1]
+    return {"title": f"{base}·{kind}"[:12], "subtitle": f"{material_label(material)} {side}cm", "bullets": []}
 
 
-def plan_notes(size: str | None, notes: str) -> str:
-    """给规划模型的补充信息：尺寸与佩戴建议。"""
-    head = f"品类：真丝方巾；规格：{size_label(size)}；适合的系法：{wear_hint(size)}"
+def plan_notes(size: str | None, notes: str, material: str | None = None) -> str:
+    """给规划模型的补充信息：材质、尺寸与佩戴建议。"""
+    head = (f"品类：{material_label(material)}方巾；规格：{size_label(size)}；适合的系法：{wear_hint(size)}；"
+            f"面料质感：{MATERIALS[normalize_material(material)][1]}")
     return f"{head}。{notes.strip()}" if notes.strip() else head
 
 
@@ -180,6 +211,45 @@ def render_size_spec(product: Path, out: Path, *, size_id: str | None, copy: dic
     for line in bullets:
         draw.text(((W - sub_font.getlength(line)) / 2, by), line, font=sub_font, fill=MUTED)
         by += int(sub_font.size * 1.7)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    canvas.convert("RGB").save(out, format="JPEG", quality=93)
+    return out
+
+
+def _busiest_box(im: Image.Image, frac: float) -> tuple[int, int, int, int]:
+    """在图上找细节最丰富的正方形区域（灰度标准差最大），用于纹样局部特写。"""
+    from PIL import ImageStat
+
+    W, H = im.size
+    side = int(min(W, H) * frac)
+    gray = im.convert("L").resize((W // 4, H // 4))
+    best, box = -1.0, (0, 0, side, side)
+    step = max(1, side // 6)
+    for y in range(0, H - side + 1, step):
+        for x in range(0, W - side + 1, step):
+            g = gray.crop((x // 4, y // 4, (x + side) // 4, (y + side) // 4))
+            std = ImageStat.Stat(g).stddev[0]
+            if std > best:
+                best, box = std, (x, y, x + side, y + side)
+    return box
+
+
+def render_crop(product: Path, out: Path, *, copy: dict) -> Path:
+    """纹样细节：从平铺原图裁出细节最丰富的局部放大，底部一行说明（不调模型）。"""
+    W, H = OUTPUT_SIZE
+    canvas = Image.new("RGBA", OUTPUT_SIZE, PAPER + (255,))
+    with Image.open(product) as src:
+        im = ImageOps.exif_transpose(src).convert("RGB")
+    crop = im.crop(_busiest_box(im, 0.42))
+    area_h = int(H * 0.8)
+    canvas.paste(ImageOps.fit(crop, (W, area_h), Image.Resampling.LANCZOS), (0, 0))
+    draw = ImageDraw.Draw(canvas)
+    title_font, sub_font = _serif(int(W * 0.045)), _serif(int(W * 0.026))
+    title, sub = str(copy.get("title") or "纹样细节"), str(copy.get("subtitle") or "")
+    y = area_h + int(H * 0.05)
+    draw.text(((W - title_font.getlength(title)) / 2, y), title, font=title_font, fill=INK)
+    if sub:
+        draw.text(((W - sub_font.getlength(sub)) / 2, y + int(title_font.size * 1.6)), sub, font=sub_font, fill=MUTED)
     out.parent.mkdir(parents=True, exist_ok=True)
     canvas.convert("RGB").save(out, format="JPEG", quality=93)
     return out

@@ -29,6 +29,7 @@ class EcomScarfOut(BaseModel):
 
     size: str
     size_label: str
+    material: str = "silk"
     model_asset_id: int | None = None
     model_name: str = ""
     model_url: str = ""
@@ -89,6 +90,7 @@ class EcomSetOptionsOut(BaseModel):
     categories: list[EcomOptionOut] = []
     scarf_sizes: list[EcomOptionOut] = []
     scarf_counts: list[int] = []
+    scarf_materials: list[EcomOptionOut] = []
     plan_fen: int
     image_fen: int
     billing_enabled: bool
