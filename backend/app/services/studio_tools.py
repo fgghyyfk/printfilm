@@ -194,6 +194,8 @@ async def run_image_tool(
         project_id=0,
         shot_no=output_no or user.id,
         size=size,
+        purpose="tools",
+        ratio_hint=ratio,
     )
     await record_seedream_image_usage(
         db,

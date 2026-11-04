@@ -99,6 +99,13 @@ class Settings(BaseSettings):
     # 火山引擎豆包语音合成（直连）：配了 Key 时豆包音色优先走这里
     volc_tts_base_url: str = "https://openspeech.bytedance.com"
     volc_tts_api_key: str = ""
+    # 生图改走 OpenAI（可选旁路）：开启并填 Key 后，按作用范围（tools=仅工具中心 / all=全站）用 gpt-image 生图
+    openai_image_enabled: bool = False
+    openai_image_api_key: str = ""
+    openai_image_base_url: str = "https://api.openai.com/v1"
+    openai_image_model: str = "gpt-image-2"
+    openai_image_quality: str = "high"
+    openai_image_scope: str = "tools"
     # 非 2.0 音色用的资源（2.0 音色自动用 seed-tts-2.0）
     volc_tts_resource_id: str = "seed-tts-1.0"
     # 语速 -50~100（0 正常，10 约 1.1 倍）

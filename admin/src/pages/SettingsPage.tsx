@@ -4,6 +4,7 @@ import { AvatarSettingsPanel } from "@/components/settings/AvatarSettingsPanel";
 import { OssSettingsPanel } from "@/components/settings/OssSettingsPanel";
 import { PaymentSettingsPanel } from "@/components/settings/PaymentSettingsPanel";
 import { RoutingSettingsPanel } from "@/components/settings/RoutingSettingsPanel";
+import { ImageProviderSettingsPanel } from "@/components/settings/ImageProviderSettingsPanel";
 import { RuntimeSettingsPanel } from "@/components/settings/RuntimeSettingsPanel";
 import { SiteSettingsPanel } from "@/components/settings/SiteSettingsPanel";
 import {
@@ -12,10 +13,11 @@ import {
 } from "@/components/settings/SettingsSaveContext";
 import { cn } from "@/lib/utils";
 
-type SettingsTab = "routing" | "avatar" | "runtime" | "oss" | "payment" | "site";
+type SettingsTab = "routing" | "image" | "avatar" | "runtime" | "oss" | "payment" | "site";
 
 const TABS: { id: SettingsTab; label: string }[] = [
   { id: "routing", label: "模型" },
+  { id: "image", label: "生图" },
   { id: "avatar", label: "数字人" },
   { id: "runtime", label: "运行参数" },
   { id: "oss", label: "存储 OSS" },
@@ -74,6 +76,7 @@ function SettingsPageInner() {
 
       <div className="settings-main">
         {tab === "routing" ? <RoutingSettingsPanel /> : null}
+        {tab === "image" ? <ImageProviderSettingsPanel /> : null}
         {tab === "avatar" ? <AvatarSettingsPanel /> : null}
         {tab === "runtime" ? <RuntimeSettingsPanel /> : null}
         {tab === "oss" ? <OssSettingsPanel /> : null}

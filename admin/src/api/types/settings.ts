@@ -56,6 +56,13 @@ export type AdminModelSettings = {
   volc_tts_base_url: string;
   volc_tts_api_key: string;
   has_volc_tts_api_key: boolean;
+  /** 生图改走 OpenAI（可选） */
+  openai_image_enabled: boolean;
+  openai_image_api_key: string;
+  has_openai_image_api_key: boolean;
+  openai_image_model: string;
+  openai_image_quality: string;
+  openai_image_scope: string;
   volc_tts_resource_id: string;
   volc_tts_speech_rate: number;
   volc_tts_instruction: string;

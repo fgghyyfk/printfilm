@@ -947,8 +947,13 @@ class ArkGateway:
         model: str | None = None,
         aspect_ratio: str | None = None,
         style_ref_urls: list[str] | None = None,
+        purpose: str = "all",
+        ratio_hint: str | None = None,
     ) -> ImageResult:
         """调用 TokenFree 生图（Seedream 家族在网关侧重映射）。
+
+        purpose：调用方用途（tools=工具中心）。后台开启「生图改走 OpenAI」且作用范围覆盖时，改用 gpt-image；
+        ratio_hint：如「3:4」，仅 OpenAI 分支用于决定输出尺寸。
 
         只软化用户正文并保留设定板前缀；InputTextSensitive 时仍用简化三视图重试，
         最后一档才缩成「三视图+服装风格」。不做空主体 / CG 厚涂兜底。
@@ -958,6 +963,13 @@ class ArkGateway:
             ark_model = None
         else:
             ark_model = resolved
+
+        from app.services.openai_image import openai_image_active
+
+        # 生图旁路优先于主渠道 Key 检查（主渠道没 Key 也能用 OpenAI 出图）；全局 ARK_MOCK 仍最优先
+        if not self.settings.ark_mock and openai_image_active(purpose, self.settings):
+            return await self._openai_image(prompt, negative, ref_urls, style_ref_urls,
+                                            project_id=project_id, shot_no=shot_no, size=size, ratio_hint=ratio_hint)
 
         if self.mock:
             self._resolve_ark_route("image", ark_model)
@@ -1033,6 +1045,40 @@ class ArkGateway:
                 )
                 raise
         raise RuntimeError(str(last_err) if last_err else "Seedream failed")
+
+    async def _openai_image(
+        self,
+        prompt: str,
+        negative: str,
+        ref_urls: list[str] | None,
+        style_ref_urls: list[str] | None,
+        *,
+        project_id: int | None,
+        shot_no: int | None,
+        size: str | None,
+        ratio_hint: str | None,
+    ) -> ImageResult:
+        """生图旁路：OpenAI gpt-image（参考图走 edits），结果与 Seedream 一样落盘返回本地地址。"""
+        from app.services import openai_image
+
+        full = (prompt or "").strip()
+        if negative:
+            full = f"{full}。避免：{negative}"
+        refs = list(dict.fromkeys([*(ref_urls or []), *(style_ref_urls or [])]))
+        out = await openai_image.generate(full, refs, project_id=project_id, shot_no=shot_no,
+                                          size=size, ratio_hint=ratio_hint, settings=self.settings)
+        usage = dict(out.get("usage") or {})
+        usage.setdefault("size", out["size"])
+        usage["provider"] = "openai"
+        usage["model"] = out["model"]
+        return ImageResult(
+            local_url=openai_image.save_path_url(out["local_path"]),
+            remote_url=None,
+            total_tokens=int(usage.get("total_tokens") or 0),
+            prompt_tokens=int(usage.get("input_tokens") or 0),
+            completion_tokens=int(usage.get("output_tokens") or 0),
+            raw_usage=usage,
+        )
 
     async def _seedream_once(
         self,
