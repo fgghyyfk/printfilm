@@ -1,3 +1,4 @@
+import { translate as translateUi } from '../../i18n/runtime'
 /** 漫剧分集左侧目录（大纲 / 分集页 / 分镜页共用） */
 import type { ReactNode } from 'react'
 import type { DramaEpisode } from '../../api/drama'
@@ -31,21 +32,21 @@ export function buildEpisodeDirItems(episodes: DramaEpisode[]): DramaEpisodeDirI
     const fragCount = (ep.fragments || []).length
     return {
       id: ep.id,
-      label: epNo >= 1 ? `第 ${epNo} 集` : `未编号 · ${ep.id}`,
-      title: ep.name || `分集 ${ep.id}`,
-      meta: fragCount > 0 ? `${fragCount} 镜` : undefined,
+      label: epNo >= 1 ? translateUi("workflow.episode", { v1: String(epNo) }) : translateUi("workflow.unnumbered", { v1: String(ep.id) }),
+      title: ep.name || translateUi("workflow.episode_ebaa6d", { v1: String(ep.id) }),
+      meta: fragCount > 0 ? translateUi("workflow.shotCount", { v1: String(fragCount) }) : undefined,
     }
   })
 }
 
 // 左侧分集目录
 export function DramaEpisodeDir({
-  title = '分集目录',
+  title = translateUi("workflow.episodes_4c659c"),
   items,
   activeId,
   onSelect,
   footer,
-  emptyText = '暂无分集',
+  emptyText = translateUi("workflow.noEpisodesYet"),
 }: DramaEpisodeDirProps) {
   return (
     <aside className="drama-episode-dir">

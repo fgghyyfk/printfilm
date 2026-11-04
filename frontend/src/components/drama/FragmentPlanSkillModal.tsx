@@ -1,3 +1,5 @@
+import { useI18n } from '../../i18n'
+import { translate as translateUi } from '../../i18n/runtime'
 /** AI 重新分镜确认：可选本次注入的 Agent Skill */
 import { useEffect } from 'react'
 import { AlertTriangle } from 'lucide-react'
@@ -16,12 +18,13 @@ type FragmentPlanSkillModalProps = {
 /** 覆盖分镜前让用户勾选 Skill */
 export function FragmentPlanSkillModal({
   open,
-  title = 'AI 重新分镜',
+  title = translateUi("workflow.replanStoryboardsWithAi"),
   message,
-  confirmText = '开始分镜',
+  confirmText = translateUi("workflow.startStoryboards"),
   onCancel,
   onConfirm,
 }: FragmentPlanSkillModalProps) {
+  const { t: translateUi } = useI18n()
   const { skills, selectedIds, toggleSkill, selectAll, selectNone, uploadSkill, uploading, uploadError } =
     useAgentSkillSelection()
 
@@ -67,7 +70,7 @@ export function FragmentPlanSkillModal({
           </div>
         </div>
         <div className="pf-dialog-skill-block">
-          <div className="pf-dialog-skill-label">本次使用的 Skill</div>
+          <div className="pf-dialog-skill-label">{translateUi("workflow.skillsForThisRun")}</div>
           <AgentSkillPicker
             skills={skills}
             selectedIds={selectedIds}
@@ -77,12 +80,12 @@ export function FragmentPlanSkillModal({
             onUpload={(file) => void uploadSkill(file)}
             uploading={uploading}
             uploadError={uploadError}
-            emptyText="还没有 Skill，可上传 .md"
+            emptyText={translateUi("workflow.noSkillsYetUploadAMdFile")}
           />
         </div>
         <div className="pf-dialog-actions">
           <button type="button" className="pf-dialog-btn pf-dialog-btn-ghost" onClick={onCancel}>
-            取消
+            {translateUi("ecomSet.copyModal.cancel")}
           </button>
           <button type="submit" className="pf-dialog-btn pf-dialog-btn-danger">
             {confirmText}

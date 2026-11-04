@@ -1,6 +1,7 @@
+import { loadSource } from './bundleModule.mjs'
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { hasActiveUnifiedTasks, isProjectBusy, requestProjectCancellation } from '../src/lib/kepuTaskControls.ts'
+const { hasActiveUnifiedTasks, isProjectBusy, requestProjectCancellation } = await loadSource('../src/lib/kepuTaskControls.ts')
 
 // 模拟后端运行态响应，不依赖页面源码或浏览器。
 const project = (status, tasks) => ({ id: 7, status, active_tasks: tasks })

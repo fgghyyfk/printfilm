@@ -1,6 +1,7 @@
+import { loadSource } from './bundleModule.mjs'
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { replacementPreview, canUndoReplacement, undoReplacement } from '../src/lib/complianceChanges.ts'
+const { replacementPreview, canUndoReplacement, undoReplacement } = await loadSource('../src/lib/complianceChanges.ts')
 
 const row = { scope: 'shot', shot_id: 12, field: 'narration', matches_current: true, text: '😀好用的暖壶，高端设计，高端配置' }
 const first = { id: '0', old: '最好用', new: '好用', current_start: 1, current_end: 3, undone: false }

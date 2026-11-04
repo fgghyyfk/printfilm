@@ -1,3 +1,4 @@
+import { translate as translateUi } from '../i18n/runtime'
 /** 按角色设定 AI 生成音色并绑定到 voiceAudio（无弹窗，供卡片一键生成） */
 import { dramaApi, type DramaAsset } from '../api/drama'
 import { buildBoundParams } from '../pages/drama/CharacterVoiceBindModal'
@@ -18,7 +19,7 @@ export async function generateAndBindCharacterVoice(
   })
   const voicePrompt = (promptResult.voice_prompt || '').trim()
   if (!voicePrompt) {
-    throw new Error('音色描述为空')
+    throw new Error(translateUi("workflow.enterAVoiceDescription"))
   }
 
   const voiceResult = await dramaApi.generateVoice({
@@ -31,7 +32,7 @@ export async function generateAndBindCharacterVoice(
   })
   const voice = voiceResult.asset
   if (!voice?.url) {
-    throw new Error('音色合成失败')
+    throw new Error(translateUi("workflow.voiceSynthesisFailed"))
   }
 
   const character = await dramaApi.updateAsset(asset.id, {

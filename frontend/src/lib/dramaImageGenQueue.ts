@@ -1,3 +1,4 @@
+import { translate as translateUi } from '../i18n/runtime'
 /** 漫剧资产生图：提交后立刻轮询，成功后用新 URL 实时回显（不排队提交） */
 import { dramaApi, type DramaAsset } from '../api/drama'
 import type { ImageGenerationOptions } from './dramaGenerationOptions'
@@ -209,7 +210,7 @@ async function waitForAssetImage(
   while (Date.now() - started < POLL_TIMEOUT_MS) {
     const list = await dramaApi.listAssets(projectId)
     const latest = list.find((a) => a.id === assetId)
-    if (!latest) throw new Error('资产不存在')
+    if (!latest) throw new Error(translateUi("workflow.assetNotFound"))
 
     const status = readGenerationStatus(latest)
     const currentUrl = assetMediaUrl(latest)
@@ -228,7 +229,7 @@ async function waitForAssetImage(
     if (status === 'failed' || status === 'cancelled') {
       const gen = (latest.params || {}).generation as { error?: string } | undefined
       const raw = String(gen?.error || '').trim()
-      throw new Error(raw || (status === 'cancelled' ? '生图已取消' : '生图失败'))
+      throw new Error(raw || (status === 'cancelled' ? translateUi("workflow.imageGenerationCancelled") : translateUi("workflow.imageGenerationFailed")))
     }
 
     const urlChanged = Boolean(currentUrl) && currentUrl !== baselineUrl
@@ -245,7 +246,7 @@ async function waitForAssetImage(
     // 仍是旧图且未进入过 in-flight：继续等（POST 后状态可能尚未可见）
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS))
   }
-  throw new Error('生图超时，请刷新后重试')
+  throw new Error(translateUi("workflow.imageGenerationTimedOutRefreshBeforeTryingAgain"))
 }
 
 const waitingPoll: InternalJob[] = []
@@ -275,7 +276,7 @@ async function pollJob(job: InternalJob) {
     emit()
     job.resolve(asset)
   } catch (err) {
-    const message = err instanceof Error ? err.message : '生图失败'
+    const message = err instanceof Error ? err.message : translateUi("workflow.imageGenerationFailed")
     job.status = 'failed'
     job.error = message
     job.finishedAt = Date.now()
@@ -328,12 +329,12 @@ async function submitJob(job: InternalJob) {
       job.onSubmission?.({ skipped: Boolean(resp.skipped), reused: Boolean(resp.reused) })
       if (resp.skipped && queuedAsset) {
         job.status = 'done'
-        job.message = '已有参考图，已跳过（未新增任务）'
+        job.message = translateUi("workflow.referenceImageAlreadyExistsSkippedWithoutCreatingATask")
         job.finishedAt = Date.now()
         job.resolve(queuedAsset)
         return
       }
-      if (resp.reused) job.message = '已接回现有生图任务，未重复入队'
+      if (resp.reused) job.message = translateUi("workflow.reconnectedToTheExistingImageTaskWithoutQueueingAnother")
     }
     if (job.status === 'queued') {
       job.status = 'running'
@@ -341,7 +342,7 @@ async function submitJob(job: InternalJob) {
     waitingPoll.push(job)
     pumpPoll()
   } catch (err) {
-    const message = err instanceof Error ? err.message : '生图失败'
+    const message = err instanceof Error ? err.message : translateUi("workflow.imageGenerationFailed")
     job.status = 'failed'
     job.error = message
     job.finishedAt = Date.now()

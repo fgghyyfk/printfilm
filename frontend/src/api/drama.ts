@@ -1,3 +1,4 @@
+import { translate as translateUi } from '../i18n/runtime'
 import { fragmentSaveBody, type FragmentEditSnapshot } from '../lib/dramaFragmentEditing'
 import { throwApiError } from '../lib/apiError'
 import { API_BASE, createJsonRequester, uploadFile } from './client'
@@ -5,7 +6,7 @@ import { apiErrorMessage } from './http'
 
 /** 漫剧 API 沿用原有错误提示，并共用登录态与 JSON 解析。 */
 const request = createJsonRequester((response, detail) =>
-  throwApiError(response.status, detail, '请求失败', response.headers.get('X-Error-Code')),
+  throwApiError(response.status, detail, translateUi("workflow.requestFailed"), response.headers.get('X-Error-Code')),
 )
 
 /** 导出 API 根地址，供静态资源 URL 拼接 */
@@ -329,7 +330,7 @@ export const dramaApi = {
   /** 上传资产媒体并返回更新后的资产。 */
   uploadAssetMedia: (assetId: number, file: File) =>
     uploadFile<DramaAsset>(`/api/drama/assets/${assetId}/upload`, file, (response, detail) => {
-      throw new Error(apiErrorMessage(detail, response.statusText) || '上传失败')
+      throw new Error(apiErrorMessage(detail, response.statusText) || translateUi("workflow.uploadFailed"))
     }),
   activateAssetImageVersion: (assetId: number, versionId: string) =>
     request<DramaAsset>(`/api/drama/assets/${assetId}/activate_image_version`, {

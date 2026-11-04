@@ -1,3 +1,4 @@
+import { translate as translateUi } from '../i18n/runtime'
 import type { Project } from '../api'
 import type { ConfirmOptions } from './dialog'
 
@@ -28,10 +29,10 @@ export async function requestProjectCancellation(
   cancel: (id: number) => Promise<Project>,
 ): Promise<Project | null> {
   const confirmed = await confirm({
-    title: '取消生成',
-    message: '确定取消当前生成任务？正在执行的任务需要等待停止后才能继续编辑或生成。',
-    confirmText: '取消生成',
-    cancelText: '继续等待',
+    title: translateUi("workflow.cancelGeneration"),
+    message: translateUi("workflow.cancelThisGenerationTaskWaitForRunningWorkTo"),
+    confirmText: translateUi("workflow.cancelGeneration"),
+    cancelText: translateUi("workflow.keepWaiting"),
     tone: 'danger',
   })
   if (!confirmed) return null

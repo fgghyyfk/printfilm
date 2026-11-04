@@ -1,3 +1,5 @@
+import { useI18n } from '../../i18n'
+import { translate as translateUi } from '../../i18n/runtime'
 /** 分集编辑：输入 @ 时弹出的资产 / 时长 / 运镜选择层 */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -38,9 +40,9 @@ type TabKey = 'assets' | 'tools'
 type ToolsView = 'list' | 'duration' | 'camera'
 
 const TYPE_LABEL: Record<string, string> = {
-  character: '角色',
-  scene: '场景',
-  prop: '道具',
+  get character() { return translateUi("workflow.character") },
+  get scene() { return translateUi("workflow.scene") },
+  get prop() { return translateUi("workflow.prop") },
 }
 
 // 渲染 @ 引用弹层
@@ -61,6 +63,7 @@ export function EpisodeEditMentionPopover({
   onSelectCameraPhrase,
   onClose,
 }: Props) {
+  const { t: translateUi } = useI18n()
   const panelRef = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   const [tab, setTab] = useState<TabKey>('assets')
@@ -192,7 +195,7 @@ export function EpisodeEditMentionPopover({
       className="drama-ep-mention-pop"
       style={{ top, left }}
       role="listbox"
-      aria-label="@ 引用"
+      aria-label={translateUi("workflow.references")}
     >
       <div className="drama-ep-mention-pop-tabs">
         <button
@@ -202,7 +205,7 @@ export function EpisodeEditMentionPopover({
           onClick={() => setTab('assets')}
         >
           <LayoutGrid size={14} />
-          资产
+          {translateUi("workflow.asset_713fd9")}
         </button>
         <button
           type="button"
@@ -214,7 +217,7 @@ export function EpisodeEditMentionPopover({
           }}
         >
           <Timer size={14} />
-          小工具
+          {translateUi("workflow.tools")}
         </button>
       </div>
 
@@ -227,7 +230,7 @@ export function EpisodeEditMentionPopover({
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => onScopeChange('episode')}
             >
-              本集
+              {translateUi("workflow.thisEpisode")}
             </button>
             <button
               type="button"
@@ -235,7 +238,7 @@ export function EpisodeEditMentionPopover({
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => onScopeChange('series')}
             >
-              全剧
+              {translateUi("workflow.wholeDrama")}
             </button>
           </div>
           <label className="drama-ep-mention-pop-search">
@@ -244,7 +247,7 @@ export function EpisodeEditMentionPopover({
               ref={searchRef}
               type="search"
               value={searchQuery}
-              placeholder="搜索资产名称、类型…"
+              placeholder={translateUi("workflow.searchAssetNamesOrTypes")}
               onChange={(e) => setSearchQuery(e.target.value)}
               onMouseDown={(e) => e.stopPropagation()}
               onKeyDown={(e) => {
@@ -263,7 +266,7 @@ export function EpisodeEditMentionPopover({
           </label>
           <div className="drama-ep-mention-pop-list">
             {filteredAssets.length === 0 ? (
-              <p className="drama-ep-mention-pop-empty">无匹配资产</p>
+              <p className="drama-ep-mention-pop-empty">{translateUi("workflow.noMatchingAssets")}</p>
             ) : (
               filteredAssets.map((asset, index) => {
                 const preview = resolveDramaMediaUrl(asset.cover || asset.url)
@@ -285,7 +288,7 @@ export function EpisodeEditMentionPopover({
                       )}
                     </span>
                     <span className="drama-ep-mention-pop-meta">
-                      <strong>{asset.name || `资产 ${asset.id}`}</strong>
+                      <strong>{asset.name || translateUi("workflow.asset", { v1: String(asset.id) })}</strong>
                       <em>{TYPE_LABEL[typeKey] || typeKey}</em>
                     </span>
                   </button>
@@ -303,8 +306,8 @@ export function EpisodeEditMentionPopover({
           >
             <Clapperboard size={16} />
             <span>
-              <strong>插入时长</strong>
-              <em>剩余可用 {remaining}s</em>
+              <strong>{translateUi("workflow.insertDuration")}</strong>
+              <em>{translateUi("workflow.sRemaining", { v1: remaining })}</em>
             </span>
           </button>
           <button
@@ -314,8 +317,8 @@ export function EpisodeEditMentionPopover({
           >
             <Aperture size={16} />
             <span>
-              <strong>景别 / 运镜</strong>
-              <em>插入空镜、特写、推拉摇移等前缀</em>
+              <strong>{translateUi("workflow.shotSizeCameraMovement")}</strong>
+              <em>{translateUi("workflow.insertEstablishingCloseUpPushPullPanOrTilt")}</em>
             </span>
           </button>
         </div>
@@ -327,7 +330,7 @@ export function EpisodeEditMentionPopover({
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => setToolsView('list')}
           >
-            ← 返回
+            {translateUi("workflow.back")}
           </button>
           <div className="drama-ep-mention-pop-duration-presets">
             {DURATION_PRESET_OPTIONS.map((sec) => {
@@ -350,7 +353,7 @@ export function EpisodeEditMentionPopover({
               type="number"
               min={1}
               max={remaining || FRAGMENT_CONTENT_DURATION_MAX}
-              placeholder="自定义秒数"
+              placeholder={translateUi("workflow.customDurationInSeconds")}
               value={customDuration}
               onChange={(e) => setCustomDuration(e.target.value)}
               onMouseDown={(e) => e.stopPropagation()}
@@ -364,7 +367,7 @@ export function EpisodeEditMentionPopover({
                 onSelectDuration(sec)
               }}
             >
-              插入
+              {translateUi("workflow.insert")}
             </button>
           </div>
         </div>
@@ -376,19 +379,19 @@ export function EpisodeEditMentionPopover({
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => setToolsView('list')}
           >
-            ← 返回
+            {translateUi("workflow.back")}
           </button>
           {filteredCamera.length === 0 ? (
-            <p className="drama-ep-mention-pop-empty">无匹配词条</p>
+            <p className="drama-ep-mention-pop-empty">{translateUi("workflow.noMatchingEntries")}</p>
           ) : (
             <>
-              {renderCameraGroup('景别', shotItems)}
-              {renderCameraGroup('运镜', moveItems)}
+              {renderCameraGroup(translateUi("workflow.shotSize"), shotItems)}
+              {renderCameraGroup(translateUi("workflow.cameraMovement"), moveItems)}
             </>
           )}
           <ul className="drama-ep-mention-pop-camera-tips">
             {DRAMA_CAMERA_USAGE_TIPS.map((tip) => (
-              <li key={tip}>{tip}</li>
+              <li key={tip}>{({ "公式：主体 + 动作 + 场景 +（景别/运镜）+（光影）": translateUi("workflow.formulaSubjectActionSceneFramingCameraMovementLighting"), "每段运动轴 ≤ 2（推+摇可以；推+摇+升易失控）": translateUi("workflow.useAtMostTwoMotionAxesPerSegmentPush"), "近景大旋转易崩脸，环绕留给中景以上": translateUi("workflow.largeRotationsCanDistortFacesInCloseUpsUse"), "空镜/景别必须用画面写法，禁止标成对白或旁白": translateUi("workflow.markCutawaysAndFramingAsVisualDirectionsNeverDialogue") } as Record<string, string>)[tip] || tip}</li>
             ))}
           </ul>
         </div>

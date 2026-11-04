@@ -1,3 +1,5 @@
+import { useI18n } from '../../../i18n'
+import { translate as translateUi } from '../../../i18n/runtime'
 /** 画布顶栏：返回、标题、保存状态、设置占位 */
 import { MyTasksButton } from '../../../components/MyTasks'
 import { useState } from 'react'
@@ -12,15 +14,16 @@ type Props = {
 
 /** 保存状态文案 */
 function saveStatusLabel(status: CanvasSaveStatus): string | null {
-  if (status === 'dirty') return '未保存'
-  if (status === 'saving') return '保存中…'
-  if (status === 'saved') return '已保存'
-  if (status === 'error') return '保存失败'
+  if (status === 'dirty') return translateUi("workflow.unsaved")
+  if (status === 'saving') return translateUi("workflow.saving")
+  if (status === 'saved') return translateUi("ecomSet.plan.saved")
+  if (status === 'error') return translateUi("workflow.couldNotSave")
   return null
 }
 
 /** 渲染画布页顶部工具栏 */
 export function CanvasTopBar({ variant = 'fullscreen' }: Props) {
+  const { t: translateUi } = useI18n()
   const navigate = useNavigate()
   const { saveStatus, projectId, freeCanvasMode } = useCanvasStore()
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -35,8 +38,8 @@ export function CanvasTopBar({ variant = 'fullscreen' }: Props) {
             <button
               type="button"
               className="fc-icon-btn"
-              aria-label="返回"
-              title="返回"
+              aria-label={translateUi("workflow.back_11d024")}
+              title={translateUi("workflow.back_11d024")}
               onClick={() => {
                 if (freeCanvasMode) {
                   navigate('/drama')
@@ -50,7 +53,7 @@ export function CanvasTopBar({ variant = 'fullscreen' }: Props) {
             </button>
           )}
           <span className="fc-topbar-title">
-            {embedded ? '资产画布' : freeCanvasMode ? '自由画布' : '资产库编排'}
+            {embedded ? translateUi("workflow.assetCanvas") : freeCanvasMode ? translateUi("workflow.freeCanvas") : translateUi("workflow.assetLayout")}
           </span>
           {statusText ? (
             <span
@@ -76,8 +79,8 @@ export function CanvasTopBar({ variant = 'fullscreen' }: Props) {
             <button
               type="button"
               className="fc-icon-btn"
-              aria-label="全屏画布"
-              title="全屏画布"
+              aria-label={translateUi("workflow.fullscreenCanvas")}
+              title={translateUi("workflow.fullscreenCanvas")}
               onClick={() => navigate(`/drama/projects/${projectId}/canvas`)}
             >
               <Maximize2 size={18} strokeWidth={1.8} />
@@ -86,8 +89,8 @@ export function CanvasTopBar({ variant = 'fullscreen' }: Props) {
           <button
             type="button"
             className="fc-icon-btn"
-            aria-label="设置"
-            title="设置"
+            aria-label={translateUi("workflow.settings")}
+            title={translateUi("workflow.settings")}
             aria-expanded={settingsOpen}
             onClick={() => setSettingsOpen((v) => !v)}
           >
@@ -97,11 +100,11 @@ export function CanvasTopBar({ variant = 'fullscreen' }: Props) {
       </div>
 
       {settingsOpen ? (
-        <div className="fc-settings-pop" role="dialog" aria-label="画布设置">
-          <strong>画布设置</strong>
+        <div className="fc-settings-pop" role="dialog" aria-label={translateUi("workflow.canvasSettings")}>
+          <strong>{translateUi("workflow.canvasSettings")}</strong>
           {freeCanvasMode
-            ? '在画布上添加节点、连线并生成图片与视频。布局与资产会自动保存。'
-            : '布局与项目资产会自动同步保存。上传走 OSS；合成时按需拉本地缓存。'}
+            ? translateUi("workflow.addNodesConnectThemAndGenerateImagesOrVideo")
+            : translateUi("workflow.theLayoutAndProjectAssetsSyncAutomaticallyUploadsUse")}
           <div style={{ marginTop: 10 }}>
             <button
               type="button"
@@ -109,7 +112,7 @@ export function CanvasTopBar({ variant = 'fullscreen' }: Props) {
               style={{ width: 'auto', padding: '0 12px', borderRadius: 10 }}
               onClick={() => setSettingsOpen(false)}
             >
-              关闭
+              {translateUi("workflow.close")}
             </button>
           </div>
         </div>

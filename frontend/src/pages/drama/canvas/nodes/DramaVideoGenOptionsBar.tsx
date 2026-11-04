@@ -1,3 +1,4 @@
+import { useI18n } from '../../../../i18n'
 /** 画布视频节点：风格 / Seedance 模型 / 时长 / 比例清晰度 */
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import { BarChart3, ChevronDown, RectangleVertical, Smile, Timer } from 'lucide-react'
@@ -42,6 +43,7 @@ export function DramaVideoGenOptionsBar({
   onChange,
   disabled = false,
 }: DramaVideoGenOptionsBarProps) {
+  const { t: translateUi } = useI18n()
   const rootRef = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState<OpenPanel>(null)
   // 自定义时长草稿：输入过程不立刻 clamp，避免打「24」时中间的「2」被夹成 min
@@ -144,8 +146,8 @@ export function DramaVideoGenOptionsBar({
     e.stopPropagation()
   }
 
-  const styleLabel = getImageStyleLabel(value.image_style_id) || '风格'
-  const modelLabel = catalogModelLabel(value.model_id, videoModels, '视频模型')
+  const styleLabel = getImageStyleLabel(value.image_style_id) || translateUi("ecomSet.form.style")
+  const modelLabel = catalogModelLabel(value.model_id, videoModels, translateUi("workflow.videoModel"))
   const outputLabel = formatVideoOutputLabel(value.aspect_ratio, value.resolution)
 
   return (
@@ -194,8 +196,8 @@ export function DramaVideoGenOptionsBar({
       </div>
 
       {open === 'style' ? (
-        <div className="fc-gen-opt-panel fc-gen-style-panel" role="dialog" aria-label="视频风格">
-          <div className="fc-gen-opt-panel-title">视频风格</div>
+        <div className="fc-gen-opt-panel fc-gen-style-panel" role="dialog" aria-label={translateUi("workflow.videoStyle")}>
+          <div className="fc-gen-opt-panel-title">{translateUi("workflow.videoStyle")}</div>
           <div className="fc-gen-style-grid">
             {IMAGE_STYLE_OPTIONS.map((opt) => {
               const selected = value.image_style_id === opt.id
@@ -219,8 +221,8 @@ export function DramaVideoGenOptionsBar({
       ) : null}
 
       {open === 'model' ? (
-        <div className="fc-gen-opt-panel" role="dialog" aria-label="视频模型">
-          <div className="fc-gen-opt-panel-title">模型</div>
+        <div className="fc-gen-opt-panel" role="dialog" aria-label={translateUi("workflow.videoModel")}>
+          <div className="fc-gen-opt-panel-title">{translateUi("workflow.model")}</div>
           <DramaMediaModelPicker
             models={videoModels}
             selectedId={value.model_id}
@@ -252,8 +254,8 @@ export function DramaVideoGenOptionsBar({
       ) : null}
 
       {open === 'duration' ? (
-        <div className="fc-gen-opt-panel" role="dialog" aria-label="视频时长">
-          <div className="fc-gen-opt-panel-title">时长</div>
+        <div className="fc-gen-opt-panel" role="dialog" aria-label={translateUi("workflow.videoDuration")}>
+          <div className="fc-gen-opt-panel-title">{translateUi("workflow.duration")}</div>
           <div className="fc-gen-chip-row">
             {durationPresets.map((sec) => (
               <button
@@ -273,8 +275,7 @@ export function DramaVideoGenOptionsBar({
             ))}
           </div>
           <label className="fc-gen-duration-custom">
-            自定义（{durationBounds.min}–{durationBounds.max}s）
-            <input
+            {translateUi("workflow.customS", { v1: durationBounds.min, v2: durationBounds.max })}<input
               type="number"
               inputMode="numeric"
               min={durationBounds.min}
@@ -303,8 +304,8 @@ export function DramaVideoGenOptionsBar({
       ) : null}
 
       {open === 'output' ? (
-        <div className="fc-gen-opt-panel" role="dialog" aria-label="画幅与清晰度">
-          <div className="fc-gen-opt-panel-title">比例</div>
+        <div className="fc-gen-opt-panel" role="dialog" aria-label={translateUi("workflow.aspectRatioAndResolution")}>
+          <div className="fc-gen-opt-panel-title">{translateUi("workflow.aspectRatio")}</div>
           <div className="fc-gen-chip-row">
             {aspectOptions.map((ratio) => (
               <button
@@ -318,7 +319,7 @@ export function DramaVideoGenOptionsBar({
             ))}
           </div>
           <div className="fc-gen-opt-panel-title" style={{ marginTop: 10 }}>
-            清晰度
+            {translateUi("workflow.resolution")}
           </div>
           <div className="fc-gen-chip-row">
             {resolutionOptions.map((res) => (

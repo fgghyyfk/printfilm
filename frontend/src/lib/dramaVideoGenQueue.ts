@@ -1,3 +1,4 @@
+import { translate as translateUi } from '../i18n/runtime'
 /** 漫剧画布资产生视频队列：入队即提交 Seedance Worker，刷新后可从资产状态恢复 */
 import { dramaApi, type DramaAsset } from '../api/drama'
 import type { VideoGenerationOptions } from './dramaVideoGenerationOptions'
@@ -160,11 +161,11 @@ async function waitForAssetVideo(projectId: number, assetId: number): Promise<Dr
       const list = await dramaApi.listAssets(projectId)
       transientStreak = 0
       const latest = list.find((a) => a.id === assetId)
-      if (!latest) throw new Error('资产不存在')
+      if (!latest) throw new Error(translateUi("workflow.assetNotFound"))
       const status = readGenerationStatus(latest)
       if (status === 'failed') {
         const gen = (latest.params || {}).generation as { error?: string } | undefined
-        throw new Error(String(gen?.error || '生视频失败'))
+        throw new Error(String(gen?.error || translateUi("workflow.videoGenerationFailed_93a037")))
       }
       if (status === 'done' && latest.url) {
         return latest
@@ -182,7 +183,7 @@ async function waitForAssetVideo(projectId: number, assetId: number): Promise<Dr
     }
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS))
   }
-  throw new Error('生视频超时，请刷新后重试')
+  throw new Error(translateUi("workflow.videoGenerationTimedOutRefreshBeforeTryingAgain"))
 }
 
 // 有限并发轮询后端结果
@@ -195,7 +196,7 @@ async function pollJob(job: InternalJob) {
     emit()
     job.resolve(asset)
   } catch (err) {
-    const message = err instanceof Error ? err.message : '生视频失败'
+    const message = err instanceof Error ? err.message : translateUi("workflow.videoGenerationFailed_93a037")
     job.status = 'failed'
     job.error = message
     job.finishedAt = Date.now()
@@ -246,7 +247,7 @@ function startJob(job: InternalJob) {
       waitingPoll.push(job)
       pump()
     } catch (err) {
-      const message = err instanceof Error ? err.message : '生视频失败'
+      const message = err instanceof Error ? err.message : translateUi("workflow.videoGenerationFailed_93a037")
       job.status = 'failed'
       job.error = message
       job.finishedAt = Date.now()

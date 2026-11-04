@@ -1,3 +1,4 @@
+import { translate as translateUi } from '../../../i18n/runtime'
 /** 画布布局脏标记 → 防抖自动保存 */
 import { useCallback, useEffect, useRef } from 'react'
 import type { Edge, Node } from '@xyflow/react'
@@ -79,7 +80,7 @@ export function useCanvasAutoSave({
         }
       } catch (err) {
         onStatus?.('error')
-        onError(err instanceof Error ? err.message : '自动保存失败')
+        onError(err instanceof Error ? err.message : translateUi("workflow.autosaveFailed"))
         // 网络闪断时保持 dirty，便于稍后自动重试 / Ctrl+S
         throw err
       } finally {

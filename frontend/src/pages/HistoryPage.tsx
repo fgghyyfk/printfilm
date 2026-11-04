@@ -69,7 +69,7 @@ function statusBadgeClass(status: string) {
 
 export default function HistoryPage() {
   const nav = useNavigate()
-  const { t, m, locale } = useI18n()
+  const { t, m, locale , t: translateUi } = useI18n()
   /*
    * items 当前页项目
    * total 筛选后总数（后端）
@@ -179,7 +179,7 @@ export default function HistoryPage() {
           } catch {
             if (valid() && current === generation && (!query.signal.aborted || timedOut)) {
               failures += 1
-              setConnectionError('连接中断，重试中')
+              setConnectionError(translateUi("workflow.connectionLostRetrying"))
             }
           } finally {
             clearTimeout(timeout)
@@ -260,7 +260,7 @@ export default function HistoryPage() {
     if (!navigator.clipboard?.writeText) { setCopyFallback({ url, title: project.title }); return }
     try {
       await navigator.clipboard.writeText(url)
-      setCopyNotice('成片链接已复制')
+      setCopyNotice(translateUi("workflow.videoLinkCopied"))
     } catch {
       setCopyFallback({ url, title: project.title })
     }
@@ -515,7 +515,7 @@ export default function HistoryPage() {
                       {busyId === p.id ? t('common.downloading') : t('common.download')}
                     </button>
                     <button type="button" className="pf-btn-text" disabled={!canDownload(p)} onClick={() => void copyFinalVideoLink(p)}>
-                      <IconCopy size={14} />复制成片链接
+                      <IconCopy size={14} />{translateUi("workflow.copyVideoLink")}
                     </button>
                     <button
                       type="button"
@@ -549,10 +549,10 @@ export default function HistoryPage() {
         </section>
       </div>
 
-      <Modal open={Boolean(copyFallback)} onClose={() => setCopyFallback(null)} title="手动复制成片链接">
+      <Modal open={Boolean(copyFallback)} onClose={() => setCopyFallback(null)} title={translateUi("workflow.copyVideoLinkManually")}>
         <p>{copyFallback?.title}</p>
-        <p>当前浏览器无法自动复制，请选中下面的链接手动复制。</p>
-        <input aria-label="成片链接" readOnly value={copyFallback?.url || ''} onFocus={(event) => event.currentTarget.select()}
+        <p>{translateUi("workflow.yourBrowserCouldNotCopyAutomaticallySelectTheLink")}</p>
+        <input aria-label={translateUi("workflow.videoLink")} readOnly value={copyFallback?.url || ''} onFocus={(event) => event.currentTarget.select()}
           style={{ width: '100%' }} />
       </Modal>
 

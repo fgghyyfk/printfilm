@@ -1,3 +1,5 @@
+import { useI18n } from '../../i18n'
+import { translate as translateUi } from '../../i18n/runtime'
 import { useState } from 'react'
 import { api } from '../../api'
 import type { Project } from '../../api'
@@ -6,21 +8,21 @@ import type { Project } from '../../api'
 type Choice<T extends string> = { id: T; label: string; title?: string }
 
 const SCENE_MODES: Choice<'per_segment' | 'fixed'>[] = [
-  { id: 'per_segment', label: '每段换场景', title: '每段口播换一个与内容相关的背景（适合科普讲解）' },
-  { id: 'fixed', label: '全片固定场景', title: '整条视频同一个场景（适合观点口播、个人 IP）' },
+  { id: 'per_segment', get label() { return translateUi("workflow.aSceneForEachSegment") }, get title() { return translateUi("workflow.useARelevantBackgroundForEachSegmentSuitedTo") } },
+  { id: 'fixed', get label() { return translateUi("workflow.oneSceneThroughout") }, get title() { return translateUi("workflow.keepOneSceneThroughoutSuitedToCommentaryAndPersonal") } },
 ]
 const FRAMINGS: Choice<'waist' | 'chest'>[] = [
-  { id: 'waist', label: '腰部以上' },
-  { id: 'chest', label: '胸像近景', title: '口播博主式近景，脸更大' },
+  { id: 'waist', get label() { return translateUi("workflow.waistUp") } },
+  { id: 'chest', get label() { return translateUi("workflow.chestUpCloseUp") }, get title() { return translateUi("workflow.presenterStyleCloseUpWithALargerFaceIn") } },
 ]
 const SCRIPT_STYLES: Choice<'kepu' | 'opinion'>[] = [
-  { id: 'kepu', label: '科普讲解' },
-  { id: 'opinion', label: '观点口播', title: '个人 IP 观点分享，标题拆成两行钩子' },
+  { id: 'kepu', get label() { return translateUi("workflow.explainer") } },
+  { id: 'opinion', get label() { return translateUi("workflow.commentary") }, get title() { return translateUi("workflow.personalBrandCommentaryWithATwoLineTitleHook") } },
 ]
 const RESOLUTIONS: Choice<'' | '480p' | '720p'>[] = [
-  { id: '', label: '后台默认' },
+  { id: '', get label() { return translateUi("workflow.siteDefault") } },
   { id: '480p', label: '480p' },
-  { id: '720p', label: '720p', title: '更清晰，GPU 耗时约翻倍' },
+  { id: '720p', label: '720p', get title() { return translateUi("workflow.sharperOutputGpuProcessingTakesAboutTwiceAsLong") } },
 ]
 
 type Props = {
@@ -34,6 +36,7 @@ type Props = {
  * 每项改动立即保存到项目；批量生产会沿用这些设置。
  */
 export default function AvatarProductionOptions({ project, onProjectUpdated, disabled }: Props) {
+  const { t: translateUi } = useI18n()
   /* 保存状态与标题第二行草稿 */
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -46,7 +49,7 @@ export default function AvatarProductionOptions({ project, onProjectUpdated, dis
     try {
       onProjectUpdated(await api.updateProject(project.id, body))
     } catch (err) {
-      setError(err instanceof Error ? err.message : '保存失败')
+      setError(err instanceof Error ? err.message : translateUi("workflow.couldNotSave"))
     } finally {
       setSaving(false)
     }
@@ -78,18 +81,18 @@ export default function AvatarProductionOptions({ project, onProjectUpdated, dis
   const opinion = project.avatar_script_style === 'opinion'
   return (
     <div className="pf-avatar-options">
-      {row('文案', SCRIPT_STYLES, project.avatar_script_style || 'kepu', (v) => void save({ avatar_script_style: v }))}
-      {row('场景', SCENE_MODES, project.avatar_scene_mode || 'per_segment', (v) => void save({ avatar_scene_mode: v }))}
-      {row('构图', FRAMINGS, project.avatar_framing || 'waist', (v) => void save({ avatar_framing: v }))}
-      {row('清晰度', RESOLUTIONS, project.avatar_resolution || '', (v) => void save({ avatar_resolution: v }))}
+      {row(translateUi("workflow.script"), SCRIPT_STYLES, project.avatar_script_style || 'kepu', (v) => void save({ avatar_script_style: v }))}
+      {row(translateUi("workflow.scene"), SCENE_MODES, project.avatar_scene_mode || 'per_segment', (v) => void save({ avatar_scene_mode: v }))}
+      {row(translateUi("workflow.framing"), FRAMINGS, project.avatar_framing || 'waist', (v) => void save({ avatar_framing: v }))}
+      {row(translateUi("workflow.resolution"), RESOLUTIONS, project.avatar_resolution || '', (v) => void save({ avatar_resolution: v }))}
       {opinion ? (
         <div className="pf-avatar-row">
-          <span className="pf-avatar-label">标题第二行</span>
+          <span className="pf-avatar-label">{translateUi("compliance.fields.avatar_title2")}</span>
           <input
             className="pf-avatar-input"
             value={title2}
             maxLength={32}
-            placeholder="留空则写稿时自动生成，如「怕选错平台」"
+            placeholder={translateUi("workflow.leaveBlankToGenerateThisWhenWritingTheScript")}
             disabled={disabled || saving}
             onChange={(e) => setTitle2(e.target.value)}
             onBlur={() => {

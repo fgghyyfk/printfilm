@@ -1,3 +1,4 @@
+import { useI18n } from '../../i18n'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, type UsageSummary } from '../../api'
@@ -21,6 +22,7 @@ export default function MonthlyUsageCard({
   variant = 'panel',
   showTopup = true,
 }: MonthlyUsageCardProps) {
+  const { t: translateUi } = useI18n()
   const [usage, setUsage] = useState<UsageSummary | null>(null)
 
   useEffect(() => {
@@ -40,12 +42,12 @@ export default function MonthlyUsageCard({
   return (
     <div className={`pf-usage-card${variant === 'compact' ? ' is-compact' : ''}`}>
       <header className="pf-usage-card-head">
-        <h3>本月使用情况</h3>
-        <p>按上游 token 实际用量计费</p>
+        <h3>{translateUi("workflow.usageThisMonth")}</h3>
+        <p>{translateUi("workflow.billedByActualProviderTokenUsage")}</p>
       </header>
 
       <div className="pf-usage-row">
-        <span>Token 用量</span>
+        <span>{translateUi("workflow.tokenUsage")}</span>
         <span className="pf-usage-val">{formatTokens(usage?.tokens ?? 0)}</span>
       </div>
       <div className="pf-meter">
@@ -53,7 +55,7 @@ export default function MonthlyUsageCard({
       </div>
 
       <div className="pf-usage-row">
-        <span>本月费用</span>
+        <span>{translateUi("workflow.costThisMonth")}</span>
         <span className="pf-usage-val">¥{(usage?.charge_yuan ?? 0).toFixed(2)}</span>
       </div>
       <div className="pf-meter">
@@ -61,21 +63,21 @@ export default function MonthlyUsageCard({
       </div>
 
       <div className="pf-usage-row">
-        <span>可用余额</span>
+        <span>{translateUi("workflow.availableBalance")}</span>
         <span className="pf-usage-val">¥{(usage?.balance_yuan ?? 0).toFixed(2)}</span>
       </div>
       {(usage?.frozen_fen ?? 0) > 0 ? (
         <div className="pf-usage-row">
-          <span>冻结中</span>
+          <span>{translateUi("workflow.reserved")}</span>
           <span className="pf-muted">¥{(usage?.frozen_yuan ?? 0).toFixed(2)}</span>
         </div>
       ) : null}
 
       <div className="pf-usage-foot">
-        <span className="pf-muted">调用 {usage?.calls ?? 0} 次</span>
+        <span className="pf-muted">{translateUi("workflow.calls", { v1: usage?.calls ?? 0 })}</span>
         {showTopup ? (
           <Link to="/pricing" className="pf-btn pf-btn-lime pf-btn-sm">
-            去充值
+            {translateUi("workflow.addCredits")}
           </Link>
         ) : null}
       </div>

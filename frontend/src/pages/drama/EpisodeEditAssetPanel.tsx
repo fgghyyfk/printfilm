@@ -1,3 +1,5 @@
+import { useI18n } from '../../i18n'
+import { translate as translateUi } from '../../i18n/runtime'
 /** 分集编辑：左侧资产栏（本集/全集 + 分类卡片） */
 import { resolveDramaAssetPreviewUrl, type DramaAsset } from '../../api/drama'
 import { CharacterVoicePreviewButton } from '../../components/drama/CharacterVoicePreviewButton'
@@ -37,9 +39,9 @@ type Props = {
 
 // 当前分类新建按钮文案
 function createLabel(tab: AssetTab | null): string {
-  if (tab === 'scene') return '新建场景'
-  if (tab === 'prop') return '新建道具'
-  return '新建角色'
+  if (tab === 'scene') return translateUi("workflow.newScene")
+  if (tab === 'prop') return translateUi("workflow.newProp")
+  return translateUi("workflow.newCharacter")
 }
 
 // 渲染分集编辑左侧资产栏
@@ -62,6 +64,7 @@ export function EpisodeEditAssetPanel({
   onCreateAsset,
   onImportAsset,
 }: Props) {
+  const { t: translateUi } = useI18n()
   return (
     <aside className="drama-ep-assets">
       <div className="drama-ep-assets-top">
@@ -71,20 +74,20 @@ export function EpisodeEditAssetPanel({
             className={scope === 'episode' ? 'active' : ''}
             onClick={() => onScopeChange('episode')}
           >
-            本集
+            {translateUi("workflow.thisEpisode")}
           </button>
           <button
             type="button"
             className={scope === 'series' ? 'active' : ''}
             onClick={() => onScopeChange('series')}
           >
-            全集
+            {translateUi("workflow.allEpisodes")}
           </button>
         </div>
         <button
           type="button"
           className="drama-ep-icon-btn solid"
-          aria-label="打开分镜故事板画布"
+          aria-label={translateUi("workflow.openStoryboardCanvas")}
           onClick={onOpenCanvas}
         >
           +
@@ -111,7 +114,7 @@ export function EpisodeEditAssetPanel({
               disabled={createBusy}
               onClick={onCreateAsset}
             >
-              {createBusy ? '创建中…' : createLabel(tab)}
+              {createBusy ? translateUi("workflow.creating") : createLabel(tab)}
             </button>
           ) : null}
           {onImportAsset ? (
@@ -121,7 +124,7 @@ export function EpisodeEditAssetPanel({
               disabled={createBusy}
               onClick={onImportAsset}
             >
-              导入
+              {translateUi("workflow.import")}
             </button>
           ) : null}
         </div>
@@ -130,8 +133,8 @@ export function EpisodeEditAssetPanel({
         {assets.length === 0 ? (
           <p className="drama-ep-empty">
             {scope === 'episode'
-              ? '本集暂无引用资产，可点上方「新建」加入，或切换「全集」查看项目资产'
-              : '暂无资产，可点上方「新建 / 导入」添加'}
+              ? translateUi("workflow.noAssetsReferencedInThisEpisodeAddOneWith")
+              : translateUi("workflow.noAssetsYetUseNewOrImportAboveTo")}
           </p>
         ) : (
           assets.map((asset) => {
@@ -150,7 +153,7 @@ export function EpisodeEditAssetPanel({
                     imageBusy ? ' is-gen' : ''
                   }`}
                   onClick={() => onOpenAsset(asset)}
-                  title="点击设置：编辑提示词、重新生成或上传形象"
+                  title={translateUi("workflow.openSettingsToEditPromptsRegenerateOrUploadAn")}
                 >
                   <div className="drama-ep-asset-thumb">
                     {cover ? (
@@ -158,14 +161,14 @@ export function EpisodeEditAssetPanel({
                     ) : (
                       <span>{(asset.name || '?')[0]}</span>
                     )}
-                    {imageBusy ? <em className="drama-ep-asset-gen-badge">生成中</em> : null}
+                    {imageBusy ? <em className="drama-ep-asset-gen-badge">{translateUi("ecomSet.result.running")}</em> : null}
                   </div>
-                  <span className="drama-ep-asset-name">{asset.name || `资产 ${asset.id}`}</span>
-                  {isActive ? <span className="drama-ep-asset-linked">已关联</span> : null}
+                  <span className="drama-ep-asset-name">{asset.name || translateUi("workflow.asset", { v1: String(asset.id) })}</span>
+                  {isActive ? <span className="drama-ep-asset-linked">{translateUi("workflow.linked")}</span> : null}
                   {DRAMA_VOICE_BINDING_ENABLED && voice ? (
-                    <span className="drama-ep-asset-voice">音色</span>
+                    <span className="drama-ep-asset-voice">{translateUi("daihuo.video.voice")}</span>
                   ) : null}
-                  <span className="drama-ep-asset-settings">设置</span>
+                  <span className="drama-ep-asset-settings">{translateUi("workflow.settings")}</span>
                 </button>
                 <div className="drama-ep-asset-ops">
                   {isActive && onUnlinkAsset ? (
@@ -173,18 +176,18 @@ export function EpisodeEditAssetPanel({
                       type="button"
                       className="drama-ep-asset-op-btn"
                       onClick={() => onUnlinkAsset(asset.id)}
-                      title="仅取消当前分镜关联，不会删除资产"
+                      title={translateUi("workflow.removeThisShotSReferenceWithoutDeletingTheAsset")}
                     >
-                      取消关联
+                      {translateUi("workflow.unlink")}
                     </button>
                   ) : (
                     <button
                       type="button"
                       className="drama-ep-asset-op-btn"
                       onClick={() => onMention(asset)}
-                      title="插入到当前分镜脚本"
+                      title={translateUi("workflow.insertIntoThisShotSScript")}
                     >
-                      插入
+                      {translateUi("workflow.insert")}
                     </button>
                   )}
                   {isCharacter && onGenerateVoice ? (
@@ -203,7 +206,7 @@ export function EpisodeEditAssetPanel({
                         disabled={voiceGenerating}
                         onClick={() => onGenerateVoice(asset)}
                       >
-                        {voiceGenerating ? '生成中…' : '生成音色'}
+                        {voiceGenerating ? translateUi("workflow.generating") : translateUi("workflow.generateVoice")}
                       </button>
                     )
                   ) : null}

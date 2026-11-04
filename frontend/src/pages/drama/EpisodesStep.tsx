@@ -1,3 +1,4 @@
+import { useI18n } from '../../i18n'
 /** 分集视频步骤：进页规则切分；支持全集规则重切与单集 AI 分镜 */
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -92,6 +93,7 @@ function verticalTitleLabel(name: string, max = 14): string {
 
 // 渲染分集视频步骤
 export function EpisodesStep({ projectId, onError }: EpisodesStepProps) {
+  const { t: translateUi } = useI18n()
   const navigate = useNavigate()
   const [episodes, setEpisodes] = useState<DramaEpisode[]>([])
   const [loading, setLoading] = useState(true)
@@ -135,7 +137,7 @@ export function EpisodesStep({ projectId, onError }: EpisodesStepProps) {
           }, 2500)
         }
       } catch (err) {
-        if (initial) onError(err instanceof Error ? err.message : '分集加载失败')
+        if (initial) onError(err instanceof Error ? err.message : translateUi("workflow.couldNotLoadEpisodes"))
         try {
           const rows = await dramaApi.listEpisodes(projectId)
           if (!cancelled) setEpisodes(rows)
@@ -156,10 +158,10 @@ export function EpisodesStep({ projectId, onError }: EpisodesStepProps) {
   async function handleReseed() {
     if (reseeding || planningId != null) return
     const ok = await dialog.confirm({
-      title: '规则重切全部分镜',
+      title: translateUi("workflow.rebuildAllStoryboardsByRules"),
       message:
-        '将按规则引擎快速重切全部分镜（含已编辑、已生成视频的分集）。单集精细分镜请用「AI 分镜」。是否继续？',
-      confirmText: '继续切分',
+        translateUi("workflow.rebuildEveryEpisodeSStoryboardsWithTheRuleEngine"),
+      confirmText: translateUi("workflow.continueSplitting"),
       tone: 'danger',
     })
     if (!ok) return
@@ -167,12 +169,12 @@ export function EpisodesStep({ projectId, onError }: EpisodesStepProps) {
     try {
       const rows = await loadEpisodes(true)
       await dialog.alert({
-        title: '切分完成',
-        message: `已更新 ${rows.length} 集分镜，可进入各集编辑查看。`,
+        title: translateUi("workflow.splittingComplete"),
+        message: translateUi("workflow.updatedStoryboardsForEpisodesOpenAnEpisodeToReview", { v1: String(rows.length) }),
         tone: 'success',
       })
     } catch (err) {
-      onError(err instanceof Error ? err.message : '重新切分失败')
+      onError(err instanceof Error ? err.message : translateUi("workflow.couldNotSplitAgain"))
     } finally {
       setReseeding(false)
     }
@@ -206,22 +208,22 @@ export function EpisodesStep({ projectId, onError }: EpisodesStepProps) {
           const count = Number(cur.params?.fragment_plan_count) || (cur.fragments || []).length
           const mode = String(cur.params?.fragment_plan_mode || 'llm')
           await dialog.alert({
-            title: '分镜完成',
+            title: translateUi("workflow.storyboardComplete"),
             message:
               mode === 'rules_fallback'
-                ? `「${cur.name}」已回退规则切分，共 ${count} 条。`
-                : `「${cur.name}」AI 分镜完成，共 ${count} 条。`,
+                ? translateUi("workflow.usedRuleBasedSplittingProducingStoryboardClips", { v1: String(cur.name), v2: String(count) })
+                : translateUi("workflow.aiStoryboardPlanningCompletedForProducingClips", { v1: String(cur.name), v2: String(count) }),
             tone: 'success',
           })
           return
         }
         if (st === 'failed') {
-          throw new Error(String(cur.params?.fragment_plan_error || 'AI 分镜失败'))
+          throw new Error(String(cur.params?.fragment_plan_error || translateUi("workflow.aiStoryboardPlanningFailed")))
         }
       }
-      throw new Error('AI 分镜超时，请稍后刷新')
+      throw new Error(translateUi("workflow.aiStoryboardPlanningTimedOutRefreshLater"))
     } catch (err) {
-      onError(err instanceof Error ? err.message : 'AI 分镜失败')
+      onError(err instanceof Error ? err.message : translateUi("workflow.aiStoryboardPlanningFailed"))
     } finally {
       setPlanningId(null)
     }
@@ -242,11 +244,9 @@ export function EpisodesStep({ projectId, onError }: EpisodesStepProps) {
             <Film size={22} strokeWidth={1.75} />
           </div>
           <div>
-            <h2>分集视频</h2>
+            <h2>{translateUi("workflow.episodeVideos")}</h2>
             <p className="drama-episodes-hero-sub">
-              共 <strong>{episodes.length}</strong> 集 ·{' '}
-              <strong>{totalFragments}</strong> 个分镜 · 已出片{' '}
-              <strong>{totalVideos}</strong>
+              {translateUi("workflow.total")} <strong>{episodes.length}</strong> {translateUi("workflow.episodes_c62f88", { v1: ' ' })}<strong>{totalFragments}</strong> {translateUi("workflow.storyboardShotsCompletedClips", { v1: ' ' })}<strong>{totalVideos}</strong>
             </p>
           </div>
         </div>
@@ -258,18 +258,18 @@ export function EpisodesStep({ projectId, onError }: EpisodesStepProps) {
             onClick={() => void handleReseed()}
           >
             <Layers size={16} strokeWidth={1.75} aria-hidden />
-            {reseeding ? '切分中…' : '规则重切全部'}
+            {reseeding ? translateUi("workflow.splitting") : translateUi("workflow.rebuildAllByRules")}
           </button>
         </div>
       </header>
 
       <div className="drama-episodes-tips" role="note">
         <Sparkles size={15} strokeWidth={1.75} aria-hidden />
-        <span>单集可点 <strong>AI 分镜</strong> 精细规划；进入 <strong>编辑</strong> 可改脚本并生成视频。</span>
+        <span>{translateUi("workflow.forAnIndividualEpisodeChoose")} <strong>{translateUi("workflow.aiStoryboards")}</strong> {translateUi("workflow.forDetailedPlanningOpen")} <strong>{translateUi("workflow.edit")}</strong> {translateUi("workflow.toEditScriptsAndGenerateClips")}</span>
       </div>
 
       {loading ? (
-        <div className="drama-episode-grid" aria-busy="true" aria-label="加载分集">
+        <div className="drama-episode-grid" aria-busy="true" aria-label={translateUi("workflow.loadEpisodes")}>
           {Array.from({ length: 6 }).map((_, i) => (
             <div key={i} className="drama-ep-card drama-ep-card-skeleton" />
           ))}
@@ -277,7 +277,7 @@ export function EpisodesStep({ projectId, onError }: EpisodesStepProps) {
       ) : episodes.length === 0 ? (
         <div className="drama-episodes-empty">
           <Clapperboard size={40} strokeWidth={1.25} aria-hidden />
-          <p>暂无分集，请先完成分集剧本步骤。</p>
+          <p>{translateUi("workflow.noEpisodesYetCompleteTheEpisodeScriptStageFirst")}</p>
         </div>
       ) : (
         <div className="drama-episode-grid">
@@ -289,22 +289,22 @@ export function EpisodesStep({ projectId, onError }: EpisodesStepProps) {
                 ? Math.round((summary.videoDone / summary.fragmentCount) * 100)
                 : 0
             const epLabel =
-              summary.epNo > 0 ? `第 ${summary.epNo} 集` : `分集 ${ep.id}`
+              summary.epNo > 0 ? translateUi("workflow.episode", { v1: String(summary.epNo) }) : translateUi("workflow.episode_ebaa6d", { v1: String(ep.id) })
             const statusLabel = planning
-              ? 'AI 分镜中…'
+              ? translateUi("workflow.planningAiStoryboards")
               : summary.planStatus === 'failed'
-                ? '分镜失败'
+                ? translateUi("workflow.storyboardPlanningFailed")
                 : summary.videoRunning > 0
-                  ? `${summary.videoRunning} 条生成中`
+                  ? translateUi("workflow.generating_97cfaa", { v1: String(summary.videoRunning) })
                   : summary.videoFailed > 0
-                    ? `${summary.videoFailed} 条失败`
+                    ? translateUi("workflow.failed_0c105a", { v1: String(summary.videoFailed) })
                     : summary.videoDone > 0
-                      ? `已出片 ${summary.videoDone}/${summary.fragmentCount}`
+                      ? translateUi("workflow.clipsComplete", { v1: String(summary.videoDone), v2: String(summary.fragmentCount) })
                       : summary.planStatus === 'completed'
-                        ? `${summary.fragmentCount} 个分镜`
+                        ? translateUi("workflow.storyboardShots", { v1: String(summary.fragmentCount) })
                         : summary.fragmentCount > 0
-                          ? `${summary.fragmentCount} 个分镜`
-                          : '待 AI 分镜'
+                          ? translateUi("workflow.storyboardShots", { v1: String(summary.fragmentCount) })
+                          : translateUi("workflow.aiStoryboardsPending")
 
             return (
               <article
@@ -317,7 +317,7 @@ export function EpisodesStep({ projectId, onError }: EpisodesStepProps) {
                   type="button"
                   className="drama-ep-card-poster"
                   onClick={() => navigate(`/drama/projects/${projectId}/episodes/${ep.id}`)}
-                  aria-label={`编辑 ${ep.name}`}
+                  aria-label={translateUi("workflow.edit_c79457", { v1: String(ep.name) })}
                 >
                   {summary.previewUrl ? (
                     <img src={summary.previewUrl} alt="" className="drama-ep-card-poster-img" />
@@ -349,8 +349,7 @@ export function EpisodesStep({ projectId, onError }: EpisodesStepProps) {
                     {summary.totalSec > 0 ? (
                       <span className="drama-ep-card-meta-item">
                         <Clapperboard size={14} strokeWidth={1.75} aria-hidden />
-                        约 {summary.totalSec}s
-                      </span>
+                        {translateUi("workflow.aboutS", { v1: summary.totalSec })}</span>
                     ) : null}
                   </div>
                   {summary.fragmentCount > 0 ? (
@@ -371,7 +370,7 @@ export function EpisodesStep({ projectId, onError }: EpisodesStepProps) {
                     onClick={() => void handlePlanEpisode(ep)}
                   >
                     <Wand2 size={15} strokeWidth={1.75} aria-hidden />
-                    {planning ? 'AI 分镜中…' : 'AI 分镜'}
+                    {planning ? translateUi("workflow.planningAiStoryboards") : translateUi("workflow.aiStoryboards")}
                   </button>
                   <button
                     type="button"
@@ -379,7 +378,7 @@ export function EpisodesStep({ projectId, onError }: EpisodesStepProps) {
                     disabled={planning}
                     onClick={() => navigate(`/drama/projects/${projectId}/episodes/${ep.id}`)}
                   >
-                    编辑
+                    {translateUi("workflow.edit")}
                   </button>
                 </div>
               </article>
@@ -389,7 +388,7 @@ export function EpisodesStep({ projectId, onError }: EpisodesStepProps) {
       )}
       <FragmentPlanSkillModal
         open={planTarget != null}
-        message={`将调用大模型重新规划「${planTarget?.name || ''}」的分镜（覆盖本集现有分镜与视频），通常需要数十秒。可勾选本次使用的 Skill。字幕方式沿用该集当前设置。`}
+        message={translateUi("workflow.aiWillReplanTheStoryboardForReplacingItsExisting", { v1: String(planTarget?.name || '') })}
         onCancel={() => setPlanTarget(null)}
         onConfirm={(skillIds) => {
           if (planTarget) void startPlanEpisode(planTarget, skillIds)

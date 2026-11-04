@@ -1,3 +1,4 @@
+import { useI18n } from '../../../i18n'
 /** 空画布居中展示的默认节点选择器 */
 import { MousePointer2 } from 'lucide-react'
 import { CANVAS_NODE_OPTIONS, type CanvasNodeKind } from './canvasTypes'
@@ -8,6 +9,7 @@ type CanvasNodeSelectorProps = {
 
 /** 渲染快速新建节点类型选择器 */
 export function CanvasNodeSelector({ onSelect }: CanvasNodeSelectorProps) {
+  const { t: translateUi } = useI18n()
   return (
     <div className="fc-overlay fc-node-selector">
       <div className="fc-node-selector-inner">
@@ -31,7 +33,7 @@ export function CanvasNodeSelector({ onSelect }: CanvasNodeSelectorProps) {
         </div>
         <p className="fc-node-hint">
           <MousePointer2 size={16} strokeWidth={1.8} />
-          点击快速添加 · 空白处双击也可新建
+          {translateUi("workflow.clickToAddOrDoubleClickAnEmptyArea")}
         </p>
       </div>
     </div>

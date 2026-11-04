@@ -1,3 +1,5 @@
+import { useI18n } from '../../i18n'
+import { translate as translateUi } from '../../i18n/runtime'
 /**
  * 旁白音色绑定：从漫剧 voice 资产选择，写入 project.params.narrationVoiceAudio
  * 供 Seedance 生成时作为全局 reference_audio 注入。
@@ -23,7 +25,7 @@ function readNarrationVoiceBinding(project: DramaProject): VoiceBinding | null {
   const data = raw as Record<string, unknown>
   const sourceAssetId = typeof data.sourceAssetId === 'number' ? data.sourceAssetId : null
   const url = typeof data.url === 'string' ? data.url : ''
-  const label = typeof data.label === 'string' ? data.label : '旁白音色'
+  const label = typeof data.label === 'string' ? data.label : translateUi("workflow.narratorVoice_0e80f4")
   if (!sourceAssetId || !url) return null
   return {
     sourceAssetId,
@@ -34,6 +36,7 @@ function readNarrationVoiceBinding(project: DramaProject): VoiceBinding | null {
 }
 
 export function NarratorVoiceBindModal({ project, open, onClose, onUpdated, onError }: Props) {
+  const { t: translateUi } = useI18n()
   const [voiceAssets, setVoiceAssets] = useState<DramaAsset[]>([])
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
@@ -62,12 +65,12 @@ export function NarratorVoiceBindModal({ project, open, onClose, onUpdated, onEr
         const voices = list.filter((a) => (a.type || '').toLowerCase() === 'voice')
         setVoiceAssets(voices)
       })
-      .catch((err) => onError(err instanceof Error ? err.message : '加载音色资产失败'))
+      .catch((err) => onError(err instanceof Error ? err.message : translateUi("workflow.couldNotLoadVoiceAssets")))
   }, [current?.sourceAssetId, onError, open, project.id])
 
   const handleConfirm = useCallback(async () => {
     if (!selectedVoice?.url || busy) {
-      onError('请选择已合成试听的旁白音色')
+      onError(translateUi("workflow.selectANarratorVoiceWithAGeneratedPreview"))
       return
     }
     setBusy(true)
@@ -75,7 +78,7 @@ export function NarratorVoiceBindModal({ project, open, onClose, onUpdated, onEr
       const binding: VoiceBinding = {
         sourceAssetId: selectedVoice.id,
         url: selectedVoice.url,
-        label: selectedVoice.name || '旁白音色',
+        label: selectedVoice.name || translateUi("workflow.narratorVoice_0e80f4"),
         // Narrator 端当前不依赖 voicePrompt；但保留字段给后续扩展
         voicePrompt:
           selectedVoice.params && typeof selectedVoice.params === 'object' && typeof (selectedVoice.params as any).voicePrompt === 'string'
@@ -90,7 +93,7 @@ export function NarratorVoiceBindModal({ project, open, onClose, onUpdated, onEr
       onUpdated(updated)
       onClose()
     } catch (err) {
-      onError(err instanceof Error ? err.message : '绑定失败')
+      onError(err instanceof Error ? err.message : translateUi("workflow.couldNotAssignTheVoice"))
     } finally {
       setBusy(false)
     }
@@ -106,7 +109,7 @@ export function NarratorVoiceBindModal({ project, open, onClose, onUpdated, onEr
       onUpdated(updated)
       onClose()
     } catch (err) {
-      onError(err instanceof Error ? err.message : '解绑失败')
+      onError(err instanceof Error ? err.message : translateUi("workflow.couldNotUnassignTheVoice"))
     } finally {
       setBusy(false)
     }
@@ -118,17 +121,17 @@ export function NarratorVoiceBindModal({ project, open, onClose, onUpdated, onEr
     <Modal
       open={open}
       onClose={onClose}
-      title="绑定旁白音色"
+      title={translateUi("workflow.bindNarratorVoice")}
       size="lg"
       dismissible={!busy}
       footer={
         <>
           <button type="button" className="pf-btn" onClick={onClose} disabled={busy}>
-            取消
+            {translateUi("ecomSet.copyModal.cancel")}
           </button>
           {current ? (
             <button type="button" className="pf-btn" onClick={() => void handleUnbind()} disabled={busy}>
-              解除绑定
+              {translateUi("workflow.unbind")}
             </button>
           ) : null}
           <button
@@ -137,24 +140,24 @@ export function NarratorVoiceBindModal({ project, open, onClose, onUpdated, onEr
             onClick={() => void handleConfirm()}
             disabled={!selectedVoice?.url || busy}
           >
-            {busy ? '绑定中…' : '确认绑定'}
+            {busy ? translateUi("workflow.binding") : translateUi("workflow.confirmBinding")}
           </button>
         </>
       }
     >
       <p className="drama-muted">
-        全局旁白音色将作为 Seedance 的 <strong>reference_audio</strong> 注入，用于所有镜头的旁白口播一致性。
+        {translateUi("workflow.theProjectNarratorVoiceIsIncludedInSeedanceAs")} <strong>reference_audio</strong> {translateUi("workflow.toKeepNarrationConsistentAcrossShots")}
       </p>
 
       <div className="drama-voice-mode-tabs" style={{ marginTop: 12 }}>
         <button type="button" className="active">
-          选择已有
+          {translateUi("workflow.chooseExisting")}
         </button>
       </div>
 
       <div className="drama-voice-list" style={{ marginTop: 10 }}>
         {voiceAssets.length === 0 ? (
-          <p className="drama-muted">暂无音色资产，请先在「音色」分类合成旁白音色</p>
+          <p className="drama-muted">{translateUi("workflow.noVoiceAssetsYetSynthesizeANarratorVoiceIn")}</p>
         ) : (
           voiceAssets.map((voice) => {
             const hasAudio = Boolean(voice.url)
@@ -168,7 +171,7 @@ export function NarratorVoiceBindModal({ project, open, onClose, onUpdated, onEr
                   onChange={() => setSelectedId(voice.id)}
                 />
                 <span>
-                  {voice.name || `音色#${voice.id}`} <small>{hasAudio ? '已合成' : '未合成'}</small>
+                  {voice.name || translateUi("workflow.voice", { v1: String(voice.id) })} <small>{hasAudio ? translateUi("workflow.synthesized") : translateUi("workflow.notSynthesized_c94784")}</small>
                 </span>
               </label>
             )

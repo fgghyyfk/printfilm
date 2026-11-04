@@ -1,3 +1,4 @@
+import { useI18n } from '../../../i18n'
 /** 画布左侧垂直居中工具栏与添加节点面板 */
 import { useEffect, useRef, useState } from 'react'
 import { FolderOpen, Plus, X } from 'lucide-react'
@@ -10,6 +11,7 @@ type CanvasLeftToolbarProps = {
 
 /** 渲染画布左侧浮动工具栏 */
 export function CanvasLeftToolbar({ onSelectNode }: CanvasLeftToolbarProps) {
+  const { t: translateUi } = useI18n()
   const { nodes, requestFocusNode } = useCanvasStore()
   /*
    * panelOpen 添加节点面板
@@ -44,9 +46,9 @@ export function CanvasLeftToolbar({ onSelectNode }: CanvasLeftToolbarProps) {
           <button
             type="button"
             className={`fc-icon-btn is-primary${panelOpen ? ' is-open' : ''}`}
-            aria-label={panelOpen ? '关闭添加节点' : '添加节点'}
+            aria-label={panelOpen ? translateUi("workflow.closeAddNodeMenu") : translateUi("workflow.addNode")}
             aria-expanded={panelOpen}
-            title="添加节点"
+            title={translateUi("workflow.addNode")}
             onClick={(event) => {
               event.stopPropagation()
               setPanelOpen((v) => !v)
@@ -57,7 +59,7 @@ export function CanvasLeftToolbar({ onSelectNode }: CanvasLeftToolbarProps) {
           </button>
 
           {panelOpen ? (
-            <div className="fc-add-panel-bridge" role="menu" aria-label="添加节点类型">
+            <div className="fc-add-panel-bridge" role="menu" aria-label={translateUi("workflow.nodeTypes")}>
               <div className="fc-add-panel">
                 {ADD_NODE_OPTIONS.map((option) => {
                   const Icon = option.icon
@@ -86,8 +88,8 @@ export function CanvasLeftToolbar({ onSelectNode }: CanvasLeftToolbarProps) {
         <button
           type="button"
           className={`fc-icon-btn${folderOpen ? ' is-active' : ''}`}
-          aria-label="资产文件夹"
-          title="资产文件夹"
+          aria-label={translateUi("workflow.assetFolders")}
+          title={translateUi("workflow.assetFolders")}
           aria-expanded={folderOpen}
           onClick={() => {
             setFolderOpen((v) => !v)
@@ -98,10 +100,10 @@ export function CanvasLeftToolbar({ onSelectNode }: CanvasLeftToolbarProps) {
         </button>
 
         {folderOpen ? (
-          <div className="fc-folder-panel" role="dialog" aria-label="画布节点列表">
-            <h4>画布节点</h4>
+          <div className="fc-folder-panel" role="dialog" aria-label={translateUi("workflow.canvasNodeList")}>
+            <h4>{translateUi("workflow.canvasNodes")}</h4>
             {nodes.length === 0 ? (
-              <p className="fc-folder-empty">暂无节点，点击 + 添加</p>
+              <p className="fc-folder-empty">{translateUi("workflow.noNodesYetClickToAddOne")}</p>
             ) : (
               nodes.map((node) => {
                 const option = CANVAS_NODE_OPTION_BY_KIND[node.data.kind]

@@ -1,7 +1,8 @@
+import { loadSource } from './bundleModule.mjs'
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { createFragmentAutosave } from '../src/lib/dramaFragmentAutosave.ts'
-import { duplicateEditableFragment } from '../src/lib/dramaFragmentEditing.ts'
+const { createFragmentAutosave } = await loadSource('../src/lib/dramaFragmentAutosave.ts')
+const { duplicateEditableFragment } = await loadSource('../src/lib/dramaFragmentEditing.ts')
 
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b }); return { promise, resolve, reject } }
 const row = (id, content, sort_order = 0) => ({ id, content, sort_order, episode_id: 3, video: '', cover: '', params: {}, asset_ids: [], duration_sec: 8 })

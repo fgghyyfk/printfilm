@@ -1,3 +1,4 @@
+import { translate as translateUi } from './i18n/runtime'
 import type { ComplianceAudit } from './api/compliance'
 import { API_BASE, createJsonRequester, requestResponse, uploadFile } from './api/client'
 import { apiErrorMessage } from './api/http'
@@ -377,7 +378,7 @@ export const api = {
   /** 上传用户头像并返回更新后的用户资料。 */
   uploadAvatar(file: File) {
     return uploadFile<User>('/api/auth/avatar', file, (response, detail) => {
-      throw new Error(apiErrorMessage(detail, response.statusText) || '头像上传失败')
+      throw new Error(apiErrorMessage(detail, response.statusText) || translateUi("workflow.couldNotUploadTheAvatar"))
     })
   },
   templates() {
@@ -440,13 +441,13 @@ export const api = {
   /** 上传科普项目封面并返回项目。 */
   uploadCover(id: number, file: File) {
     return uploadFile<Project>(`/api/projects/${id}/cover`, file, (response, detail) => {
-      throw new Error(apiErrorMessage(detail, response.statusText) || '封面上传失败')
+      throw new Error(apiErrorMessage(detail, response.statusText) || translateUi("workflow.couldNotUploadTheCover"))
     })
   },
   /** 上传数字人半身照；换照片后已生成的对口型视频作废。 */
   uploadAvatarImage(id: number, file: File) {
     return uploadFile<Project>(`/api/projects/${id}/avatar-image`, file, (response, detail) => {
-      throw new Error(apiErrorMessage(detail, response.statusText) || '照片上传失败')
+      throw new Error(apiErrorMessage(detail, response.statusText) || translateUi("workflow.couldNotUploadThePhoto"))
     })
   },
   /** 由人脸照生成定妆照（只保留脸）；约 10–60 秒。 */
@@ -533,7 +534,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ ids }),
     }, (response, detail) => {
-      throw new Error(apiErrorMessage(detail, response.statusText) || '打包下载失败')
+      throw new Error(apiErrorMessage(detail, response.statusText) || translateUi("workflow.couldNotDownloadTheArchive"))
     })
     const blob = await res.blob()
     const cd = res.headers.get('Content-Disposition') || ''
@@ -572,7 +573,7 @@ export const api = {
   /** 上传分镜图片，保留当前项目响应结构。 */
   uploadShotImage(projectId: number, shotId: number, file: File) {
     return uploadFile<Project>(`/api/projects/${projectId}/shots/${shotId}/image`, file, (_response, detail) => {
-      throw new Error(typeof detail === 'string' ? detail : '画面上传失败')
+      throw new Error(typeof detail === 'string' ? detail : translateUi("workflow.couldNotUploadTheImage"))
     })
   },
   regenImage(projectId: number, shotId: number) {

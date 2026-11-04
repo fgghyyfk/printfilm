@@ -1,3 +1,4 @@
+import { translate as translateUi } from '../i18n/runtime'
 export const CATEGORY_ORDER = [
   '开源',
   '科普',
@@ -18,21 +19,21 @@ export const CATEGORY_ORDER = [
 ]
 
 export const HOME_CATEGORY_LABELS: Record<string, string> = {
-  全部: '全部',
-  开源: '开源项目',
-  科普: '知识科普',
-  获客: '获客短视频',
-  纪录片: '纪录片',
-  写实感: '写实感',
-  真人感: '人物故事',
-  电影感: '电影解说',
-  儿童: '情感治愈',
-  动漫: '动漫',
-  国风: '国风',
-  科幻: '科幻',
-  奇幻: '奇幻',
-  悬疑: '悬疑',
-  商业: '商业营销',
-  复古: '复古',
-  图文: '图文',
+  get 全部() { return translateUi("workflow.all") },
+  get 开源() { return translateUi("workflow.openSourceProjects") },
+  get 科普() { return translateUi("workflow.knowledgeExplainers") },
+  get 获客() { return translateUi("workflow.marketingShorts") },
+  get 纪录片() { return translateUi("workflow.documentary") },
+  get 写实感() { return translateUi("workflow.realistic") },
+  get 真人感() { return translateUi("workflow.personalStories") },
+  get 电影感() { return translateUi("workflow.movieCommentary") },
+  get 儿童() { return translateUi("workflow.comfortingStories") },
+  get 动漫() { return translateUi("workflow.anime") },
+  get 国风() { return translateUi("workflow.chineseStyle") },
+  get 科幻() { return translateUi("workflow.scienceFiction") },
+  get 奇幻() { return translateUi("workflow.fantasy") },
+  get 悬疑() { return translateUi("workflow.mystery") },
+  get 商业() { return translateUi("workflow.businessMarketing") },
+  get 复古() { return translateUi("workflow.retro") },
+  get 图文() { return translateUi("workflow.imageAndText") },
 }

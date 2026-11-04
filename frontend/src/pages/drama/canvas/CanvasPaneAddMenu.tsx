@@ -1,3 +1,4 @@
+import { useI18n } from '../../../i18n'
 /** 画布空白处双击：弹出新建节点类型菜单 */
 import { useEffect, useRef } from 'react'
 import { ADD_NODE_OPTIONS, type CanvasNodeKind } from './canvasTypes'
@@ -11,6 +12,7 @@ type CanvasPaneAddMenuProps = {
 
 /** 在双击位置附近展示节点类型列表 */
 export function CanvasPaneAddMenu({ screen, onSelect, onClose }: CanvasPaneAddMenuProps) {
+  const { t: translateUi } = useI18n()
   const rootRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -40,7 +42,7 @@ export function CanvasPaneAddMenu({ screen, onSelect, onClose }: CanvasPaneAddMe
       className="fc-pane-add-menu"
       style={{ left, top }}
       role="menu"
-      aria-label="双击新建节点"
+      aria-label={translateUi("workflow.doubleClickToAddANode")}
     >
       {ADD_NODE_OPTIONS.map((option) => {
         const Icon = option.icon

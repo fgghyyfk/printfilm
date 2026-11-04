@@ -1,3 +1,4 @@
+import { translate as translateUi } from '../i18n/runtime'
 /** 广告法合规扫描 API：科普项目 / 漫剧分集 */
 
 import { createJsonRequester } from './client'
@@ -88,7 +89,7 @@ export type DramaComplianceReport = ComplianceReport<DramaComplianceItem>
 
 // 合规提示是辅助信息：错误只抛普通 Error，不触发全局计费/登录弹窗
 const request = createJsonRequester((_response, detail) => {
-  throw new Error(apiErrorMessage(detail, '合规检查失败'))
+  throw new Error(apiErrorMessage(detail, translateUi("workflow.complianceCheckFailed")))
 })
 
 // 扫描科普项目标题与各镜文案

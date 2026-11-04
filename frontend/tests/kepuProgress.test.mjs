@@ -1,7 +1,8 @@
+import { loadSource } from './bundleModule.mjs'
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { createHttpTransport } from '../src/api/http.ts'
-import { monitorKepuProgress, readProjectEvents } from '../src/lib/kepuProgress.ts'
+const { monitorKepuProgress, readProjectEvents } = await loadSource('../src/lib/kepuProgress.ts')
 
 // 使用真实 ReadableStream 控制分块与断流，不连接外部服务。
 function eventStream() {

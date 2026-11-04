@@ -1,3 +1,4 @@
+import { useI18n } from '../../../../i18n'
 /** 画布提示词：contentEditable，@asset 显示为带小图的标签 */
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { resolveDramaMediaUrl } from '../../../../api/drama'
@@ -51,6 +52,7 @@ export function CanvasPromptEditor({
   onChange,
   onSubmit,
 }: CanvasPromptEditorProps) {
+  const { t: translateUi } = useI18n()
   const editorRef = useRef<HTMLDivElement>(null)
   const lastEmittedRef = useRef(value)
   const [mention, setMention] = useState<MentionUi>(EMPTY_MENTION)
@@ -230,7 +232,7 @@ export function CanvasPromptEditor({
         className={`fc-generate-input fc-generate-editor nodrag nopan nowheel${empty ? ' is-empty' : ''}`}
         role="textbox"
         aria-multiline="true"
-        aria-label="生成提示词"
+        aria-label={translateUi("workflow.generationPrompt")}
         contentEditable={!disabled}
         suppressContentEditableWarning
         data-placeholder={placeholder}

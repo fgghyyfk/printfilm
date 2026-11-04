@@ -1,3 +1,6 @@
+import { queueDisplayText } from '../../lib/dramaQueueDisplay'
+import { useI18n } from '../../i18n'
+import { translate as translateUi } from '../../i18n/runtime'
 /** 生成队列任务详情：进行中看进度，失败才挖根因 */
 import { useEffect, useState } from 'react'
 import { Loader2, X } from 'lucide-react'
@@ -12,10 +15,10 @@ type Props = {
 }
 
 const STATUS_LABEL: Record<DramaGenJob['status'], string> = {
-  queued: '排队中',
-  running: '生成中',
-  done: '已完成',
-  failed: '失败',
+  get queued() { return translateUi("ecomSet.result.queued") },
+  get running() { return translateUi("ecomSet.result.running") },
+  get done() { return translateUi("ecomSet.status.done") },
+  get failed() { return translateUi("ecomSet.status.failed") },
 }
 
 // 拉取该目标相关的多条历史任务（用于挖出被「重试超限」覆盖的根因）
@@ -54,14 +57,15 @@ async function listRelatedTasks(job: DramaGenJob): Promise<TaskRunOut[]> {
 
 // 进行中任务的进度说明
 function activeJobHint(job: DramaGenJob): string {
-  if (job.message?.trim()) return job.message.trim()
-  if (job.status === 'queued') return '任务已入队，等待调度器领取。'
-  if (job.kind === 'video') return '正在生成分镜视频，完成后会自动更新封面与成片。'
-  return '正在生成图片，完成后会自动写回资产。'
+  if (job.message?.trim()) return queueDisplayText(job.message).trim()
+  if (job.status === 'queued') return translateUi("workflow.theTaskIsQueuedAndWaitingToBeScheduled")
+  if (job.kind === 'video') return translateUi("workflow.generatingTheStoryboardClipTheCoverAndVideoWill")
+  return translateUi("workflow.generatingTheImageItWillBeSavedToThe")
 }
 
 // 任务详情抽屉（进行中=进度；失败=错误文案）
 export function DramaGenTaskDetail({ job, onClose }: Props) {
+  const { t: translateUi } = useI18n()
   const isFailed = job.status === 'failed'
   const isActive = job.status === 'queued' || job.status === 'running'
   const [loading, setLoading] = useState(isFailed)
@@ -133,7 +137,7 @@ export function DramaGenTaskDetail({ job, onClose }: Props) {
   }, [job, isFailed])
 
   const errView = isFailed ? formatDramaGenError(rawError || job.message) : null
-  const panelTitle = isFailed ? '失败原因' : isActive ? '任务进度' : '任务详情'
+  const panelTitle = isFailed ? translateUi("workflow.failureReason") : isActive ? translateUi("workflow.taskProgress") : translateUi("workflow.taskDetails")
 
   return (
     <div className="drama-gen-detail" role="dialog" aria-label={panelTitle}>
@@ -142,7 +146,7 @@ export function DramaGenTaskDetail({ job, onClose }: Props) {
           <strong>{panelTitle}</strong>
           <span>{job.title}</span>
         </div>
-        <button type="button" className="drama-gen-fab-icon-btn" onClick={onClose} aria-label="关闭">
+        <button type="button" className="drama-gen-fab-icon-btn" onClick={onClose} aria-label={translateUi("workflow.close")}>
           <X size={18} />
         </button>
       </header>
@@ -151,7 +155,7 @@ export function DramaGenTaskDetail({ job, onClose }: Props) {
         {loading ? (
           <div className="drama-gen-detail-loading">
             <Loader2 size={18} className="drama-gen-detail-spin" />
-            <span>正在解析错误…</span>
+            <span>{translateUi("workflow.readingErrorDetails")}</span>
           </div>
         ) : null}
 
@@ -161,7 +165,7 @@ export function DramaGenTaskDetail({ job, onClose }: Props) {
             <p>{errView.message}</p>
             {errView.suggestion ? (
               <p className="drama-gen-detail-tip">
-                <strong>建议：</strong>
+                <strong>{translateUi("workflow.suggestion_025837")}</strong>
                 {errView.suggestion}
                 {errView.billingBlocked ? (
                   <>
@@ -170,7 +174,7 @@ export function DramaGenTaskDetail({ job, onClose }: Props) {
                   </>
                 ) : null}
                 {errView.upstreamAccountBlocked ? (
-                  <> 需管理员充值 TokenFree Seedream 账户。</>
+                  <> {translateUi("workflow.anAdministratorMustTopUpTheTokenfreeSeedreamAccount_d037cc")}</>
                 ) : null}
               </p>
             ) : errView.billingBlocked ? (
@@ -178,7 +182,7 @@ export function DramaGenTaskDetail({ job, onClose }: Props) {
                 <BillingTopupLink />
               </p>
             ) : errView.upstreamAccountBlocked ? (
-              <p className="drama-gen-detail-tip">需管理员充值 TokenFree Seedream 账户，用户端充值无法解决。</p>
+              <p className="drama-gen-detail-tip">{translateUi("workflow.anAdministratorMustTopUpTheTokenfreeSeedreamAccount")}</p>
             ) : null}
           </section>
         ) : (
@@ -186,7 +190,7 @@ export function DramaGenTaskDetail({ job, onClose }: Props) {
             <h4>{STATUS_LABEL[job.status]}</h4>
             <p>{activeJobHint(job)}</p>
             {job.status === 'done' ? (
-              <p className="drama-gen-detail-tip">成片已写回分镜，可在时间轴预览。</p>
+              <p className="drama-gen-detail-tip">{translateUi("workflow.theFinishedClipIsSavedToTheStoryboardAnd")}</p>
             ) : null}
           </section>
         )}

@@ -1,3 +1,4 @@
+import { translate as translateUi } from '../../../i18n/runtime'
 /** 画布节点类型与选择器选项定义 */
 import type { LucideIcon } from 'lucide-react'
 import {
@@ -58,22 +59,22 @@ export function canvasKindToAssetType(kind: CanvasNodeKind): string {
 
 /** 空画布居中快速新建选项（顺序与设计稿一致） */
 export const CANVAS_NODE_OPTIONS: CanvasNodeOption[] = [
-  { id: 'character', label: '角色', icon: UserRound },
-  { id: 'scene', label: '场景', icon: Landmark },
-  { id: 'video', label: '视频', icon: PlaySquare },
-  { id: 'image', label: '图片', icon: ImageIcon },
-  { id: 'text', label: '文本', icon: Text },
-  { id: 'audio', label: '音频', icon: AudioLines },
+  { id: 'character', get label() { return translateUi("workflow.character") }, icon: UserRound },
+  { id: 'scene', get label() { return translateUi("workflow.scene") }, icon: Landmark },
+  { id: 'video', get label() { return translateUi("workflow.video") }, icon: PlaySquare },
+  { id: 'image', get label() { return translateUi("workflow.image") }, icon: ImageIcon },
+  { id: 'text', get label() { return translateUi("workflow.text") }, icon: Text },
+  { id: 'audio', get label() { return translateUi("workflow.audio_461189") }, icon: AudioLines },
 ]
 
 /** 左侧添加面板选项 */
 export const ADD_NODE_OPTIONS: CanvasNodeOption[] = [
-  { id: 'character', label: '角色', icon: UserRound },
-  { id: 'scene', label: '场景', icon: Landmark },
-  { id: 'text', label: '文本', icon: Text },
-  { id: 'image', label: '图片', icon: ImageIcon },
-  { id: 'video', label: '视频', icon: PlaySquare },
-  { id: 'audio', label: '音频', icon: AudioLines },
+  { id: 'character', get label() { return translateUi("workflow.character") }, icon: UserRound },
+  { id: 'scene', get label() { return translateUi("workflow.scene") }, icon: Landmark },
+  { id: 'text', get label() { return translateUi("workflow.text") }, icon: Text },
+  { id: 'image', get label() { return translateUi("workflow.image") }, icon: ImageIcon },
+  { id: 'video', get label() { return translateUi("workflow.video") }, icon: PlaySquare },
+  { id: 'audio', get label() { return translateUi("workflow.audio_461189") }, icon: AudioLines },
 ]
 
 export const CANVAS_NODE_OPTION_BY_KIND = Object.fromEntries(

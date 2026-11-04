@@ -1,3 +1,4 @@
+import { translate as translateUi } from '../i18n/runtime'
 /** 加载可见 Agent Skill，并记住勾选 */
 
 import { useCallback, useEffect, useState } from 'react'
@@ -92,7 +93,7 @@ export function useAgentSkillSelection(): UseAgentSkillSelectionResult {
         return next
       })
     } catch (err) {
-      setUploadError(err instanceof Error ? err.message : '上传失败')
+      setUploadError(err instanceof Error ? err.message : translateUi("workflow.uploadFailed"))
     } finally {
       setUploading(false)
     }

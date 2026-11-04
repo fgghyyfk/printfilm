@@ -1,3 +1,4 @@
+import { translate as translateUi } from '../i18n/runtime'
 /** API Key 管理客户端（/api/user/api-keys） */
 
 import { API_BASE, createJsonRequester } from './client'
@@ -5,7 +6,7 @@ import { apiErrorMessage } from './http'
 
 /** API Key 错误仅交由当前页面展示，不触发计费弹窗。 */
 const request = createJsonRequester((response, detail) => {
-  throw new Error(apiErrorMessage(detail, response.statusText) || '请求失败')
+  throw new Error(apiErrorMessage(detail, response.statusText) || translateUi("workflow.requestFailed"))
 })
 
 export type ApiKeyItem = {

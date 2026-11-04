@@ -1,6 +1,7 @@
+import { loadSource } from './bundleModule.mjs'
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { orderedFragmentAssetIds, selectedFragmentAssetIds, fragmentCharacterLimitWarning } from '../src/lib/dramaFragmentReferences.ts'
+const { orderedFragmentAssetIds, selectedFragmentAssetIds, fragmentCharacterLimitWarning } = await loadSource('../src/lib/dramaFragmentReferences.ts')
 
 test('角色优先级持久化后改变实际入选三人，重复正文不虚增警告', () => {
   const assets = [{ id: 1, type: 'scene' }, ...[11, 12, 13, 14].map(id => ({ id, type: 'character', name: `角色${id}` })),

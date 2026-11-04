@@ -1,3 +1,5 @@
+import { useI18n } from '../../i18n'
+import { translate as translateUi } from '../../i18n/runtime'
 import { useVoicePreview } from '../../hooks/useVoicePreview'
 import { useEffect, useMemo, useState, type MouseEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -22,17 +24,17 @@ import { handleBillingError } from '../../lib/billingError'
 import { kepuStepIndex, kepuSteps, pipelineModeLabel } from '../../lib/status'
 
 const OUTPUT_MODES: { id: PipelineMode; label: string; desc: string; image: string }[] = [
-  { id: 'full', label: 'AI 视频', desc: '图→视频→配音→合成', image: '/mode-presets/full.jpg' },
+  { id: 'full', get label() { return translateUi("workflow.aiVideo") }, get desc() { return translateUi("workflow.imagesVideoVoiceoverComposition") }, image: '/mode-presets/full.jpg' },
   {
     id: 'image_text',
-    label: '静图成片',
-    desc: '静图+叠字+配音，不生成 AI 视频',
+    get label() { return translateUi("workflow.stillImageVideo") },
+    get desc() { return translateUi("workflow.stillImagesTextOverlaysAndVoiceoverNoAiVideo") },
     image: '/mode-presets/image_text.jpg',
   },
   {
     id: 'avatar',
-    label: '数字人口播',
-    desc: '半身照+配音→对口型视频，加标题条',
+    get label() { return translateUi("workflow.talkingHeadNarration") },
+    get desc() { return translateUi("workflow.photoAndVoiceoverLipSyncedVideoWithATitle") },
     image: '/mode-presets/avatar.svg',
   },
 ]
@@ -59,6 +61,7 @@ function isPortraitRatio(ratio: string | undefined | null): boolean {
 }
 
 export default function StyleConfigPage() {
+  const { t: translateUi } = useI18n()
   const { id } = useParams()
   const projectId = Number(id)
   const nav = useNavigate()
@@ -109,7 +112,7 @@ export default function StyleConfigPage() {
         if (p.image_model) setImageModel(p.image_model)
         if (p.video_model) setVideoModel(p.video_model)
       })
-      .catch((err) => setError(err instanceof Error ? err.message : '加载失败'))
+      .catch((err) => setError(err instanceof Error ? err.message : translateUi("ecomSet.loadFailed")))
   }, [nav, projectId])
 
 
@@ -171,7 +174,7 @@ export default function StyleConfigPage() {
   async function generate() {
     if (!project) return
     if (pipelineMode === 'avatar' && !project.avatar_image_url) {
-      setError('请先上传数字人半身照')
+      setError(translateUi("workflow.uploadAnUpperBodyPortraitFirst"))
       return
     }
     stopPreview()
@@ -201,14 +204,14 @@ export default function StyleConfigPage() {
       const started = await api.generate(project.id)
       nav(`/studio/${started.id}`)
     } catch (err) {
-      const msg = err instanceof Error ? err.message : '生成失败'
-      if (msg.includes('合成成片')) {
+      const msg = err instanceof Error ? err.message : translateUi("ecomSet.result.failed")
+      if (msg.includes(translateUi("workflow.composeFinalVideo"))) {
         try {
           const composed = await api.compose(project.id)
           nav(`/studio/${composed.id}`)
           return
         } catch (e2) {
-          setError(e2 instanceof Error ? e2.message : '合成失败')
+          setError(e2 instanceof Error ? e2.message : translateUi("workflow.compositionFailed"))
           return
         }
       }
@@ -223,7 +226,7 @@ export default function StyleConfigPage() {
   if (!project) {
     return (
       <AppShell active="studio">
-        {error ? <BillingErrorNotice message={error} /> : <p className="pf-muted">加载中…</p>}
+        {error ? <BillingErrorNotice message={error} /> : <p className="pf-muted">{translateUi("ecomSet.loading")}</p>}
       </AppShell>
     )
   }
@@ -235,9 +238,9 @@ export default function StyleConfigPage() {
           <div>
             <button type="button" className="pf-back" onClick={() => nav('/studio/new')}>
               <IconChevronLeft size={18} />
-              返回创作台
+              {translateUi("workflow.backToCreation")}
             </button>
-            <h1 className="pf-page-title">{project?.title || '风格配置'}</h1>
+            <h1 className="pf-page-title">{project?.title || translateUi("workflow.styleSettings_da3726")}</h1>
           </div>
           <Stepper
             steps={kepuSteps(pipelineMode)}
@@ -249,7 +252,7 @@ export default function StyleConfigPage() {
 
       <div className="pf-style-layout">
         <aside className="pf-create-col">
-          <h3>项目信息</h3>
+          <h3>{translateUi("workflow.projectInformation")}</h3>
           {currentTpl ? (
             <div>
               <div
@@ -272,31 +275,30 @@ export default function StyleConfigPage() {
           ) : null}
           <ul className="pf-meta-list" style={{ marginTop: '0.85rem' }}>
             <li>
-              <span>主题</span>
+              <span>{translateUi("workflow.topic_e848dd")}</span>
               <span style={{ maxWidth: '55%', textAlign: 'right' }}>
                 {(project?.source_text || '').slice(0, 40)}
               </span>
             </li>
             <li>
-              <span>时长</span>
-              <span>~1–3 分钟</span>
+              <span>{translateUi("workflow.duration")}</span>
+              <span>{translateUi("workflow.text13Minutes")}</span>
             </li>
             <li>
-              <span>分镜数</span>
-              <span>AI 自动</span>
+              <span>{translateUi("workflow.shotCount")}</span>
+              <span>{translateUi("workflow.automaticWithAi")}</span>
             </li>
           </ul>
           <button type="button" className="pf-btn pf-btn-ghost pf-btn-block pf-btn-sm" disabled>
-            预览模板 <ComingSoon />
+            {translateUi("workflow.previewTemplate")} <ComingSoon />
           </button>
         </aside>
 
         <section className="pf-create-col">
           <div className="pf-style-block">
-            <h3>画面风格</h3>
+            <h3>{translateUi("workflow.visualStyle")}</h3>
             <p className="pf-muted" style={{ fontSize: '0.78rem', margin: '0 0 0.65rem' }}>
-              已由选题时选择的模板锁定，出图与出视频会自动带上画风。是否出角色由模板规则和主题让 AI
-              决定，不必再选一套人设。
+              {translateUi("workflow.theSelectedTemplateSetsTheVisualStyleForImages")}
             </p>
             {currentTpl ? (
               <div
@@ -316,11 +318,11 @@ export default function StyleConfigPage() {
                   ) : null}
                 </span>
                 <div className="cap">{currentTpl.name}</div>
-                <div className="cap-sub">模板画风</div>
+                <div className="cap-sub">{translateUi("workflow.templateStyle")}</div>
               </div>
             ) : null}
             <label className="pf-field" style={{ marginTop: '0.75rem' }}>
-              <span className="pf-field-label">风格提示词（可选覆盖）</span>
+              <span className="pf-field-label">{translateUi("workflow.stylePromptOptionalOverride")}</span>
               <textarea
                 className="pf-field-input"
                 value={stylePrompt}
@@ -333,12 +335,12 @@ export default function StyleConfigPage() {
 
           <div className="pf-style-block">
             <h3>
-              配音音色
+              {translateUi("workflow.narrationVoice")}
               <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm" disabled>
-                更多音色 <ComingSoon />
+                {translateUi("workflow.moreVoices")} <ComingSoon />
               </button>
             </h3>
-            {isFallback ? <p role="status">本次试听使用备用音色</p> : null}
+            {isFallback ? <p role="status">{translateUi("workflow.thisPreviewUsesABackupVoice")}</p> : null}
             <div className="pf-voice-row">
               {voices.map((v) => {
                 const vid = voiceKey(v)
@@ -361,7 +363,7 @@ export default function StyleConfigPage() {
                   >
                     <strong className="pf-voice-name">{v.label}</strong>
                     <span className="pf-voice-meta">
-                      {v.gender === 'female' ? '女声' : v.gender === 'male' ? '男声' : v.gender}
+                      {v.gender === 'female' ? translateUi("daihuo.video.gender.female") : v.gender === 'male' ? translateUi("daihuo.video.gender.male") : v.gender}
                     </span>
                     <button
                       type="button"
@@ -376,13 +378,13 @@ export default function StyleConfigPage() {
                       onClick={(e) => previewVoice(v, e)}
                     >
                       {loading ? (
-                        '生成中…'
+                        translateUi("workflow.generating")
                       ) : playing ? (
-                        '播放中'
+                        translateUi("workflow.playing")
                       ) : (
                         <>
                           <IconPlay size={12} />
-                          试听
+                          {translateUi("workflow.previewVoice_854b12")}
                         </>
                       )}
                     </button>
@@ -392,15 +394,14 @@ export default function StyleConfigPage() {
             </div>
             {selectedVoice ? (
               <p className="pf-muted" style={{ fontSize: '0.78rem', margin: '0.55rem 0 0' }}>
-                当前：{selectedVoice.label} · 成片用该音色整片配音；点击「试听」可听约 5 秒样例
-              </p>
+                {translateUi("workflow.selectedUsedForFullFilmNarrationPreviewASample", { v1: selectedVoice.label })}</p>
             ) : null}
           </div>
 
           <div className="pf-style-block">
-            <h3>成片方式</h3>
+            <h3>{translateUi("workflow.videoMode")}</h3>
             <p className="pf-muted" style={{ fontSize: '0.78rem', margin: '0 0 0.65rem' }}>
-              任意模板都可选择是否生成 AI 视频，与画幅无关。
+              {translateUi("workflow.chooseAiVideoOrStillImageCompositionWithAny")}
             </p>
             <div className="pf-style-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
               {OUTPUT_MODES.map((m) => (
@@ -433,9 +434,9 @@ export default function StyleConfigPage() {
 
           {mediaCatalog && pipelineMode !== 'avatar' ? (
             <div className="pf-style-block">
-              <h3>图片模型</h3>
+              <h3>{translateUi("workflow.imageModel")}</h3>
               <p className="pf-muted" style={{ fontSize: '0.78rem', margin: '0 0 0.65rem' }}>
-                使用管理后台「模型」中已勾选的 TokenFree 模型。
+                {translateUi("workflow.usesTokenfreeModelsEnabledInTheAdminModelSettings")}
               </p>
               <div className="pf-model-grid">
                 {mediaCatalog.image_models.map((m: MediaModelOption) => (
@@ -447,7 +448,7 @@ export default function StyleConfigPage() {
                   >
                     <div className="pf-model-opt-title">
                       <span>{m.label}</span>
-                      {m.recommended ? <span className="pf-model-badge">推荐</span> : null}
+                      {m.recommended ? <span className="pf-model-badge">{translateUi("workflow.recommended")}</span> : null}
                     </div>
                     <div className="pf-model-opt-desc">{m.description}</div>
                     <div className="pf-model-opt-provider">TokenFree</div>
@@ -459,9 +460,9 @@ export default function StyleConfigPage() {
 
           {mediaCatalog && pipelineMode === 'full' ? (
             <div className="pf-style-block">
-              <h3>视频模型</h3>
+              <h3>{translateUi("workflow.videoModel")}</h3>
               <p className="pf-muted" style={{ fontSize: '0.78rem', margin: '0 0 0.65rem' }}>
-                图生视频所用模型；静图成片模式不调用。
+                {translateUi("workflow.modelForImageToVideoGenerationNotUsedIn")}
               </p>
               <div className="pf-model-grid">
                 {mediaCatalog.video_models.map((m: MediaModelOption) => (
@@ -473,7 +474,7 @@ export default function StyleConfigPage() {
                   >
                     <div className="pf-model-opt-title">
                       <span>{m.label}</span>
-                      {m.recommended ? <span className="pf-model-badge">推荐</span> : null}
+                      {m.recommended ? <span className="pf-model-badge">{translateUi("workflow.recommended")}</span> : null}
                     </div>
                     <div className="pf-model-opt-desc">{m.description}</div>
                     <div className="pf-model-opt-provider">TokenFree</div>
@@ -484,7 +485,7 @@ export default function StyleConfigPage() {
           ) : null}
 
           <div className="pf-style-block">
-            <h3>输出比例</h3>
+            <h3>{translateUi("workflow.outputAspectRatio")}</h3>
             <div className="pf-ratio-row">
               {RATIOS.map((r) => (
                 <button
@@ -502,7 +503,7 @@ export default function StyleConfigPage() {
         </section>
 
         <aside className="pf-create-col">
-          <h3>实时预览</h3>
+          <h3>{translateUi("workflow.livePreview")}</h3>
           <div
             className={[
               'pf-editor-preview',
@@ -515,32 +516,32 @@ export default function StyleConfigPage() {
             {currentTpl ? (
               <img src={api.assetUrl(currentTpl.preview_cover)} alt="" />
             ) : (
-              <span className="empty">预览占位</span>
+              <span className="empty">{translateUi("workflow.previewPlaceholder")}</span>
             )}
           </div>
           <p className="pf-muted" style={{ fontSize: '0.8rem' }}>
-            生成后可在分镜台查看真实画面。当前为模板预览。
+            {translateUi("workflow.thisIsATemplatePreviewGeneratedVisualsAppearIn")}
           </p>
-          <h3 style={{ marginTop: '1rem' }}>当前配置概览</h3>
+          <h3 style={{ marginTop: '1rem' }}>{translateUi("workflow.currentConfiguration")}</h3>
           <ul className="pf-meta-list">
             <li>
-              <span>风格</span>
+              <span>{translateUi("ecomSet.form.style")}</span>
               <span>{currentTpl?.name || '—'}</span>
             </li>
             <li>
-              <span>角色</span>
-              <span>AI 按模板与主题决定</span>
+              <span>{translateUi("workflow.character")}</span>
+              <span>{translateUi("workflow.aiDecidesFromTheTemplateAndTopic")}</span>
             </li>
             <li>
-              <span>配音</span>
-              <span>{selectedVoice?.label || '默认'}</span>
+              <span>{translateUi("workflow.narration_0f10bb")}</span>
+              <span>{selectedVoice?.label || translateUi("workflow.default")}</span>
             </li>
             <li>
-              <span>比例</span>
+              <span>{translateUi("workflow.aspectRatio")}</span>
               <span>{ratio}</span>
             </li>
             <li>
-              <span>成片</span>
+              <span>{translateUi("workflow.finishedVideo")}</span>
               <span>{pipelineModeLabel(pipelineMode)}</span>
             </li>
           </ul>
@@ -554,8 +555,8 @@ export default function StyleConfigPage() {
             >
               <IconPlay size={14} />
               {playingId === voiceKey(selectedVoice)
-                ? '停止试听'
-                : `试听「${selectedVoice.label}」`}
+                ? translateUi("workflow.stopPreview")
+                : translateUi("workflow.preview_0867e4", { v1: String(selectedVoice.label) })}
             </button>
           ) : null}
           {error ? <BillingErrorNotice message={error} style={{ marginTop: '0.75rem' }} /> : null}
@@ -566,11 +567,11 @@ export default function StyleConfigPage() {
             disabled={busy || Boolean(previewBusy)}
             onClick={generate}
           >
-            {busy ? '启动中…' : project.shots?.length ? '保存并继续' : '生成故事板'}
+            {busy ? translateUi("workflow.starting") : project.shots?.length ? translateUi("workflow.saveAndContinue") : translateUi("workflow.generateStoryboards")}
             {!busy ? <span aria-hidden>→</span> : null}
           </button>
           <p className="pf-muted" style={{ fontSize: '0.78rem', marginTop: '0.5rem' }}>
-            先生成分镜脚本，确认修改后再手动开始出图与配音。
+            {translateUi("workflow.generateTheStoryboardScriptFirstReviewItThenStart")}
           </p>
         </aside>
       </div>

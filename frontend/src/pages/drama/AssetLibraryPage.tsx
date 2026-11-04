@@ -1,3 +1,5 @@
+import { useI18n } from '../../i18n'
+import { translate as translateUi } from '../../i18n/runtime'
 /** 全局漫剧资产库：按角色 / 场景 / 道具 / 音色分类，音色可试听 */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Pause, Play } from 'lucide-react'
@@ -28,18 +30,18 @@ const PAGE_SIZE_DEFAULT = 12
 const PAGE_SIZE_OPTIONS = [12, 24, 36] as const
 
 const TABS: Array<{ value: AssetTabKey; label: string }> = [
-  { value: 'all', label: '全部' },
-  { value: 'character', label: '角色' },
-  { value: 'scene', label: '场景' },
-  { value: 'prop', label: '道具' },
-  ...(DRAMA_VOICE_BINDING_ENABLED ? [{ value: 'voice' as const, label: '音色' }] : []),
+  { value: 'all', get label() { return translateUi("workflow.all") } },
+  { value: 'character', get label() { return translateUi("workflow.character") } },
+  { value: 'scene', get label() { return translateUi("workflow.scene") } },
+  { value: 'prop', get label() { return translateUi("workflow.prop") } },
+  ...(DRAMA_VOICE_BINDING_ENABLED ? [{ value: 'voice' as const, get label() { return translateUi("daihuo.video.voice") } }] : []),
 ]
 
 const KIND_LABEL: Record<string, string> = {
-  character: '角色',
-  scene: '场景',
-  prop: '道具',
-  voice: '音色',
+  get character() { return translateUi("workflow.character") },
+  get scene() { return translateUi("workflow.scene") },
+  get prop() { return translateUi("workflow.prop") },
+  get voice() { return translateUi("daihuo.video.voice") },
 }
 
 export default function AssetLibraryPage() {
@@ -71,7 +73,7 @@ function fileMeta(asset: DramaAsset): string {
   const url = (asset.cover || asset.url || '').toLowerCase()
   const ext = url.match(/\.([a-z0-9]{2,5})(\?|$)/)?.[1]
   if (ext) return `.${ext}`
-  return asset.type || '文件'
+  return asset.type || translateUi("workflow.file")
 }
 
 // 音色资产或角色已绑定音色的试听地址
@@ -87,6 +89,7 @@ function isImageLike(asset: DramaAsset): boolean {
 
 // 渲染资产库内容
 function AssetLibraryInner() {
+  const { t: translateUi } = useI18n()
   /*
    * assets 当前项目范围下的资产
    * projects 项目列表（筛选用）
@@ -129,7 +132,7 @@ function AssetLibraryInner() {
         if (!cancelled) setAssets(filterDramaLibraryAssets(rows))
       })
       .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : '加载失败')
+        if (!cancelled) setError(err instanceof Error ? err.message : translateUi("ecomSet.loadFailed"))
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -147,16 +150,16 @@ function AssetLibraryInner() {
 
   const projectNameById = useMemo(() => {
     const map = new Map<number, string>()
-    for (const p of projects) map.set(p.id, p.title || `项目 #${p.id}`)
+    for (const p of projects) map.set(p.id, p.title || translateUi("workflow.projectNumber", { v1: String(p.id) }))
     return map
   }, [projects])
 
   const projectOptions = useMemo(
     () => [
-      { value: '', label: '全部项目' },
+      { value: '', label: translateUi("workflow.allProjects") },
       ...projects.map((p) => ({
         value: String(p.id),
-        label: p.title || `项目 #${p.id}`,
+        label: p.title || translateUi("workflow.project", { v1: String(p.id) }),
       })),
     ],
     [projects],
@@ -194,7 +197,7 @@ function AssetLibraryInner() {
   function toggleVoice(asset: DramaAsset) {
     const src = resolveDramaMediaUrl(voicePreviewUrl(asset))
     if (!src) {
-      setError('该音色尚未合成试听')
+      setError(translateUi("workflow.thisVoiceHasNoPreviewYet"))
       return
     }
     if (playingId === asset.id) {
@@ -205,7 +208,7 @@ function AssetLibraryInner() {
     if (!audioRef.current) audioRef.current = new Audio()
     audioRef.current.src = src
     audioRef.current.onended = () => setPlayingId(null)
-    void audioRef.current.play().catch(() => setError('播放失败'))
+    void audioRef.current.play().catch(() => setError(translateUi("workflow.couldNotPlayAudio")))
     setPlayingId(asset.id)
   }
 
@@ -215,39 +218,39 @@ function AssetLibraryInner() {
         <header className="pf-drama-list-head">
           <div className="pf-drama-list-title-row">
             <div>
-              <h1>资产管理</h1>
+              <h1>{translateUi("workflow.assetManagement")}</h1>
               <p className="pf-muted" style={{ margin: '0.35rem 0 0' }}>
-                按角色、场景、道具与音色浏览
+                {translateUi("workflow.browseCharactersScenesPropsAndVoices")}
               </p>
             </div>
             <div className="pf-drama-list-actions">
               <Button to="/drama" variant="ghost" size="sm">
-                漫剧项目
+                {translateUi("workflow.dramaProjects")}
               </Button>
               <Button to="/history" variant="ghost" size="sm">
-                科普历史
+                {translateUi("workflow.explainerHistory")}
               </Button>
               <Button to="/settings" variant="ghost" size="sm">
-                个人中心
+                {translateUi("workflow.myAccount")}
               </Button>
             </div>
           </div>
 
           <div className="pf-drama-list-toolbar">
-            <PillFilter options={TABS} value={tab} onChange={setTab} ariaLabel="资产分类" />
+            <PillFilter options={TABS} value={tab} onChange={setTab} ariaLabel={translateUi("workflow.assetCategories")} />
             <div className="pf-asset-toolbar-filters">
               <FilterSelect
-                label="按项目筛选"
+                label={translateUi("workflow.filterByProject")}
                 value={projectId}
                 options={projectOptions}
                 onChange={setProjectId}
               />
               <label className="pf-drama-search">
-                <span className="sr-only">搜索资产</span>
+                <span className="sr-only">{translateUi("workflow.searchAssets")}</span>
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="搜索名称或项目"
+                  placeholder={translateUi("workflow.searchNamesOrProjects")}
                 />
               </label>
             </div>
@@ -259,14 +262,14 @@ function AssetLibraryInner() {
         <div className="pf-asset-toolbar-meta">
           <p className="pf-muted" style={{ margin: 0 }}>
             {loading
-              ? '加载中…'
-              : `共 ${assets.length} 项 · 筛选后 ${filtered.length} 项 · 第 ${safePage}/${pageCount} 页`}
+              ? translateUi("ecomSet.loading")
+              : translateUi("workflow.totalMatchingPage", { v1: String(assets.length), v2: String(filtered.length), v3: String(safePage), v4: String(pageCount) })}
           </p>
         </div>
 
         {!loading && filtered.length === 0 ? (
           <div className="pf-empty-state is-compact">
-            <p className="pf-muted">该分类暂无资产</p>
+            <p className="pf-muted">{translateUi("workflow.noAssetsInThisCategory")}</p>
           </div>
         ) : (
           <>
@@ -275,7 +278,7 @@ function AssetLibraryInner() {
                 const kind = assetKind(asset)
                 const mediaSrc = resolveDramaMediaUrl(asset.cover || (kind === 'voice' ? '' : asset.url))
                 const projectLabel =
-                  projectNameById.get(asset.project_id) || `项目 #${asset.project_id}`
+                  projectNameById.get(asset.project_id) || translateUi("workflow.project", { v1: String(asset.project_id) })
                 const previewUrl = voicePreviewUrl(asset)
                 const isVoice = kind === 'voice'
                 const playing = playingId === asset.id
@@ -288,7 +291,7 @@ function AssetLibraryInner() {
                           className={`pf-asset-play${playing ? ' is-playing' : ''}`}
                           onClick={() => toggleVoice(asset)}
                           disabled={!previewUrl}
-                          title={previewUrl ? (playing ? '停止试听' : '试听音色') : '尚未合成试听'}
+                          title={previewUrl ? (playing ? translateUi("workflow.stopPreview") : translateUi("workflow.previewVoice")) : translateUi("workflow.noPreviewYet")}
                         >
                           <span className="pf-asset-play-icon" aria-hidden>
                             {playing ? <Pause size={20} strokeWidth={2} /> : <Play size={20} strokeWidth={2} />}
@@ -301,7 +304,7 @@ function AssetLibraryInner() {
                           onClick={() =>
                             setLightbox({ src: mediaSrc, alt: asset.name || fileMeta(asset) })
                           }
-                          title="查看大图"
+                          title={translateUi("workflow.viewFullImage")}
                         >
                           <img src={mediaSrc} alt={asset.name || ''} />
                         </button>
@@ -309,7 +312,7 @@ function AssetLibraryInner() {
                         <span>{fileMeta(asset)}</span>
                       )}
                     </div>
-                    <h3>{asset.name || '未命名'}</h3>
+                    <h3>{asset.name || translateUi("workflow.untitled")}</h3>
                     <p>
                       {fileMeta(asset)} · {projectLabel}
                     </p>
@@ -321,10 +324,10 @@ function AssetLibraryInner() {
                           onError={setError}
                         />
                       ) : isVoice && !previewUrl ? (
-                        <span className="pf-muted">尚未合成试听</span>
+                        <span className="pf-muted">{translateUi("workflow.noPreviewYet")}</span>
                       ) : null}
                       <Button to={`/drama/projects/${asset.project_id}`} variant="ghost" size="sm">
-                        打开项目
+                        {translateUi("workflow.openProject")}
                       </Button>
                     </div>
                   </article>
@@ -342,7 +345,7 @@ function AssetLibraryInner() {
                 setPage(1)
               }}
               onChange={setPage}
-              ariaLabel="资产库分页"
+              ariaLabel={translateUi("workflow.assetLibraryPages")}
             />
           </>
         )}

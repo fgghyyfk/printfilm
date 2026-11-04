@@ -1,3 +1,4 @@
+import { translate as translateUi } from '../i18n/runtime'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 
@@ -34,12 +35,12 @@ export function useVoicePreview(onError: (message: string) => void) {
       audioRef.current = audio
       keyRef.current = key
       audio.onended = () => { if (serial.current === request) setPlayingId(null) }
-      audio.onerror = () => { if (serial.current === request) { setPlayingId(null); errorRef.current('试听播放失败') } }
+      audio.onerror = () => { if (serial.current === request) { setPlayingId(null); errorRef.current(translateUi("workflow.couldNotPlayTheVoicePreview")) } }
       setPlayingId(voiceId)
       setIsFallback(Boolean(result.is_fallback))
       await audio.play()
     } catch (err) {
-      if (serial.current === request) { setPlayingId(null); errorRef.current(err instanceof Error ? err.message : '试听失败') }
+      if (serial.current === request) { setPlayingId(null); errorRef.current(err instanceof Error ? err.message : translateUi("workflow.voicePreviewFailed")) }
     } finally {
       if (serial.current === request) setPreviewBusy(null)
     }

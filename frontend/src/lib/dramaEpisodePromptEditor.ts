@@ -1,3 +1,4 @@
+import { translate as translateUi } from '../i18n/runtime'
 /** 分集脚本编辑器：inline 时长/资产标签渲染与序列化 */
 export type DramaMentionChipData = {
   assetId: number
@@ -233,7 +234,7 @@ export function createDurationChipElement(seconds: number) {
   chipEl.contentEditable = 'false'
   chipEl.dataset.mention = 'true'
   chipEl.dataset.durationSec = String(seconds)
-  chipEl.title = `时长 ${seconds}s，编辑时点击切换`
+  chipEl.title = translateUi("workflow.editableDurationHint", { v1: String(seconds) })
 
   const labelEl = document.createElement('span')
   labelEl.dataset.durationLabel = 'true'
@@ -247,7 +248,7 @@ export function createDurationChipElement(seconds: number) {
 // 更新已有时长标签秒数
 export function updateDurationChipElement(chipEl: HTMLElement, seconds: number) {
   chipEl.dataset.durationSec = String(seconds)
-  chipEl.title = `时长 ${seconds}s，编辑时点击切换`
+  chipEl.title = translateUi("workflow.editableDurationHint", { v1: String(seconds) })
   const labelEl = chipEl.querySelector<HTMLElement>('[data-duration-label]')
   if (labelEl) labelEl.textContent = `${seconds}s`
 }
@@ -491,7 +492,7 @@ export function resolveChipFromAsset(
 ): DramaMentionChipData {
   return {
     assetId: asset.id,
-    label: asset.name || `资产 ${asset.id}`,
+    label: asset.name || translateUi("workflow.asset", { v1: String(asset.id) }),
     previewUrl: previewUrl || null,
   }
 }

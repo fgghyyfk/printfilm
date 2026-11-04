@@ -1,3 +1,4 @@
+import { useI18n } from '../i18n'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
@@ -8,6 +9,7 @@ import PillTabs from '../components/ui/PillTabs'
 import { CATEGORY_ORDER, HOME_CATEGORY_LABELS } from '../lib/categories'
 
 export default function TemplatesPage() {
+  const { t: translateUi } = useI18n()
   const nav = useNavigate()
   const [templates, setTemplates] = useState<Template[]>([])
   const [error, setError] = useState('')
@@ -36,7 +38,7 @@ export default function TemplatesPage() {
     const m = new Map<string, string>()
     for (const k of categoryKeys) m.set(HOME_CATEGORY_LABELS[k] || k, k)
     return m
-  }, [categoryKeys])
+  }, [categoryKeys, translateUi])
 
   const filtered = useMemo(() => {
     let list = templates
@@ -62,22 +64,22 @@ export default function TemplatesPage() {
     <AppShell active="templates">
       <div className="pf-section-head">
         <div>
-          <h2>模板库</h2>
-          <p>为科普与知识短片挑选画面语言</p>
+          <h2>{translateUi("workflow.templateLibrary")}</h2>
+          <p>{translateUi("workflow.chooseAVisualStyleForExplainersAndKnowledgeVideos")}</p>
         </div>
       </div>
       <div className="pf-search" style={{ maxWidth: 420, marginBottom: '1rem' }}>
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="搜索模板名称或描述"
+          placeholder={translateUi("workflow.searchTemplateNamesOrDescriptions")}
         />
       </div>
       <PillTabs
         items={categoryLabels}
         value={HOME_CATEGORY_LABELS[category] || category}
         onChange={(label) => setCategory(labelToKey.get(label) || '全部')}
-        ariaLabel="模板分类"
+        ariaLabel={translateUi("workflow.templateCategories")}
       />
       {error ? <BillingErrorNotice message={error} /> : null}
       <div className="pf-template-grid" style={{ marginTop: '1rem' }}>
@@ -96,7 +98,7 @@ export default function TemplatesPage() {
           </button>
         ))}
       </div>
-      {filtered.length === 0 ? <p className="pf-muted">没有匹配的模板。</p> : null}
+      {filtered.length === 0 ? <p className="pf-muted">{translateUi("workflow.noMatchingTemplates")}</p> : null}
     </AppShell>
   )
 }

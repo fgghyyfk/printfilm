@@ -1,10 +1,11 @@
+import { translate as translateUi } from '../i18n/runtime'
 /** Agent Skill API：列表 / 上传 / 启用 / 删除 */
 
 import { createJsonRequester, uploadFile } from './client'
 
 /** Skill API 保留本模块的错误文案，避免依赖漫剧客户端。 */
 const request = createJsonRequester((_response, detail) => {
-  throw new Error(typeof detail === 'string' ? detail : '请求失败')
+  throw new Error(typeof detail === 'string' ? detail : translateUi("workflow.requestFailed"))
 })
 
 export type AgentSkill = {
@@ -37,7 +38,7 @@ export function uploadAgentSkillMarkdown(markdown: string) {
 /** 上传 .md 文件 */
 export function uploadAgentSkillFile(file: File) {
   return uploadFile<AgentSkill>('/api/drama/skills/upload', file, (_response, detail) => {
-    throw new Error(typeof detail === 'string' ? detail : '上传失败')
+    throw new Error(typeof detail === 'string' ? detail : translateUi("workflow.uploadFailed"))
   })
 }
 

@@ -1,3 +1,5 @@
+import { translate as translateUi } from '../../i18n/runtime'
+import { useI18n } from '../../i18n'
 /** 剧情大纲：左栏分集目录 + 右栏本集梗概/剧本与可选创作备注 */
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -40,7 +42,7 @@ function formatOutlineShotDuration(sec: number): string {
   if (sec < 60) return `${sec}s`
   const m = Math.floor(sec / 60)
   const s = sec % 60
-  return s ? `${m}分${s}秒` : `${m}分钟`
+  return s ? translateUi("workflow.minutesSeconds", { v1: String(m), v2: String(s) }) : translateUi("workflow.wholeMinutes", { v1: String(m) })
 }
 
 type OutlineEpisodePanelProps = {
@@ -112,6 +114,7 @@ function SectionCard({
   onCopy,
   scriptPreview,
 }: SectionCardProps) {
+  const { t: translateUi } = useI18n()
   const genBusy = generateBusy ?? busy
   return (
     <article className={`drama-outline-section${open ? ' is-open' : ''}`}>
@@ -128,7 +131,7 @@ function SectionCard({
         <div className="drama-outline-section-actions">
           <button type="button" className="drama-outline-text-btn" disabled={busy} onClick={onEdit}>
             <Pencil size={14} strokeWidth={2} />
-            编辑
+            {translateUi("workflow.edit")}
           </button>
           {onRegenerate ? (
             <button type="button" className="drama-outline-text-btn" disabled={genBusy} onClick={onRegenerate}>
@@ -138,13 +141,13 @@ function SectionCard({
           ) : null}
           <button type="button" className="drama-outline-text-btn" onClick={onCopy}>
             <Copy size={14} strokeWidth={2} />
-            复制
+            {translateUi("workflow.duplicate")}
           </button>
           <button
             type="button"
             className="drama-outline-text-btn drama-outline-text-btn-icon"
             onClick={onToggle}
-            aria-label={sectionKey === 'body' ? '弹窗解析' : open ? '收起' : '展开'}
+            aria-label={sectionKey === 'body' ? translateUi("workflow.openParsedScript") : open ? translateUi("compliance.collapse") : translateUi("compliance.expand")}
           >
             {sectionKey === 'body' ? (
               <Maximize2 size={14} strokeWidth={2} />
@@ -153,7 +156,7 @@ function SectionCard({
             ) : (
               <ChevronDown size={14} strokeWidth={2} />
             )}
-            {sectionKey === 'body' ? '解析预览' : open ? '收起' : '展开'}
+            {sectionKey === 'body' ? translateUi("workflow.parsedPreview") : open ? translateUi("compliance.collapse") : translateUi("compliance.expand")}
           </button>
         </div>
       </header>
@@ -171,10 +174,10 @@ function SectionCard({
               />
               <div className="drama-ep-section-edit-actions">
                 <button type="button" className="drama-btn-ghost" disabled={busy} onClick={onCancel}>
-                  取消
+                  {translateUi("ecomSet.copyModal.cancel")}
                 </button>
                 <button type="button" className="drama-btn-primary" disabled={busy} onClick={onSave}>
-                  保存
+                  {translateUi("workflow.save")}
                 </button>
               </div>
             </>
@@ -206,6 +209,7 @@ export function OutlineEpisodePanel({
   onOpenEpisodes,
   children,
 }: OutlineEpisodePanelProps) {
+  const { t: translateUi } = useI18n()
   const navigate = useNavigate()
   const [activeEpisodeNumber, setActiveEpisodeNumber] = useState(1)
   const [openSections, setOpenSections] = useState<Set<SectionKey>>(
@@ -381,15 +385,15 @@ export function OutlineEpisodePanel({
         const num = Number((cur.params || {}).episode_optimize_number || 0)
         if (num === tokenEpisode && st === 'completed') return cur
         if (num === tokenEpisode && st === 'failed') {
-          throw new Error(String((cur.params || {}).episode_optimize_error || '生成失败'))
+          throw new Error(String((cur.params || {}).episode_optimize_error || translateUi("ecomSet.result.failed")))
         }
         if (st !== 'generating') return cur
       } catch (err) {
         // 瞬时网络失败不中断轮询，避免 Failed to fetch 把界面卡在「生成中」
-        lastErr = err instanceof Error ? err : new Error('轮询失败')
+        lastErr = err instanceof Error ? err : new Error(translateUi("workflow.couldNotRefreshProgress"))
       }
     }
-    throw lastErr || new Error('生成超时，请稍后刷新')
+    throw lastErr || new Error(translateUi("workflow.generationTimedOutRefreshLaterToCheckItsStatus"))
   }
 
   async function saveBodies(nextBodies: DramaEpisodeBody[]) {
@@ -415,7 +419,7 @@ export function OutlineEpisodePanel({
       setOpenSections((prev) => new Set(prev).add('summary'))
       onOpenEpisodes()
     } catch (err) {
-      const msg = err instanceof Error ? err.message : '加集失败'
+      const msg = err instanceof Error ? err.message : translateUi("workflow.couldNotAddTheEpisode")
       setLocalError(msg)
       onError(msg)
     } finally {
@@ -438,7 +442,7 @@ export function OutlineEpisodePanel({
       await saveBodies(next)
       setEditingSection(null)
     } catch (err) {
-      const msg = err instanceof Error ? err.message : '保存失败'
+      const msg = err instanceof Error ? err.message : translateUi("workflow.couldNotSave")
       setLocalError(msg)
       onError(msg)
     } finally {
@@ -449,34 +453,34 @@ export function OutlineEpisodePanel({
   async function handleGenerate(mode: 'summary' | 'body' | 'full' | 'brief') {
     if (!selected?.episodeNumber) return
     if (editingSection || sceneEditing) {
-      setLocalError('请先保存或取消正在编辑的内容，再生成。')
+      setLocalError(translateUi("workflow.saveOrCancelYourCurrentEditsBeforeGenerating"))
       return
     }
     const creative = selected.creative || ''
     const summary = selected.summary || ''
     if (mode === 'summary' && !isSubstantialEpisodeCreative(creative)) {
-      setLocalError(`用于生成梗概的创作备注至少 ${MIN_EPISODE_CREATIVE_CHARS} 字`)
+      setLocalError(translateUi("workflow.creativeNotesMinimum", { v1: String(MIN_EPISODE_CREATIVE_CHARS) }))
       return
     }
     if (mode === 'full' && !isSubstantialEpisodeCreative(creative) && episodeBodyCharLen(summary) < 40) {
-      setLocalError(`请填写至少 40 字的本集梗概，或至少 ${MIN_EPISODE_CREATIVE_CHARS} 字的创作备注`)
+      setLocalError(translateUi("workflow.synopsisOrNotesMinimum", { v1: String(MIN_EPISODE_CREATIVE_CHARS) }))
       return
     }
     // 与后端 run_episode_body_from_brief 一致：创意≥10 或摘要≥40
     if (mode === 'body' && episodeBodyCharLen(creative) < 10 && episodeBodyCharLen(summary) < 40) {
-      setLocalError('请先填写本集梗概，再生成拍摄剧本')
+      setLocalError(translateUi("workflow.enterThisEpisodeSSynopsisBeforeGeneratingItsShooting"))
       return
     }
     if (mode === 'brief' && !isSubstantialEpisodeBody(selected.body)) {
-      setLocalError(`拍摄剧本需满 ${MIN_EPISODE_BODY_CHARS} 字后再提取本集梗概`)
+      setLocalError(translateUi("workflow.scriptMinimumForSynopsis", { v1: String(MIN_EPISODE_BODY_CHARS) }))
       return
     }
     if (mode === 'full') {
       const ok = await dialog.confirm({
-        title: '重新生成整集',
+        title: translateUi("workflow.regenerateEpisode"),
         message:
-          '将优先按本集梗概重写拍摄剧本；没有梗概时使用创作备注。若本集已进入分镜，之后重新分镜会覆盖并清空已生成镜头。是否继续？',
-        confirmText: '重新生成',
+          translateUi("workflow.rewriteTheShootingScriptFromTheEpisodeSynopsisOr"),
+        confirmText: translateUi("ecomSet.result.regenerate"),
         tone: 'danger',
       })
       if (!ok) return
@@ -497,10 +501,10 @@ export function OutlineEpisodePanel({
       const cur = await pollOptimize(targetEpisode)
       const created = Number((cur.params || {}).episode_optimize_assets_created || 0)
       if ((mode === 'body' || mode === 'full') && created > 0) {
-        setLocalNotice(`新建 ${created} 个角色/场景，已进资产库`)
+        setLocalNotice(translateUi("workflow.createdCharacterSceneCount", { v1: String(created) }))
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : '生成失败'
+      const msg = err instanceof Error ? err.message : translateUi("ecomSet.result.failed")
       setLocalError(msg)
       onError(msg)
     } finally {
@@ -512,11 +516,11 @@ export function OutlineEpisodePanel({
   async function handleConfirmEnter() {
     if (!selected?.episodeNumber) return
     if (editingSection || sceneEditing) {
-      setLocalError('请先保存或取消正在编辑的内容，再进入分镜。')
+      setLocalError(translateUi("workflow.saveOrCancelYourCurrentEditsBeforeOpeningThe"))
       return
     }
     if (!isSubstantialEpisodeBody(selected.body)) {
-      setLocalError(`剧本内容需满 ${MIN_EPISODE_BODY_CHARS} 字后再进入分镜`)
+      setLocalError(translateUi("workflow.scriptMinimumForStoryboard", { v1: String(MIN_EPISODE_BODY_CHARS) }))
       return
     }
     setLocalError('')
@@ -539,7 +543,7 @@ export function OutlineEpisodePanel({
       }
       setEnterSkillOpen(true)
     } catch (err) {
-      const msg = err instanceof Error ? err.message : '进入分镜失败'
+      const msg = err instanceof Error ? err.message : translateUi("workflow.couldNotOpenTheStoryboard")
       setLocalError(msg)
       onError(msg)
     } finally {
@@ -566,11 +570,11 @@ export function OutlineEpisodePanel({
           skill_ids: skillIds,
         })
       } catch (planErr) {
-        onError(planErr instanceof Error ? planErr.message : 'AI 分镜入队失败，已进入规则分镜')
+        onError(planErr instanceof Error ? planErr.message : translateUi("workflow.aiStoryboardingCouldNotBeQueuedRuleBasedStoryboarding"))
       }
       navigate(`/drama/projects/${projectId}/episodes/${episodeId}`)
     } catch (err) {
-      const msg = err instanceof Error ? err.message : '进入分镜失败'
+      const msg = err instanceof Error ? err.message : translateUi("workflow.couldNotOpenTheStoryboard")
       setLocalError(msg)
       onError(msg)
     } finally {
@@ -589,7 +593,7 @@ export function OutlineEpisodePanel({
       )
       await saveBodies(next)
     } catch (err) {
-      const msg = err instanceof Error ? err.message : '保存失败'
+      const msg = err instanceof Error ? err.message : translateUi("workflow.couldNotSave")
       setLocalError(msg)
       onError(msg)
       throw err
@@ -615,7 +619,7 @@ export function OutlineEpisodePanel({
   function startEdit(section: SectionKey) {
     if (!selected) return
     if (sceneEditing) {
-      setLocalError('请先保存或取消正在编辑的场次。')
+      setLocalError(translateUi("workflow.saveOrCancelTheSceneYouAreEditingFirst"))
       return
     }
     setEditingSection(section)
@@ -633,15 +637,15 @@ export function OutlineEpisodePanel({
     try {
       await navigator.clipboard.writeText(text || '')
     } catch {
-      setLocalError('复制失败')
+      setLocalError(translateUi("workflow.couldNotDuplicate"))
     }
   }
 
   const metaTags = useMemo(() => {
     const tags: string[] = []
     if (storyType) tags.push(storyType)
-    if (selected?.origin === 'manual') tags.push('手动加集')
-    else if (selected?.body) tags.push('自动生成')
+    if (selected?.origin === 'manual') tags.push(translateUi("workflow.manuallyAddedEpisode"))
+    else if (selected?.body) tags.push(translateUi("workflow.automaticallyGenerated"))
     return tags
   }, [storyType, selected])
 
@@ -649,8 +653,8 @@ export function OutlineEpisodePanel({
   const selectedShot = episodeShotStats[selected?.episodeNumber || 0]
   const charHint = selected
     ? [
-        selected.summary ? `梗概 ${episodeBodyCharLen(selected.summary)} 字` : null,
-        selected.body ? `剧本 ${episodeBodyCharLen(selected.body)} 字` : null,
+        selected.summary ? translateUi("workflow.synopsisCharCount", { v1: String(episodeBodyCharLen(selected.summary)) }) : null,
+        selected.body ? translateUi("workflow.scriptCharCount", { v1: String(episodeBodyCharLen(selected.body)) }) : null,
       ]
         .filter(Boolean)
         .join(' · ')
@@ -660,8 +664,8 @@ export function OutlineEpisodePanel({
     <aside className="drama-outline-sidebar">
       <div className="drama-outline-sidebar-head">
         <div>
-          <h3>分集目录</h3>
-          <p>共 {directoryEpisodes.length} 集</p>
+          <h3>{translateUi("workflow.episodes_4c659c")}</h3>
+          <p>{translateUi("workflow.episodes_5b28c7", { v1: directoryEpisodes.length })}</p>
         </div>
         {summaryReady ? (
           <button
@@ -671,7 +675,7 @@ export function OutlineEpisodePanel({
             onClick={() => void handleAddEpisode()}
           >
             <Plus size={14} strokeWidth={2.5} />
-            {adding ? '添加中' : '加集'}
+            {adding ? translateUi("workflow.adding") : translateUi("workflow.addEpisode")}
           </button>
         ) : null}
       </div>
@@ -682,30 +686,30 @@ export function OutlineEpisodePanel({
           const active = activeEpisodeNumber === ep.episodeNumber
           const shot = episodeShotStats[ep.episodeNumber || 0]
           const statusLabel = summaryGenerating
-            ? '全剧摘要生成中…'
+            ? translateUi("workflow.generatingDramaSummary")
             : assetsSeeding
-              ? '抽取资产中…'
+              ? translateUi("workflow.extractingAssets")
               : shot?.planStatus === 'generating'
-                ? 'AI 分镜中…'
+                ? translateUi("workflow.planningAiStoryboards")
                 : shot?.planStatus === 'failed'
-                  ? '分镜失败'
+                  ? translateUi("workflow.storyboardPlanningFailed")
                   : shot?.scriptChanged && shot.fragmentCount > 0
-                    ? `${shot.fragmentCount} 镜 · ${formatOutlineShotDuration(shot.totalSec)}（旧稿）`
+                    ? translateUi("workflow.shotsOlderScript", { v1: String(shot.fragmentCount), v2: String(formatOutlineShotDuration(shot.totalSec)) })
                     : shot?.planStatus === 'completed' &&
                       shot.fragmentCount > 0 &&
                       shot.totalSec > 0
                     ? shot.fragmentCount <= 1 && ready
-                      ? `1 镜 · ${formatOutlineShotDuration(shot.totalSec)}（偏少）`
-                      : `${shot.fragmentCount} 镜 · ${formatOutlineShotDuration(shot.totalSec)}`
+                      ? translateUi("workflow.text1ShotFewShots", { v1: String(formatOutlineShotDuration(shot.totalSec)) })
+                      : translateUi("workflow.shots", { v1: String(shot.fragmentCount), v2: String(formatOutlineShotDuration(shot.totalSec)) })
                     : episodeGenerating && !ready && !body?.summary && !body?.creative
                       ? episodeProgress.total > 0
-                        ? `整剧进度 ${episodeProgress.done}/${episodeProgress.total}`
-                        : '等待生成剧本…'
+                        ? translateUi("workflow.dramaProgress", { v1: String(episodeProgress.done), v2: String(episodeProgress.total) })
+                        : translateUi("workflow.waitingForScriptGeneration")
                       : ready
-                        ? '待 AI 分镜'
+                        ? translateUi("workflow.aiStoryboardsPending")
                         : body?.summary || body?.creative
-                          ? '待生成剧本'
-                          : '待填写梗概'
+                          ? translateUi("workflow.scriptPending")
+                          : translateUi("workflow.synopsisNeeded")
           return (
             <li key={ep.episodeNumber}>
               <button
@@ -727,8 +731,8 @@ export function OutlineEpisodePanel({
                   })()}
                 </span>
                 <span className="drama-outline-ep-meta">
-                  <strong>第 {ep.episodeNumber} 集</strong>
-                  <small>{ep.title || '未命名'}</small>
+                  <strong>{translateUi("workflow.episode_7518ae", { v1: ep.episodeNumber })}</strong>
+                  <small>{ep.title || translateUi("workflow.untitled")}</small>
                   <em
                     className={
                       summaryGenerating ||
@@ -760,12 +764,12 @@ export function OutlineEpisodePanel({
     <div className="drama-outline-detail-empty">
       <p>
         {summaryGenerating
-          ? '全剧摘要生成中，完成后会抽取资产并生成各集剧本…'
+          ? translateUi("workflow.generatingTheDramaSummaryThenExtractingAssetsAndWriting")
           : assetsSeeding
-            ? '正在抽取资产库，随后生成各集剧本…'
+            ? translateUi("workflow.extractingAssetsThenWritingEpisodeScripts")
             : summaryReady
-              ? '暂无分集，请点击「加集」或等待自动生成。'
-              : '请先完成整剧创意与剧本摘要。'}
+              ? translateUi("workflow.noEpisodesYetChooseAddEpisodeOrWaitFor")
+              : translateUi("workflow.completeTheDramaConceptAndScriptSummaryFirst")}
       </p>
     </div>
   ) : (
@@ -777,17 +781,15 @@ export function OutlineEpisodePanel({
               className="drama-title-input"
               value={titleDraft}
               onChange={(e) => setTitleDraft(e.target.value)}
-              placeholder="集名"
+              placeholder={translateUi("workflow.episodeName")}
             />
           ) : (
             <h2>
-              第 {selected.episodeNumber} 集
-              {selected.title ? `：${selected.title}` : ''}
-            </h2>
+              {translateUi("workflow.episode_28c99a", { v1: selected.episodeNumber, v2: selected.title ? `：${selected.title}` : '' })}</h2>
           )}
           {imageStyleLabel ? <span className="drama-outline-style-badge">{imageStyleLabel}</span> : null}
           <div className="drama-outline-detail-meta">
-            {charHint ? <span>{charHint}</span> : <span>尚未填写本集内容</span>}
+            {charHint ? <span>{charHint}</span> : <span>{translateUi("workflow.noEpisodeContentYet")}</span>}
             {metaTags.map((tag) => (
               <span key={tag} className="drama-outline-tag">
                 {tag}
@@ -799,12 +801,12 @@ export function OutlineEpisodePanel({
           <span className={`drama-outline-saved${bodyReady && !editingSection && !sceneEditing && !selectedShot?.scriptChanged ? ' is-ready' : ''}`}>
             <Check size={14} strokeWidth={2.5} />
             {editingSection || sceneEditing
-              ? '编辑未保存'
+              ? translateUi("workflow.unsavedEdits")
               : selectedShot?.scriptChanged
-                ? '分镜待更新'
+                ? translateUi("workflow.storyboardNeedsUpdating")
                 : bodyReady
-                  ? '可进分镜'
-                  : saving ? '保存中' : '已同步'}
+                  ? translateUi("workflow.readyForStoryboards")
+                  : saving ? translateUi("workflow.saving_a032e8") : translateUi("workflow.synced")}
           </span>
           {bodyReady && episodeBodyCharLen(selected.summary) < 40 ? (
             <button
@@ -813,7 +815,7 @@ export function OutlineEpisodePanel({
               disabled={generateBusy}
               onClick={() => void handleGenerate('brief')}
             >
-              {selectedGenerating && generatingMode === 'brief' ? '提取中…' : '提取本集梗概'}
+              {selectedGenerating && generatingMode === 'brief' ? translateUi("workflow.extracting") : translateUi("workflow.extractEpisodeSynopsis")}
             </button>
           ) : null}
           <button
@@ -823,23 +825,23 @@ export function OutlineEpisodePanel({
             onClick={() => void handleGenerate('full')}
             title={
               batchLocksThisEpisode
-                ? '本集剧本尚未生成完，请稍候'
+                ? translateUi("workflow.thisEpisodeSScriptIsStillGeneratingPleaseWait")
                 : anyEpisodeGenerating
-                  ? '另有单集生成进行中'
+                  ? translateUi("workflow.anotherEpisodeIsGenerating")
                   : undefined
             }
           >
             <RefreshCw size={15} strokeWidth={2.25} />
-            {selectedGenerating && generatingMode === 'full' ? '生成中…' : '重新生成整集'}
+            {selectedGenerating && generatingMode === 'full' ? translateUi("workflow.generating") : translateUi("workflow.regenerateEpisode")}
           </button>
           <button
             type="button"
             className="drama-btn-primary"
             disabled={enterBusy}
             onClick={() => void handleConfirmEnter()}
-            title={!selectedBodyReady ? `剧本内容需满 ${MIN_EPISODE_BODY_CHARS} 字` : undefined}
+            title={!selectedBodyReady ? translateUi("workflow.theScriptNeedsAtLeastCharacters", { v1: String(MIN_EPISODE_BODY_CHARS) }) : undefined}
           >
-            {confirming ? '进入中…' : '进入分镜'}
+            {confirming ? translateUi("workflow.opening") : translateUi("workflow.openStoryboards")}
           </button>
         </div>
       </header>
@@ -847,60 +849,59 @@ export function OutlineEpisodePanel({
       {localError ? <p className="drama-error">{localError}</p> : null}
       {localNotice ? <p className="drama-outline-notice">{localNotice}</p> : null}
       {selectedShot?.scriptChanged ? (
-        <p className="drama-outline-notice">剧本已修改，当前分镜仍为旧稿；进入后请重新分镜。</p>
+        <p className="drama-outline-notice">{translateUi("workflow.theScriptHasChangedButTheStoryboardUsesThe")}</p>
       ) : null}
       {summaryGenerating ? (
-        <p className="drama-loader">全剧摘要生成中…完成后抽取资产，再生成各集剧本</p>
+        <p className="drama-loader">{translateUi("workflow.generatingTheDramaSummaryFollowedByAssetsAndEpisode")}</p>
       ) : null}
       {assetsSeeding ? (
-        <p className="drama-loader">抽取资产中…角色/场景写入资产库后开始分集</p>
+        <p className="drama-loader">{translateUi("workflow.extractingAssetsEpisodeWritingStartsAfterCharactersAndScenes")}</p>
       ) : null}
       {episodeGenerating ? (
         <p className="drama-loader">
           {episodeProgress.total > 0
-            ? `整剧进度 ${episodeProgress.done}/${episodeProgress.total} · 可先浏览已完成的集`
-            : '全集剧本生成中，可先浏览已完成的集…'}
+            ? translateUi("workflow.dramaProgressBrowseCompletedEpisodesWhileYouWait", { v1: String(episodeProgress.done), v2: String(episodeProgress.total) })
+            : translateUi("workflow.writingEpisodeScriptsYouCanBrowseCompletedEpisodes")}
         </p>
       ) : null}
       {selectedGenerating ? (
-        <p className="drama-loader">本集生成中（{generatingMode}）…</p>
+        <p className="drama-loader">{translateUi("workflow.generatingThisEpisode", { v1: generatingMode })}</p>
       ) : anyEpisodeGenerating && generatingEpisodeNumber ? (
         <p className="drama-loader">
-          第 {generatingEpisodeNumber} 集生成中，可先浏览/编辑本集（生成请等该集完成）
-        </p>
+          {translateUi("workflow.episodeIsGeneratingYouCanBrowseOrEditThis", { v1: generatingEpisodeNumber })}</p>
       ) : null}
       {selected && episodeShotStats[selected.episodeNumber || 0]?.planStatus === 'generating' ? (
-        <p className="drama-loader">本集 AI 分镜中…</p>
+        <p className="drama-loader">{translateUi("workflow.planningAiStoryboardsForThisEpisode")}</p>
       ) : null}
       {selected &&
       isSubstantialEpisodeBody(selected.body) &&
       !episodeShotStats[selected.episodeNumber || 0]?.planStatus &&
       !summaryGenerating &&
       !assetsSeeding ? (
-        <p className="drama-loader">本集正文已就绪，等待入队 AI 分镜…</p>
+        <p className="drama-loader">{translateUi("workflow.theEpisodeScriptIsReadyWaitingToQueueAi")}</p>
       ) : null}
 
       <div className="drama-outline-sections">
         <SectionCard
           sectionKey="summary"
           icon={<BookOpen size={18} strokeWidth={1.9} />}
-          title="本集梗概"
-          subtitle="本集人物、冲突、转折与结局；生成拍摄剧本的主要依据"
+          title={translateUi("workflow.episodeSynopsis")}
+          subtitle=translateUi("workflow.charactersConflictTurnsAndEndingForThisEpisodeThe")
           text={selected.summary || ''}
           editing={editingSection === 'summary'}
           draft={sectionDraft}
           open={openSections.has('summary')}
           busy={busy}
           generateBusy={generateBusy}
-          placeholder="填写本集梗概（至少 40 字），再生成拍摄剧本"
+          placeholder={translateUi("workflow.enterAnEpisodeSynopsisAtLeast40CharactersThen")}
           regenerateLabel={
             selectedGenerating && generatingMode === 'brief'
-              ? '提取中…'
+              ? translateUi("workflow.extracting")
               : selectedGenerating && generatingMode === 'summary'
-                ? '生成中…'
+                ? translateUi("workflow.generating")
                 : summaryGenerateMode === 'brief'
-                  ? '从剧本提取'
-                  : '从备注生成'
+                  ? translateUi("workflow.extractFromScript")
+                  : translateUi("workflow.generateFromNotes")
           }
           onToggle={() => toggleSection('summary')}
           onEdit={() => startEdit('summary')}
@@ -913,16 +914,16 @@ export function OutlineEpisodePanel({
         <SectionCard
           sectionKey="body"
           icon={<FileText size={18} strokeWidth={1.9} />}
-          title="拍摄剧本"
-          subtitle="含对白与画面描述的拍摄正文（按场次解析，可分段编辑）"
+          title={translateUi("workflow.shootingScript")}
+          subtitle=translateUi("workflow.shootingScriptWithDialogueAndVisualsParsedIntoEditable")
           text={selected.body || ''}
           editing={editingSection === 'body'}
           draft={sectionDraft}
           open={openSections.has('body')}
           busy={busy}
           generateBusy={generateBusy || !canGenerateBody}
-          placeholder={`拍摄剧本正文（进入分镜需满 ${MIN_EPISODE_BODY_CHARS} 字）`}
-          regenerateLabel={selectedGenerating && generatingMode === 'body' ? '生成中…' : '生成剧本'}
+          placeholder={translateUi("workflow.shootingScriptAtLeastCharactersToOpenStoryboards", { v1: String(MIN_EPISODE_BODY_CHARS) })}
+          regenerateLabel={selectedGenerating && generatingMode === 'body' ? translateUi("workflow.generating") : translateUi("workflow.generateScript")}
           onToggle={() => toggleSection('body')}
           onEdit={() => startEdit('body')}
           onCancel={() => setEditingSection(null)}
@@ -934,7 +935,7 @@ export function OutlineEpisodePanel({
             <OutlineScriptPreview
               key={selected.episodeNumber}
               text={selected.body || ''}
-              empty={`拍摄剧本正文（进入分镜需满 ${MIN_EPISODE_BODY_CHARS} 字）`}
+              empty={translateUi("workflow.shootingScriptAtLeastCharactersToOpenStoryboards", { v1: String(MIN_EPISODE_BODY_CHARS) })}
               busy={busy}
               shotStats={episodeShotStats[selected.episodeNumber || 0] || null}
               onSaveScenes={handleSaveScenes}
@@ -945,15 +946,15 @@ export function OutlineEpisodePanel({
         <SectionCard
           sectionKey="creative"
           icon={<Lightbulb size={18} strokeWidth={1.9} />}
-          title="创作备注（可选）"
-          subtitle="补充创作方向或保留早期创意；已有梗概时无需填写"
+          title={translateUi("workflow.creativeNotesOptional")}
+          subtitle=translateUi("workflow.addCreativeDirectionOrKeepEarlyIdeasOptionalWhen")
           text={selected.creative || ''}
           editing={editingSection === 'creative'}
           draft={sectionDraft}
           open={openSections.has('creative')}
           busy={busy}
-          placeholder="可选：补充人物动机、创作方向或特别要求"
-          regenerateLabel="生成梗概"
+          placeholder={translateUi("workflow.optionalCharacterMotivationsCreativeDirectionOrSpecialRequirements")}
+          regenerateLabel=translateUi("workflow.generateSynopsis")
           onToggle={() => toggleSection('creative')}
           onEdit={() => startEdit('creative')}
           onCancel={() => setEditingSection(null)}
@@ -965,7 +966,7 @@ export function OutlineEpisodePanel({
       <OutlineScriptParseModal
         open={scriptModalOpen}
         onClose={() => setScriptModalOpen(false)}
-        title={`第 ${selected.episodeNumber} 集 · 剧本解析`}
+        title={translateUi("workflow.episodeParsedScript", { v1: String(selected.episodeNumber) })}
         text={selected.body || ''}
       />
     </section>
@@ -977,9 +978,9 @@ export function OutlineEpisodePanel({
         {children({ directory, bodies })}
         <FragmentPlanSkillModal
           open={enterSkillOpen}
-          title="进入分镜"
-          message="将确认本集剧本并切分分镜。可勾选本次使用的 Skill；确认后会覆盖该集已有分镜与已生成镜头（若有）。"
-          confirmText={confirming ? '进入中…' : '开始分镜'}
+          title={translateUi("workflow.openStoryboards")}
+          message={translateUi("workflow.confirmThisEpisodeSScriptAndSplitItInto")}
+          confirmText={confirming ? translateUi("workflow.opening") : translateUi("workflow.startStoryboards")}
           onCancel={() => {
             if (!confirming) setEnterSkillOpen(false)
           }}
@@ -994,9 +995,9 @@ export function OutlineEpisodePanel({
       <div className="drama-outline-main">{bodies}</div>
       <FragmentPlanSkillModal
         open={enterSkillOpen}
-        title="进入分镜"
-        message="将确认本集剧本并切分分镜。可勾选本次使用的 Skill；确认后会覆盖该集已有分镜与已生成镜头（若有）。"
-        confirmText={confirming ? '进入中…' : '开始分镜'}
+        title={translateUi("workflow.openStoryboards")}
+        message={translateUi("workflow.confirmThisEpisodeSScriptAndSplitItInto")}
+        confirmText={confirming ? translateUi("workflow.opening") : translateUi("workflow.startStoryboards")}
         onCancel={() => {
           if (!confirming) setEnterSkillOpen(false)
         }}

@@ -1,3 +1,4 @@
+import { translate as translateUi } from '../../i18n/runtime'
 /** 分集编辑页辅助：资产分类、引用解析、标签文案 */
 import type { DramaAsset, DramaFragment } from '../../api/drama'
 import { orderedFragmentAssetIds } from '../../lib/dramaFragmentReferences'
@@ -14,9 +15,9 @@ export type AssetScope = 'episode' | 'series'
 export type AssetTab = 'character' | 'scene' | 'prop'
 
 export const ASSET_TABS: Array<{ key: AssetTab; label: string }> = [
-  { key: 'character', label: '角色' },
-  { key: 'scene', label: '场景' },
-  { key: 'prop', label: '道具' },
+  { key: 'character', get label() { return translateUi("workflow.character") } },
+  { key: 'scene', get label() { return translateUi("workflow.scene") } },
+  { key: 'prop', get label() { return translateUi("workflow.prop") } },
 ]
 
 export const RATIO_OPTIONS = DRAMA_RATIO_OPTIONS
@@ -64,7 +65,7 @@ export function buildFragmentRefStripItems(
     const voice = asset && readVoice ? readVoice(asset) : null
     return {
       assetId,
-      name: asset?.name || `资产 ${assetId}`,
+      name: asset?.name || translateUi("workflow.assetNumber", { v1: String(assetId) }),
       type: asset?.type || '',
       previewUrl: preview,
       isCharacter,
@@ -172,9 +173,9 @@ export function readFragmentVideoVersions(frag: DramaFragment | null | undefined
 
 // 分镜队列徽标文案
 export function fragmentQueueBadgeLabel(status: string): string {
-  if (status === 'queued' || status === 'pending' || status === 'leased') return '排队'
-  if (status === 'running' || status === 'generating' || status === 'awaiting_poll') return '生成中'
-  if (status === 'failed') return '失败'
+  if (status === 'queued' || status === 'pending' || status === 'leased') return translateUi("workflow.queued_cfb281")
+  if (status === 'running' || status === 'generating' || status === 'awaiting_poll') return translateUi("ecomSet.result.running")
+  if (status === 'failed') return translateUi("ecomSet.status.failed")
   return ''
 }
 
@@ -193,7 +194,7 @@ export function resolveFragmentDurationSec(
 export function formatFragLabel(index: number, durationSec: number | null | undefined) {
   const n = String(index + 1).padStart(2, '0')
   const sec = durationSec && durationSec > 0 ? durationSec : 8
-  return `片段 ${n} · ${sec}s`
+  return translateUi("workflow.clipS", { v1: String(n), v2: String(sec) })
 }
 
 // 按本集/全集与分类筛选资产

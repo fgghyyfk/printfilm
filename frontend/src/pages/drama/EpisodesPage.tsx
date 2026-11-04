@@ -1,3 +1,4 @@
+import { useI18n } from '../../i18n'
 /** 旧分集中间页：自动跳到首集分镜编辑 */
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -18,6 +19,7 @@ export default function EpisodesPage() {
 
 // 加载后跳转首集编辑，不再展示中间页
 function EpisodesRedirect() {
+  const { t: translateUi } = useI18n()
   const { projectId } = useParams()
   const pid = Number(projectId)
   const navigate = useNavigate()
@@ -37,7 +39,7 @@ function EpisodesRedirect() {
         const path = await resolveStoryboardPath(pid)
         if (!cancelled) navigate(path, { replace: true })
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : '无法进入分镜')
+        if (!cancelled) setError(err instanceof Error ? err.message : translateUi("workflow.cannotOpenStoryboards"))
       }
     })()
     return () => {
@@ -48,7 +50,7 @@ function EpisodesRedirect() {
   return (
     <AppShell active="drama" flush>
       <div className="drama-workspace-status">
-        {error || '正在进入分镜…'}
+        {error || translateUi("workflow.openingStoryboards")}
       </div>
     </AppShell>
   )

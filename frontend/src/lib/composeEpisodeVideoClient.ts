@@ -1,3 +1,4 @@
+import { translate as translateUi } from '../i18n/runtime'
 /** 浏览器内无损拼接本集 MP4；编码不一致时回退服务端统一重编码 */
 
 import type { DramaFragment } from '../api/drama'
@@ -26,7 +27,7 @@ export function listEpisodeComposeClips(fragments: DramaFragment[]): EpisodeComp
     if (!url || fragment.id == null) return
     clips.push({
       id: fragment.id,
-      label: `分镜${index + 1}`,
+      label: translateUi("workflow.shot", { v1: String(index + 1) }),
       url,
     })
   })
@@ -56,9 +57,9 @@ async function composeEpisodeVideoServer(
     await new Promise<void>((resolve) => setTimeout(resolve, 1500))
     task = await tasksApi.get(queued.task_id)
   }
-  if (task.status !== 'succeeded') throw new Error(task.error_message || '全片合成未完成，请查看任务记录')
+  if (task.status !== 'succeeded') throw new Error(task.error_message || translateUi("workflow.videoCompositionDidNotCompleteCheckTheTaskRecord"))
   const url = resolveDramaMediaUrl(String(task.result_payload?.video_url || ''))
-  if (!url) throw new Error('服务端合成未返回可下载地址')
+  if (!url) throw new Error(translateUi("workflow.serverCompositionReturnedNoDownloadUrl"))
   const blob = await fetchMediaBlob(url)
   onProgress?.({ phase: 'server', done: clips.length, total: clips.length })
   return blob
@@ -71,7 +72,7 @@ export async function composeEpisodeVideoClient(
   options?: { episodeId?: number },
 ): Promise<Blob> {
   if (clips.length === 0) {
-    throw new Error('本集还没有可拼接的分镜视频')
+    throw new Error(translateUi("workflow.thisEpisodeHasNoClipsReadyToCompose"))
   }
 
   const buffers: Uint8Array[] = new Array(clips.length)
@@ -95,7 +96,7 @@ export async function composeEpisodeVideoClient(
   const names = clips.map((clip) => clip.label)
   for (let i = 0; i < buffers.length; i++) {
     if (!isMp4(buffers[i])) {
-      throw new Error(`${names[i]} 不是可拼接的 MP4`)
+      throw new Error(translateUi("workflow.isNotAComposableMp4", { v1: String(names[i]) }))
     }
   }
   const compat = mp4Compat(buffers, { names })
@@ -106,9 +107,7 @@ export async function composeEpisodeVideoClient(
       return composeEpisodeVideoServer(episodeId, clips, onProgress)
     }
     throw new Error(
-      `各镜编码不一致，无法在浏览器里无损拼接。请用同一模型、比例和清晰度生成后再试。${
-        compat.reason ? `（${compat.reason}）` : ''
-      }`,
+      translateUi("workflow.theClipsUseDifferentCodecsAndCannotBeJoined", { v1: String(compat.reason ? `（${compat.reason}）` : '') }),
     )
   }
   const merged = concatMp4(buffers)

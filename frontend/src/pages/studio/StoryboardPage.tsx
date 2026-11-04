@@ -1,3 +1,4 @@
+import { translate as translateUi } from '../../i18n/runtime'
 import { applyComplianceSuggestion } from '../../lib/complianceChanges'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -63,7 +64,7 @@ function csvEscape(value: string | number | null | undefined) {
 }
 
 function downloadStoryboardCsv(project: Project) {
-  const header = ['镜号', '旁白', '画面描述', '时长秒', '状态', '镜头标题']
+  const header = [translateUi("workflow.shotNumber"), translateUi("compliance.fields.narration"), translateUi("workflow.visualDescription"), translateUi("workflow.durationSeconds"), translateUi("workflow.status"), translateUi("workflow.shotTitle")]
   const rows = (project.shots || [])
     .slice()
     .sort((a, b) => a.shot_no - b.shot_no)
@@ -106,7 +107,7 @@ function shotCaption(shot: Shot) {
   if (shot.overlay_title) {
     return `${shot.overlay_title}${
       shot.overlay_subtitle ? ` · ${shot.overlay_subtitle}` : ''
-    }${shot.narration ? `｜旁白：${shot.narration}` : ''}`
+    }${shot.narration ? translateUi("workflow.narrationLabelSuffix", { v1: String(shot.narration) }) : ''}`
   }
   return shot.narration
 }
@@ -115,7 +116,7 @@ export default function StoryboardPage() {
   const { id } = useParams()
   const projectId = Number(id)
   const nav = useNavigate()
-  const { t } = useI18n()
+  const { t , t: translateUi } = useI18n()
   const [project, setProject] = useState<Project | null>(null)
   const [template, setTemplate] = useState<Template | null>(null)
   const [busy, setBusy] = useState(false)
@@ -163,7 +164,7 @@ export default function StoryboardPage() {
         })
       })
       .catch((err) => {
-        if (!controller.signal.aborted) setError(err instanceof Error ? err.message : '加载失败')
+        if (!controller.signal.aborted) setError(err instanceof Error ? err.message : translateUi("ecomSet.loadFailed"))
       })
     return () => controller.abort()
   }, [nav, projectId])
@@ -237,18 +238,18 @@ export default function StoryboardPage() {
 
   const isAvatar = project?.pipeline_mode === 'avatar'
   const generateLabel = running
-    ? '生成中…'
+    ? translateUi("workflow.generating")
     : shots.length === 0
-      ? '去风格页生成分镜'
+      ? translateUi("workflow.generateTheStoryboardOnTheStylePage")
       : needsScriptConfirm
         ? isAvatar
-          ? '确认分镜，逐段配音'
-          : '确认分镜，逐镜出图与配音'
+          ? translateUi("workflow.confirmStoryboardAndVoiceEachSegment")
+          : translateUi("workflow.confirmStoryboardAndGenerateImagesAndVoiceover")
         : needsVideos
           ? isAvatar
-            ? '生成数字人视频'
-            : '逐镜出视频'
-          : '继续生成'
+            ? translateUi("workflow.generateAvatarVideo")
+            : translateUi("workflow.generateShotVideos")
+          : translateUi("workflow.continueGeneration")
 
   // 工作台进度：完整模式要镜头视频 + 外部 TTS，静图模式只配音合成
   const progressItems = useMemo(() => {
@@ -262,16 +263,16 @@ export default function StoryboardPage() {
     const stage = effectiveStatus(project)
     type ProgressItem = { label: string; done: boolean; run?: boolean; pct?: number }
     const items: ProgressItem[] = [
-      { label: '主题解析', done: true },
-      { label: '分镜脚本', done: list.length > 0 || !['DRAFT', 'SCRIPTING'].includes(project.status) },
+      { label: translateUi("workflow.topicAnalysis"), done: true },
+      { label: translateUi("workflow.storyboardScript"), done: list.length > 0 || !['DRAFT', 'SCRIPTING'].includes(project.status) },
       {
-        label: avatar ? `数字人照片 (${imgs}/${list.length || 0})` : `画面生成 (${imgs}/${list.length || 0})`,
+        label: avatar ? translateUi("workflow.portraits", { v1: String(imgs), v2: String(list.length || 0) }) : translateUi("workflow.imageGeneration", { v1: String(imgs), v2: String(list.length || 0) }),
         done: list.length > 0 && imgs === list.length,
       },
     ]
     if (full) {
       items.push({
-        label: `${avatar ? '数字人视频' : '镜头视频'} (${vids}/${list.length || 0})`,
+        label: `${avatar ? translateUi("workflow.talkingHeadVideo") : translateUi("workflow.videoClips")} (${vids}/${list.length || 0})`,
         done:
           list.length > 0 &&
           (vids === list.length ||
@@ -281,13 +282,13 @@ export default function StoryboardPage() {
       })
     }
     items.push({
-      label: `配音合成 (${auds}/${list.length || 0})`,
+      label: translateUi("workflow.narration", { v1: String(auds), v2: String(list.length || 0) }),
       done: list.length > 0 && auds === list.length,
       run: stage === 'AUDIOING',
       pct: stage === 'AUDIOING' ? project.progress : undefined,
     })
     items.push({
-      label: full ? '镜头拼接' : '成片渲染',
+      label: full ? translateUi("workflow.clipComposition") : translateUi("workflow.finalRendering"),
       done: Boolean(project.final_video_url) || project.status === 'DONE',
       run: stage === 'COMPOSING',
       pct: stage === 'COMPOSING' ? project.progress : undefined,
@@ -312,13 +313,13 @@ export default function StoryboardPage() {
     try {
       setProject(await api.generate(project.id))
     } catch (err) {
-      const msg = err instanceof Error ? err.message : '继续生成失败'
-      if (msg.includes('合成成片')) {
+      const msg = err instanceof Error ? err.message : translateUi("workflow.couldNotContinueGeneration")
+      if (msg.includes(translateUi("workflow.composeFinalVideo"))) {
         try {
           setError('')
           setProject(await api.compose(project.id))
         } catch (e2) {
-          setError(e2 instanceof Error ? e2.message : '合成失败')
+          setError(e2 instanceof Error ? e2.message : translateUi("workflow.compositionFailed"))
         }
         return
       }
@@ -338,7 +339,7 @@ export default function StoryboardPage() {
       const result = await requestProjectCancellation(project.id, dialog.confirm, api.cancelProject)
       if (result) setProject(result)
     } catch (err) {
-      setError(err instanceof Error ? err.message : '取消生成失败')
+      setError(err instanceof Error ? err.message : translateUi("workflow.couldNotCancelGeneration"))
     } finally {
       setBusy(false)
     }
@@ -347,10 +348,10 @@ export default function StoryboardPage() {
   async function restartGenerate() {
     if (!project) return
     const ok = await dialog.confirm({
-      title: '推倒重做',
-      message: '将清空当前分镜与素材，重新拆分镜（生成后仍可先确认再继续）。',
-      confirmText: '确认重做',
-      cancelText: '再想想',
+      title: translateUi("workflow.startOver"),
+      message: translateUi("workflow.replaceTheCurrentStoryboardsAndAssetsWithANew"),
+      confirmText: translateUi("workflow.confirmRestart"),
+      cancelText: translateUi("workflow.notNow"),
       tone: 'danger',
     })
     if (!ok) return
@@ -359,7 +360,7 @@ export default function StoryboardPage() {
     try {
       setProject(await api.generate(project.id, { restart: true }))
     } catch (err) {
-      const msg = err instanceof Error ? err.message : '重做失败'
+      const msg = err instanceof Error ? err.message : translateUi("workflow.couldNotRegenerate_dfd1ca")
       setError(msg)
       await handleBillingError(err, nav)
     } finally {
@@ -370,10 +371,10 @@ export default function StoryboardPage() {
   async function deleteProject() {
     if (!project) return
     const ok = await dialog.confirm({
-      title: '删除项目',
-      message: '确定删除该项目？素材与成片将一并清除，此操作不可恢复。',
-      confirmText: '删除',
-      cancelText: '取消',
+      title: translateUi("workflow.deleteProject"),
+      message: translateUi("workflow.deleteThisProjectAndItsMediaThisCannotBe"),
+      confirmText: translateUi("workflow.delete"),
+      cancelText: translateUi("ecomSet.copyModal.cancel"),
       tone: 'danger',
     })
     if (!ok) return
@@ -382,7 +383,7 @@ export default function StoryboardPage() {
       await api.deleteProject(project.id)
       nav('/history')
     } catch (err) {
-      setError(err instanceof Error ? err.message : '删除失败')
+      setError(err instanceof Error ? err.message : translateUi("workflow.couldNotDelete"))
     } finally {
       setBusy(false)
     }
@@ -394,7 +395,7 @@ export default function StoryboardPage() {
     try {
       setProject(await api.compose(project.id))
     } catch (err) {
-      setError(err instanceof Error ? err.message : '合成失败')
+      setError(err instanceof Error ? err.message : translateUi("workflow.compositionFailed"))
     } finally {
       setBusy(false)
     }
@@ -407,7 +408,7 @@ export default function StoryboardPage() {
     try {
       setProject(await api.uploadCover(project.id, file))
     } catch (err) {
-      setError(err instanceof Error ? err.message : '封面上传失败')
+      setError(err instanceof Error ? err.message : translateUi("workflow.couldNotUploadTheCover"))
     } finally {
       setBusy(false)
       if (coverInputRef.current) coverInputRef.current.value = ''
@@ -420,7 +421,7 @@ export default function StoryboardPage() {
       .sort((a, b) => a.shot_no - b.shot_no)
       .find((s) => s.image_url)
     if (!first?.image_url) {
-      setError('暂无可用镜头画面')
+      setError(translateUi("workflow.noShotImagesAvailable"))
       return
     }
     setBusy(true)
@@ -428,7 +429,7 @@ export default function StoryboardPage() {
     try {
       setProject(await api.updateProject(project.id, { cover_url: first.image_url }))
     } catch (err) {
-      setError(err instanceof Error ? err.message : '设置封面失败')
+      setError(err instanceof Error ? err.message : translateUi("workflow.couldNotSetTheCover"))
     } finally {
       setBusy(false)
     }
@@ -446,11 +447,11 @@ export default function StoryboardPage() {
     if (!project || batchSelected.length === 0) return
     const durationVal = batchDuration.trim() === '' ? null : Number(batchDuration)
     if (durationVal != null && (!Number.isFinite(durationVal) || durationVal <= 0)) {
-      setError('请输入有效时长（秒）')
+      setError(translateUi("workflow.enterAValidDurationInSeconds"))
       return
     }
     if (durationVal == null && !batchRegenAudio) {
-      setError('请设置时长，或勾选重配音')
+      setError(translateUi("workflow.setADurationOrSelectNarrationRegeneration"))
       return
     }
     setBusy(true)
@@ -467,7 +468,7 @@ export default function StoryboardPage() {
       setProject(await api.getProject(project.id))
       setBatchOpen(false)
     } catch (err) {
-      setError(err instanceof Error ? err.message : '批量调整失败')
+      setError(err instanceof Error ? err.message : translateUi("workflow.couldNotApplyBatchChanges"))
       try {
         setProject(await api.getProject(project.id))
       } catch {
@@ -485,7 +486,7 @@ export default function StoryboardPage() {
       await api.publish(project.id)
       nav('/history')
     } catch (err) {
-      setError(err instanceof Error ? err.message : '发布失败')
+      setError(err instanceof Error ? err.message : translateUi("workflow.couldNotPublish"))
     } finally {
       setBusy(false)
     }
@@ -516,7 +517,7 @@ export default function StoryboardPage() {
           : await api.regenImage(project.id, shot.id),
       )
     } catch (err) {
-      setError(err instanceof Error ? err.message : '生成画面失败')
+      setError(err instanceof Error ? err.message : translateUi("workflow.imageGenerationFailed_d0996d"))
     } finally {
       markShotIdle(shot.id)
     }
@@ -528,7 +529,7 @@ export default function StoryboardPage() {
     try {
       setProject(await api.regenVideo(project.id, shot.id))
     } catch (err) {
-      setError(err instanceof Error ? err.message : '生成视频失败')
+      setError(err instanceof Error ? err.message : translateUi("workflow.videoGenerationFailed_9a917d"))
     } finally {
       markShotIdle(shot.id)
     }
@@ -541,7 +542,7 @@ export default function StoryboardPage() {
     try {
       setProject(await api.regenAudio(project.id, shot.id))
     } catch (err) {
-      setError(err instanceof Error ? err.message : '重配音失败')
+      setError(err instanceof Error ? err.message : translateUi("workflow.couldNotRegenerateNarration"))
     } finally {
       setBusy(false)
     }
@@ -609,7 +610,7 @@ export default function StoryboardPage() {
     // durationCheck 时长校验结果
     const durationCheck = validateSegmentScriptDuration(scriptText)
     if (!durationCheck.valid) {
-      setError(durationCheck.message || '分镜时长不合法')
+      setError(durationCheck.message || translateUi("workflow.invalidStoryboardDuration"))
       return
     }
     setBusy(true)
@@ -637,7 +638,7 @@ export default function StoryboardPage() {
       closeShotEdit()
       setProject(await api.getProject(project.id))
     } catch (err) {
-      setError(err instanceof Error ? err.message : '保存失败')
+      setError(err instanceof Error ? err.message : translateUi("workflow.couldNotSave"))
     } finally {
       setBusy(false)
     }
@@ -660,7 +661,7 @@ export default function StoryboardPage() {
       setProject(updated)
       setPromptEdit(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : '保存提示词失败')
+      setError(err instanceof Error ? err.message : translateUi("workflow.couldNotSaveThePrompt"))
     } finally {
       setBusy(false)
     }
@@ -679,7 +680,7 @@ export default function StoryboardPage() {
       setProject(updated)
       setPromptEdit(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : '恢复模板失败')
+      setError(err instanceof Error ? err.message : translateUi("workflow.couldNotRestoreTheTemplate"))
     } finally {
       setBusy(false)
     }
@@ -688,7 +689,7 @@ export default function StoryboardPage() {
   if (!project && !error) {
     return (
       <AppShell active="studio">
-        <p className="pf-muted">加载中…</p>
+        <p className="pf-muted">{translateUi("ecomSet.loading")}</p>
       </AppShell>
     )
   }
@@ -702,8 +703,8 @@ export default function StoryboardPage() {
   }
 
   const structure = (project.shots || []).slice(0, 5).map((s, i) => {
-    const labels = ['开端', '发展', '转折', '高潮', '结局']
-    return { label: labels[i] || `段落 ${i + 1}`, text: s.narration || s.overlay_title || '—' }
+    const labels = [translateUi("workflow.opening_e3aa56"), translateUi("workflow.development"), translateUi("workflow.turn"), translateUi("workflow.climax"), translateUi("workflow.ending")]
+    return { label: labels[i] || translateUi("workflow.segment", { v1: String(i + 1) }), text: s.narration || s.overlay_title || '—' }
   })
 
   return (
@@ -713,7 +714,7 @@ export default function StoryboardPage() {
           <div>
             <button type="button" className="pf-back" onClick={() => nav(`/studio/${project.id}/style`)}>
               <IconChevronLeft size={18} />
-              AI 生成故事板 / 分镜工作台
+              {translateUi("workflow.aiStoryboardWorkspace")}
             </button>
             <h1 className="pf-page-title">{project.title}</h1>
             <EcomSetSourceLink ecomSetId={project.ecom_set_id} />
@@ -727,7 +728,7 @@ export default function StoryboardPage() {
                 onClick={openFinalPreview}
               >
                 <IconMonitor size={14} />
-                预览成片
+                {translateUi("workflow.previewVideo")}
               </button>
             ) : primaryAction === 'compose' ? (
               <button
@@ -737,7 +738,7 @@ export default function StoryboardPage() {
                 onClick={composeOnly}
               >
                 <IconPlay size={14} />
-                拼接成片
+                {translateUi("workflow.composeVideo")}
               </button>
             ) : (
               <button
@@ -759,7 +760,7 @@ export default function StoryboardPage() {
                 disabled={busy || cancellationPending}
                 onClick={cancelGenerate}
               >
-                {cancellationPending ? '等待停止…' : '取消生成'}
+                {cancellationPending ? translateUi("workflow.waitingToStop_ec905c") : translateUi("workflow.cancelGeneration")}
               </button>
             ) : null}
             <button
@@ -769,7 +770,7 @@ export default function StoryboardPage() {
               onClick={openBatchAdjust}
             >
               <IconSliders size={15} />
-              批量调整
+              {translateUi("workflow.batchEdit")}
             </button>
             <button
               type="button"
@@ -778,12 +779,12 @@ export default function StoryboardPage() {
               onClick={restartGenerate}
             >
               <IconRefresh size={15} />
-              推倒重做
+              {translateUi("workflow.startOver")}
             </button>
             {primaryAction !== 'preview' && hasFinal ? (
               <button type="button" className="pf-btn-text" onClick={openFinalPreview}>
                 <IconMonitor size={15} />
-                预览成片
+                {translateUi("workflow.previewVideo")}
               </button>
             ) : null}
             {primaryAction === 'preview' && readyToCompose ? (
@@ -792,9 +793,9 @@ export default function StoryboardPage() {
                 className="pf-btn-text"
                 disabled={busy || running}
                 onClick={composeOnly}
-title="用当前镜头重新拼接"
+title={translateUi("workflow.composeAgainFromTheCurrentShots")}
             >
-              重新拼接
+              {translateUi("workflow.recompose")}
             </button>
             ) : null}
             {primaryAction !== 'generate' && !readyToCompose ? (
@@ -804,7 +805,7 @@ title="用当前镜头重新拼接"
                 disabled={busy || running}
                 onClick={continueGenerate}
               >
-                {generateLabel === '生成中…' ? '继续生成' : generateLabel}
+                {generateLabel === translateUi("workflow.generating") ? translateUi("workflow.continueGeneration") : generateLabel}
               </button>
             ) : null}
             <button
@@ -813,7 +814,7 @@ title="用当前镜头重新拼接"
               onClick={() => nav(`/studio/${project.id}/editor`)}
             >
               <IconEdit size={14} />
-              打开编辑器
+              {translateUi("workflow.openEditor")}
             </button>
           </div>
         </div>
@@ -832,7 +833,7 @@ title="用当前镜头重新拼接"
 
       <div className="pf-board">
         <aside className="pf-create-col">
-          <h3>项目设置</h3>
+          <h3>{translateUi("workflow.projectSettings")}</h3>
           {(project.cover_url || template?.preview_cover) ? (
             <img
               src={api.assetUrl(project.cover_url || template?.preview_cover)}
@@ -869,17 +870,17 @@ title="用当前镜头重新拼接"
               onClick={() => coverInputRef.current?.click()}
             >
               <IconImage size={14} />
-              更换封面
+              {translateUi("workflow.changeCover")}
             </button>
             <button
               type="button"
               className="pf-btn pf-btn-ghost pf-btn-sm pf-btn-icon"
               disabled={busy || running || !shots.some((s) => s.image_url)}
               onClick={useFirstShotCover}
-              title="使用第一个有画面的镜头作为封面"
+              title={translateUi("workflow.useTheFirstShotWithAnImageAsThe")}
             >
               <IconImage size={14} />
-              用首镜封面
+              {translateUi("workflow.useFirstShotCover")}
             </button>
             <button
               type="button"
@@ -888,24 +889,24 @@ title="用当前镜头重新拼接"
               onClick={() => downloadStoryboardCsv(project)}
             >
               <IconDownload size={14} />
-              草稿导出
+              {translateUi("workflow.exportDraft")}
             </button>
           </div>
           <ul className="pf-meta-list" style={{ marginTop: '0.85rem' }}>
             <li>
-              <span>项目名称</span>
+              <span>{translateUi("workflow.projectName")}</span>
               <span>{project.title}</span>
             </li>
             <li>
-              <span>状态</span>
+              <span>{translateUi("workflow.status")}</span>
               <span>{statusLabel(project)}</span>
             </li>
             <li>
-              <span>进度</span>
+              <span>{translateUi("workflow.progress")}</span>
               <span>{project.progress}%</span>
             </li>
             <li>
-              <span>时长</span>
+              <span>{translateUi("workflow.duration")}</span>
               <span>
                 {Math.floor(totalDuration / 60)
                   .toString()
@@ -917,15 +918,15 @@ title="用当前镜头重新拼接"
               </span>
             </li>
             <li>
-              <span>画面比例</span>
+              <span>{translateUi("workflow.aspectRatio_f07fc5")}</span>
               <span>{project.output_ratio || (project.pipeline_mode === 'image_text' ? '9:16' : '16:9')}</span>
             </li>
             <li>
-              <span>成片方式</span>
+              <span>{translateUi("workflow.videoMode")}</span>
               <span>{pipelineModeLabel(project.pipeline_mode)}</span>
             </li>
             <li>
-              <span>风格</span>
+              <span>{translateUi("ecomSet.form.style")}</span>
               <span>{template?.name || project.template_id}</span>
             </li>
           </ul>
@@ -935,18 +936,18 @@ title="用当前镜头重新拼接"
             onClick={() => nav(`/studio/${project.id}/style`)}
             disabled={running}
           >
-            编辑项目设置
+            {translateUi("workflow.editProjectSettings")}
           </button>
           <div className="pf-prompt-panel">
-            <h4>内置提示词</h4>
+            <h4>{translateUi("workflow.builtInPrompts")}</h4>
             <p className="pf-muted" style={{ fontSize: '0.72rem', margin: '0 0 0.45rem' }}>
-              画风来自模板。角色是否出镜由 AI 按模板与主题决定；只有这里改过才覆盖本项目。
+              {translateUi("workflow.theTemplateProvidesTheVisualStyleAiDecidesWhether")}
             </p>
             {(
               [
-                ['风格', displayPrompts.style_prompt],
-                ['角色', displayPrompts.character_prompt],
-                ['额外', displayPrompts.extra_prompt],
+                [translateUi("ecomSet.form.style"), displayPrompts.style_prompt],
+                [translateUi("workflow.character"), displayPrompts.character_prompt],
+                [translateUi("workflow.additional"), displayPrompts.extra_prompt],
               ] as const
             ).map(([label, value]) => (
               <button
@@ -963,29 +964,29 @@ title="用当前镜头重新拼接"
                 }
               >
                 <strong>{label}</strong>
-                <span>{(value || '').trim() || '（空，点击编辑）'}</span>
+                <span>{(value || '').trim() || translateUi("workflow.emptyClickToEdit")}</span>
               </button>
             ))}
           </div>
           <p className="pf-muted" style={{ fontSize: '0.75rem', marginTop: '0.75rem' }}>
-            内容由 AI 生成，请注意核对准确性
+            {translateUi("workflow.aiGeneratedContentPleaseCheckItsAccuracy")}
           </p>
         </aside>
 
         <div className="pf-board-main">
           <div className="pf-outline-grid">
             <article className="pf-create-col">
-              <h3>AI 生成大纲</h3>
+              <h3>{translateUi("workflow.aiOutline")}</h3>
               <p style={{ margin: 0, fontSize: '0.9rem', lineHeight: 1.65 }}>
                 {project.source_text}
               </p>
               <div className="pf-tags">
-                <span>核心主题</span>
-                <span>{project.source_type === 'script' ? '完整文案' : '一句话主题'}</span>
+                <span>{translateUi("workflow.coreTopic")}</span>
+                <span>{project.source_type === 'script' ? translateUi("workflow.fullScript") : translateUi("workflow.oneLineTopic")}</span>
               </div>
             </article>
             <article className="pf-create-col">
-              <h3>结构摘要</h3>
+              <h3>{translateUi("workflow.structureSummary")}</h3>
               <ul className="pf-meta-list">
                 {structure.length ? (
                   structure.map((s) => (
@@ -996,7 +997,7 @@ title="用当前镜头重新拼接"
                   ))
                 ) : (
                   <li>
-                    <span>等待分镜</span>
+                    <span>{translateUi("workflow.storyboardsPending")}</span>
                     <span>—</span>
                   </li>
                 )}
@@ -1006,16 +1007,16 @@ title="用当前镜头重新拼接"
 
           <section className="pf-shot-card">
             <div className="pf-shot-card-head">
-              <h3>分镜列表（共 {project.shots.length} 个场景）</h3>
+              <h3>{translateUi("workflow.storyboardListScenes", { v1: project.shots.length })}</h3>
               <div className="pf-toolbar">
                 {project.status === 'DONE' && hasFinal ? (
                   <button type="button" className="pf-btn pf-btn-lime pf-btn-sm" disabled={busy} onClick={publish}>
-                    发布
+                    {translateUi("workflow.publish")}
                   </button>
                 ) : null}
                 {hasFinal ? (
                   <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm" onClick={openFinalPreview}>
-                    预览成片
+                    {translateUi("workflow.previewVideo")}
                   </button>
                 ) : (
                   <button
@@ -1024,7 +1025,7 @@ title="用当前镜头重新拼接"
                     disabled={busy || running || !readyToCompose}
                     onClick={composeOnly}
                   >
-                    拼接成片
+                    {translateUi("workflow.composeVideo")}
                   </button>
                 )}
               </div>
@@ -1032,12 +1033,12 @@ title="用当前镜头重新拼接"
             {project.shots.length === 0 ? (
               <p className="pf-muted" style={{ margin: '1.5rem 0', textAlign: 'center' }}>
                 {running
-                  ? '正在拆分镜…'
-                  : '暂无分镜。从风格配置页开始生成后，可先确认修改，再手动开始画面生成。'}
+                  ? translateUi("workflow.planningStoryboards")
+                  : translateUi("workflow.noStoryboardsYetStartFromStyleSettingsReviewThe")}
               </p>
             ) : needsScriptConfirm ? (
               <p className="pf-muted" style={{ margin: '0 0 1rem' }}>
-                分镜已就绪。点表格「旁白」改口播（会同步脚本并影响整片配音），点「逐段分镜」改画面节奏与 @duration。确认后按阶段预扣：画面+配音 → 镜头视频 → 合成。
+                {translateUi("workflow.storyboardsAreReadyEditNarrationToUpdateSpeechAnd")}
               </p>
             ) : null}
             {project.shots.length === 0 ? null : (
@@ -1046,7 +1047,7 @@ title="用当前镜头重新拼接"
                 refreshKey={complianceKey}
                 applyDisabled={busy || running || Boolean(editing)}
                 onApply={async (item, hit) => {
-                  if (editing) throw new Error('请先保存正在编辑的文案')
+                  if (editing) throw new Error(translateUi("workflow.saveTheTextYouAreEditingFirst"))
                   const owner = item.scope === 'project' ? project : project.shots.find((shot) => shot.id === item.shot_id)
                   const current = owner ? String((owner as unknown as Record<string, unknown>)[item.field] || '') : ''
                   applyComplianceSuggestion(current, item.text, hit)
@@ -1070,13 +1071,13 @@ title="用当前镜头重新拼接"
                 <table className="pf-shot-table">
                   <thead>
                     <tr>
-                      <th className="col-no">场景</th>
-                      <th className="col-thumb">画面</th>
-                      <th className="col-narr">旁白/台词</th>
-                      <th className="col-seg">逐段分镜</th>
-                      <th className="col-dur">时长</th>
-                      <th className="col-status">状态</th>
-                      <th className="col-ops">操作</th>
+                      <th className="col-no">{translateUi("workflow.scene")}</th>
+                      <th className="col-thumb">{translateUi("workflow.visual")}</th>
+                      <th className="col-narr">{translateUi("workflow.narrationDialogue")}</th>
+                      <th className="col-seg">{translateUi("workflow.segmentScript")}</th>
+                      <th className="col-dur">{translateUi("workflow.duration")}</th>
+                      <th className="col-status">{translateUi("workflow.status")}</th>
+                      <th className="col-ops">{translateUi("workflow.actions")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1098,7 +1099,7 @@ title="用当前镜头重新拼接"
                       const done = shotDisplayDone(displayKind)
                       const failed = displayKind === 'failed'
                       const sceneTitle =
-                        shot.overlay_title?.trim() || `场景 ${String(shot.shot_no).padStart(2, '0')}`
+                        shot.overlay_title?.trim() || translateUi("workflow.scene_294057", { v1: String(String(shot.shot_no).padStart(2, '0')) })
                       const narration = (shot.narration || '').trim()
                       const script = shot.segment_script || shot.video_prompt || ''
                       const { cues, beats } = parseSegmentScript(script)
@@ -1129,7 +1130,7 @@ title="用当前镜头重新拼接"
                                 />
                               ) : (
                                 <div className="pf-shot-thumb empty">
-                                  {shotGenerating ? '生成中' : '待出图'}
+                                  {shotGenerating ? translateUi("ecomSet.result.running") : translateUi("workflow.imagePending_43ec51")}
                                 </div>
                               )}
                             </button>
@@ -1139,7 +1140,7 @@ title="用当前镜头重新拼接"
                               type="button"
                               className="pf-shot-narration pf-shot-editable"
                               disabled={rowBusy}
-                              title="点击编辑旁白与标题"
+                              title={translateUi("workflow.clickToEditNarrationAndTitle")}
                               onClick={() => openShotEdit(shot, 'narration')}
                             >
                               <span className="title">{sceneTitle}</span>
@@ -1147,11 +1148,10 @@ title="用当前镜头重新拼接"
                                 {narration ? `“${narration}”` : '—'}
                               </span>
                               {shot.tts_metadata?.audio_url === shot.audio_url && shot.tts_metadata.is_fallback ?
-                                <span className="pf-muted">本段使用备用音色</span> : null}
+                                <span className="pf-muted">{translateUi("workflow.thisSegmentUsesABackupVoice")}</span> : null}
                               {isAvatar && shot.highlights ? (
                                 <span className="pf-muted" style={{ display: 'block', fontSize: '0.75rem' }}>
-                                  重点：{shot.highlights.split('|').join(' · ')}
-                                </span>
+                                  {translateUi("workflow.highlights", { v1: shot.highlights.split('|').join(' · ') })}</span>
                               ) : null}
                             </button>
                           </td>
@@ -1160,7 +1160,7 @@ title="用当前镜头重新拼接"
                               type="button"
                               className="pf-shot-desc pf-shot-editable"
                               disabled={rowBusy}
-                              title="点击编辑逐段分镜脚本"
+                              title={translateUi("workflow.clickToEditTheSegmentScript")}
                               onClick={() => openShotEdit(shot, 'segment_script')}
                               style={{ textAlign: 'left', width: '100%' }}
                             >
@@ -1197,12 +1197,11 @@ title="用当前镜头重新拼接"
                                   ))}
                                   {beats.length > 4 ? (
                                     <span className="pf-muted" style={{ fontSize: '0.75rem' }}>
-                                      另有 {beats.length - 4} 段…
-                                    </span>
+                                      {translateUi("workflow.moreSegments", { v1: beats.length - 4 })}</span>
                                   ) : null}
                                 </div>
                               ) : (
-                                desc || '（点击填写逐段分镜）'
+                                desc || translateUi("workflow.clickToAddASegmentScript")
                               )}
                             </button>
                           </td>
@@ -1228,7 +1227,7 @@ title="用当前镜头重新拼接"
                                 disabled={rowBusy}
                                 onClick={() => openShotEdit(shot)}
                               >
-                                编辑
+                                {translateUi("workflow.edit")}
                               </button>
                               <button
                                 type="button"
@@ -1236,23 +1235,23 @@ title="用当前镜头重新拼接"
                                 disabled={rowBusy}
                                 onClick={() => regenImage(shot)}
                               >
-                                {isAvatar ? '重画场景' : shot.image_url ? '重绘画面' : '生成画面'}
+                                {isAvatar ? translateUi("workflow.redrawScene") : shot.image_url ? translateUi("workflow.redrawImage") : translateUi("workflow.generateImage_c9c7b0")}
                               </button>
                               {isFullPipeline ? (
                                 <button
                                   type="button"
                                   className="op op-video"
                                   disabled={rowBusy || !shot.image_url}
-                                  title={!shot.image_url ? '请先生成该镜画面' : undefined}
+                                  title={!shot.image_url ? translateUi("workflow.generateThisShotSImageFirst") : undefined}
                                   onClick={() => regenVideo(shot)}
                                 >
-                                  {shot.video_url ? '重生视频' : '出视频'}
+                                  {shot.video_url ? translateUi("workflow.regenerateVideo") : translateUi("workflow.generateVideo_d2252f")}
                                 </button>
                               ) : null}
                               <button
                                 type="button"
                                 className="more"
-                                aria-label="更多操作"
+                                aria-label={translateUi("workflow.moreActions")}
                                 disabled={rowBusy}
                                 onClick={(e) => {
                                   e.stopPropagation()
@@ -1271,7 +1270,7 @@ title="用当前镜头重新拼接"
                                       regenAudio(shot)
                                     }}
                                   >
-                                    重配音
+                                    {translateUi("workflow.regenerateNarration")}
                                   </button>
                                 </div>
                               ) : null}
@@ -1286,9 +1285,7 @@ title="用当前镜头重新拼接"
             )}
             <div className="pf-shot-footer">
               <span className="pf-muted" style={{ fontSize: '0.82rem' }}>
-                总时长: {formatMmSs(totalDuration)} | 画面: {project.shots.length} 个 | 音频:{' '}
-                {project.shots.filter((s) => s.audio_url).length} 段 | 分辨率: 预览
-              </span>
+                {translateUi("workflow.durationImagesAudioSegmentsResolutionPreview", { v1: formatMmSs(totalDuration), v2: project.shots.length, v3: ' ', v4: project.shots.filter((s) => s.audio_url).length })}</span>
               <div className="pf-toolbar">
                 <button
                   type="button"
@@ -1297,7 +1294,7 @@ title="用当前镜头重新拼接"
                   onClick={() => downloadStoryboardCsv(project)}
                 >
                   <IconDownload size={15} />
-                  导出分镜脚本
+                  {translateUi("workflow.exportStoryboardScript")}
                 </button>
                 <button
                   type="button"
@@ -1306,7 +1303,7 @@ title="用当前镜头重新拼接"
                   onClick={deleteProject}
                 >
                   <IconTrash size={15} />
-                  删除项目
+                  {translateUi("workflow.deleteProject")}
                 </button>
               </div>
             </div>
@@ -1314,7 +1311,7 @@ title="用当前镜头重新拼接"
         </div>
 
         <aside className="pf-create-col pf-board-settings">
-          <h3>生成进度</h3>
+          <h3>{translateUi("workflow.generationProgress")}</h3>
           {liveProgress?.connectionError ? <p className="pf-live-progress" role="status">{liveProgress.connectionError}</p> : null}
           {liveProgress?.message ? <p className="pf-live-progress" role="status">{liveProgress.message}</p> : null}
           <ul className="pf-progress-list">
@@ -1345,10 +1342,9 @@ title="用当前镜头重新拼接"
       {batchOpen && project ? (
         <div className="modal-backdrop" onClick={() => !busy && setBatchOpen(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h3>批量调整分镜</h3>
+            <h3>{translateUi("workflow.batchEditStoryboardShots")}</h3>
             <p className="pf-muted" style={{ marginTop: 0 }}>
-              已选 {batchSelected.length} / {project.shots.length} 个镜头
-            </p>
+              {translateUi("workflow.selectedShots", { v1: batchSelected.length, v2: project.shots.length })}</p>
             <div
               style={{
                 maxHeight: 160,
@@ -1367,7 +1363,7 @@ title="用当前镜头重新拼接"
                     setBatchSelected(e.target.checked ? project.shots.map((s) => s.id) : [])
                   }
                 />
-                全选
+                {translateUi("workflow.selectAll")}
               </label>
               {project.shots
                 .slice()
@@ -1386,17 +1382,16 @@ title="用当前镜头重新拼接"
                         )
                       }
                     />
-                    镜头 {String(s.shot_no).padStart(2, '0')} · {formatMmSs(shotDisplayDurationSec(s))}
-                  </label>
+                    {translateUi("workflow.shot_c6c9b1", { v1: String(s.shot_no).padStart(2, '0'), v2: formatMmSs(shotDisplayDurationSec(s)) })}</label>
                 ))}
             </div>
             <label>
-              统一时长（秒，留空则不改）
+              {translateUi("workflow.durationForAllSelectedShotsSecondsBlankKeepsExisting")}
               <input
                 type="number"
                 min={1}
                 step={0.5}
-                placeholder="例如 6"
+                placeholder={translateUi("workflow.forExample6")}
                 value={batchDuration}
                 onChange={(e) => setBatchDuration(e.target.value)}
               />
@@ -1407,7 +1402,7 @@ title="用当前镜头重新拼接"
                 checked={batchRegenAudio}
                 onChange={(e) => setBatchRegenAudio(e.target.checked)}
               />
-              对所选镜头重新配音
+              {translateUi("workflow.regenerateNarrationForSelectedShots")}
             </label>
             <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
               <button
@@ -1416,7 +1411,7 @@ title="用当前镜头重新拼接"
                 disabled={busy || batchSelected.length === 0}
                 onClick={applyBatchAdjust}
               >
-                应用
+                {translateUi("workflow.apply")}
               </button>
               <button
                 type="button"
@@ -1424,7 +1419,7 @@ title="用当前镜头重新拼接"
                 disabled={busy}
                 onClick={() => setBatchOpen(false)}
               >
-                取消
+                {translateUi("ecomSet.copyModal.cancel")}
               </button>
             </div>
           </div>
@@ -1446,37 +1441,37 @@ title="用当前镜头重新拼接"
           >
             <h3>
               {editMode === 'narration'
-                ? `编辑镜头 ${editing.shot_no} · 旁白与标题`
+                ? translateUi("workflow.editShotNarrationAndTitle", { v1: String(editing.shot_no) })
                 : editMode === 'segment'
-                  ? `编辑镜头 ${editing.shot_no} · 逐段分镜`
-                  : `编辑镜头 ${editing.shot_no} · 全部提示词`}
+                  ? translateUi("workflow.editShotSegmentScript", { v1: String(editing.shot_no) })
+                  : translateUi("workflow.editShotAllPrompts", { v1: String(editing.shot_no) })}
             </h3>
             <div className="pf-prompt-modal-scroll">
               {editMode === 'narration' || editMode === 'full' ? (
                 <>
                   <label>
-                    镜头标题
+                    {translateUi("workflow.shotTitle")}
                     <input
                       autoFocus={editFocus === 'title' || editMode === 'narration'}
                       value={editing.overlay_title || ''}
                       onChange={(e) => setEditing({ ...editing, overlay_title: e.target.value })}
                     />
                     <span className="pf-muted pf-prompt-hint">
-                      分镜列表名称；图文成片会叠到画面顶部
+                      {translateUi("workflow.nameInTheStoryboardListOverlaidAtTheTop")}
                     </span>
                   </label>
                   <label>
-                    副标题
+                    {translateUi("compliance.fields.overlay_subtitle")}
                     <input
                       value={editing.overlay_subtitle || ''}
                       onChange={(e) => setEditing({ ...editing, overlay_subtitle: e.target.value })}
                     />
                     <span className="pf-muted pf-prompt-hint">
-                      图文成片叠字；AI 视频成片不烧这行，只作分镜说明
+                      {translateUi("workflow.overlaidInImageTextVideosUsedOnlyAsA")}
                     </span>
                   </label>
                   <label>
-                    旁白
+                    {translateUi("compliance.fields.narration")}
                     <textarea
                       autoFocus={editFocus === 'narration'}
                       value={editing.narration}
@@ -1484,31 +1479,31 @@ title="用当前镜头重新拼接"
                       rows={editMode === 'narration' ? 6 : 3}
                     />
                     <span className="pf-muted pf-prompt-hint">
-                      会同步到脚本旁白段，并影响整片配音（改完需重新生成配音/成片）
+                      {translateUi("workflow.syncsToNarrationInTheScriptAndAffectsThe")}
                     </span>
                   </label>
                   {isAvatar ? (
                     <>
                       <label>
-                        出镜场景
+                        {translateUi("workflow.onScreenSetting")}
                         <textarea
                           value={editing.img_prompt}
                           onChange={(e) => setEditing({ ...editing, img_prompt: e.target.value })}
                           rows={3}
                         />
                         <span className="pf-muted pf-prompt-hint">
-                          人物站在什么背景前讲解（英文效果更稳）；改后该段场景图与视频会重新生成
+                          {translateUi("workflow.describeTheBackgroundBehindTheSpeakerEnglishWorksMore")}
                         </span>
                       </label>
                       <label>
-                        重点文字
+                        {translateUi("compliance.fields.highlights")}
                         <input
                           value={editing.highlights || ''}
-                          placeholder="用 | 分隔，最多 3 个，如 散射|波长短"
+                          placeholder={translateUi("workflow.separateUpToThreeTermsWithForExampleScattering")}
                           onChange={(e) => setEditing({ ...editing, highlights: e.target.value })}
                         />
                         <span className="pf-muted pf-prompt-hint">
-                          说到这个词时在画面上方弹出黄色大字；只影响合成，不用重新生成视频
+                          {translateUi("workflow.showLargeYellowTextAboveTheSpeakerWhenEach")}
                         </span>
                       </label>
                     </>
@@ -1517,7 +1512,7 @@ title="用当前镜头重新拼接"
               ) : null}
               {editMode === 'full' ? (
                 <label>
-                  画面提示词（首帧）
+                  {translateUi("workflow.imagePromptFirstFrame")}
                   <textarea
                     autoFocus={editFocus === 'img_prompt'}
                     value={editing.img_prompt}
@@ -1525,14 +1520,14 @@ title="用当前镜头重新拼接"
                     rows={3}
                   />
                   <span className="pf-muted pf-prompt-hint">
-                    会同步到脚本首段画面，出图与视频都用这一段
+                    {translateUi("workflow.syncsToTheFirstVisualInTheScriptAnd")}
                   </span>
                 </label>
               ) : null}
               {editMode === 'segment' || editMode === 'full' ? (
                 <>
                   <label>
-                    逐段分镜脚本（画面节奏与 @duration）
+                    {translateUi("workflow.segmentScriptVisualRhythmAndDuration")}
                     <textarea
                       className="pf-prompt-segment"
                       autoFocus={editFocus === 'segment_script' || editMode === 'segment'}
@@ -1551,7 +1546,7 @@ title="用当前镜头重新拼接"
                       ))
                     ) : (
                       <span className="pf-muted" style={{ fontSize: '0.8rem' }}>
-                        暂无 @duration 标签
+                        {translateUi("workflow.noDurationTagsYet")}
                       </span>
                     )}
                     <span
@@ -1562,14 +1557,13 @@ title="用当前镜头重新拼接"
                         color: editDurationCheck.valid ? undefined : 'var(--pf-danger, #c0392b)',
                       }}
                     >
-                      合计 {editDurationCheck.total}s / {SHOT_DURATION_MAX}s
-                    </span>
+                      {translateUi("workflow.totalSS", { v1: editDurationCheck.total, v2: SHOT_DURATION_MAX })}</span>
                   </div>
                   {!editDurationCheck.valid && editDurationCheck.message ? (
                     <p className="pf-error pf-prompt-duration-error">{editDurationCheck.message}</p>
                   ) : null}
                   <label>
-                    运镜备注
+                    {translateUi("workflow.cameraNotes")}
                     <input
                       value={editing.camera || ''}
                       onChange={(e) => setEditing({ ...editing, camera: e.target.value })}
@@ -1577,7 +1571,7 @@ title="用当前镜头重新拼接"
                   </label>
                   <div className="pf-prompt-modal-row">
                     <label>
-                      时长（秒，保存后按 @duration 重算）
+                      {translateUi("workflow.durationSecondsRecalculatedFromDurationOnSave")}
                       <input
                         type="number"
                         value={editing.duration}
@@ -1598,7 +1592,7 @@ title="用当前镜头重新拼接"
                     setEditFocus('segment_script')
                   }}
                 >
-                  逐段分镜…
+                  {translateUi("workflow.segmentScript_a54c3b")}
                 </button>
               ) : null}
               {editMode !== 'narration' ? (
@@ -1610,7 +1604,7 @@ title="用当前镜头重新拼接"
                     setEditFocus('narration')
                   }}
                 >
-                  旁白与标题…
+                  {translateUi("workflow.narrationAndTitle")}
                 </button>
               ) : null}
               {editMode !== 'full' ? (
@@ -1622,7 +1616,7 @@ title="用当前镜头重新拼接"
                     setEditFocus('')
                   }}
                 >
-                  全部字段
+                  {translateUi("workflow.allFields")}
                 </button>
               ) : null}
               <span className="pf-prompt-modal-foot-spacer" />
@@ -1632,10 +1626,10 @@ title="用当前镜头重新拼接"
                 disabled={busy || !editDurationCheck.valid}
                 onClick={saveShot}
               >
-                保存
+                {translateUi("workflow.save")}
               </button>
               <button type="button" className="pf-btn pf-btn-ghost" onClick={closeShotEdit}>
-                取消
+                {translateUi("ecomSet.copyModal.cancel")}
               </button>
             </div>
           </div>
@@ -1645,12 +1639,12 @@ title="用当前镜头重新拼接"
       {promptEdit ? (
         <div className="modal-backdrop" onClick={() => setPromptEdit(null)}>
           <div className="modal pf-prompt-modal" onClick={(e) => e.stopPropagation()}>
-            <h3>项目内置提示词</h3>
+            <h3>{translateUi("workflow.projectBuiltInPrompts")}</h3>
             <p className="pf-muted" style={{ fontSize: '0.8rem', marginTop: 0 }}>
-              默认跟随后台模板。保存为与模板相同的内容会自动清除覆盖；已生成镜头需点重生成才会更新。
+              {translateUi("workflow.usesTheSiteTemplateByDefaultSavingMatchingText")}
             </p>
             <label>
-              风格提示词
+              {translateUi("workflow.stylePrompt")}
               <textarea
                 value={promptEdit.style_prompt}
                 onChange={(e) => setPromptEdit({ ...promptEdit, style_prompt: e.target.value })}
@@ -1658,7 +1652,7 @@ title="用当前镜头重新拼接"
               />
             </label>
             <label>
-              角色提示词
+              {translateUi("workflow.characterPrompt")}
               <textarea
                 autoFocus
                 value={promptEdit.character_prompt}
@@ -1667,7 +1661,7 @@ title="用当前镜头重新拼接"
               />
             </label>
             <label>
-              额外要求
+              {translateUi("workflow.extraRequirements")}
               <textarea
                 value={promptEdit.extra_prompt}
                 onChange={(e) => setPromptEdit({ ...promptEdit, extra_prompt: e.target.value })}
@@ -1681,7 +1675,7 @@ title="用当前镜头重新拼接"
                 disabled={busy}
                 onClick={saveProjectPrompts}
               >
-                保存
+                {translateUi("workflow.save")}
               </button>
               <button
                 type="button"
@@ -1689,10 +1683,10 @@ title="用当前镜头重新拼接"
                 disabled={busy}
                 onClick={() => void restoreTemplatePrompts()}
               >
-                恢复后台模板
+                {translateUi("workflow.restoreSiteTemplate")}
               </button>
               <button type="button" className="pf-btn pf-btn-ghost" onClick={() => setPromptEdit(null)}>
-                取消
+                {translateUi("ecomSet.copyModal.cancel")}
               </button>
             </div>
           </div>
@@ -1704,10 +1698,10 @@ title="用当前镜头重新拼接"
           <div className="modal preview-modal" onClick={(e) => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h3 style={{ margin: 0 }}>
-                {preview.kind === 'final' ? preview.title : `镜头 ${preview.shotNo}`}
+                {preview.kind === 'final' ? preview.title : translateUi("workflow.shot_5d1002", { v1: String(preview.shotNo) })}
               </h3>
               <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm" onClick={() => setPreview(null)}>
-                关闭
+                {translateUi("workflow.close")}
               </button>
             </div>
             {preview.kind === 'final' ? (
@@ -1723,7 +1717,7 @@ title="用当前镜头重新拼接"
             ) : preview.imageUrl ? (
               <img className="preview-media" src={api.assetUrl(preview.imageUrl)} alt="" />
             ) : (
-              <p className="pf-muted">暂无预览</p>
+              <p className="pf-muted">{translateUi("workflow.noPreviewYet_bdefa3")}</p>
             )}
             {preview.kind === 'shot' && preview.audioUrl ? (
               <audio src={api.assetUrl(preview.audioUrl)} controls style={{ width: '100%' }} />

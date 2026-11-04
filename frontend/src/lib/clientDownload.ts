@@ -1,3 +1,4 @@
+import { translate as translateUi } from '../i18n/runtime'
 /** Client-side video download + zip (no server pack endpoint). */
 
 import JSZip from 'jszip'
@@ -26,7 +27,7 @@ export function triggerBlobDownload(blob: Blob, filename: string) {
 export async function fetchMediaBlob(url: string): Promise<Blob> {
   const res = await fetch(url, { mode: 'cors', credentials: 'omit' })
   if (!res.ok) {
-    throw new Error(`下载失败（${res.status}）`)
+    throw new Error(translateUi("workflow.downloadFailed_f36584", { v1: String(res.status) }))
   }
   return res.blob()
 }
@@ -51,7 +52,7 @@ export async function zipVideosClient(
   onProgress?: (done: number, total: number) => void,
 ): Promise<{ blob: Blob; filename: string }> {
   if (!items.length) {
-    throw new Error('请选择已完成的项目')
+    throw new Error(translateUi("workflow.chooseCompletedProjects"))
   }
   const zip = new JSZip()
   const used = new Set<string>()

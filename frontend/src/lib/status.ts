@@ -1,3 +1,4 @@
+import { translate as translateUi } from '../i18n/runtime'
 import { getActiveLocale } from '../i18n/detect'
 import { messages } from '../i18n/messages'
 
@@ -209,12 +210,12 @@ export function formatMmSs(seconds: number) {
 
 /** 科普全链路步骤：建项 / 风格 / 分镜台共用 */
 export const KEPU_STEPS = [
-  { key: 'topic', label: '选题' },
-  { key: 'style', label: '风格' },
-  { key: 'confirm', label: '确认分镜' },
-  { key: 'assets', label: '画面与配音' },
-  { key: 'videos', label: '镜头视频' },
-  { key: 'compose', label: '合成预览' },
+  { key: 'topic', get label() { return translateUi("workflow.topic") } },
+  { key: 'style', get label() { return translateUi("ecomSet.form.style") } },
+  { key: 'confirm', get label() { return translateUi("workflow.confirmStoryboard") } },
+  { key: 'assets', get label() { return translateUi("workflow.imagesAndVoiceover") } },
+  { key: 'videos', get label() { return translateUi("workflow.videoClips") } },
+  { key: 'compose', get label() { return translateUi("workflow.composeAndPreview") } },
 ]
 
 export const CREATE_STEPS = KEPU_STEPS
@@ -222,9 +223,9 @@ export const BOARD_STEPS = KEPU_STEPS
 
 /** 成片方式的中文名 */
 export function pipelineModeLabel(mode?: string | null) {
-  if (mode === 'image_text') return '静图成片'
-  if (mode === 'avatar') return '数字人口播'
-  return 'AI 视频'
+  if (mode === 'image_text') return translateUi("workflow.stillImageVideo")
+  if (mode === 'avatar') return translateUi("workflow.talkingHeadNarration")
+  return translateUi("workflow.aiVideo")
 }
 
 /** 静图成片跳过「镜头视频」步；数字人口播改两步的名称 */
@@ -234,7 +235,7 @@ export function kepuSteps(pipelineMode?: string | null) {
   }
   if (pipelineMode === 'avatar') {
     return KEPU_STEPS.map((s) =>
-      s.key === 'assets' ? { ...s, label: '照片与配音' } : s.key === 'videos' ? { ...s, label: '数字人视频' } : s,
+      s.key === 'assets' ? { ...s, label: translateUi("workflow.photoAndVoiceover") } : s.key === 'videos' ? { ...s, label: translateUi("workflow.talkingHeadVideo") } : s,
     )
   }
   return KEPU_STEPS
@@ -308,17 +309,17 @@ export function kepuPhaseHint(project: {
   shots?: Array<{ image_url?: string | null; audio_url?: string | null; video_url?: string | null }>
 }): string {
   if (isRunning(effectiveStatus(project))) {
-    return '生成进行中，可在右侧查看各阶段进度。'
+    return translateUi("workflow.generationIsRunningSeeStageProgressOnTheRight")
   }
   const phase = kepuBillingPhase(project)
   if (project.pipeline_mode === 'avatar') {
-    if (phase === 'script') return '先在风格页上传半身照并点「生成故事板」，本步只把口播拆成若干段。'
-    if (phase === 'assets') return '确认每段口播后开始配音：每段单独配音，数字人口型对齐该段声音。'
-    if (phase === 'videos') return '配音已齐。下一步逐段生成数字人视频，单卡每 15 秒约需 30 分钟，可离开页面稍后再看。'
-    return '数字人视频已齐。合成时加标题条与逐句字幕。'
+    if (phase === 'script') return translateUi("workflow.uploadAnUpperBodyPortraitOnTheStylePage")
+    if (phase === 'assets') return translateUi("workflow.reviewEachSegmentThenGenerateNarrationEachSegmentHas")
+    if (phase === 'videos') return translateUi("workflow.narrationIsReadyNextGenerateTalkingHeadClipsSegment")
+    return translateUi("workflow.talkingHeadClipsAreReadyCompositionAddsTitleBars")
   }
-  if (phase === 'script') return '先在风格页点「生成故事板」，本步只拆分镜脚本（预扣文字模型）。'
-  if (phase === 'assets') return '确认旁白与画面后开始生成：按镜头依次出图（后镜参考上一镜）+ 整片配音。'
-  if (phase === 'videos') return '画面与配音已齐。下一步按镜头依次出视频，后镜参考上一镜尾帧。'
-  return '素材已齐。拼接成片走后期合成（叠旁白字幕与配乐，扣费很少）。'
+  if (phase === 'script') return translateUi("workflow.chooseGenerateStoryboardsOnTheStylePageThisStage")
+  if (phase === 'assets') return translateUi("workflow.reviewNarrationAndVisualsThenGenerateImagesInShot")
+  if (phase === 'videos') return translateUi("workflow.imagesAndNarrationAreReadyNextGenerateVideoClips")
+  return translateUi("workflow.assetsAreReadyComposeTheVideoWithNarrationSubtitles")
 }

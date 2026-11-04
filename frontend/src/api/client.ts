@@ -1,3 +1,4 @@
+import { translate as translateUi } from '../i18n/runtime'
 import { throwApiError } from '../lib/apiError'
 import { createHttpTransport, resolveApiBase } from './http'
 import type { ApiErrorHandler } from './http'
@@ -33,7 +34,7 @@ const transport = createHttpTransport({
   baseUrl: API_BASE,
   getToken: () => localStorage.getItem('token'),
   onUnauthorized: handleUnauthorized,
-  onError: (response, detail) => throwApiError(response.status, detail, '请求未完成，请稍后再试', response.headers.get('X-Error-Code')),
+  onError: (response, detail) => throwApiError(response.status, detail, translateUi("workflow.theRequestDidNotCompletePleaseTryAgainLater"), response.headers.get('X-Error-Code')),
 })
 
 /** 共用鉴权与错误解析，返回原始响应以支持文件下载。 */

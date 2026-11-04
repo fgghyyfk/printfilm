@@ -1,3 +1,5 @@
+import { useI18n } from '../../i18n'
+import { translate as translateUi } from '../../i18n/runtime'
 /** 图/视频模型选择列表：图标 + 简介 + 耗时 + 选用提示 */
 import type { ReactNode } from 'react'
 import { Check, Clapperboard, Film, Image as ImageIcon, Sparkles, Wand2, Zap } from 'lucide-react'
@@ -42,9 +44,10 @@ function ModelIcon({ kind }: { kind: MediaModelIconKind }) {
 export function DramaMediaModelPicker({
   models,
   selectedId,
-  emptyHint = '请先在管理后台「模型」保存预设默认模型',
+  emptyHint = translateUi("workflow.saveADefaultModelUnderModelsInTheAdmin"),
   onSelect,
 }: Props) {
+  const { t: translateUi } = useI18n()
   if (models.length === 0) {
     return <p className="fc-gen-model-empty">{emptyHint}</p>
   }
@@ -76,7 +79,7 @@ export function DramaMediaModelPicker({
             <span className="fc-gen-model-card-body">
               <span className="fc-gen-model-card-head">
                 <strong>{m.label}</strong>
-                {m.recommended ? <em className="fc-gen-model-card-rec">默认</em> : null}
+                {m.recommended ? <em className="fc-gen-model-card-rec">{translateUi("workflow.default")}</em> : null}
                 <em className="fc-gen-model-card-badge">{badge}</em>
                 {selected ? (
                   <Check className="fc-gen-model-card-check" size={15} strokeWidth={2.4} aria-hidden />

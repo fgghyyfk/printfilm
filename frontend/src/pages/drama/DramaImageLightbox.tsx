@@ -1,3 +1,5 @@
+import { useI18n } from '../../i18n'
+import { translate as translateUi } from '../../i18n/runtime'
 /** 资产图片全屏放大预览（点击遮罩 / Esc 关闭） */
 import { useEffect } from 'react'
 import { createPortal } from 'react-dom'
@@ -9,7 +11,8 @@ type Props = {
 }
 
 // 渲染图片放大层
-export function DramaImageLightbox({ src, alt = '预览', onClose }: Props) {
+export function DramaImageLightbox({ src, alt = translateUi("ecomSet.result.preview"), onClose }: Props) {
+  const { t: translateUi } = useI18n()
   useEffect(() => {
     const prev = document.body.style.overflow
     document.body.style.overflow = 'hidden'
@@ -31,10 +34,10 @@ export function DramaImageLightbox({ src, alt = '预览', onClose }: Props) {
       className="drama-lightbox-backdrop"
       role="dialog"
       aria-modal="true"
-      aria-label="图片预览"
+      aria-label={translateUi("workflow.imagePreview")}
       onClick={onClose}
     >
-      <button type="button" className="drama-lightbox-close" aria-label="关闭" onClick={onClose}>
+      <button type="button" className="drama-lightbox-close" aria-label={translateUi("workflow.close")} onClick={onClose}>
         ×
       </button>
       <img

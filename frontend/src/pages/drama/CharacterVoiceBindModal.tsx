@@ -1,3 +1,5 @@
+import { useI18n } from '../../i18n'
+import { translate as translateUi } from '../../i18n/runtime'
 /** 角色音色绑定：选择 / 上传 / AI 合成试听，写入 params.voiceAudio */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { dramaApi, resolveDramaMediaUrl, type DramaAsset } from '../../api/drama'
@@ -61,7 +63,7 @@ export function readAssetVoiceBinding(asset: DramaAsset): VoiceBinding | null {
       return {
         sourceAssetId,
         url,
-        label: typeof data.label === 'string' ? data.label : '音色',
+        label: typeof data.label === 'string' ? data.label : translateUi("daihuo.video.voice"),
         voicePrompt: typeof data.voicePrompt === 'string' ? data.voicePrompt : undefined,
       }
     }
@@ -74,7 +76,7 @@ export function readAssetVoiceBinding(asset: DramaAsset): VoiceBinding | null {
       const sourceAssetId = typeof data.sourceAssetId === 'number' ? data.sourceAssetId : null
       const url = typeof data.url === 'string' ? data.url : ''
       if (sourceAssetId && url) {
-        return { sourceAssetId, url, label: '音色' }
+        return { sourceAssetId, url, label: translateUi("daihuo.video.voice") }
       }
     }
   }
@@ -87,7 +89,7 @@ export function buildBoundParams(asset: DramaAsset, voice: DramaAsset): Record<s
   const binding: VoiceBinding = {
     sourceAssetId: voice.id,
     url,
-    label: voice.name || '音色',
+    label: voice.name || translateUi("daihuo.video.voice"),
     voicePrompt: readVoicePrompt(voice) || undefined,
   }
   const prev = (asset.params || {}) as Record<string, unknown>
@@ -114,6 +116,7 @@ export function CharacterVoiceBindModal({
   onBound,
   onError,
 }: Props) {
+  const { t: translateUi } = useI18n()
   /*
    * voiceAssets 项目内 voice/audio 资产
    * selectedId 选中音色
@@ -152,7 +155,7 @@ export function CharacterVoiceBindModal({
         setNewPrompt(result.voice_prompt || '')
         setSuggestedSpeaker(result.speaker || '')
       } catch (err) {
-        onError(err instanceof Error ? err.message : 'AI 生成音色描述失败')
+        onError(err instanceof Error ? err.message : translateUi("workflow.couldNotGenerateTheVoiceDescription"))
       } finally {
         setPromptBusy(false)
       }
@@ -184,7 +187,7 @@ export function CharacterVoiceBindModal({
           setMode('upload')
         }
       })
-      .catch((err) => onError(err instanceof Error ? err.message : '加载音色失败'))
+      .catch((err) => onError(err instanceof Error ? err.message : translateUi("workflow.couldNotLoadVoices")))
   }, [open, asset, projectId, bound?.sourceAssetId, onError])
 
   // 进入「AI 合成」时自动生成音色描述
@@ -202,7 +205,7 @@ export function CharacterVoiceBindModal({
   async function handleUploadAudio(file: File) {
     if (uploadBusy) return
     if (!file.type.startsWith('audio/') && !/\.(mp3|wav|m4a)$/i.test(file.name)) {
-      onError('请上传 mp3 / wav / m4a 音频文件')
+      onError(translateUi("workflow.uploadAnMp3WavOrM4aAudioFile"))
       return
     }
     setUploadBusy(true)
@@ -219,12 +222,12 @@ export function CharacterVoiceBindModal({
         },
       })
       const uploaded = await dramaApi.uploadAssetMedia(created.id, file)
-      if (!(uploaded.url || '').trim()) throw new Error('上传成功但未得到可播放地址')
+      if (!(uploaded.url || '').trim()) throw new Error(translateUi("workflow.theUploadSucceededButReturnedNoPlayableUrl"))
       setVoiceAssets((prev) => [uploaded, ...prev.filter((v) => v.id !== uploaded.id)])
       setSelectedId(uploaded.id)
       setMode('pick')
     } catch (err) {
-      onError(err instanceof Error ? err.message : '上传失败')
+      onError(err instanceof Error ? err.message : translateUi("workflow.uploadFailed"))
     } finally {
       setUploadBusy(false)
       if (uploadInputRef.current) uploadInputRef.current.value = ''
@@ -245,12 +248,12 @@ export function CharacterVoiceBindModal({
         character_asset_id: asset.id,
       })
       const created = result.asset
-      if (!created) throw new Error('合成失败')
+      if (!created) throw new Error(translateUi("workflow.compositionFailed"))
       setVoiceAssets((prev) => [...prev, created])
       setSelectedId(created.id)
       setMode('pick')
     } catch (err) {
-      onError(err instanceof Error ? err.message : '音色合成失败')
+      onError(err instanceof Error ? err.message : translateUi("workflow.voiceSynthesisFailed"))
     } finally {
       setSynthBusy(false)
     }
@@ -273,7 +276,7 @@ export function CharacterVoiceBindModal({
         setVoiceAssets((prev) => prev.map((v) => (v.id === voice.id ? result.asset! : v)))
       }
     } catch (err) {
-      onError(err instanceof Error ? err.message : '重新合成失败')
+      onError(err instanceof Error ? err.message : translateUi("workflow.couldNotSynthesizeAgain"))
     } finally {
       setSynthBusy(false)
     }
@@ -282,7 +285,7 @@ export function CharacterVoiceBindModal({
   // 确认绑定到角色
   async function handleConfirm() {
     if (!selectedVoice?.url || busy) {
-      onError('请先选择或上传一段可试听的音频')
+      onError(translateUi("workflow.selectOrUploadPlayableAudioFirst"))
       return
     }
     setBusy(true)
@@ -293,7 +296,7 @@ export function CharacterVoiceBindModal({
       onBound(updated)
       onClose()
     } catch (err) {
-      onError(err instanceof Error ? err.message : '绑定失败')
+      onError(err instanceof Error ? err.message : translateUi("workflow.couldNotAssignTheVoice"))
     } finally {
       setBusy(false)
     }
@@ -316,7 +319,7 @@ export function CharacterVoiceBindModal({
       onBound(updated)
       onClose()
     } catch (err) {
-      onError(err instanceof Error ? err.message : '解绑失败')
+      onError(err instanceof Error ? err.message : translateUi("workflow.couldNotUnassignTheVoice"))
     } finally {
       setBusy(false)
     }
@@ -326,14 +329,14 @@ export function CharacterVoiceBindModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="绑定音色"
+      title={translateUi("workflow.bindVoice")}
       size="lg"
       dismissible={!anyBusy}
       className="drama-voice-bind-modal"
       footer={
         <>
           <button type="button" className="pf-btn" onClick={onClose} disabled={anyBusy}>
-            取消
+            {translateUi("ecomSet.copyModal.cancel")}
           </button>
           {bound ? (
             <button
@@ -342,7 +345,7 @@ export function CharacterVoiceBindModal({
               onClick={() => void handleUnbind()}
               disabled={anyBusy}
             >
-              解除绑定
+              {translateUi("workflow.unbind")}
             </button>
           ) : null}
           <button
@@ -351,17 +354,15 @@ export function CharacterVoiceBindModal({
             onClick={() => void handleConfirm()}
             disabled={!selectedVoice?.url || anyBusy}
           >
-            {busy ? '绑定中…' : '确认绑定'}
+            {busy ? translateUi("workflow.binding") : translateUi("workflow.confirmBinding")}
           </button>
         </>
       }
     >
       <p className="drama-muted">
-        给「{asset.name || '角色'}」配上说话声音。选一段试听、上传录音，或用 AI
-        合成都可以。之后生成带对白的镜头时，会尽量按这段声音来念。
-      </p>
+        {translateUi("workflow.giveAVoiceChooseASampleUploadARecording", { v1: asset.name || translateUi("workflow.character") })}</p>
       <p className="drama-muted" style={{ marginTop: -6, fontSize: 12 }}>
-        画布里也可以把「音频」节点连到角色，效果一样。
+        {translateUi("workflow.onTheCanvasConnectingAnAudioNodeToA")}
       </p>
 
       <div className="drama-voice-mode-tabs">
@@ -371,7 +372,7 @@ export function CharacterVoiceBindModal({
           onClick={() => setMode('pick')}
           disabled={anyBusy}
         >
-          选择已有
+          {translateUi("workflow.chooseExisting")}
         </button>
         <button
           type="button"
@@ -379,7 +380,7 @@ export function CharacterVoiceBindModal({
           onClick={() => setMode('upload')}
           disabled={anyBusy}
         >
-          上传音频
+          {translateUi("workflow.uploadAudio")}
         </button>
         <button
           type="button"
@@ -392,23 +393,23 @@ export function CharacterVoiceBindModal({
           }}
           disabled={anyBusy}
         >
-          AI 合成
+          {translateUi("workflow.synthesizeWithAi")}
         </button>
       </div>
 
       {mode === 'pick' ? (
         <div className="drama-voice-list">
           {voiceAssets.length === 0 ? (
-            <p className="drama-muted">还没有可用音色，请先「上传音频」或「AI 合成」。</p>
+            <p className="drama-muted">{translateUi("workflow.noVoicesAvailableUploadAudioOrSynthesizeAVoice")}</p>
           ) : (
             voiceAssets.map((voice) => {
               const hasAudio = Boolean(voice.url)
               const canResynth = Boolean(readVoicePrompt(voice))
               const statusLabel = !hasAudio
-                ? '待生成'
+                ? translateUi("workflow.pendingGeneration")
                 : canResynth
-                  ? '已合成'
-                  : '已上传'
+                  ? translateUi("workflow.synthesized")
+                  : translateUi("workflow.uploaded")
               return (
                 <label key={voice.id} className="drama-voice-option">
                   <input
@@ -418,7 +419,7 @@ export function CharacterVoiceBindModal({
                     onChange={() => setSelectedId(voice.id)}
                   />
                   <span>
-                    {voice.name || `音色#${voice.id}`}
+                    {voice.name || translateUi("workflow.voice", { v1: String(voice.id) })}
                     <small>{statusLabel}</small>
                   </span>
                   {hasAudio && canResynth ? (
@@ -431,7 +432,7 @@ export function CharacterVoiceBindModal({
                         void handleResynth(voice)
                       }}
                     >
-                      重合成
+                      {translateUi("workflow.resynthesize")}
                     </button>
                   ) : null}
                 </label>
@@ -442,7 +443,7 @@ export function CharacterVoiceBindModal({
       ) : mode === 'upload' ? (
         <div className="drama-voice-create-form">
           <p className="drama-muted" style={{ margin: 0 }}>
-            支持 mp3 / wav / m4a。建议 2 秒以上的清晰人声，效果更稳。
+            {translateUi("workflow.supportsMp3WavAndM4aClearSpeechOfAt")}
           </p>
           <input
             ref={uploadInputRef}
@@ -460,48 +461,47 @@ export function CharacterVoiceBindModal({
             disabled={uploadBusy}
             onClick={() => uploadInputRef.current?.click()}
           >
-            {uploadBusy ? '上传中…' : '选择音频文件'}
+            {uploadBusy ? translateUi("workflow.uploading") : translateUi("workflow.chooseAudioFile")}
           </button>
         </div>
       ) : (
         <div className="drama-voice-create-form">
           <label className="drama-field">
-            <span>音色名称</span>
+            <span>{translateUi("workflow.voiceName")}</span>
             <input
               type="text"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
-              placeholder="例如：沉稳男声、俏皮少女"
+              placeholder={translateUi("workflow.forExampleCalmManPlayfulYoungWoman")}
             />
           </label>
           <label className="drama-field">
             <span className="drama-voice-prompt-label">
-              声音什么样（随便写）
+              {translateUi("workflow.describeTheVoiceInYourOwnWords")}
               <button
                 type="button"
                 className="pf-btn pf-btn-sm"
                 disabled={promptBusy || synthBusy}
                 onClick={() => void fetchVoicePrompt(true)}
               >
-                {promptBusy ? '生成中…' : '按角色设定帮我写'}
+                {promptBusy ? translateUi("workflow.generating") : translateUi("workflow.writeFromTheCharacterDescription")}
               </button>
             </span>
             <textarea
               rows={4}
               value={
                 promptBusy && !newPrompt
-                  ? '正在根据角色设定写一段声音描述…'
+                  ? translateUi("workflow.writingAVoiceDescriptionFromTheCharacterProfile")
                   : newPrompt
               }
               readOnly={promptBusy && !newPrompt}
               onChange={(e) => setNewPrompt(e.target.value)}
-              placeholder="例如：三十岁左右男性，声音沉稳偏磁性，语速不急…"
+              placeholder={translateUi("workflow.forExampleAManInHisThirtiesWithA")}
             />
           </label>
           {suggestedSpeaker ? (
             <p className="drama-muted" style={{ margin: 0, fontSize: 12 }}>
-              已匹配声线：{suggestedSpeaker}
-            </p>
+              {translateUi("workflow.matchedVoice", { v1: suggestedSpeaker })}</p>
           ) : null}
           <button
             type="button"
@@ -509,7 +509,7 @@ export function CharacterVoiceBindModal({
             disabled={!newPrompt.trim() || synthBusy || promptBusy}
             onClick={() => void handleCreateAndSynth()}
           >
-            {synthBusy ? '合成中…' : '合成试听'}
+            {synthBusy ? translateUi("workflow.synthesizing") : translateUi("workflow.generateVoicePreview")}
           </button>
         </div>
       )}

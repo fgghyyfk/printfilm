@@ -1,3 +1,4 @@
+import { translate as translateUi } from '../i18n/runtime'
 /** 分镜字幕板：从分镜正文提取口播字幕，供预览与导出。 */
 
 import type { DramaFragment } from '../api/drama'
@@ -92,13 +93,13 @@ export function buildDramaSubtitleBoard(fragments: DramaFragment[]): DramaSubtit
 // 导出字幕板纯文本（预览用）。
 export function exportDramaSubtitleBoardText(fragments: DramaFragment[]): string {
   const cues = buildDramaSubtitleBoard(fragments)
-  if (cues.length === 0) return '暂无可导出的字幕内容'
+  if (cues.length === 0) return translateUi("workflow.noExportableSubtitles")
   return cues
     .map(
       (cue) =>
-        `${formatSubtitleClock(cue.startSec)}-${formatSubtitleClock(cue.endSec)} 片段 ${String(
+        translateUi("workflow.subtitleTextRow", { v1: String(formatSubtitleClock(cue.startSec)), v2: String(formatSubtitleClock(cue.endSec)), v3: String(String(
           cue.fragmentIndex + 1,
-        ).padStart(2, '0')} ${cue.speaker}：${cue.text}`,
+        ).padStart(2, '0')), v4: String(cue.speaker), v5: String(cue.text) }),
     )
     .join('\n')
 }

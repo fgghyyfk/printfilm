@@ -1,3 +1,4 @@
+import { translate as translateUi } from '../i18n/runtime'
 /** 生成替换明细的码点高亮与窄撤销请求。 */
 import type { ComplianceChange, ComplianceHit, ComplianceReplacementItem } from '../api/compliance'
 
@@ -23,7 +24,7 @@ export async function undoReplacement(
   change: ComplianceChange,
   patch: (path: string, body: { compliance_undo: { field: string; change_id: string } }) => Promise<unknown>,
 ): Promise<void> {
-  if (!canUndoReplacement(row, change)) throw new Error('文案已编辑或该条已撤销，请对照原稿手动修改')
+  if (!canUndoReplacement(row, change)) throw new Error(translateUi("workflow.thisTextWasEditedOrTheChangeWasAlready"))
   const path = row.scope === 'project'
     ? `/api/projects/${projectId}`
     : `/api/projects/${projectId}/shots/${row.shot_id}`
@@ -36,7 +37,7 @@ export function applyComplianceSuggestion(current: string, scanned: string, hit:
   const chars = Array.from(current)
   if (hit.suggestion == null || current !== scanned || !Number.isInteger(hit.start) || !Number.isInteger(hit.end)
       || hit.start < 0 || hit.end <= hit.start || chars.slice(hit.start, hit.end).join('') !== hit.word) {
-    throw new Error('文案已变化，请重新检查后再替换')
+    throw new Error(translateUi("workflow.theTextHasChangedRunTheCheckAgainBefore"))
   }
   return chars.slice(0, hit.start).join('') + hit.suggestion + chars.slice(hit.end).join('')
 }

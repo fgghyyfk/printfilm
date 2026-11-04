@@ -1,3 +1,4 @@
+import { translate as translateUi } from '../i18n/runtime'
 /**
  * 漫剧分镜脚本校验（对齐 docs/EPISODE_RULES.md §3 / §9）
  * 用于生成前告警：时长、空镜误标对白、资产缺图/缺音色
@@ -125,24 +126,24 @@ export function validateDramaFragmentScript(content: string): DramaScriptIssue[]
   if (badSegment != null) {
     issues.push({
       level: 'error',
-      message: `单个 @duration 需在 ${DRAMA_SEGMENT_DURATION_MIN}–${DRAMA_SEGMENT_DURATION_HARD_MAX} 秒之间`,
+      message: translateUi("workflow.eachDurationMustBeBetweenAndSeconds", { v1: String(DRAMA_SEGMENT_DURATION_MIN), v2: String(DRAMA_SEGMENT_DURATION_HARD_MAX) }),
     })
   } else if (durations.some((value) => value > DRAMA_SEGMENT_DURATION_MAX)) {
     issues.push({
       level: 'warn',
-      message: `部分 @duration 超过新分镜建议 ${DRAMA_SEGMENT_DURATION_MAX}s，旧稿可继续生成`,
+      message: translateUi("workflow.someDurationValuesExceedTheSRecommendationForNew", { v1: String(DRAMA_SEGMENT_DURATION_MAX) }),
     })
   }
 
   if (total > DRAMA_SHOT_DURATION_HARD_MAX) {
     issues.push({
       level: 'error',
-      message: `本镜 @duration 合计 ${total}s，超过 Seedance 上限 ${DRAMA_SHOT_DURATION_HARD_MAX}s`,
+      message: translateUi("workflow.thisShotTotalsSInDurationExceedingTheSeedance", { v1: String(total), v2: String(DRAMA_SHOT_DURATION_HARD_MAX) }),
     })
   } else if (total > FRAGMENT_CONTENT_DURATION_MAX) {
     issues.push({
       level: 'warn',
-      message: `本镜 @duration 合计 ${total}s，超过新分镜建议 ${FRAGMENT_CONTENT_DURATION_MAX}s（旧稿可继续生成）`,
+      message: translateUi("workflow.thisShotTotalsSInDurationExceedingTheS", { v1: String(total), v2: String(FRAGMENT_CONTENT_DURATION_MAX) }),
     })
   }
 
@@ -156,7 +157,7 @@ export function validateDramaFragmentScript(content: string): DramaScriptIssue[]
       issues.push({
         level: 'error',
         message:
-          '检测到「空镜/景别」被标成对白或旁白（会口播并烧字幕）。请改为「【画面·无配音仅环境音】」或「空镜：…」纯画面行',
+          translateUi("workflow.aVisualOnlyShotHasBeenMarkedAsDialogue"),
       })
       break
     }
@@ -204,14 +205,14 @@ export function validateDramaFragmentAssets(
     issues.push({
       level: 'error',
       code: 'missing_reference_image',
-      message: `以下关联资产缺少参考图，请先生成或上传后再生成视频：${missingImage.slice(0, 5).join('、')}${missingImage.length > 5 ? '…' : ''}`,
+      message: translateUi("workflow.theseLinkedAssetsNeedReferenceImagesBeforeVideoGeneration", { v1: String(missingImage.slice(0, 5).join('、')), v2: String(missingImage.length > 5 ? '…' : '') }),
     })
   }
 
   if (missingVoice.length > 0) {
     issues.push({
       level: 'warn',
-      message: `脚本含对白，但以下角色尚未绑定音色：${missingVoice.slice(0, 5).join('、')}${missingVoice.length > 5 ? '…' : ''}`,
+      message: translateUi("workflow.theScriptIncludesDialogueButTheseCharactersHaveNo", { v1: String(missingVoice.slice(0, 5).join('、')), v2: String(missingVoice.length > 5 ? '…' : '') }),
     })
   }
 

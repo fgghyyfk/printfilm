@@ -143,7 +143,7 @@ function EpisodeEditInner() {
   const pid = Number(projectId)
   const eid = Number(episodeId)
   const navigate = useNavigate()
-  const { t } = useI18n()
+  const { t , t: translateUi } = useI18n()
   /*
    * episode 分集
    * fragments 分镜
@@ -216,7 +216,7 @@ function EpisodeEditInner() {
     onRows: setFragmentState,
     onSaved: setEpisode,
     onState: setSaveState,
-    onError: (err) => setError(err instanceof Error ? err.message : '保存失败'),
+    onError: (err) => setError(err instanceof Error ? err.message : translateUi("workflow.couldNotSave")),
   }), [eid])
   // 自动保存不把尚未重生的视频当成最新创作输入；旧视频保留本页初载基线。
   const videoBaselines = useRef(new Map<number, DramaFragment>())
@@ -349,7 +349,7 @@ function EpisodeEditInner() {
   const continuityBlockedReason = useMemo(() => {
     if (!linkLastFrame || selectedIndex <= 0) return ''
     const prev = fragments[selectedIndex - 1]
-    if (!prev) return '缺少上一镜，无法衔接'
+    if (!prev) return translateUi("workflow.thePreviousShotIsMissingContinuityIsUnavailable")
     if (prev.id && generatingIds.has(prev.id)) {
       return ''
     }
@@ -358,7 +358,7 @@ function EpisodeEditInner() {
       readFragmentGenerationStatus(prev).status === 'done' ||
       Boolean(prevLastFrameUrl)
     if (!prevDone) {
-      return '请先生成上一镜并等待尾帧就绪'
+      return translateUi("workflow.generateThePreviousShotAndWaitForItsLast")
     }
     return ''
   }, [linkLastFrame, selectedIndex, fragments, generatingIds, prevLastFrameUrl])
@@ -367,7 +367,7 @@ function EpisodeEditInner() {
     if (!linkLastFrame || selectedIndex <= 0) return ''
     const prev = fragments[selectedIndex - 1]
     if (!prev?.id || !generatingIds.has(prev.id)) return ''
-    return '上一镜仍在生成，本镜将入队等待上一镜完成后再开始'
+    return translateUi("workflow.thePreviousShotIsGeneratingThisShotWillWait")
   }, [linkLastFrame, selectedIndex, fragments, generatingIds])
 
   // selectedGenerateLocked 锁当前镜「生成」：忙/生成中/衔接/缺参考图等硬门禁
@@ -403,14 +403,14 @@ function EpisodeEditInner() {
       }
       setStatus(
         enabled
-          ? '已开启尾帧衔接：未开始的任务已改成按镜序排队，进行中的任务不受影响'
-          : '已关闭尾帧衔接：未开始的任务已恢复并可并发生成，进行中的任务不受影响',
+          ? translateUi("workflow.lastFrameContinuityEnabledUnstartedJobsNowRunIn")
+          : translateUi("workflow.lastFrameContinuityDisabledUnstartedJobsMayRunConcurrently"),
       )
     } catch (err) {
       if (!autosave.isActive()) return
       setLinkLastFrame(prevEnabled)
       setProjectParams(prevParams)
-      setError(err instanceof Error ? err.message : '保存衔接设置失败')
+      setError(err instanceof Error ? err.message : translateUi("workflow.couldNotSaveContinuitySettings"))
     }
   }
 
@@ -432,13 +432,13 @@ function EpisodeEditInner() {
 
     if (!quiet) {
       const ok = await dialog.confirm({
-        title: '切换画幅 / 清晰度',
+        title: translateUi("workflow.changeAspectRatioResolution"),
         message:
           generatedCount > 0
-            ? `将本集从 ${prevLabel} 改为 ${nextLabel}。已生成的 ${generatedCount} 镜不会自动更新，需要重新生成才会按新规格出片。`
-            : `将本集从 ${prevLabel} 改为 ${nextLabel}。之后生成的分镜将使用该规格。`,
-        confirmText: generatedCount > 0 ? '保存并重新生成' : '保存',
-        cancelText: '取消',
+            ? translateUi("workflow.changeThisEpisodeFromToItsExistingClipsWill", { v1: String(prevLabel), v2: String(nextLabel), v3: String(generatedCount) })
+            : translateUi("workflow.changeThisEpisodeFromToFutureStoryboardClipsWill", { v1: String(prevLabel), v2: String(nextLabel) }),
+        confirmText: generatedCount > 0 ? translateUi("workflow.saveAndRegenerate") : translateUi("workflow.save"),
+        cancelText: translateUi("ecomSet.copyModal.cancel"),
         tone: generatedCount > 0 ? 'danger' : 'default',
       })
       if (!ok || !autosave.isActive()) return
@@ -463,8 +463,8 @@ function EpisodeEditInner() {
       if (!quiet) {
         setStatus(
           generatedCount > 0
-            ? `已更新本集规格为 ${nextLabel}，正在按新规格重新入队…`
-            : `已更新本集规格为 ${nextLabel}`,
+            ? translateUi("workflow.episodeOutputUpdatedToRequeuingWithTheNewSettings", { v1: String(nextLabel) })
+            : translateUi("workflow.episodeOutputUpdatedTo", { v1: String(nextLabel) }),
         )
         setError('')
         if (generatedCount > 0 && autosave.epoch() === outputEpoch) {
@@ -472,14 +472,14 @@ function EpisodeEditInner() {
         }
       } else if (generatedCount > 0) {
         // 模型能力自动钳制：不弹确认、不重入队，但提示已生成镜头需手动重生成
-        setStatus(`规格已按当前模型调整为 ${nextLabel}，已生成镜头需重生成才会按新规格出片`)
+        setStatus(translateUi("workflow.outputAdjustedToForThisModelRegenerateExistingClips", { v1: String(nextLabel) }))
       }
     } catch (err) {
       if (!autosave.isActive()) return
       setEpisodeParams(prevParams)
       episodeParamsRef.current = prevParams
       setAspectRatio(readEpisodeAspectRatio(prevParams, projectParams))
-      setError(err instanceof Error ? err.message : '本集输出规格保存失败')
+      setError(err instanceof Error ? err.message : translateUi("workflow.couldNotSaveEpisodeOutputSettings"))
       throw err
     }
   }
@@ -520,7 +520,7 @@ function EpisodeEditInner() {
         setSubtitleMode(readEffectiveSubtitleMode(prevParams, projectParamsRef.current))
         setCharacterIntroMode(readEffectiveCharacterIntroMode(prevParams, projectParamsRef.current))
       }
-      setError(err instanceof Error ? err.message : '设置保存失败')
+      setError(err instanceof Error ? err.message : translateUi("workflow.couldNotSaveSettings"))
     } finally {
       release()
       if (editor.isActive()) setBusy(false)
@@ -531,14 +531,14 @@ function EpisodeEditInner() {
     if (mode === subtitleMode) return
     await saveContentSetting({ ...episodeParamsRef.current, subtitleMode: mode, subtitleEnabled: subtitleModeUsesModelOutput(mode) },
       (rows) => applySubtitleModeToFragments(rows, mode),
-      mode === 'model' ? '已切换为模型自出字幕，并补回分镜字幕提示词' : '已切换为后期拼接字幕，并去掉分镜里的字幕提示词')
+      mode === 'model' ? translateUi("workflow.switchedToModelGeneratedSubtitlesAndRestoredTheStoryboard") : translateUi("workflow.switchedToPostProductionSubtitlesAndRemovedTheStoryboard"))
   }
 
   async function handleEpisodeCharacterIntroChange(mode: DramaCharacterIntroMode) {
     if (mode === characterIntroMode) return
     await saveContentSetting({ ...episodeParamsRef.current, characterIntroMode: mode, characterIntroEnabled: characterIntroModeEnabled(mode) },
       (rows) => applyCharacterIntroModeToFragments(rows, mode),
-      mode === 'model' ? '已开启人物介绍叠字；重新规划分镜时会重新注入介绍行' : '已关闭人物介绍，并去掉分镜里的介绍叠字行')
+      mode === 'model' ? translateUi("workflow.characterIntroductionOverlaysEnabledReplanningWillAddTheIntroduction") : translateUi("workflow.characterIntroductionsDisabledAndTheirOverlayLinesRemoved"))
   }
 
   const referencedIds = useMemo(() => {
@@ -557,7 +557,7 @@ function EpisodeEditInner() {
 
   // 应用后端生成进度并同步分镜状态 + 全局队列
   function applyGenerateStatus(st: Awaited<ReturnType<typeof dramaApi.generateStatus>>) {
-    setStatus(`完成 ${st.done}/${st.total} · 进行中 ${st.running} · 失败 ${st.failed}`)
+    setStatus(translateUi("workflow.doneRunningFailed", { v1: String(st.done), v2: String(st.total), v3: String(st.running), v4: String(st.failed) }))
     const byId = new Map(st.fragments.map((f) => [f.fragment_id, f.status]))
     setFragments((prev) => {
       const next = prev.map((f) => {
@@ -638,7 +638,7 @@ function EpisodeEditInner() {
       if (readFragmentPlanStatus(ep) === 'generating') {
         const planEpoch = autosave.epoch()
         setBusy(true)
-        setStatus('等待生成…')
+        setStatus(translateUi("workflow.waitingForGeneration"))
         const started = Date.now()
         while (Date.now() - started < 10 * 60 * 1000) {
           await new Promise((r) => setTimeout(r, 2500))
@@ -648,7 +648,7 @@ function EpisodeEditInner() {
           if (st === 'completed') {
             if (!autosave.isActive()) return
             if (autosave.state().dirty || autosave.epoch() !== planEpoch) {
-              setError('分镜已更新，本地稿已保留，请刷新后核对')
+              setError(translateUi("workflow.theStoryboardHasChangedYourLocalDraftIsKept"))
               setBusy(false)
               return
             }
@@ -656,16 +656,16 @@ function EpisodeEditInner() {
             autosave.load(cur)
             setEpisode(cur)
             setSelectedIndex(0)
-            setStatus(`分镜完成 · ${(cur.fragments || []).length} 条`)
+            setStatus(translateUi("workflow.storyboardCompleteClips", { v1: String((cur.fragments || []).length) }))
             setBusy(false)
             return
           }
           if (st === 'failed') {
-            setError(String(cur.params?.fragment_plan_error || 'AI 分镜失败'))
+            setError(String(cur.params?.fragment_plan_error || translateUi("workflow.aiStoryboardPlanningFailed")))
             setBusy(false)
             return
           }
-          setStatus('等待生成…')
+          setStatus(translateUi("workflow.waitingForGeneration"))
         }
         setBusy(false)
         return
@@ -730,7 +730,7 @@ function EpisodeEditInner() {
     setBusy(false)
     setStatus('')
     setError('')
-    reload(() => live).catch((err) => { if (live && autosave.isActive()) setError(err instanceof Error ? err.message : '加载失败') })
+    reload(() => live).catch((err) => { if (live && autosave.isActive()) setError(err instanceof Error ? err.message : translateUi("ecomSet.loadFailed")) })
     dramaApi
       .listAssets(pid)
       .then((rows) => { if (live && autosave.isActive()) setAssets(rows) })
@@ -784,7 +784,7 @@ function EpisodeEditInner() {
     ;[ids[left], ids[right]] = [ids[right], ids[left]]
     updateSelected({ asset_ids: ids, params: { ...selected.params, reference_asset_order: ids } })
     setEditing(true)
-    setStatus('已调整角色优先级，请保存')
+    setStatus(translateUi("workflow.characterPriorityChangedPleaseSave"))
   }
 
   // 插入空白分镜
@@ -839,11 +839,11 @@ function EpisodeEditInner() {
     setError('')
     try {
       const ep = await editor.flush()
-      if (!editor.isActive()) throw new Error('分集已切换')
-      setStatus('已保存')
+      if (!editor.isActive()) throw new Error(translateUi("workflow.theEpisodeChanged"))
+      setStatus(translateUi("ecomSet.plan.saved"))
       return ep
     } catch (err) {
-      if (editor.isActive()) setError(err instanceof Error ? err.message : '保存失败')
+      if (editor.isActive()) setError(err instanceof Error ? err.message : translateUi("workflow.couldNotSave"))
       throw err
     }
   }
@@ -882,30 +882,30 @@ function EpisodeEditInner() {
   // 仅生成当前选中分镜（保存按 id 更新，生成前仍用保存后返回的 id）
   async function generateSelected() {
     if (!selected) {
-      setError('请先选择一条分镜')
+      setError(translateUi("workflow.selectAStoryboardShotFirst"))
       return
     }
     if (selectedGenerateLocked) {
       if (selectedGateBlocking.length > 0) {
         setError(selectedGateBlocking.map((i) => i.message).join('；'))
         await dialog.alert({
-          title: '无法生成',
+          title: translateUi("workflow.cannotGenerate"),
           message: formatDramaGateMessage(
             selectedGateBlocking,
             [],
-            '请先为关联角色/场景/道具生成或上传参考图。',
+            translateUi("workflow.generateOrUploadReferenceImagesForTheLinkedCharacters"),
           ),
         })
       } else if (continuityBlockedReason) {
         setError(continuityBlockedReason)
         await dialog.alert({
-          title: '无法生成',
-          message: `${continuityBlockedReason}。开启「尾帧衔接」后须先有上一镜成片，再按镜序生成本镜。`,
+          title: translateUi("workflow.cannotGenerate"),
+          message: translateUi("workflow.withLastFrameContinuityEnabledFinishThePreviousShot", { v1: String(continuityBlockedReason) }),
         })
       } else if (selectedIsGenerating) {
-        setError('当前分镜正在生成，请等待完成后再试')
+        setError(translateUi("workflow.thisStoryboardShotIsGeneratingWaitForItTo"))
       } else {
-        setError('请等待当前操作完成后再试')
+        setError(translateUi("workflow.waitForTheCurrentOperationToFinishBeforeTrying"))
       }
       return
     }
@@ -914,8 +914,8 @@ function EpisodeEditInner() {
     if (blocking.length > 0) {
       setError(blocking.map((i) => i.message).join('；'))
       await dialog.alert({
-        title: '无法生成',
-        message: formatDramaGateMessage(blocking, warnings, '请先按分集规则修复脚本后再生成。'),
+        title: translateUi("workflow.cannotGenerate"),
+        message: formatDramaGateMessage(blocking, warnings, translateUi("workflow.correctTheScriptUsingTheEpisodeRulesBeforeGenerating")),
       })
       return
     }
@@ -924,30 +924,30 @@ function EpisodeEditInner() {
     const fragLabel = formatFragLabel(selectedIndex, selectedDuration)
     const isRegen = Boolean(selected.video)
     const ok = await dialog.confirm({
-      title: isRegen ? '重新生成分镜视频' : '生成分镜视频',
+      title: isRegen ? translateUi("workflow.regenerateStoryboardClip") : translateUi("workflow.generateStoryboardClip"),
       message: formatDramaGateMessage(
         [],
         warnings,
         isRegen
-          ? `将保存并重新生成「${fragLabel}」。当前成片会清空并改存为历史版本，入队后可在右下角队列查看进度。`
+          ? translateUi("workflow.saveAndRegenerateTheCurrentClipWillBeKept", { v1: String(fragLabel) })
           : linkLastFrame
             ? continuityQueueHint
-              ? `将保存「${fragLabel}」并入队。${continuityQueueHint}。`
-              : `将保存并按镜序生成「${fragLabel}」。入队后可继续编辑；本镜会使用上一镜尾帧作衔接参考。`
-            : `将保存并生成「${fragLabel}」。入队后可继续编辑；当前未开启尾帧衔接，本镜会独立生成。`,
+              ? translateUi("workflow.saveAndQueue", { v1: String(fragLabel), v2: String(continuityQueueHint) })
+              : translateUi("workflow.saveAndGenerateInShotOrderYouCanKeep", { v1: String(fragLabel) })
+            : translateUi("workflow.saveAndGenerateIndependentlyYouCanKeepEditingAfter", { v1: String(fragLabel) }),
       ),
-      confirmText: warnings.length > 0 ? '仍要生成' : isRegen ? '重新生成' : '开始生成',
+      confirmText: warnings.length > 0 ? translateUi("workflow.generateAnyway") : isRegen ? translateUi("ecomSet.result.regenerate") : translateUi("ecomSet.confirm.ok"),
     })
     if (!ok) return
     setBusy(true)
     setError('')
-    setStatus(isRegen ? '保存并重新排队生成…' : '保存并排队生成当前分镜…')
+    setStatus(isRegen ? translateUi("workflow.savingAndRequeuing") : translateUi("workflow.savingAndQueuingThisStoryboardShot"))
     try {
       const ep = await save()
       setBusy(true)
       const frag = autosave.rows().find((row) => row.clientKey === targetKey)
       if (!frag?.id) {
-        throw new Error('保存后未找到当前分镜，请刷新后重试')
+        throw new Error(translateUi("workflow.theCurrentStoryboardShotWasNotFoundAfterSaving"))
       }
       await dramaApi.generateEpisode(eid, [frag.id], modelId)
       // 乐观写入排队态，避免旧 video 把状态盖成已完成
@@ -958,7 +958,7 @@ function EpisodeEditInner() {
                 ...f,
                 params: {
                   ...(f.params || {}),
-                  generation: { status: 'queued', message: '已入队' },
+                  generation: { status: 'queued', message: translateUi("workflow.queued") },
                 },
               }
             : f,
@@ -975,12 +975,12 @@ function EpisodeEditInner() {
         fragmentIds: [frag.id],
       })
       setBusy(false)
-      setStatus(isRegen ? `「${fragLabel}」已重新入队，可在右下角查看队列` : `「${fragLabel}」已入队，可在右下角查看队列`)
+      setStatus(isRegen ? translateUi("workflow.requeuedSeeTheQueueAtTheLowerRight", { v1: String(fragLabel) }) : translateUi("workflow.queuedSeeTheQueueAtTheLowerRight", { v1: String(fragLabel) }))
       ensureEpisodeVideoStatusPoll()
     } catch (err) {
       if (!autosave.isActive()) return
       setBusy(false)
-      setError(err instanceof Error ? err.message : '生成失败')
+      setError(err instanceof Error ? err.message : translateUi("ecomSet.result.failed"))
     }
   }
 
@@ -988,9 +988,9 @@ function EpisodeEditInner() {
   async function activateVideoVersion(versionId: string) {
     if (!selected?.id || selectedIsGenerating) return
     const ok = await dialog.confirm({
-      title: '切换历史版本',
-      message: '将用该历史成片替换当前预览；当前成片会进入历史版本列表。',
-      confirmText: '切换',
+      title: translateUi("workflow.switchVideoVersion"),
+      message: translateUi("workflow.useThisHistoricalClipAsTheCurrentVideoThe"),
+      confirmText: translateUi("workflow.switch"),
     })
     if (!ok) return
     setBusy(true)
@@ -1023,10 +1023,10 @@ function EpisodeEditInner() {
         ),
       )
       setPreviewVersionId(null)
-      setStatus('已切换历史版本')
+      setStatus(translateUi("workflow.videoVersionSwitched"))
     } catch (err) {
       if (!autosave.isActive()) return
-      setError(err instanceof Error ? err.message : '切换版本失败')
+      setError(err instanceof Error ? err.message : translateUi("workflow.couldNotSwitchVideoVersions"))
     } finally {
       if (autosave.isActive()) setBusy(false)
     }
@@ -1035,11 +1035,11 @@ function EpisodeEditInner() {
   // 批量生成：入队本集分镜（forceRegen 覆盖已有成片；入口仅 MiniMax-H3）
   async function generateAll(opts?: { forceRegen?: boolean; skipConfirm?: boolean }) {
     if (fragments.length === 0) {
-      setError('没有可生成的分镜')
+      setError(translateUi("workflow.noStoryboardShotsAvailableToGenerate"))
       return
     }
     if (generateAllLocked) {
-      setError('正在提交，请稍候')
+      setError(translateUi("workflow.submittingPleaseWait"))
       return
     }
 
@@ -1063,27 +1063,27 @@ function EpisodeEditInner() {
     const pendingCount = plannedRows.length - doneIndices.length
     const pendingKeys = new Set(plannedRows.filter((_, index) => !doneIndices.includes(index)).map((row) => row.clientKey))
     if (pendingCount <= 0) {
-      setStatus('本集分镜已全部生成，已自动跳过')
+      setStatus(translateUi("workflow.allStoryboardClipsInThisEpisodeAreCompleteAnd"))
       return
     }
     if (allBlocking.length > 0) {
-      setError(allBlocking[0] || '分镜脚本校验未通过')
-      const message = ['请先修复以下问题：', '', ...allBlocking.slice(0, 8).map((m) => `· ${m}`)].join('\n')
+      setError(allBlocking[0] || translateUi("workflow.storyboardScriptValidationFailed"))
+      const message = [translateUi("workflow.fixTheseIssuesFirst"), '', ...allBlocking.slice(0, 8).map((m) => `· ${m}`)].join('\n')
       if (missingReference) {
         const go = await dialog.confirm({
-          title: '请先补齐参考图', message: `${message}\n\n可前往资产库使用「一键生成未出图」。`,
-          confirmText: '去一键出图',
+          title: translateUi("workflow.addTheMissingReferenceImagesFirst"), message: translateUi("workflow.openTheAssetLibraryAndChooseGenerateMissingImages", { v1: String(message) }),
+          confirmText: translateUi("workflow.generateMissingImages_df3aa9"),
         })
         if (go) await openReferenceAssets()
       } else {
-        await dialog.alert({ title: '无法批量生成', message })
+        await dialog.alert({ title: translateUi("workflow.cannotGenerateThisBatch"), message })
       }
       return
     }
 
     setBusy(true)
     setError('')
-    setStatus(`保存并估算 ${pendingCount} 条分镜…`)
+    setStatus(translateUi("workflow.savingAndEstimatingStoryboardClips", { v1: String(pendingCount) }))
     const selectedModelId = modelId
     try {
       const ep = await save()
@@ -1093,13 +1093,13 @@ function EpisodeEditInner() {
         .map((f) => f.id)
         .filter((id): id is number => typeof id === 'number' && id > 0)
       if (ids.length === 0) {
-        setStatus('保存后检测到分镜已全部生成，已自动跳过')
+        setStatus(translateUi("workflow.afterSavingAllStoryboardClipsWereAlreadyCompleteAnd"))
         setBusy(false)
         return
       }
       const quote = await dramaApi.quoteEpisodeVideos(eid, ids, selectedModelId)
       if (!quote.count) {
-        setStatus('所选分镜已在生成中，无需重复入队')
+        setStatus(translateUi("workflow.theSelectedStoryboardClipsAreAlreadyGeneratingNoNeed"))
         setBusy(false)
         return
       }
@@ -1107,12 +1107,12 @@ function EpisodeEditInner() {
         const updatedCount = (ep.fragments || []).filter((f) => quote.fragment_ids.includes(f.id!) &&
           fragmentReferenceFreshness(f, assets) === 'image_updated').length
         const ok = await dialog.confirm({
-          title: opts?.forceRegen ? '按新规格重新生成' : '批量生成分镜视频',
+          title: opts?.forceRegen ? translateUi("workflow.regenerateWithNewOutputSettings") : translateUi("workflow.generateStoryboardClipsInBulk"),
           message: formatDramaGateMessage([], allWarnings.slice(0, 8).map((message) => ({ level: 'warn' as const, message })),
-            `将排队生成 ${quote.count} 镜${updatedCount ? `，其中 ${updatedCount} 镜为形象更新重做` : ''}。预估 ¥${(quote.estimate_fen / 100).toFixed(2)}，按实际用量结算。已有成片保留为历史版本。${linkLastFrame ? '按镜序等待上一镜尾帧。' : ''}`),
-          confirmText: '确认排队生成', tone: 'danger',
+            translateUi("workflow.queueClipsEstimatedSettledByActualUsageExistingClips", { v1: String(quote.count), v2: String(updatedCount ? translateUi("workflow.includingRemadeForUpdatedReferenceImages", { v1: String(updatedCount) }) : ''), v3: String((quote.estimate_fen / 100).toFixed(2)), v4: String(linkLastFrame ? translateUi("workflow.eachShotWaitsForThePreviousLastFrame") : '') })),
+          confirmText: translateUi("workflow.confirmAndQueue"), tone: 'danger',
         })
-        if (!ok) { setBusy(false); setStatus('已保存，未提交生成'); return }
+        if (!ok) { setBusy(false); setStatus(translateUi("workflow.savedWithoutSubmittingGeneration")); return }
       }
       const genResult = await dramaApi.generateEpisode(eid, quote.fragment_ids, selectedModelId, quote.fragments)
       const queuedIds =
@@ -1133,15 +1133,15 @@ function EpisodeEditInner() {
       const limit = Number(genResult.user_job_limit || 0)
       if (deferred > 0 && limit > 0) {
         setStatus(
-          `已入队 ${queuedIds.length} 镜：最多同时生成 ${limit} 镜，另有 ${deferred} 镜排队等待`,
+          translateUi("workflow.queuedClipsUpToConcurrentWithWaiting", { v1: String(queuedIds.length), v2: String(limit), v3: String(deferred) }),
         )
       } else {
-        setStatus(`已入队 ${queuedIds.length} 镜，生成中…`)
+        setStatus(translateUi("workflow.queuedClipsGenerating", { v1: String(queuedIds.length) }))
       }
       setBusy(false)
     } catch (err) {
       if (!autosave.isActive()) return
-      setError(err instanceof Error ? err.message : '批量生成失败')
+      setError(err instanceof Error ? err.message : translateUi("workflow.batchGenerationFailed"))
       setBusy(false)
     }
   }
@@ -1160,7 +1160,7 @@ function EpisodeEditInner() {
   // 单集 LLM 重新分镜：确认并勾选 Skill 后入队
   function planFragmentsWithLlm() {
     if (planFragmentsLocked) {
-      setError('当前有视频生成任务进行中，请稍候再重新分镜')
+      setError(translateUi("workflow.waitForActiveVideoJobsToFinishBeforeReplanning"))
       return
     }
     setPlanModalOpen(true)
@@ -1171,7 +1171,7 @@ function EpisodeEditInner() {
     setPlanModalOpen(false)
     setBusy(true)
     setError('')
-    setStatus('等待生成…')
+    setStatus(translateUi("workflow.waitingForGeneration"))
     try {
       await save()
       const planEpoch = autosave.epoch()
@@ -1190,7 +1190,7 @@ function EpisodeEditInner() {
         if (st === 'completed') {
           if (!autosave.isActive()) return
           if (autosave.state().dirty || autosave.epoch() !== planEpoch) {
-            setError('分镜已更新，本地稿已保留，请刷新后核对')
+            setError(translateUi("workflow.theStoryboardHasChangedYourLocalDraftIsKept"))
             setBusy(false)
             return
           }
@@ -1206,24 +1206,24 @@ function EpisodeEditInner() {
           const count = Number(ep.params?.fragment_plan_count) || (ep.fragments || []).length
           setStatus(
             mode === 'rules_fallback'
-              ? `分镜完成（模型失败已回退规则切分）· ${count} 条`
-              : `分镜完成 · ${count} 条`,
+              ? translateUi("workflow.storyboardCompleteRuleBasedFallbackAfterModelFailureClips", { v1: String(count) })
+              : translateUi("workflow.storyboardCompleteClips", { v1: String(count) }),
           )
           setBusy(false)
           return
         }
         if (st === 'failed') {
-          const msg = String(ep.params?.fragment_plan_error || 'AI 分镜失败')
+          const msg = String(ep.params?.fragment_plan_error || translateUi("workflow.aiStoryboardPlanningFailed"))
           setError(msg)
           setBusy(false)
           return
         }
-        setStatus('等待生成…')
+        setStatus(translateUi("workflow.waitingForGeneration"))
       }
-      throw new Error('AI 分镜超时，请稍后刷新查看')
+      throw new Error(translateUi("workflow.aiStoryboardPlanningTimedOutRefreshLaterToCheck"))
     } catch (err) {
       if (!autosave.isActive()) return
-      setError(err instanceof Error ? err.message : 'AI 分镜失败')
+      setError(err instanceof Error ? err.message : translateUi("workflow.aiStoryboardPlanningFailed"))
       setBusy(false)
     }
   }
@@ -1258,12 +1258,12 @@ function EpisodeEditInner() {
   // 自定义新建角色 / 场景 / 道具
   async function handleCreateSideAsset() {
     const kind = resolveCreateAssetTab()
-    const label = kind === 'scene' ? '场景' : kind === 'prop' ? '道具' : '角色'
+    const label = kind === 'scene' ? translateUi("workflow.scene") : kind === 'prop' ? translateUi("workflow.prop") : translateUi("workflow.character")
     const name = await dialog.prompt({
-      title: `新建${label}`,
-      message: `输入${label}名称，创建后会插入当前分镜，并可继续生成或上传形象。`,
-      placeholder: kind === 'scene' ? '例如：深宫御花园' : kind === 'prop' ? '例如：玉佩' : '例如：白龙',
-      confirmText: '创建',
+      title: translateUi("workflow.create_820804", { v1: String(label) }),
+      message: translateUi("workflow.enterANameForTheItWillBeInserted", { v1: String(label) }),
+      placeholder: kind === 'scene' ? translateUi("workflow.forExamplePalaceGarden") : kind === 'prop' ? translateUi("workflow.forExampleJadePendant") : translateUi("workflow.forExampleWhiteDragon"),
+      confirmText: translateUi("workflow.create_fcbd09"),
     })
     if (!name?.trim()) return
     setAssetCreateBusy(true)
@@ -1277,9 +1277,9 @@ function EpisodeEditInner() {
         params: { kind },
       })
       adoptCreatedAsset(created, kind)
-      setStatus(`已新建${label}「${created.name}」并插入当前分镜`)
+      setStatus(translateUi("workflow.createdAndReferencedItInThisStoryboardShot", { v1: String(label), v2: String(created.name) }))
     } catch (err) {
-      setError(err instanceof Error ? err.message : `创建${label}失败`)
+      setError(err instanceof Error ? err.message : translateUi("workflow.couldNotCreate_05a33d", { v1: String(label) }))
     } finally {
       setAssetCreateBusy(false)
     }
@@ -1294,9 +1294,9 @@ function EpisodeEditInner() {
       const created = await importGlobalAssetToProject(pid, source)
       adoptCreatedAsset(created, kind)
       setLibraryPickerOpen(false)
-      setStatus(`已导入「${created.name}」并插入当前分镜`)
+      setStatus(translateUi("workflow.importedAndReferencedItInThisStoryboardShot", { v1: String(created.name) }))
     } catch (err) {
-      setError(err instanceof Error ? err.message : '导入资产失败')
+      setError(err instanceof Error ? err.message : translateUi("workflow.couldNotImportTheAsset"))
       throw err
     } finally {
       setAssetCreateBusy(false)
@@ -1317,8 +1317,8 @@ function EpisodeEditInner() {
     const name = assets.find((a) => a.id === assetId)?.name
     setStatus(
       name
-        ? `已取消本镜对「${name}」的关联，资产仍在项目中（可切到「全集」查看）`
-        : '已取消本镜关联，资产仍在项目中（可切到「全集」查看）',
+        ? translateUi("workflow.unlinkedFromThisShotItRemainsInTheProject", { v1: String(name) })
+        : translateUi("workflow.unlinkedFromThisShotTheAssetRemainsInThe"),
     )
   }
 
@@ -1357,13 +1357,13 @@ function EpisodeEditInner() {
     )
     let queueLabel: string | null = null
     if (job) {
-      if (job.status === 'running') queueLabel = '生成中…'
+      if (job.status === 'running') queueLabel = translateUi("workflow.generating")
       else {
         const queuedOnly = imageGenQueue.filter(
           (j) => j.status === 'queued' || j.status === 'running',
         )
         const pos = queuedOnly.findIndex((j) => j.id === job.id) + 1
-        queueLabel = pos > 1 ? `排队 #${pos}` : '排队中…'
+        queueLabel = pos > 1 ? translateUi("workflow.queued_381f95", { v1: pos }) : translateUi("workflow.queued_f62e20")
       }
     }
     return dramaAssetImageGenButtonLabel(asset, queueLabel)
@@ -1386,7 +1386,7 @@ function EpisodeEditInner() {
       onAssetUpdate: handleCharacterUpdated,
     })
       .then((updated) => handleCharacterUpdated(updated))
-      .catch((err) => setError(err instanceof Error ? err.message : '生图失败'))
+      .catch((err) => setError(err instanceof Error ? err.message : translateUi("workflow.imageGenerationFailed")))
   }
 
   // 打开分镜失败原因（优先队列任务，否则用分镜 params.generation.error）
@@ -1396,7 +1396,7 @@ function EpisodeEditInner() {
       (j) => j.id === videoJobId(frag.id!) || (j.kind === 'video' && j.targetId === frag.id),
     )
     const gen = readFragmentGenerationStatus(frag)
-    const title = `${episode?.name || '本集'} · ${formatFragLabel(index, frag.duration_sec)}`
+    const title = `${episode?.name || translateUi("workflow.thisEpisode")} · ${formatFragLabel(index, frag.duration_sec)}`
     setFailReasonJob({
       id: fromQueue?.id || videoJobId(frag.id),
       kind: 'video',
@@ -1405,9 +1405,9 @@ function EpisodeEditInner() {
       episodeId: eid || undefined,
       taskId: fromQueue?.taskId,
       title: fromQueue?.title || title,
-      subtype: '分镜视频',
+      subtype: translateUi("workflow.storyboardVideo"),
       status: 'failed',
-      error: fromQueue?.error || gen.error || '生成失败',
+      error: fromQueue?.error || gen.error || translateUi("ecomSet.result.failed"),
       createdAt: fromQueue?.createdAt || Date.now(),
     })
   }
@@ -1422,7 +1422,7 @@ function EpisodeEditInner() {
       handleCharacterUpdated(character)
       setAssets((prev) => (prev.some((a) => a.id === voice.id) ? prev : [...prev, voice]))
     } catch (err) {
-      setError(err instanceof Error ? err.message : '音色生成失败')
+      setError(err instanceof Error ? err.message : translateUi("workflow.voiceGenerationFailed"))
     } finally {
       setCharacterVoiceBusyIds((prev) => {
         const next = new Set(prev)
@@ -1435,7 +1435,7 @@ function EpisodeEditInner() {
   if (!episode) {
     return (
       <div className="drama-ep-fullscreen drama-ep-center">
-        {error || '加载中…'}
+        {error || translateUi("ecomSet.loading")}
       </div>
     )
   }
@@ -1455,7 +1455,7 @@ function EpisodeEditInner() {
     <div className="drama-ep-fullscreen">
       <header className="drama-ep-header">
         <div className="drama-ep-header-left">
-          <button type="button" className="drama-ep-icon-btn" aria-label="返回" onClick={handleBack}>
+          <button type="button" className="drama-ep-icon-btn" aria-label={translateUi("workflow.back_11d024")} onClick={handleBack}>
             ‹
           </button>
           <h1>{episode.name}</h1>
@@ -1485,29 +1485,29 @@ function EpisodeEditInner() {
             disabled={planFragmentsLocked}
             onClick={() => void planFragmentsWithLlm()}
           >
-            {busy && (status.includes('分镜') || status.includes('等待生成'))
-              ? '等待生成…'
-              : 'AI 重新分镜'}
+            {busy && (status.includes(translateUi("workflow.storyboard")) || status.includes(translateUi("workflow.waitingForGeneration_436346")))
+              ? translateUi("workflow.waitingForGeneration")
+              : translateUi("workflow.replanStoryboardsWithAi")}
           </button>
           {/* MiniMax-H3 支持一次入队本集剩余分镜；其它视频模型仍只走单镜生成 */}
           {isMinimaxH3Model(modelId) ? (
             <>
             <label><input type="checkbox" checked={includeUpdatedImages} disabled={busy}
-              onChange={(event) => setIncludeUpdatedImages(event.target.checked)} />含形象更新镜头</label>
+              onChange={(event) => setIncludeUpdatedImages(event.target.checked)} />{translateUi("workflow.includeShotsWithUpdatedImages")}</label>
             <button
               type="button"
               className="drama-ep-btn-dark drama-ep-header-gen-all"
               disabled={generateAllLocked || fragments.length === 0}
               onClick={() => void generateAll()}
             >
-              {busy ? '入队中…' : '批量生成'}
+              {busy ? translateUi("workflow.queuing") : translateUi("ecomSet.steps.2")}
             </button>
             </>
           ) : null}
         </div>
       </header>
 
-      <p role="status">{saveState.conflict ? '保存冲突，本地稿已保留，请刷新后核对' : saveState.saving ? '保存中…' : saveState.dirty ? '有未保存的修改' : '已保存'}</p>
+      <p role="status">{saveState.conflict ? translateUi("workflow.saveConflictYourLocalDraftIsKeptRefreshAnd") : saveState.saving ? translateUi("workflow.saving") : saveState.dirty ? translateUi("ecomSet.plan.unsaved") : translateUi("ecomSet.plan.saved")}</p>
       {(status || error) && (
         <div className="drama-ep-banner">
           {error ? <BillingErrorNotice message={error} className="drama-ep-banner-error" inline /> : null}
@@ -1551,15 +1551,13 @@ function EpisodeEditInner() {
             <div>
               <strong>{formatFragLabel(selectedIndex, selectedDuration)}</strong>
               <p>
-                顶部显示本镜关联；键入 @ 可引用资产或插入时长标签 ·{' '}
-                {formatProjectOutputLabel(
+                {translateUi("workflow.referencesAppearAboveTypeToAddAnAssetOr", { v1: ' ', v2: formatProjectOutputLabel(
                   readEpisodeAspectRatio(episodeParams, projectParams),
                   readEpisodeResolution(episodeParams, projectParams),
-                )}
-              </p>
+                ) })}</p>
             </div>
             <label className="drama-ep-duration">
-              时长
+              {translateUi("workflow.duration")}
               <input
                 type="number"
                 min={4}
@@ -1600,7 +1598,7 @@ function EpisodeEditInner() {
                   asset_ids: Array.from(new Set([...keptExtra, ...fromContent])),
                 })
                 if (removed.length > 0) {
-                  setStatus('已取消本镜关联，资产仍保留在项目中（可切到「全集」查看）')
+                  setStatus(translateUi("workflow.unlinkedFromThisShotTheAssetRemainsInThe_bbd4b8"))
                 }
               }}
             />
@@ -1629,16 +1627,16 @@ function EpisodeEditInner() {
               }`}
             >
               {continuityBlockedReason
-                ? `已开启尾帧衔接：${continuityBlockedReason}`
+                ? translateUi("workflow.lastFrameContinuityEnabled", { v1: String(continuityBlockedReason) })
                 : continuityQueueHint
                   ? continuityQueueHint
                   : prevLastFrameUrl
-                    ? '将使用上一镜尾帧作为衔接参考（与角色参考图一并提交）'
-                    : '上一镜已成片：生成时将自动抽取尾帧作衔接参考'}
+                    ? translateUi("workflow.usesThePreviousShotSLastFrameAlongsideCharacter")
+                    : translateUi("workflow.thePreviousClipIsCompleteItsLastFrameWill")}
             </p>
           ) : !linkLastFrame ? (
             <p className="drama-ep-continuity-hint">
-              当前未开启尾帧衔接：分镜会独立并发生成，适合快速批量出片。
+              {translateUi("workflow.lastFrameContinuityIsOffStoryboardClipsGenerateIndependently")}
             </p>
           ) : null}
 
@@ -1650,7 +1648,7 @@ function EpisodeEditInner() {
                 disabled={busy}
                 onClick={() => void openReferenceAssets()}
               >
-                去一键补参考图
+                {translateUi("workflow.generateMissingReferenceImages")}
               </button>
             ) : null}
             {editing ? (
@@ -1661,7 +1659,7 @@ function EpisodeEditInner() {
                   disabled={busy}
                   onClick={() => { void save().then(() => { if (autosave.isActive()) setEditing(false) }).catch(() => undefined) }}
                 >
-                  结束编辑
+                  {translateUi("workflow.finishEditing")}
                 </button>
                 <button
                   type="button"
@@ -1669,7 +1667,7 @@ function EpisodeEditInner() {
                   disabled={busy}
                   onClick={() => void save().catch(() => undefined)}
                 >
-                  {busy ? '保存中…' : '保存'}
+                  {busy ? translateUi("workflow.saving") : translateUi("workflow.save")}
                 </button>
               </>
             ) : (
@@ -1680,7 +1678,7 @@ function EpisodeEditInner() {
                   disabled={!selected || selectedIsGenerating || busy}
                   onClick={() => setEditing(true)}
                 >
-                  编辑
+                  {translateUi("workflow.edit")}
                 </button>
                 <button
                   type="button"
@@ -1690,23 +1688,23 @@ function EpisodeEditInner() {
                     selectedGateBlocking[0]?.message ||
                     continuityBlockedReason ||
                     continuityQueueHint ||
-                    (selectedIsGenerating ? '当前分镜正在生成' : undefined)
+                    (selectedIsGenerating ? translateUi("workflow.thisStoryboardShotIsGenerating") : undefined)
                   }
                   onClick={() => void generateSelected()}
                 >
                   {selectedIsGenerating
-                    ? '生成中…'
+                    ? translateUi("workflow.generating")
                     : busy
-                      ? '处理中…'
+                      ? translateUi("workflow.processing_1cac8a")
                       : selectedGateBlocking.length > 0
-                        ? '先补参考图'
+                        ? translateUi("workflow.addReferenceImagesFirst")
                         : continuityQueueHint
-                          ? '排队生成'
+                          ? translateUi("workflow.queueGeneration")
                           : continuityBlockedReason
-                            ? '待上一镜'
+                            ? translateUi("workflow.waitingForPreviousShot")
                             : selectedHasVideo
-                              ? '重新生成'
-                              : '生成'}
+                              ? translateUi("ecomSet.result.regenerate")
+                              : translateUi("workflow.generate")}
                 </button>
               </>
             )}
@@ -1715,14 +1713,14 @@ function EpisodeEditInner() {
 
           {selectedVersions.length > 0 && selected?.id ? (
             <div className="drama-ep-versions">
-              <span className="drama-ep-versions-label">历史版本</span>
+              <span className="drama-ep-versions-label">{translateUi("workflow.versionHistory")}</span>
               <div className="drama-ep-versions-list">
                 {selectedHasVideo && selected.video ? (
                   <button
                     type="button"
                     className={`drama-ep-version is-active${!previewVersionId ? ' is-current' : ''}`}
                     disabled={busy || selectedIsGenerating}
-                    title="当前成片"
+                    title={translateUi("workflow.currentVideo")}
                     onClick={() => setPreviewVersionId(null)}
                   >
                     {selected.cover ? (
@@ -1730,7 +1728,7 @@ function EpisodeEditInner() {
                     ) : (
                       <video src={resolveDramaMediaUrl(selected.video)} muted />
                     )}
-                    <em>当前</em>
+                    <em>{translateUi("ecomSet.history.current")}</em>
                   </button>
                 ) : null}
                 {selectedVersions.map((ver, index) => {
@@ -1743,7 +1741,7 @@ function EpisodeEditInner() {
                       type="button"
                       className={`drama-ep-version${previewVersionId === ver.id ? ' is-previewing' : ''}`}
                       disabled={busy || selectedIsGenerating}
-                      title="点击预览；右侧可设为当前"
+                      title={translateUi("workflow.clickToPreviewUseTheRightPanelToMake")}
                       onClick={() => setPreviewVersionId(ver.id)}
                     >
                       {cover ? <img src={cover} alt="" /> : <video src={video} muted />}
@@ -1762,7 +1760,7 @@ function EpisodeEditInner() {
           onPlayingFragmentChange={handlePlayingFragmentChange}
           aspectRatio={aspectRatio}
           episodeId={episode?.id}
-          episodeName={episode?.name || '本集'}
+          episodeName={episode?.name || translateUi("workflow.thisEpisode")}
           subtitleMode={subtitleMode}
           onOpenStoryboard={openEpisodeStoryboard}
           previewVideoUrl={previewVideoUrl}
@@ -1794,7 +1792,7 @@ function EpisodeEditInner() {
           applyDisabled={busy || saveState.conflict}
           onApply={async (item, hit) => {
             const current = autosave.rows().find((row) => row.id === item.fragment_id)
-            if (!current) throw new Error('文案已变化，请重新检查后再替换')
+            if (!current) throw new Error(translateUi("workflow.theTextHasChangedRunTheCheckAgainBefore"))
             const content = applyComplianceSuggestion(current.content, item.text, hit)
             editFragments((rows) => rows.map((row) => row.clientKey === current.clientKey ? { ...row, content } : row))
             await save()
@@ -1811,7 +1809,7 @@ function EpisodeEditInner() {
           <button
             type="button"
             className="drama-ep-insert"
-            aria-label="在开头插入分镜"
+            aria-label={translateUi("workflow.insertStoryboardShotAtTheStart")}
             onClick={() => insertFrag(0)}
           >
             +
@@ -1895,8 +1893,8 @@ function EpisodeEditInner() {
                   <button
                     type="button"
                     className="drama-ep-clip-fail-btn"
-                    title="查看失败原因"
-                    aria-label={`查看片段 ${index + 1} 失败原因`}
+                    title={translateUi("workflow.viewFailureReason")}
+                    aria-label={translateUi("workflow.viewFailureReasonForClip", { v1: String(index + 1) })}
                     onClick={() => openFragmentFailReason(frag, index)}
                   >
                     <CircleAlert size={14} strokeWidth={2.25} aria-hidden />
@@ -1904,15 +1902,15 @@ function EpisodeEditInner() {
                 ) : null}
               </div>
               <div className="drama-ep-clip-ops">
-                <button type="button" aria-label="插入" onClick={() => insertFrag(index + 1)} disabled={busy}>
+                <button type="button" aria-label={translateUi("workflow.insert")} onClick={() => insertFrag(index + 1)} disabled={busy}>
                   +
                 </button>
-                <button type="button" aria-label="复制" onClick={() => duplicateFrag(index)} disabled={busy}>
+                <button type="button" aria-label={translateUi("workflow.duplicate")} onClick={() => duplicateFrag(index)} disabled={busy}>
                   ⧉
                 </button>
                 <button
                   type="button"
-                  aria-label="删除"
+                  aria-label={translateUi("workflow.delete")}
                   disabled={busy || fragments.length <= 1}
                   onClick={() => deleteFrag(index)}
                 >
@@ -1927,7 +1925,7 @@ function EpisodeEditInner() {
 
       <FragmentPlanSkillModal
         open={planModalOpen}
-        message="将调用大模型按本集剧本重新规划分镜（覆盖并清空现有分镜与已生成镜头），通常需要数十秒。可勾选本次使用的 Skill。字幕方式沿用顶栏当前设置。"
+        message={translateUi("workflow.aiWillReplanThisEpisodeSStoryboardReplacingExisting")}
         onCancel={() => setPlanModalOpen(false)}
         onConfirm={(skillIds) => void startPlanFragments(skillIds)}
       />
@@ -1970,8 +1968,8 @@ function EpisodeEditInner() {
             ? ['prop', 'material', 'none']
             : [resolveCreateAssetTab()]
         }
-        title={`导入${resolveCreateAssetTab() === 'scene' ? '场景' : resolveCreateAssetTab() === 'prop' ? '道具' : '角色'}`}
-        confirmLabel="导入到本集"
+        title={translateUi("workflow.import_309ff5", { v1: String(resolveCreateAssetTab() === 'scene' ? translateUi("workflow.scene") : resolveCreateAssetTab() === 'prop' ? translateUi("workflow.prop") : translateUi("workflow.character")) })}
+        confirmLabel={translateUi("workflow.importIntoThisEpisode")}
         onPick={handleImportSideAsset}
       />
 

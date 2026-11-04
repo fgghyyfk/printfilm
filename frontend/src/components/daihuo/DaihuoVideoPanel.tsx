@@ -18,7 +18,7 @@ function voiceKey(v: VoicePreset): string {
 
 /** 第⑤步：复用套图生成口播分镜，继续最近项目或明确新建另一条。 */
 export default function DaihuoVideoPanel({ set }: { set: EcomSet }) {
-  const { t } = useI18n()
+  const { t , t: translateUi } = useI18n()
   const nav = useNavigate()
 
   /* 视频设置：ratio 画幅；voices 音色列表；voiceId 选中音色；voicesError 音色加载失败 */
@@ -46,7 +46,7 @@ export default function DaihuoVideoPanel({ set }: { set: EcomSet }) {
     const timer = setTimeout(() => {
       quoteDaihuoProject(set.id, { output_ratio: ratio, voice_id: voiceId }, controller.signal)
         .then((next) => { if (!controller.signal.aborted) setQuote(next) })
-        .catch((err) => { if (!controller.signal.aborted) setQuoteError(err instanceof Error ? err.message : '估价失败') })
+        .catch((err) => { if (!controller.signal.aborted) setQuoteError(err instanceof Error ? err.message : translateUi("workflow.couldNotEstimateTheCost")) })
     }, 300)
     return () => { clearTimeout(timer); controller.abort() }
   }, [set.id, ratio, voiceId, projectId, createNew])
@@ -89,9 +89,9 @@ export default function DaihuoVideoPanel({ set }: { set: EcomSet }) {
       const payload = { output_ratio: ratio, voice_id: voiceId, create_new: createNew,
         request_id: createNew ? requestRef.current!.id : undefined }
       const estimate = quote?.output_ratio === ratio && quote.voice_id === voiceId ? quote : await quoteDaihuoProject(set.id, payload)
-      const confirmed = await dialog.confirm({ title: '生成带货口播分镜',
-        message: `复用 ${estimate.usable_images} 张底图，新增生图费用 ¥0。写稿预估 ¥${(estimate.script_fen / 100).toFixed(2)}；后续配音预估 ¥${(estimate.tts_fen / 100).toFixed(2)}。本次先生成口播分镜，后续按阶段继续并预扣，按实际服务商用量结算。`,
-        confirmText: '开始写稿',
+      const confirmed = await dialog.confirm({ title: translateUi("workflow.createProductNarrationStoryboards"),
+        message: translateUi("workflow.reuseBaseImagesWith0InNewImageCharges", { v1: String(estimate.usable_images), v2: String((estimate.script_fen / 100).toFixed(2)), v3: String((estimate.tts_fen / 100).toFixed(2)) }),
+        confirmText: translateUi("workflow.startWriting"),
       })
       if (!confirmed) return
       pid = (await createDaihuoProject(set.id, payload)).project_id
@@ -115,10 +115,10 @@ export default function DaihuoVideoPanel({ set }: { set: EcomSet }) {
         <div className="pf-ecom-section-head">
           <div>
             <h2>{t('daihuo.video.linkedTitle')}</h2>
-            <p className="pf-muted">最近创建的视频可继续制作；新建另一条会保留原视频和作品。</p>
+            <p className="pf-muted">{translateUi("workflow.continueYourLatestVideoOrCreateAnotherWhileKeeping")}</p>
           </div>
           <div className="pf-ecom-actions">
-            <Button variant="ghost" size="sm" disabled={busy} onClick={() => { stopPreview(); requestRef.current = null; setError(''); setCreateNew(true) }}>新建另一个视频</Button>
+            <Button variant="ghost" size="sm" disabled={busy} onClick={() => { stopPreview(); requestRef.current = null; setError(''); setCreateNew(true) }}>{translateUi("workflow.createAnotherVideo")}</Button>
             <Button variant="lime" size="sm" icon onClick={() => nav(`/studio/${projectId}`)}>
               {t('daihuo.video.view')}
               <ArrowRight size={14} aria-hidden />
@@ -134,7 +134,7 @@ export default function DaihuoVideoPanel({ set }: { set: EcomSet }) {
     <section className="pf-ecom-section pf-daihuo-panel">
       <div className="pf-ecom-section-head">
         <div>
-          <h2>{createNew ? '使用同一套图新建另一个视频' : t('daihuo.video.title')}</h2>
+          <h2>{createNew ? translateUi("workflow.createAnotherVideoFromThisImageSet") : t('daihuo.video.title')}</h2>
           <p className="pf-muted">{t('daihuo.video.hint')}</p>
         </div>
       </div>
@@ -183,19 +183,19 @@ export default function DaihuoVideoPanel({ set }: { set: EcomSet }) {
       <div className="pf-ecom-actions">
         <Button variant="ghost" size="sm" disabled={!voiceId || busy || previewBusy === voiceId}
           onClick={() => { setError(''); void previewVoice(voiceId, 'daihuo') }}>
-          {previewBusy === voiceId ? '试听生成中…' : playingId === voiceId ? '停止试听' : '试听当前音色'}
+          {previewBusy === voiceId ? translateUi("workflow.preparingPreview") : playingId === voiceId ? translateUi("workflow.stopPreview") : translateUi("workflow.previewSelectedVoice")}
         </Button>
-        {isFallback ? <span role="status">本次试听使用备用音色</span> : null}
+        {isFallback ? <span role="status">{translateUi("workflow.thisPreviewUsesABackupVoice")}</span> : null}
       </div>
-      <p className="pf-muted" role="status">{quote ? `复用 ${quote.usable_images} 张底图 ¥0；写稿预估 ¥${(quote.script_fen / 100).toFixed(2)}；后续配音预估 ¥${(quote.tts_fen / 100).toFixed(2)}` : quoteError || '正在估价…'}</p>
-      <p className="pf-muted">先生成口播分镜，后续按阶段继续。配音为预估，按实际服务商用量结算。</p>
+      <p className="pf-muted" role="status">{quote ? translateUi("workflow.reuseImages0ScriptEstimateLaterNarrationEstimate", { v1: String(quote.usable_images), v2: String((quote.script_fen / 100).toFixed(2)), v3: String((quote.tts_fen / 100).toFixed(2)) }) : quoteError || translateUi("workflow.estimatingCost")}</p>
+      <p className="pf-muted">{translateUi("workflow.startWithNarrationStoryboardsThenContinueByStageNarration")}</p>
       {error ? <BillingErrorNotice message={error} className="pf-tool-error" /> : null}
 
       <div className="pf-ecom-actions pf-daihuo-submit">
-        {createNew ? <Button variant="ghost" disabled={busy} onClick={() => { stopPreview(); setCreateNew(false) }}>返回已有视频</Button> : null}
+        {createNew ? <Button variant="ghost" disabled={busy} onClick={() => { stopPreview(); setCreateNew(false) }}>{translateUi("workflow.backToExistingVideo")}</Button> : null}
         <Button variant="lime" icon disabled={busy || voices == null || !quote} onClick={onCreate}>
           {busy ? <Loader2 size={16} className="pf-tool-spin" aria-hidden /> : <Clapperboard size={16} aria-hidden />}
-          {busy ? t('daihuo.video.creating') : '生成口播分镜'}
+          {busy ? t('daihuo.video.creating') : translateUi("workflow.createNarrationStoryboards")}
         </Button>
       </div>
     </section>

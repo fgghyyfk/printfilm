@@ -1,3 +1,4 @@
+import { translate as translateUi } from '../i18n/runtime'
 /** 资产形象历史版本读写 */
 import { resolveDramaMediaUrl, type DramaAsset } from '../api/drama'
 
@@ -39,9 +40,9 @@ export function resolveAssetImageVersionUrl(version: AssetImageVersion): string 
 
 export function formatAssetImageVersionLabel(version: AssetImageVersion): string {
   const src = (version.source || '').toLowerCase()
-  if (src === 'upload') return '上传'
-  if (src === 'replaced') return '被替换'
-  if (src === 'generate') return '生成'
-  if (src === 'restored') return '还原'
-  return '历史'
+  if (src === 'upload') return translateUi("workflow.upload")
+  if (src === 'replaced') return translateUi("workflow.replaced")
+  if (src === 'generate') return translateUi("workflow.generate")
+  if (src === 'restored') return translateUi("workflow.restore")
+  return translateUi("workflow.history")
 }

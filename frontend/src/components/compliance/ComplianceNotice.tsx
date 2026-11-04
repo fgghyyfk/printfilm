@@ -36,7 +36,7 @@ export default function ComplianceNotice<T extends { hits: ComplianceHit[] }>({
   undoDisabled,
   onUndoReplacement,
 }: Props<T>) {
-  const { t } = useI18n()
+  const { t , t: translateUi } = useI18n()
   /*
    * report 最近一次成功的扫描结果
    * open 是否展开明细
@@ -74,7 +74,7 @@ export default function ComplianceNotice<T extends { hits: ComplianceHit[] }>({
     setApplying(true)
     setApplyError('')
     try { await onApply(item, hit); await runCheck() }
-    catch (err) { setApplyError(err instanceof Error ? err.message : '替换失败，请重新检查') }
+    catch (err) { setApplyError(err instanceof Error ? err.message : translateUi("workflow.replacementFailedScanAgain")) }
     finally { setApplying(false) }
   }
 
@@ -146,9 +146,8 @@ export default function ComplianceNotice<T extends { hits: ComplianceHit[] }>({
                       >
                         {hit.word}
                         <small>{hit.category}</small>
-                        {hit.suggestion != null ? <span className="pf-compliance-suggestion">建议{hit.suggestion ? `改为「${hit.suggestion}」` : '删除该用语'}
-                          {onApply ? <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm" disabled={applyDisabled || applying || loading}
-                            onClick={() => void apply(item, hit)}>替换这一处</button> : null}
+                        {hit.suggestion != null ? <span className="pf-compliance-suggestion">{translateUi("workflow.suggestion", { v1: hit.suggestion ? translateUi("workflow.replaceWith", { v1: String(hit.suggestion) }) : translateUi("workflow.removeThisWording") })}{onApply ? <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm" disabled={applyDisabled || applying || loading}
+                            onClick={() => void apply(item, hit)}>{translateUi("workflow.replaceThisOccurrence")}</button> : null}
                         </span> : null}
                       </span>
                     ))}

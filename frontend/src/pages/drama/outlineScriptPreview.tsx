@@ -1,3 +1,5 @@
+import { useI18n } from '../../i18n'
+import { translate as translateUi } from '../../i18n/runtime'
 /** 大纲页：剧本按场次解析展示 / 分段编辑 / 弹窗预览 */
 import { useEffect, useMemo, useState } from 'react'
 import { Pencil } from 'lucide-react'
@@ -205,12 +207,12 @@ function formatClockDuration(sec: number): string {
   if (sec < 60) return `${sec}s`
   const m = Math.floor(sec / 60)
   const s = sec % 60
-  return s ? `${m}分${s}秒` : `${m}分钟`
+  return s ? translateUi("workflow.mS", { v1: m, v2: s }) : translateUi("workflow.min", { v1: m })
 }
 
 function formatEstimateDuration(sec: number): string {
-  if (sec <= 0) return '约 —'
-  return `约 ${formatClockDuration(sec)}`
+  if (sec <= 0) return translateUi("workflow.approx")
+  return translateUi("workflow.approx_7b62d2", { v1: formatClockDuration(sec) })
 }
 
 // 渲染解析后的剧本行
@@ -261,14 +263,15 @@ function ScriptLines({ text }: { text: string }) {
 
 /** 场次信息条：对白 / 动作 / 内外景 / 出场 */
 function SceneStatsBar({ stats }: { stats: OutlineSceneStats }) {
+  const { t: translateUi } = useI18n()
   const items: string[] = []
-  if (stats.dialogueCount > 0) items.push(`${stats.dialogueCount} 句对白`)
-  if (stats.actionCount > 0) items.push(`${stats.actionCount} 段动作`)
+  if (stats.dialogueCount > 0) items.push(translateUi("workflow.dialogueLineCount", { v1: String(stats.dialogueCount) }))
+  if (stats.actionCount > 0) items.push(translateUi("workflow.actionBlockCount", { v1: String(stats.actionCount) }))
   if (stats.location) items.push(stats.location)
   if (stats.cast.length) items.push(stats.cast.slice(0, 6).join('、'))
   if (!items.length) return null
   return (
-    <div className="drama-outline-scene-stats" aria-label="本场解析信息">
+    <div className="drama-outline-scene-stats" aria-label={translateUi("workflow.parsedSceneDetails")}>
       {items.map((item) => (
         <span key={item} className="drama-outline-scene-stat">
           {item}
@@ -298,6 +301,7 @@ export function OutlineScriptPreview({
   onSaveScenes,
   onEditingChange,
 }: OutlineScriptPreviewProps) {
+  const { t: translateUi } = useI18n()
   const blocks = useMemo(() => parseOutlineSceneBlocks(text), [text])
   const blockStats = useMemo(
     () => blocks.map((b) => summarizeOutlineScene(b.body)),
@@ -346,20 +350,19 @@ export function OutlineScriptPreview({
   const summaryBar =
     blocks.length > 0 ? (
       <div className="drama-outline-script-summary">
-        <span>{blocks[0].label === '全文' ? '1 段' : `${blocks.length} 场`}</span>
+        <span>{blocks[0].label === '全文' ? translateUi("workflow.text1Segment") : translateUi("workflow.scenes", { v1: String(blocks.length) })}</span>
         {hasShotDuration ? (
           <span>
-            {shotStats!.fragmentCount} 镜 · 合计 {formatClockDuration(displayTotalSec)}
-          </span>
+            {translateUi("workflow.shotsTotal", { v1: shotStats!.fragmentCount, v2: formatClockDuration(displayTotalSec) })}</span>
         ) : displayTotalSec > 0 ? (
-          <span>合计 {formatClockDuration(displayTotalSec)}</span>
+          <span>{translateUi("workflow.total_513f27", { v1: formatClockDuration(displayTotalSec) })}</span>
         ) : null}
         <span className="drama-outline-script-summary-hint">
           {hasShotDuration
-            ? '时长取自已切分镜头'
+            ? translateUi("workflow.durationComesFromTheExistingStoryboardShots")
             : shotStats?.scriptChanged
-              ? '时长为当前剧本估算；已有分镜仍为旧稿'
-              : '时长为解析估算，进分镜后以镜头为准'}
+              ? translateUi("workflow.estimatedFromTheCurrentScriptExistingStoryboardsStillUse")
+              : translateUi("workflow.estimatedFromTheScriptStoryboardShotDurationsTakePrecedence")}
         </span>
       </div>
     ) : null
@@ -377,7 +380,7 @@ export function OutlineScriptPreview({
               onClick={() => startEdit(0)}
             >
               <Pencil size={13} />
-              编辑本段
+              {translateUi("workflow.editSegment")}
             </button>
           ) : null}
         </div>
@@ -420,7 +423,7 @@ export function OutlineScriptPreview({
                 onClick={() => startEdit(i)}
               >
                 <Pencil size={13} />
-                编辑本场
+                {translateUi("workflow.editScene")}
               </button>
             ) : null}
           </header>
@@ -457,6 +460,7 @@ function SceneEditBox({
   onCancel: () => void
   onSave: () => void
 }) {
+  const { t: translateUi } = useI18n()
   return (
     <div className="drama-outline-scene-edit-box">
       <textarea
@@ -468,10 +472,10 @@ function SceneEditBox({
       />
       <div className="drama-ep-section-edit-actions">
         <button type="button" className="drama-btn-ghost" disabled={saving} onClick={onCancel}>
-          取消
+          {translateUi("ecomSet.copyModal.cancel")}
         </button>
         <button type="button" className="drama-btn-primary" disabled={saving} onClick={onSave}>
-          {saving ? '保存中…' : '保存本段'}
+          {saving ? translateUi("workflow.saving") : translateUi("workflow.saveSegment")}
         </button>
       </div>
     </div>
@@ -490,10 +494,11 @@ export function OutlineScriptParseModal({
   title: string
   text: string
 }) {
+  const { t: translateUi } = useI18n()
   return (
     <Modal open={open} onClose={onClose} title={title} size="xl" className="drama-outline-script-modal">
       <div className="drama-outline-script-modal-body">
-        <OutlineScriptPreview text={text} empty="暂无剧本内容" />
+        <OutlineScriptPreview text={text} empty={translateUi("workflow.noScriptYet")} />
       </div>
     </Modal>
   )

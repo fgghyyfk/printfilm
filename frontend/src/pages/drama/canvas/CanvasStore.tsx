@@ -1,3 +1,4 @@
+import { useI18n } from '../../../i18n'
 /** 画布状态上下文：节点/边、历史、UI 开关与增删操作 */
 import {
   useCallback,
@@ -140,6 +141,7 @@ type CanvasStoreProviderProps = {
 
 /** 提供画布受控状态与历史操作 */
 export function CanvasStoreProvider({ projectId, children }: CanvasStoreProviderProps) {
+  const { t: translateUi } = useI18n()
   const [nodes, setNodes] = useState<Node<CanvasAssetNodeData>[]>([])
   const [edges, setEdges] = useState<Edge[]>([])
   const [history, setHistory] = useState<CanvasHistoryState>(createEmptyCanvasHistory)
@@ -233,7 +235,7 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
       })
       .catch((err) => {
         if (cancelled) return
-        setErrorMessage(err instanceof Error ? err.message : '加载画布失败')
+        setErrorMessage(err instanceof Error ? err.message : translateUi("workflow.couldNotLoadTheCanvas"))
         readyRef.current = true
       })
       .finally(() => {
@@ -307,9 +309,9 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
     const targetProject = projectId
     try {
       const confirmed = await dialog.confirm({
-        title: '从画布移除',
-        message: `将移除 ${removedNodes.length} 个节点、${removedEdges.length} 条连线。资产库、分镜引用和生成任务保留，可撤销恢复。`,
-        confirmText: '移除', tone: 'danger',
+        title: translateUi("workflow.removeFromCanvas"),
+        message: translateUi("workflow.removeNodesAndConnectionsAssetsStoryboardReferencesAndGeneration", { v1: String(removedNodes.length), v2: String(removedEdges.length) }),
+        confirmText: translateUi("workflow.remove"), tone: 'danger',
       })
       if (!confirmed || currentProjectRef.current !== targetProject) return false
       const nodeIds = new Set(removedNodes.map((node) => node.id))
@@ -380,7 +382,7 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
       const pair = pickAudioCharacterPair(source, target)
       if (pair) {
         void bindVoiceFromEdgeRef.current(pair.audio.id, pair.character.id).catch((err) => {
-          setErrorMessage(err instanceof Error ? err.message : '音色绑定失败')
+          setErrorMessage(err instanceof Error ? err.message : translateUi("workflow.couldNotAssignTheVoice_de21ff"))
         })
       }
     },
@@ -420,13 +422,13 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
               params: { on_canvas: true },
             })
             if (usedIds.has(retry.id)) {
-              setErrorMessage('创建节点失败：资产已存在于画布')
+              setErrorMessage(translateUi("workflow.cannotCreateANodeThisAssetIsAlreadyOn"))
               return
             }
             assetId = retry.id
           }
         } catch (err) {
-          setErrorMessage(err instanceof Error ? err.message : '创建资产失败')
+          setErrorMessage(err instanceof Error ? err.message : translateUi("workflow.couldNotCreateTheAsset"))
           return
         }
 
@@ -484,7 +486,7 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
   const ensureNodeAsset = useCallback(
     async (nodeId: string) => {
       const node = nodesRef.current.find((n) => n.id === nodeId)
-      if (!node) throw new Error('节点不存在')
+      if (!node) throw new Error(translateUi("workflow.nodeNotFound"))
       if (typeof node.data.assetId === 'number' && node.data.assetId > 0) {
         return node.data.assetId
       }
@@ -535,7 +537,7 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
           .filter((n): n is Node<CanvasAssetNodeData> => Boolean(n && n.data.kind === 'character'))
         for (const character of linkedCharacters) {
           void bindVoiceFromEdgeRef.current(nodeId, character.id).catch((err) => {
-            setErrorMessage(err instanceof Error ? err.message : '音色绑定失败')
+            setErrorMessage(err instanceof Error ? err.message : translateUi("workflow.couldNotAssignTheVoice_de21ff"))
           })
         }
       }
@@ -548,10 +550,10 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
     async (nodeId: string, source: DramaAsset) => {
       pushSnapshot()
       const node = nodesRef.current.find((n) => n.id === nodeId)
-      if (!node) throw new Error('节点不存在')
+      if (!node) throw new Error(translateUi("workflow.nodeNotFound"))
       const isAudioNode = node.data.kind === 'audio'
       if (!source.url && !source.cover) {
-        throw new Error(isAudioNode ? '所选资产没有可用音频' : '所选资产没有可用图片')
+        throw new Error(isAudioNode ? translateUi("workflow.theSelectedAssetHasNoUsableAudio") : translateUi("workflow.theSelectedAssetHasNoUsableImage"))
       }
       const assetId = await ensureNodeAsset(nodeId)
       const promptHint = isAudioNode ? '' : readEditableVisualPrompt(source)
@@ -627,7 +629,7 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
           .filter((n): n is Node<CanvasAssetNodeData> => Boolean(n && n.data.kind === 'character'))
         for (const character of linkedCharacters) {
           void bindVoiceFromEdgeRef.current(nodeId, character.id).catch((err) => {
-            setErrorMessage(err instanceof Error ? err.message : '音色绑定失败')
+            setErrorMessage(err instanceof Error ? err.message : translateUi("workflow.couldNotAssignTheVoice_de21ff"))
           })
         }
       }
@@ -671,7 +673,7 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
       if (!audioNode || !characterNode) return
       const audioUrl = String(audioNode.data.mediaUrl || '').trim()
       if (!audioUrl) {
-        setErrorMessage('请先给音频节点上传或选用音频，再连到角色')
+        setErrorMessage(translateUi("workflow.uploadOrSelectAudioForTheAudioNodeBefore"))
         return
       }
 
@@ -680,8 +682,8 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
       const list = await dramaApi.listAssets(projectId)
       let character = list.find((a) => a.id === characterAssetId)
       let audio = list.find((a) => a.id === audioAssetId)
-      if (!character) throw new Error('角色资产不存在')
-      if (!audio) throw new Error('音频资产不存在')
+      if (!character) throw new Error(translateUi("workflow.characterAssetNotFound"))
+      if (!audio) throw new Error(translateUi("workflow.audioAssetNotFound"))
 
       if (!(audio.url || '').trim()) {
         audio = await dramaApi.updateAsset(audioAssetId, {
@@ -705,11 +707,11 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
   const generateNodeImage = useCallback(
     async (nodeId: string, prompt: string, options?: Partial<ImageGenerationOptions>) => {
       const trimmed = prompt.trim()
-      if (!trimmed) throw new Error('请输入提示词')
+      if (!trimmed) throw new Error(translateUi("workflow.enterAPrompt"))
       pushSnapshot()
       const node = nodesRef.current.find((n) => n.id === nodeId)
-      if (!node) throw new Error('节点不存在')
-      if (node.data.kind === 'video') throw new Error('视频节点请使用视频生成')
+      if (!node) throw new Error(translateUi("workflow.nodeNotFound"))
+      if (node.data.kind === 'video') throw new Error(translateUi("workflow.useVideoGenerationForVideoNodes"))
 
       setNodes((current) =>
         current.map((n) =>
@@ -783,7 +785,7 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
           },
         })
         const mediaUrl = latest.url || latest.cover || ''
-        if (!mediaUrl) throw new Error('生图超时，请重试')
+        if (!mediaUrl) throw new Error(translateUi("workflow.imageGenerationTimedOutPleaseTryAgain"))
         setNodes((current) =>
           current.map((n) =>
             n.id === nodeId
@@ -838,10 +840,10 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
   const generateNodeVideo = useCallback(
     async (nodeId: string, prompt: string, options?: Partial<VideoGenerationOptions>) => {
       const trimmed = prompt.trim()
-      if (!trimmed) throw new Error('请输入提示词')
+      if (!trimmed) throw new Error(translateUi("workflow.enterAPrompt"))
       pushSnapshot()
       const node = nodesRef.current.find((n) => n.id === nodeId)
-      if (!node) throw new Error('节点不存在')
+      if (!node) throw new Error(translateUi("workflow.nodeNotFound"))
 
       setNodes((current) =>
         current.map((n) =>
@@ -876,7 +878,7 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
           referenceAssetIds: collectConnectedAssetIds(nodeId),
         })
         const mediaUrl = resolveDramaMediaUrl(latest.url || latest.cover || '')
-        if (!mediaUrl) throw new Error('生视频超时，请重试')
+        if (!mediaUrl) throw new Error(translateUi("workflow.videoGenerationTimedOutPleaseTryAgain"))
         setNodes((current) =>
           current.map((n) =>
             n.id === nodeId

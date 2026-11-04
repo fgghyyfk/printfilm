@@ -1,3 +1,4 @@
+import { useI18n } from '../../i18n'
 /** 分集 / 项目画幅与清晰度设置（写入 episode.params 或 project.params） */
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
@@ -46,6 +47,7 @@ export function DramaProjectOutputSettings({
   videoModelId = '',
   onChange,
 }: Props) {
+  const { t: translateUi } = useI18n()
   const rootRef = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(false)
   const [panelStyle, setPanelStyle] = useState<CSSProperties | null>(null)
@@ -76,12 +78,12 @@ export function DramaProjectOutputSettings({
     videoModels,
   ) as DramaResolution
   const outputLabel = formatProjectOutputLabel(clampedAspect, clampedResolution)
-  const scopeHint = scope === 'episode' ? '本集' : '项目统一'
-  const panelTitle = scope === 'episode' ? '分集画幅' : '项目画幅'
+  const scopeHint = scope === 'episode' ? translateUi("workflow.thisEpisode") : translateUi("workflow.projectDefault")
+  const panelTitle = scope === 'episode' ? translateUi("workflow.episodeAspectRatio") : translateUi("workflow.projectAspectRatio")
   const panelNote =
     scope === 'episode'
-      ? '仅本集分镜使用；未单独设置时继承项目默认。比例与清晰度随当前视频模型过滤，可点选修改。'
-      : '全部分集共用同一规格；比例与清晰度随当前视频模型过滤。'
+      ? translateUi("workflow.appliesToThisEpisodeSStoryboardOnlyUnsetValues")
+      : translateUi("workflow.allEpisodesShareTheseSettingsAvailableAspectRatiosAnd")
 
   /* 仅在目录已匹配到模型白名单时静默钳制回写，避免 catalog/modelId 未就绪时把 1080p 写成 720p */
   useEffect(() => {
@@ -172,8 +174,8 @@ export function DramaProjectOutputSettings({
         disabled={disabled || saving}
         title={
           scope === 'episode'
-            ? '本集画幅与清晰度；各镜生成后可直接拼接'
-            : '全项目统一画幅与清晰度，各分镜生成后可直接拼接'
+            ? translateUi("workflow.episodeAspectRatioAndResolutionGeneratedClipsCanBe")
+            : translateUi("workflow.useOneAspectRatioAndResolutionAcrossTheProject")
         }
         onClick={() => setOpen((c) => !c)}
       >
@@ -189,7 +191,7 @@ export function DramaProjectOutputSettings({
               className="fc-gen-opt-panel drama-ep-opt-panel fc-gen-opt-panel--portal"
               style={panelStyle}
               role="dialog"
-              aria-label={scope === 'episode' ? '分集画幅与清晰度' : '项目画幅与清晰度'}
+              aria-label={scope === 'episode' ? translateUi("workflow.episodeAspectRatioAndResolution") : translateUi("workflow.projectAspectRatioAndResolution")}
             >
               <div className="fc-gen-opt-panel-title">{panelTitle}</div>
               <p className="drama-project-output-note">{panelNote}</p>
@@ -208,7 +210,7 @@ export function DramaProjectOutputSettings({
                 ))}
               </div>
               <div className="fc-gen-opt-panel-title" style={{ marginTop: 12 }}>
-                清晰度
+                {translateUi("workflow.resolution")}
               </div>
               <div className="fc-gen-chip-row">
                 {resolutionOptions.map((r) => (

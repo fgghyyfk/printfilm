@@ -1,3 +1,4 @@
+import { translate as translateUi } from '../../../i18n/runtime'
 /** 分集分镜 → 共享资产节点连线到各分镜视频节点 */
 import type { Edge, Node } from '@xyflow/react'
 import {
@@ -159,9 +160,9 @@ export function buildEpisodeFragmentFlow(
         assetId,
         linkedFragments: fragmentIds.map((fragmentId) => ({
           fragmentId,
-          label: fragLabels.get(fragmentId) || `镜 ${fragmentId}`,
+          label: fragLabels.get(fragmentId) || translateUi("workflow.shot_3014cb", { v1: String(fragmentId) }),
         })),
-        name: asset?.name || `资产 ${assetId}`,
+        name: asset?.name || translateUi("workflow.assetNumber", { v1: String(assetId) }),
         typeLabel: tab || asset?.type || '资产',
         previewUrl: resolveDramaMediaUrl(asset?.cover || asset?.url) || '',
       },

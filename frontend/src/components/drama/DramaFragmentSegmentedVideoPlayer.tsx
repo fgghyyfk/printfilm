@@ -1,3 +1,4 @@
+import { useI18n } from '../../i18n'
 /** 分集编辑：带分镜分段进度条的视频播放器（客户端顺序连播） */
 import { Download, Maximize, Minimize, MonitorPlay, Pause, Play, Volume2, VolumeX } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -33,6 +34,7 @@ export function DramaFragmentSegmentedVideoPlayer({
   overrideVideoUrl = null,
   overridePosterUrl = null,
 }: Props) {
+  const { t: translateUi } = useI18n()
   // videoRef 视频元素引用
   const videoRef = useRef<HTMLVideoElement | null>(null)
   // screenRef 预览画面容器（全屏目标）
@@ -401,7 +403,7 @@ export function DramaFragmentSegmentedVideoPlayer({
             <div className="drama-ep-video-overlay-actions">
               <button
                 type="button"
-                aria-label={isFullscreen ? '退出全屏' : '全屏预览'}
+                aria-label={isFullscreen ? translateUi("workflow.exitFullscreen") : translateUi("workflow.fullscreenPreview")}
                 className="drama-ep-video-overlay-btn"
                 onClick={() => void handleToggleFullscreen()}
               >
@@ -413,7 +415,7 @@ export function DramaFragmentSegmentedVideoPlayer({
               </button>
               <button
                 type="button"
-                aria-label="下载视频"
+                aria-label={translateUi("workflow.downloadVideo")}
                 className="drama-ep-video-overlay-btn"
                 onClick={handleDownloadVideo}
               >
@@ -422,10 +424,10 @@ export function DramaFragmentSegmentedVideoPlayer({
             </div>
           </>
         ) : posterUrl ? (
-          <img src={posterUrl} alt="分镜预览" />
+          <img src={posterUrl} alt={translateUi("workflow.storyboardPreview")} />
         ) : (
           <div className="drama-ep-player-placeholder">
-            <span>视频待生成</span>
+            <span>{translateUi("workflow.videoNotGeneratedYet")}</span>
           </div>
         )}
       </div>
@@ -438,7 +440,7 @@ export function DramaFragmentSegmentedVideoPlayer({
         <div className="drama-ep-video-toolbar">
           <button
             type="button"
-            aria-label={isPlaying ? '暂停' : '播放'}
+            aria-label={isPlaying ? translateUi("workflow.pause") : translateUi("workflow.play")}
             disabled={!hasCurrentVideo}
             className="drama-ep-video-icon-btn"
             onClick={handleTogglePlay}
@@ -497,9 +499,9 @@ export function DramaFragmentSegmentedVideoPlayer({
 
           <button
             type="button"
-            aria-label={autoLinkNext ? '关闭自动衔接下一片段' : '开启自动衔接下一片段'}
+            aria-label={autoLinkNext ? translateUi("workflow.turnOffAutomaticNextClip") : translateUi("workflow.turnOnAutomaticNextClip")}
             title={
-              autoLinkNext ? '关闭自动衔接下一片段' : '当前片段播放完后自动播放下一片段'
+              autoLinkNext ? translateUi("workflow.turnOffAutomaticNextClip") : translateUi("workflow.playTheNextClipAutomaticallyAfterThisOne")
             }
             disabled={!hasAnyVideo}
             className={`drama-ep-video-autolink${autoLinkNext ? ' is-on' : ''}`}
@@ -511,7 +513,7 @@ export function DramaFragmentSegmentedVideoPlayer({
 
           <button
             type="button"
-            aria-label={muted ? '取消静音' : '静音'}
+            aria-label={muted ? translateUi("workflow.unmute") : translateUi("workflow.mute")}
             disabled={!hasCurrentVideo}
             className="drama-ep-video-icon-btn is-muted"
             onClick={() => setMuted((value) => !value)}
@@ -525,8 +527,8 @@ export function DramaFragmentSegmentedVideoPlayer({
 
           <button
             type="button"
-            aria-label={isFullscreen ? '退出全屏' : '全屏预览'}
-            title={isFullscreen ? '退出全屏' : '全屏预览'}
+            aria-label={isFullscreen ? translateUi("workflow.exitFullscreen") : translateUi("workflow.fullscreenPreview")}
+            title={isFullscreen ? translateUi("workflow.exitFullscreen") : translateUi("workflow.fullscreenPreview")}
             disabled={!hasCurrentVideo}
             className="drama-ep-video-icon-btn"
             onClick={() => void handleToggleFullscreen()}

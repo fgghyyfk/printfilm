@@ -1,3 +1,4 @@
+import { translate as translateUi } from '../i18n/runtime'
 import type { Project } from '../api'
 import { isProjectBusy } from './kepuTaskControls.ts'
 
@@ -123,7 +124,7 @@ export function monitorKepuProgress(options: {
     } catch {
       if (visible() && generation === current && (!query.signal.aborted || timedOut)) {
         failures += 1
-        options.onConnectionError?.('连接中断，重试中')
+        options.onConnectionError?.(translateUi("workflow.connectionLostRetrying"))
       }
     } finally {
       clearTimeout(timeout)
@@ -148,7 +149,7 @@ export function monitorKepuProgress(options: {
     try {
       const response = await options.connect(signal)
       if (!visible() || generation !== current) { await response.body?.cancel(); return }
-      if (!response.body) throw new Error('进度连接没有响应流')
+      if (!response.body) throw new Error(translateUi("workflow.theProgressConnectionReturnedNoStream"))
       healthy = true
       reconnectFailures = 0
       schedulePoll()

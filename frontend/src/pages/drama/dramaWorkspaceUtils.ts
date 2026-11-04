@@ -1,3 +1,4 @@
+import { translate as translateUi } from '../../i18n/runtime'
 /** Shared helpers for drama project workspace steps. */
 import type { DramaEpisodeBody, DramaProject, DramaScript } from '../../api/drama'
 
@@ -87,7 +88,7 @@ export function buildOutlineDirectory(
     const ep = byNumber.get(episodeNumber)
     return {
       episodeNumber,
-      title: ep?.title || `第 ${episodeNumber} 集`,
+      title: ep?.title || translateUi("workflow.episode", { v1: String(episodeNumber) }),
       creative: ep?.creative,
       summary: ep?.summary,
       body: ep?.body,

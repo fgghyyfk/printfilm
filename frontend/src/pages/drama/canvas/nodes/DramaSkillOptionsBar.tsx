@@ -1,3 +1,4 @@
+import { useI18n } from '../../../../i18n'
 /** 画布生成条：多选 Agent Skill */
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import { ChevronDown, Wand2 } from 'lucide-react'
@@ -30,6 +31,7 @@ export function DramaSkillOptionsBar({
   uploadError = '',
   disabled = false,
 }: DramaSkillOptionsBarProps) {
+  const { t: translateUi } = useI18n()
   const rootRef = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(false)
 
@@ -67,7 +69,7 @@ export function DramaSkillOptionsBar({
         </button>
       </div>
       {open ? (
-        <div className="fc-gen-opt-panel" role="dialog" aria-label="选择 Skill">
+        <div className="fc-gen-opt-panel" role="dialog" aria-label={translateUi("workflow.chooseSkill")}>
           <div className="fc-gen-opt-panel-title">Skill</div>
           <AgentSkillPicker
             compact

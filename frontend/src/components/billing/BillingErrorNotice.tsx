@@ -1,3 +1,5 @@
+import { useI18n } from '../../i18n'
+import { translate as translateUi } from '../../i18n/runtime'
 import type { CSSProperties } from 'react'
 import { Link } from 'react-router-dom'
 import { isBillingError, PRICING_PATH } from '../../lib/billingError'
@@ -17,9 +19,10 @@ export default function BillingErrorNotice({
   message,
   className = 'pf-error',
   style,
-  linkText = '去充值 →',
+  linkText = translateUi("workflow.topUp"),
   inline = false,
 }: Props) {
+  useI18n()
   const text = String(message || '').trim()
   if (!text) return null
   const Tag = inline ? 'span' : 'p'

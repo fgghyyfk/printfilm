@@ -1,3 +1,5 @@
+import { useI18n } from '../../i18n'
+import { translate as translateUi } from '../../i18n/runtime'
 /** 资产库步骤：首次无资产时自动 seed，分类 Tab + 生图队列 + 角色音色绑定 */
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -40,10 +42,10 @@ import {
 type AssetTabKey = 'character' | 'scene' | 'prop' | 'voice'
 
 const ASSET_TABS: Array<{ key: AssetTabKey; label: string }> = [
-  { key: 'character', label: '角色' },
-  { key: 'scene', label: '场景' },
-  { key: 'prop', label: '道具' },
-  ...(DRAMA_VOICE_BINDING_ENABLED ? [{ key: 'voice' as const, label: '音色' }] : []),
+  { key: 'character', get label() { return translateUi("workflow.character") } },
+  { key: 'scene', get label() { return translateUi("workflow.scene") } },
+  { key: 'prop', get label() { return translateUi("workflow.prop") } },
+  ...(DRAMA_VOICE_BINDING_ENABLED ? [{ key: 'voice' as const, get label() { return translateUi("daihuo.video.voice") } }] : []),
 ]
 
 const PAGE_SIZE_DEFAULT = 12
@@ -69,6 +71,7 @@ function needsImageGeneration(asset: DramaAsset): boolean {
 
 // 渲染资产库步骤
 export function AssetsStep({ projectId, onError }: AssetsStepProps) {
+  const { t: translateUi } = useI18n()
   /*
    * assets 项目资产
    * tab 当前分类
@@ -139,7 +142,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
           setAssets((prev) => (prev ?? []).map((a) => (a.id === next.id ? next : a)))
         })
       } catch (err) {
-        onError(err instanceof Error ? err.message : '资产加载失败')
+        onError(err instanceof Error ? err.message : translateUi("workflow.couldNotLoadAssets"))
         try {
           const list = normalizeAssetList(await dramaApi.listAssets(projectId, { libraryOnly: true }))
           setAssets(list)
@@ -205,9 +208,9 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
     project?.params && typeof project.params === 'object'
       ? String(
           ((project.params as Record<string, unknown>).narrationVoiceAudio as Record<string, unknown> | undefined)?.label ||
-            '未设置',
+            translateUi("workflow.notSet"),
         )
-      : '未设置'
+      : translateUi("workflow.notSet")
   const filtered = assetList.filter((a) => {
     const t = (a.type || '').toLowerCase()
     if (tab === 'voice') return t === 'voice'
@@ -243,7 +246,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
     try {
       await dramaApi.updateScript(projectId, { image_style_id: styleId })
     } catch (err) {
-      onError(err instanceof Error ? err.message : '保存风格失败')
+      onError(err instanceof Error ? err.message : translateUi("workflow.couldNotSaveTheStyle"))
     }
   }
 
@@ -262,7 +265,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
       const message = err instanceof Error ? err.message : String(err || '')
       if (isBillingError(message)) return null
       if (await handleBillingError(err)) return null
-      onError(message || '余额校验失败')
+      onError(message || translateUi("workflow.couldNotCheckTheBalance"))
       return null
     }
   }
@@ -280,7 +283,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
     if (view.upstreamAccountBlocked || view.billingBlocked) {
       await alertDramaGenError(err)
     }
-    onError(view.message || message || '生图失败')
+    onError(view.message || message || translateUi("workflow.imageGenerationFailed"))
   }
 
   // 加入全局生图队列（不互相顶掉）
@@ -314,7 +317,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
       (a) => needsImageGeneration(a) && !busyAssetIds.has(a.id),
     )
     if (targets.length === 0) {
-      onError('当前分类没有未生成的资产')
+      onError(translateUi("workflow.allAssetsInThisCategoryHaveImages"))
       return
     }
     // 报价、确认期间选择器可变化，本批始终使用点击时的同一份选项。
@@ -328,12 +331,12 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
       const totalYuan = pre.requested_total_yuan ?? pre.requested_total_fen / 100
       const balanceYuan = pre.balance_yuan ?? pre.balance_fen / 100
       const ok = await dialog.confirm({
-        title: '批量生成形象',
+        title: translateUi("workflow.generateAssetImagesInBulk"),
         message:
-          `将为当前「${ASSET_TABS.find((t) => t.key === tab)?.label || '分类'}」下 ${targets.length} 个缺少可用参考图的资产排队生成。\n\n` +
-          `每张预扣约 ¥${unitYuan.toFixed(2)}，本次最多约 ¥${totalYuan.toFixed(2)}（当前余额 ¥${balanceYuan.toFixed(2)}；结束后按实际用量结算）。\n\n` +
-          '提交时会再次检查，已有参考图会跳过，在途任务会复用，不重复入队。是否继续？',
-        confirmText: '开始生成',
+          translateUi("workflow.queueImageGenerationForAssetsInThatLackUsable", { v1: String(ASSET_TABS.find((t) => t.key === tab)?.label || translateUi("workflow.category")), v2: String(targets.length) }) +
+          translateUi("workflow.reserveAboutPerImageUpToForThisBatch", { v1: String(unitYuan.toFixed(2)), v2: String(totalYuan.toFixed(2)), v3: String(balanceYuan.toFixed(2)) }) +
+          translateUi("workflow.assetsAreCheckedAgainOnSubmissionExistingImagesAre"),
+        confirmText: translateUi("ecomSet.confirm.ok"),
       })
       if (!ok) return
       const counts = { queued: 0, reused: 0, skipped: 0 }
@@ -350,7 +353,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
             if (skipped) counts.skipped += 1
             else if (reused) counts.reused += 1
             else counts.queued += 1
-            setBatchSummary(`本次新增入队 ${counts.queued} 项，复用在途 ${counts.reused} 项，已有图跳过 ${counts.skipped} 项。`)
+            setBatchSummary(translateUi("workflow.batchSubmissionCounts", { v1: String(counts.queued), v2: String(counts.reused), v3: String(counts.skipped) }))
           },
           onAssetUpdate: (next) => {
             setAssets((prev) => (prev ?? []).map((a) => (a.id === next.id ? next : a)))
@@ -360,7 +363,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
         }),
       ))
       const failedCount = results.filter((r) => r.status === 'rejected').length
-      setBatchSummary(`本次新增入队 ${counts.queued} 项，复用在途 ${counts.reused} 项，已有图跳过 ${counts.skipped} 项${failedCount ? `；${failedCount} 项未完成，请查看失败原因` : ''}。`)
+      setBatchSummary(translateUi("workflow.batchSubmissionCountsWithErrors", { v1: String(counts.queued), v2: String(counts.reused), v3: String(counts.skipped), v4: String(failedCount ? translateUi("workflow.batchIncompleteCount", { v1: String(failedCount) }) : '') }))
       const failed = results.find((r) => r.status === 'rejected')
       if (failed && failed.status === 'rejected') await notifyImageGenFailure(failed.reason)
     } finally {
@@ -390,7 +393,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
       handleVoiceBound(character)
       handleVoiceCreated(voice)
     } catch (err) {
-      onError(err instanceof Error ? err.message : '音色生成失败')
+      onError(err instanceof Error ? err.message : translateUi("workflow.voiceGenerationFailed"))
     } finally {
       setCharacterVoiceBusyIds((prev) => {
         const next = new Set(prev)
@@ -404,9 +407,9 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
   async function batchGenerateCharacterVoices() {
     if (batchVoiceBusy || selectedCharacterAssets.length === 0) return
     const ok = await dialog.confirm({
-      title: '批量生成音色',
-      message: `将为选中的 ${selectedCharacterAssets.length} 个角色分别 AI 生成音色并绑定，是否继续？`,
-      confirmText: '开始生成',
+      title: translateUi("workflow.generateVoicesInBulk"),
+      message: translateUi("workflow.generateAndBindAnAiVoiceForEachOf", { v1: String(selectedCharacterAssets.length) }),
+      confirmText: translateUi("ecomSet.confirm.ok"),
     })
     if (!ok) return
     setBatchVoiceBusy(true)
@@ -430,7 +433,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
     setBatchVoiceBusy(false)
     setSelectedCharacterIds([])
     if (failCount > 0) {
-      onError(`${failCount} 个角色音色生成失败`)
+      onError(translateUi("workflow.voiceGenerationFailedForCharacters", { v1: String(failCount) }))
     }
   }
 
@@ -443,11 +446,11 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
     )
     if (dup) {
       const ok = await dialog.confirm({
-        title: '可能重复',
-        message: `当前项目已有同名「${source.name}」资产，仍要导入一份副本吗？`,
-        confirmText: '仍要导入',
+        title: translateUi("workflow.possibleDuplicate"),
+        message: translateUi("workflow.thisProjectAlreadyHasAnAssetNamedImportAnother", { v1: String(source.name) }),
+        confirmText: translateUi("workflow.importAnyway"),
       })
-      if (!ok) throw new Error('已取消')
+      if (!ok) throw new Error(translateUi("workflow.cancelled"))
     }
     const created = await importGlobalAssetToProject(projectId, source)
     setAssets((prev) => [...(prev ?? []), created])
@@ -456,10 +459,10 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
   // 新增音色资产
   async function handleAddVoice() {
     const name = await dialog.prompt({
-      title: '新增音色',
-      message: '输入音色名称',
-      placeholder: '例如：大禹-沉稳男声',
-      confirmText: '创建',
+      title: translateUi("workflow.addVoice"),
+      message: translateUi("workflow.enterAVoiceName"),
+      placeholder: translateUi("workflow.forExampleYuCalmMaleVoice"),
+      confirmText: translateUi("workflow.create_fcbd09"),
     })
     if (!name?.trim()) return
     try {
@@ -473,7 +476,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
       setAssets((prev) => [...(prev ?? []), created])
       setVoicePromptDrafts((prev) => ({ ...prev, [created.id]: '' }))
     } catch (err) {
-      onError(err instanceof Error ? err.message : '创建音色失败')
+      onError(err instanceof Error ? err.message : translateUi("workflow.couldNotCreateTheVoice"))
     }
   }
 
@@ -488,7 +491,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
   async function handleSynthVoice(asset: DramaAsset) {
     const prompt = (voicePromptDrafts[asset.id] ?? readVoicePrompt(asset)).trim()
     if (!prompt) {
-      onError('请先填写音色描述')
+      onError(translateUi("workflow.enterAVoiceDescriptionFirst"))
       return
     }
     setVoiceSynthBusyId(asset.id)
@@ -501,7 +504,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
       })
       setAssets((prev) => (prev ?? []).map((a) => (a.id === asset.id ? result.asset : a)))
     } catch (err) {
-      onError(err instanceof Error ? err.message : '音色合成失败')
+      onError(err instanceof Error ? err.message : translateUi("workflow.voiceSynthesisFailed"))
     } finally {
       setVoiceSynthBusyId(null)
     }
@@ -510,27 +513,27 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
   // 删除音色资产
   async function handleDeleteVoice(asset: DramaAsset) {
     const ok = await dialog.confirm({
-      title: '删除音色',
-      message: `确定删除音色「${asset.name || '未命名'}」？`,
+      title: translateUi("workflow.deleteVoice"),
+      message: translateUi("workflow.deleteVoice_7561cb", { v1: String(asset.name || translateUi("workflow.untitled")) }),
       tone: 'danger',
-      confirmText: '删除',
+      confirmText: translateUi("workflow.delete"),
     })
     if (!ok) return
     try {
       await dramaApi.deleteAsset(asset.id)
       setAssets((prev) => (prev ?? []).filter((a) => a.id !== asset.id))
     } catch (err) {
-      onError(err instanceof Error ? err.message : '删除失败')
+      onError(err instanceof Error ? err.message : translateUi("workflow.couldNotDelete"))
     }
   }
 
   // 新增角色
   async function handleAddCharacter() {
     const name = await dialog.prompt({
-      title: '新增角色',
-      message: '输入角色名称',
-      placeholder: '例如：大禹',
-      confirmText: '创建',
+      title: translateUi("workflow.addCharacter"),
+      message: translateUi("workflow.enterACharacterName"),
+      placeholder: translateUi("workflow.forExampleYu"),
+      confirmText: translateUi("workflow.create_fcbd09"),
     })
     if (!name?.trim()) return
     try {
@@ -543,28 +546,28 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
       })
       setAssets((prev) => [...(prev ?? []), created])
     } catch (err) {
-      onError(err instanceof Error ? err.message : '创建角色失败')
+      onError(err instanceof Error ? err.message : translateUi("workflow.couldNotCreateTheCharacter"))
     }
   }
 
   // 删除角色
   async function handleDeleteCharacter(asset: DramaAsset) {
     const ok = await dialog.confirm({
-      title: '删除角色',
-      message: `确定删除角色「${asset.name || '未命名'}」？此操作不可恢复。`,
+      title: translateUi("workflow.deleteCharacter"),
+      message: translateUi("workflow.deleteCharacterThisCannotBeUndone", { v1: String(asset.name || translateUi("workflow.untitled")) }),
       tone: 'danger',
-      confirmText: '删除',
+      confirmText: translateUi("workflow.delete"),
     })
     if (!ok) return
     if (busyAssetIds.has(asset.id)) {
-      onError('该角色正在生图中，请稍后再删')
+      onError(translateUi("workflow.thisCharacterSImageIsBeingGeneratedWaitBefore"))
       return
     }
     try {
       await dramaApi.deleteAsset(asset.id)
       setAssets((prev) => (prev ?? []).filter((a) => a.id !== asset.id))
     } catch (err) {
-      onError(err instanceof Error ? err.message : '删除失败')
+      onError(err instanceof Error ? err.message : translateUi("workflow.couldNotDelete"))
     }
   }
 
@@ -572,10 +575,10 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
   async function handleReseedAssets() {
     if (reseedBusy || batchBusy) return
     const ok = await dialog.confirm({
-      title: '重新抽取资产',
+      title: translateUi("workflow.extractAssetsAgain"),
       message:
-        '将按最新剧本摘要补全新角色/场景，并用 AI 为全部角色、场景、道具重新生成完整生图提示词。已有图片/音色绑定不会删除，但重新生图时会使用新提示词。是否继续？',
-      confirmText: '开始抽取',
+        translateUi("workflow.findNewCharactersAndScenesFromTheLatestScript"),
+      confirmText: translateUi("workflow.startExtraction"),
       tone: 'danger',
     })
     if (!ok) return
@@ -608,23 +611,23 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
           ? (params.assets_seed_llm_errors as string[])
           : []
         const failed = seedStatus === 'failed'
-        const parts = [`新建 ${created} 项`, `AI 刷新提示词 ${refreshed} 项`]
+        const parts = [translateUi("workflow.createdItemCount", { v1: String(created) }), translateUi("workflow.refreshedPromptCount", { v1: String(refreshed) })]
         if (propsUpdated > 0) {
-          parts.push(`更新道具 ${propsUpdated} 项`)
+          parts.push(translateUi("workflow.updatedPropCount", { v1: String(propsUpdated) }))
         }
         let detail = failed
-          ? String(params.assets_seed_error || '抽取失败')
+          ? String(params.assets_seed_error || translateUi("workflow.extractionFailed"))
           : `${parts.join('，')}。`
         if (!failed && created === 0 && refreshed === 0 && llmErrors.length === 0) {
           detail +=
-            '角色/场景若已存在则不会重复新建；本次也没有刷新到提示词。请确认剧本摘要与分集正文已生成后重试。'
+            translateUi("workflow.existingCharactersAndScenesAreNotDuplicatedNoPrompts")
         } else if (!failed && llmErrors.length > 0) {
-          detail += `\n\n以下资产 AI 刷新失败：\n${llmErrors.slice(0, 5).join('\n')}${llmErrors.length > 5 ? `\n…共 ${llmErrors.length} 项` : ''}`
+          detail += translateUi("workflow.assetRefreshErrors", { v1: String(llmErrors.slice(0, 5).join('\n')), v2: String(llmErrors.length > 5 ? translateUi("workflow.totalErrorItems", { v1: String(llmErrors.length) }) : '') })
         } else if (!failed) {
-          detail += '可在画布查看 prompt 或点击「生成形象」验证。'
+          detail += translateUi("workflow.viewThePromptOnTheCanvasOrChooseGenerate")
         }
         await dialog.alert({
-          title: failed || llmErrors.length > 0 ? '抽取完成（部分失败）' : '抽取完成',
+          title: failed || llmErrors.length > 0 ? translateUi("workflow.extractionCompleteSomeItemsFailed") : translateUi("workflow.extractionComplete"),
           message: detail,
           tone: failed || llmErrors.length > 0 ? 'danger' : 'success',
         })
@@ -635,26 +638,26 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
       const refreshed = result.prompts_refreshed ?? 0
       const propsUpdated = result.props_updated ?? 0
       const llmErrors = Array.isArray(result.llm_errors) ? result.llm_errors : []
-      const parts = [`新建 ${created} 项`, `AI 刷新提示词 ${refreshed} 项`]
+      const parts = [translateUi("workflow.createdItemCount", { v1: String(created) }), translateUi("workflow.refreshedPromptCount", { v1: String(refreshed) })]
       if (propsUpdated > 0) {
-        parts.push(`更新道具 ${propsUpdated} 项`)
+        parts.push(translateUi("workflow.updatedPropCount", { v1: String(propsUpdated) }))
       }
       let detail = `${parts.join('，')}。`
       if (created === 0 && refreshed === 0 && llmErrors.length === 0) {
         detail +=
-          '角色/场景若已存在则不会重复新建；本次也没有刷新到提示词。请确认剧本摘要与分集正文已生成后重试。'
+          translateUi("workflow.existingCharactersAndScenesAreNotDuplicatedNoPrompts")
       } else if (llmErrors.length > 0) {
-        detail += `\n\n以下资产 AI 刷新失败：\n${llmErrors.slice(0, 5).join('\n')}${llmErrors.length > 5 ? `\n…共 ${llmErrors.length} 项` : ''}`
+        detail += translateUi("workflow.assetRefreshErrors", { v1: String(llmErrors.slice(0, 5).join('\n')), v2: String(llmErrors.length > 5 ? translateUi("workflow.totalErrorItems", { v1: String(llmErrors.length) }) : '') })
       } else {
-        detail += '可在画布查看 prompt 或点击「生成形象」验证。'
+        detail += translateUi("workflow.viewThePromptOnTheCanvasOrChooseGenerate")
       }
       await dialog.alert({
-        title: llmErrors.length > 0 ? '抽取完成（部分失败）' : '抽取完成',
+        title: llmErrors.length > 0 ? translateUi("workflow.extractionCompleteSomeItemsFailed") : translateUi("workflow.extractionComplete"),
         message: detail,
         tone: llmErrors.length > 0 ? 'danger' : 'success',
       })
     } catch (err) {
-      onError(err instanceof Error ? err.message : '重新抽取失败')
+      onError(err instanceof Error ? err.message : translateUi("workflow.couldNotExtractAgain"))
     } finally {
       setReseedBusy(false)
     }
@@ -668,11 +671,11 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
     )
     let queueLabel: string | null = null
     if (job) {
-      if (job.status === 'running') queueLabel = '生成中…'
+      if (job.status === 'running') queueLabel = translateUi("workflow.generating")
       else {
         const queuedOnly = genQueue.filter((j) => j.status === 'queued' || j.status === 'running')
         const pos = queuedOnly.findIndex((j) => j.id === job.id) + 1
-        queueLabel = pos > 0 ? (pos > 1 ? `排队 #${pos}` : '排队中…') : '排队中…'
+        queueLabel = pos > 0 ? (pos > 1 ? translateUi("workflow.queued_381f95", { v1: pos }) : translateUi("workflow.queued_f62e20")) : translateUi("workflow.queued_f62e20")
       }
     }
     return dramaAssetImageGenButtonLabel(asset, queueLabel)
@@ -691,10 +694,9 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
             <Boxes size={22} strokeWidth={1.75} />
           </div>
           <div>
-            <h2>资产库</h2>
+            <h2>{translateUi("workflow.assetLibrary")}</h2>
             <p className="drama-step-hero-sub">
-              共 <strong>{assetList.length}</strong> 项资产 · 当前分类{' '}
-              <strong>{filtered.length}</strong> 项 · 待生图 <strong>{pending.length}</strong>
+              {translateUi("workflow.total")} <strong>{assetList.length}</strong> {translateUi("workflow.assetsCurrentCategory", { v1: ' ' })}<strong>{filtered.length}</strong> {translateUi("workflow.assetsImagesPending")} <strong>{pending.length}</strong>
             </p>
           </div>
         </div>
@@ -703,7 +705,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
 
       <div className="drama-assets-tips" role="note">
         <Sparkles size={15} strokeWidth={1.75} aria-hidden />
-        <span>随时管理角色、场景与道具。确认分集剧本时会自动抽取本集相关资产，出图可在此补做。</span>
+        <span>{translateUi("workflow.manageCharactersScenesAndPropsHereEpisodeAssetsAre")}</span>
       </div>
 
       <div className="drama-assets-toolbar">
@@ -722,12 +724,12 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
         <div className="drama-actions">
           {tab === 'character' ? (
             <button type="button" className="pf-btn" onClick={() => void handleAddCharacter()}>
-              新增角色
+              {translateUi("workflow.addCharacter")}
             </button>
           ) : null}
           {DRAMA_VOICE_BINDING_ENABLED && tab === 'voice' ? (
             <button type="button" className="pf-btn" onClick={() => void handleAddVoice()}>
-              新增音色
+              {translateUi("workflow.addVoice")}
             </button>
           ) : null}
           {DRAMA_VOICE_BINDING_ENABLED && tab !== 'voice' ? (
@@ -735,17 +737,16 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
               type="button"
               className="pf-btn"
               onClick={() => setNarratorVoiceOpen(true)}
-              title="全局旁白音色（用于所有镜头旁白 reference_audio 一致性）"
+              title={translateUi("workflow.projectNarratorVoiceConsistentNarrationReferenceAudioAcrossShots")}
               disabled={!project}
             >
-              旁白音色：{narrationVoiceLabel}
-            </button>
+              {translateUi("workflow.narratorVoice", { v1: narrationVoiceLabel })}</button>
           ) : null}
           <button type="button" className="pf-btn" onClick={() => setPickerOpen(true)}>
-            从资产库选择
+            {translateUi("workflow.chooseFromAssetLibrary")}
           </button>
           <Link className="pf-btn" to="/drama/assets">
-            浏览全部资产
+            {translateUi("workflow.browseAllAssets")}
           </Link>
           <button
             type="button"
@@ -754,8 +755,8 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
             onClick={() => void handleReseedAssets()}
           >
             {reseedBusy
-              ? `AI 抽取中…（约 ${Math.max(imageAssetCount, 1)} 项，需 1–3 分钟）`
-              : '重新抽取资产'}
+              ? translateUi("workflow.aiExtractionAboutAssets13Minutes", { v1: String(Math.max(imageAssetCount, 1)) })
+              : translateUi("workflow.extractAssetsAgain")}
           </button>
           {tab !== 'voice' ? (
             <button
@@ -765,15 +766,15 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
               onClick={() => void batchGenerate()}
               title={
                 pending.length > 0
-                  ? `仅为当前分类下缺少可用参考图的 ${pending.length} 项排队生成`
-                  : '当前分类没有未出图资产'
+                  ? translateUi("workflow.queueOnlyTheAssetsInThisCategoryWithoutUsable", { v1: String(pending.length) })
+                  : translateUi("workflow.everyAssetInThisCategoryHasAnImage")
               }
             >
               {batchBusy || queueBusy
-                ? `生成中 ${busyAssetIds.size}`
+                ? translateUi("workflow.generating_210174", { v1: String(busyAssetIds.size) })
                 : pending.length > 0
-                  ? `一键生成未出图 (${pending.length})`
-                  : '一键生成未出图'}
+                  ? translateUi("workflow.generateMissingImages", { v1: String(pending.length) })
+                  : translateUi("workflow.generateMissingImages_e8a2a9")}
             </button>
           ) : null}
 
@@ -783,15 +784,15 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
               className="pf-btn pf-btn-lime"
               disabled={batchBusy || batchVoiceBusy || selectedCharacterIds.length === 0}
               onClick={() => void batchGenerateCharacterVoices()}
-              title="按各角色人物设定分别生成音色并绑定"
+              title={translateUi("workflow.generateAndBindAVoiceFromEachCharacterS")}
             >
               {batchVoiceBusy
-                ? '批量生成中…'
-                : `批量生成音色（${selectedCharacterIds.length}）`}
+                ? translateUi("workflow.generatingBatch")
+                : translateUi("workflow.generateVoicesInBulk_646f22", { v1: String(selectedCharacterIds.length) })}
             </button>
           ) : null}
           <Link className="pf-btn" to={`/drama/projects/${projectId}/canvas`}>
-            打开画布
+            {translateUi("workflow.openCanvas")}
           </Link>
         </div>
       </div>
@@ -807,12 +808,11 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
         </div>
       ) : null}
 
-      {loading ? <p className="drama-muted">正在从剧本抽取资产（含道具）…</p> : null}
+      {loading ? <p className="drama-muted">{translateUi("workflow.extractingScriptAssetsIncludingProps")}</p> : null}
 
       {!loading && filtered.length > 0 ? (
         <p className="drama-muted drama-assets-page-meta">
-          第 {safePage} / {pageCount} 页 · 本分类共 {filtered.length} 项
-        </p>
+          {translateUi("workflow.pageAssetsInThisCategory", { v1: safePage, v2: pageCount, v3: filtered.length })}</p>
       ) : null}
 
       <div className={`drama-asset-grid${tab === 'voice' ? ' is-voice' : ''}`}>
@@ -836,7 +836,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
                   const draft = (voicePromptDrafts[asset.id] ?? '').trim()
                   if (draft && draft !== readVoicePrompt(asset)) {
                     void persistVoicePrompt(asset, draft).catch((err) =>
-                      onError(err instanceof Error ? err.message : '保存失败'),
+                      onError(err instanceof Error ? err.message : translateUi("workflow.couldNotSave")),
                     )
                   }
                 }}
@@ -869,10 +869,10 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
                 <button
                   type="button"
                   className="drama-asset-thumb-btn"
-                  title="点击放大"
+                  title={translateUi("workflow.clickToEnlarge")}
                   onClick={(e) => {
                     e.stopPropagation()
-                    setLightbox({ src: mediaSrc, alt: asset.name || '预览' })
+                    setLightbox({ src: mediaSrc, alt: asset.name || translateUi("ecomSet.result.preview") })
                   }}
                 >
                   <img key={mediaSrc} src={mediaSrc} alt={asset.name || ''} />
@@ -880,7 +880,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
               ) : (
                 <div className="drama-asset-placeholder">{asset.type || 'asset'}</div>
               )}
-              <h3>{asset.name || '未命名'}</h3>
+              <h3>{asset.name || translateUi("workflow.untitled")}</h3>
               <p>
                 {asset.type}
                 {isCharacter && voice ? ` · ${voice.label}` : ''}
@@ -907,7 +907,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
                         )
                       }}
                     />
-                    <span className="drama-muted">选中</span>
+                    <span className="drama-muted">{translateUi("workflow.selected")}</span>
                   </label>
                 ) : null}
                 <button
@@ -938,7 +938,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
                           }
                           onClick={() => void handleGenerateCharacterVoice(asset)}
                         >
-                          {characterVoiceBusyIds.has(asset.id) ? '生成中…' : '生成音色'}
+                          {characterVoiceBusyIds.has(asset.id) ? translateUi("workflow.generating") : translateUi("workflow.generateVoice")}
                         </button>
                       )
                     ) : null}
@@ -948,7 +948,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
                       disabled={busy || batchBusy || batchVoiceBusy}
                       onClick={() => void handleDeleteCharacter(asset)}
                     >
-                      删除
+                      {translateUi("workflow.delete")}
                     </button>
                   </>
                 ) : null}
@@ -957,7 +957,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
           )
         })}
       </div>
-      {!loading && filtered.length === 0 ? <p className="drama-muted">该分类暂无资产</p> : null}
+      {!loading && filtered.length === 0 ? <p className="drama-muted">{translateUi("workflow.noAssetsInThisCategory")}</p> : null}
 
       {!loading && filtered.length > 0 ? (
         <Pagination
@@ -971,7 +971,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
             setPage(1)
           }}
           onChange={setPage}
-          ariaLabel="资产库分页"
+          ariaLabel={translateUi("workflow.assetLibraryPages")}
           className="drama-assets-pagination"
         />
       ) : null}
@@ -1034,8 +1034,8 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
         onClose={() => setPickerOpen(false)}
         projectId={projectId}
         defaultTab={tab === 'voice' ? 'voice' : tab}
-        title="从资产库导入"
-        confirmLabel="导入到本项目"
+        title={translateUi("workflow.importFromAssetLibrary")}
+        confirmLabel={translateUi("workflow.importIntoThisProject")}
         onPick={handleImportFromLibrary}
       />
     </div>

@@ -1,3 +1,4 @@
+import { translate as translateUi } from '../i18n/runtime'
 /** 独立创作工具 API：/api/tools/* */
 
 import { throwApiError } from '../lib/apiError'
@@ -92,21 +93,21 @@ export async function runStudioTool(payload: ToolRunPayload): Promise<ToolRunRes
   for (const file of payload.files || []) {
     body.append('files', file)
   }
-  return requestToolJson('/api/tools/run', '生成失败', { method: 'POST', body }, true)
+  return requestToolJson('/api/tools/run', translateUi("ecomSet.result.failed"), { method: 'POST', body }, true)
 }
 
 // 查询视频任务状态
 export async function pollStudioToolTask(taskId: string): Promise<ToolTaskResult> {
-  return requestToolJson(`/api/tools/tasks/${encodeURIComponent(taskId)}`, '查询失败')
+  return requestToolJson(`/api/tools/tasks/${encodeURIComponent(taskId)}`, translateUi("workflow.couldNotCheckTheStatus"))
 }
 
 // 个人中心：分页拉取工具创作记录
 export async function listToolRuns(page = 1, pageSize = 8, signal?: AbortSignal): Promise<ToolRunList> {
   const qs = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
-  return requestToolJson(`/api/tools/runs?${qs}`, '加载失败', { signal })
+  return requestToolJson(`/api/tools/runs?${qs}`, translateUi("ecomSet.loadFailed"), { signal })
 }
 
 // 个人中心：单条创作详情（含 OSS 结果地址）
 export async function getToolRun(runId: number, signal?: AbortSignal): Promise<ToolRunRecord> {
-  return requestToolJson(`/api/tools/runs/${runId}`, '加载失败', { signal })
+  return requestToolJson(`/api/tools/runs/${runId}`, translateUi("ecomSet.loadFailed"), { signal })
 }

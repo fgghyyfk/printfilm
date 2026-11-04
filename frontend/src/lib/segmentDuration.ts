@@ -1,3 +1,4 @@
+import { translate as translateUi } from '../i18n/runtime'
 /**
  * 科普分镜脚本内 @duration 解析、校验与分段预览
  * 常量与后端 seedance_segments 对齐（单段 3–12s，镜合计 ≤30s）
@@ -101,7 +102,7 @@ export function validateSegmentScriptDuration(content: string): {
       valid: false,
       total,
       durations,
-      message: `单个 @duration 需在 ${SEGMENT_DURATION_MIN}–${SEGMENT_DURATION_MAX} 秒之间`,
+      message: translateUi("workflow.eachDurationMustBeBetweenAndSeconds", { v1: String(SEGMENT_DURATION_MIN), v2: String(SEGMENT_DURATION_MAX) }),
     }
   }
 
@@ -110,7 +111,7 @@ export function validateSegmentScriptDuration(content: string): {
       valid: false,
       total,
       durations,
-      message: `镜头时长合计不能超过 ${SHOT_DURATION_MAX} 秒（当前 ${total}s）`,
+      message: translateUi("workflow.totalShotDurationCannotExceedSecondsCurrentlyS", { v1: String(SHOT_DURATION_MAX), v2: String(total) }),
     }
   }
 

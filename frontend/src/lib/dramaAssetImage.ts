@@ -1,3 +1,4 @@
+import { translate as translateUi } from '../i18n/runtime'
 /** 漫剧资产是否已有形象图（AI 生成或本地上传；SVG 占位不算） */
 import type { DramaAsset } from '../api/drama'
 
@@ -67,5 +68,5 @@ export function dramaAssetImageGenButtonLabel(
   queueLabel: string | null,
 ): string {
   if (queueLabel) return queueLabel
-  return dramaAssetHasImage(asset) ? '重新生成形象' : '生成形象'
+  return dramaAssetHasImage(asset) ? translateUi("workflow.regenerateImage") : translateUi("workflow.generateImage")
 }

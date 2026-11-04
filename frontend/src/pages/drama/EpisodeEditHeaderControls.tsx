@@ -1,3 +1,4 @@
+import { useI18n } from '../../i18n'
 /** 分集编辑顶栏：画幅/清晰度 / 视频风格 / 字幕 / 人物介绍 / 模型 / 镜间衔接 */
 
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent } from 'react'
@@ -76,6 +77,7 @@ export function EpisodeEditHeaderControls({
   disabled = false,
   globalSettingsReadOnly = false,
 }: Props) {
+  const { t: translateUi } = useI18n()
   const rootRef = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState<OpenPanel>(null)
   const [rulesOpen, setRulesOpen] = useState(false)
@@ -134,11 +136,11 @@ export function EpisodeEditHeaderControls({
   const stop = (e: MouseEvent) => {
     e.stopPropagation()
   }
-  const styleLabel = getImageStyleLabel(styleId) || '视频风格'
-  const modelLabel = catalogModelLabel(modelId, videoModels, '视频模型')
-  const subtitleLabel = subtitleMode === 'model' ? '模型字幕' : '后期字幕'
+  const styleLabel = getImageStyleLabel(styleId) || translateUi("workflow.videoStyle")
+  const modelLabel = catalogModelLabel(modelId, videoModels, translateUi("workflow.videoModel"))
+  const subtitleLabel = subtitleMode === 'model' ? translateUi("workflow.modelGeneratedSubtitles") : translateUi("workflow.postProductionSubtitles")
   const subtitleUsesModel = subtitleModeUsesModelOutput(subtitleMode)
-  const introLabel = characterIntroMode === 'model' ? '人物介绍' : '无介绍叠字'
+  const introLabel = characterIntroMode === 'model' ? translateUi("workflow.characterIntroductions") : translateUi("workflow.noIntroductionOverlays")
   const introEnabled = characterIntroModeEnabled(characterIntroMode)
   const globalLocked = disabled || globalSettingsReadOnly
   return (
@@ -166,7 +168,7 @@ export function EpisodeEditHeaderControls({
             if (globalSettingsReadOnly) return
             setOpen((c) => (c === 'style' ? null : 'style'))
           }}
-          title={globalSettingsReadOnly ? `${styleLabel}（项目设置，分镜只读）` : styleLabel}
+          title={globalSettingsReadOnly ? translateUi("workflow.projectSettingReadOnlyHere", { v1: String(styleLabel) }) : styleLabel}
         >
           <Smile size={14} strokeWidth={1.8} />
           <span className="fc-gen-opt-label">{styleLabel}</span>
@@ -180,7 +182,7 @@ export function EpisodeEditHeaderControls({
             if (globalSettingsReadOnly) return
             setOpen((c) => (c === 'subtitle' ? null : 'subtitle'))
           }}
-          title={globalSettingsReadOnly ? `${subtitleLabel}（项目设置，分镜只读）` : '字幕设置'}
+          title={globalSettingsReadOnly ? translateUi("workflow.projectSettingReadOnlyHere", { v1: String(subtitleLabel) }) : translateUi("workflow.subtitleSettings")}
         >
           <Type size={14} strokeWidth={1.8} />
           <span className="fc-gen-opt-label">{subtitleLabel}</span>
@@ -194,7 +196,7 @@ export function EpisodeEditHeaderControls({
             if (globalSettingsReadOnly) return
             setOpen((c) => (c === 'intro' ? null : 'intro'))
           }}
-          title={globalSettingsReadOnly ? `${introLabel}（项目设置，分镜只读）` : '人物介绍叠字'}
+          title={globalSettingsReadOnly ? translateUi("workflow.projectSettingReadOnlyHere", { v1: String(introLabel) }) : translateUi("workflow.characterIntroductionOverlays")}
         >
           <Users size={14} strokeWidth={1.8} />
           <span className="fc-gen-opt-label">{introLabel}</span>
@@ -218,18 +220,18 @@ export function EpisodeEditHeaderControls({
             if (globalSettingsReadOnly) return
             setOpen((c) => (c === 'link' ? null : 'link'))
           }}
-          title={globalSettingsReadOnly ? `${linkLastFrame ? '尾帧衔接' : '并发生成'}（项目设置，分镜只读）` : '镜间尾帧衔接'}
+          title={globalSettingsReadOnly ? translateUi("workflow.projectSettingReadOnlyHere", { v1: String(linkLastFrame ? translateUi("workflow.lastFrameContinuity") : translateUi("workflow.concurrentGeneration")) }) : translateUi("workflow.lastFrameContinuityBetweenShots")}
         >
           <Link2 size={14} strokeWidth={1.8} />
-          <span className="fc-gen-opt-label">{linkLastFrame ? '尾帧衔接' : '并发生成'}</span>
+          <span className="fc-gen-opt-label">{linkLastFrame ? translateUi("workflow.lastFrameContinuity") : translateUi("workflow.concurrentGeneration")}</span>
           {!globalSettingsReadOnly ? <ChevronDown size={12} strokeWidth={2} /> : null}
         </button>
         <button
           type="button"
           className="fc-gen-opt-btn drama-seedance-help-btn"
           disabled={disabled}
-          title="Seedance 传值与使用规则"
-          aria-label="Seedance 传值与使用规则"
+          title={translateUi("workflow.seedanceInputsAndUsage")}
+          aria-label={translateUi("workflow.seedanceInputsAndUsage")}
           onClick={() => setRulesOpen(true)}
         >
           <CircleHelp size={14} strokeWidth={1.8} />
@@ -244,9 +246,9 @@ export function EpisodeEditHeaderControls({
                   className="fc-gen-opt-panel fc-gen-style-panel drama-ep-opt-panel fc-gen-opt-panel--portal"
                   style={panelStyle}
                   role="dialog"
-                  aria-label="视频风格"
+                  aria-label={translateUi("workflow.videoStyle")}
                 >
-                  <div className="fc-gen-opt-panel-title">视频风格</div>
+                  <div className="fc-gen-opt-panel-title">{translateUi("workflow.videoStyle")}</div>
                   <div className="fc-gen-style-grid">
                     {IMAGE_STYLE_OPTIONS.map((opt) => {
                       const selected = styleId === opt.id
@@ -274,13 +276,13 @@ export function EpisodeEditHeaderControls({
                   className="fc-gen-opt-panel drama-ep-opt-panel fc-gen-opt-panel--portal"
                   style={panelStyle}
                   role="dialog"
-                  aria-label="视频模型"
+                  aria-label={translateUi("workflow.videoModel")}
                 >
-                  <div className="fc-gen-opt-panel-title">视频模型</div>
+                  <div className="fc-gen-opt-panel-title">{translateUi("workflow.videoModel")}</div>
                   <DramaMediaModelPicker
                     models={videoModels}
                     selectedId={modelId}
-                    emptyHint="请先在管理后台「模型」保存预设默认模型"
+                    emptyHint=translateUi("workflow.saveADefaultModelUnderModelsInTheAdmin")
                     onSelect={(opt) => {
                       onModelChange(opt.id)
                       setOpen(null)
@@ -293,9 +295,9 @@ export function EpisodeEditHeaderControls({
                   className="fc-gen-opt-panel drama-ep-opt-panel fc-gen-opt-panel--portal"
                   style={panelStyle}
                   role="dialog"
-                  aria-label="镜间衔接"
+                  aria-label={translateUi("workflow.shotContinuity")}
                 >
-                  <div className="fc-gen-opt-panel-title">镜间衔接</div>
+                  <div className="fc-gen-opt-panel-title">{translateUi("workflow.shotContinuity")}</div>
                   <label className="drama-ep-link-last-frame">
                     <input
                       type="checkbox"
@@ -304,10 +306,9 @@ export function EpisodeEditHeaderControls({
                       onChange={(e) => onLinkLastFrameChange(e.target.checked)}
                     />
                     <span>
-                      用上一镜尾帧衔接
+                      {translateUi("workflow.continueFromThePreviousShotSLastFrame")}
                       <em>
-                        默认开启。按镜序生成，可提前提交下一镜并在队列中等待上一镜完成；关闭后默认并发生成。切换时会立刻重排未开始的任务。有角色/场景参考时以参考图附带尾帧（不可与
-                        first_frame 混用）
+                        {translateUi("workflow.enabledByDefaultShotsRunInOrderSubmitLater")}
                       </em>
                     </span>
                   </label>
@@ -318,9 +319,9 @@ export function EpisodeEditHeaderControls({
                   className="fc-gen-opt-panel drama-ep-opt-panel fc-gen-opt-panel--portal"
                   style={panelStyle}
                   role="dialog"
-                  aria-label="字幕设置"
+                  aria-label={translateUi("workflow.subtitleSettings")}
                 >
-                  <div className="fc-gen-opt-panel-title">字幕设置</div>
+                  <div className="fc-gen-opt-panel-title">{translateUi("workflow.subtitleSettings")}</div>
                   <label className="drama-ep-link-last-frame">
                     <input
                       type="radio"
@@ -330,9 +331,9 @@ export function EpisodeEditHeaderControls({
                       onChange={() => onSubtitleModeChange('model')}
                     />
                     <span>
-                      模型自出字幕
+                      {translateUi("workflow.modelGeneratedSubtitles_dfe6c0")}
                       <em>
-                        切换后会立刻在当前分镜正文里补回「同步字幕 / 字幕 cue」提示词，生成时由模型直接出字幕。
+                        {translateUi("workflow.addsSubtitleCuesToTheCurrentScriptsSoThe")}
                       </em>
                     </span>
                   </label>
@@ -345,9 +346,9 @@ export function EpisodeEditHeaderControls({
                       onChange={() => onSubtitleModeChange('post')}
                     />
                     <span>
-                      后期拼接字幕
+                      {translateUi("workflow.postProductionSubtitles_4b3cc7")}
                       <em>
-                        切换后会立刻去掉当前分镜里的字幕提示词；右侧字幕板仍可预览与导出，供后期叠字。
+                        {translateUi("workflow.removesSubtitlePromptsFromTheScriptsPreviewOrExport")}
                       </em>
                     </span>
                   </label>
@@ -358,9 +359,9 @@ export function EpisodeEditHeaderControls({
                   className="fc-gen-opt-panel drama-ep-opt-panel fc-gen-opt-panel--portal"
                   style={panelStyle}
                   role="dialog"
-                  aria-label="人物介绍"
+                  aria-label=translateUi("workflow.characterIntroductions")
                 >
-                  <div className="fc-gen-opt-panel-title">人物介绍叠字</div>
+                  <div className="fc-gen-opt-panel-title">{translateUi("workflow.characterIntroductionOverlays")}</div>
                   <label className="drama-ep-link-last-frame">
                     <input
                       type="radio"
@@ -370,9 +371,9 @@ export function EpisodeEditHeaderControls({
                       onChange={() => onCharacterIntroModeChange('model')}
                     />
                     <span>
-                      模型叠字介绍
+                      {translateUi("workflow.modelGeneratedCharacterIntroductions")}
                       <em>
-                        开启后，重新规划分镜时会为首次出场重要角色写入「人物介绍·画面叠字·角色身旁」；生成时由模型把介绍贴在角色身旁。
+                        {translateUi("workflow.whenEnabledReplanningAddsIntroductionCuesForImportantCharacters")}
                       </em>
                     </span>
                   </label>
@@ -385,9 +386,9 @@ export function EpisodeEditHeaderControls({
                       onChange={() => onCharacterIntroModeChange('off')}
                     />
                     <span>
-                      关闭人物介绍
+                      {translateUi("workflow.disableCharacterIntroductions")}
                       <em>
-                        切换后会立刻去掉当前分镜里的人物介绍叠字行；生成时禁止画面内介绍字卡。已去掉的介绍需重新分镜才会回来。
+                        {translateUi("workflow.removesIntroductionOverlayLinesAndPreventsIntroductionCardsIn")}
                       </em>
                     </span>
                   </label>

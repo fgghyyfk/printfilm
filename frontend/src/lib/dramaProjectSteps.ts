@@ -1,3 +1,4 @@
+import { translate as translateUi } from '../i18n/runtime'
 /** Drama project workflow steps: 剧情大纲 → 分镜 → 生成视频 */
 
 export type ProjectStepKey = 'outline' | 'storyboard' | 'video'
@@ -18,13 +19,13 @@ export type WorkspaceLocationState = {
 export function buildProjectSteps(hasScript: boolean): ProjectStepItem[] {
   const steps: Array<{ key: ProjectStepKey; label: string }> = hasScript
     ? [
-        { key: 'outline', label: '剧情大纲' },
-        { key: 'storyboard', label: '分镜' },
-        { key: 'video', label: '生成视频' },
+        { key: 'outline', label: translateUi("workflow.storyOutline") },
+        { key: 'storyboard', label: translateUi("workflow.storyboard") },
+        { key: 'video', label: translateUi("workflow.generateVideo") },
       ]
     : [
-        { key: 'storyboard', label: '分镜' },
-        { key: 'video', label: '生成视频' },
+        { key: 'storyboard', label: translateUi("workflow.storyboard") },
+        { key: 'video', label: translateUi("workflow.generateVideo") },
       ]
   return steps.map((step, index) => ({ ...step, order: index + 1 }))
 }

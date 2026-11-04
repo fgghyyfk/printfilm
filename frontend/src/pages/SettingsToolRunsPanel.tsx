@@ -1,3 +1,5 @@
+import { translate as translateUi } from '../i18n/runtime'
+import { useI18n } from '../i18n'
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Download, Eye } from 'lucide-react'
@@ -18,11 +20,11 @@ import { keepToolRunTerminal, pollToolRunPage } from '../lib/toolRunPolling'
 const PAGE_SIZE_DEFAULT = 8
 
 const STATUS_CN: Record<string, string> = {
-  queued: '生成中',
-  running: '生成中',
-  awaiting_review: '结果与费用待核对',
-  succeeded: '已完成',
-  failed: '失败',
+  get queued() { return translateUi("ecomSet.result.running") },
+  get running() { return translateUi("ecomSet.result.running") },
+  get awaiting_review() { return translateUi("workflow.resultAndCostAwaitingReview") },
+  get succeeded() { return translateUi("ecomSet.status.done") },
+  get failed() { return translateUi("ecomSet.status.failed") },
 }
 
 // 格式化记录时间
@@ -60,6 +62,7 @@ function downloadName(item: ToolRunRecord, url: string): string {
 
 /** 个人中心「工具创作」列表：服务端分页 + 详情查看/下载 */
 export default function SettingsToolRunsPanel() {
+  const { t: translateUi } = useI18n()
   /*
    * page 页码
    * pageSize 每页条数
@@ -108,7 +111,7 @@ export default function SettingsToolRunsPanel() {
         })
       },
       onError: (err) => {
-        setError(err instanceof Error ? err.message : '加载失败')
+        setError(err instanceof Error ? err.message : translateUi("ecomSet.loadFailed"))
         setLoading(false)
       },
     })
@@ -134,7 +137,7 @@ export default function SettingsToolRunsPanel() {
       setDetail((current) => current?.id === fresh.id ? keepToolRunTerminal(current, fresh) : current)
       setItems((prev) => prev.map((row) => (row.id === fresh.id ? keepToolRunTerminal(row, fresh) : row)))
     } catch (err) {
-      if (!controller.signal.aborted) setActionError(err instanceof Error ? err.message : '加载详情失败')
+      if (!controller.signal.aborted) setActionError(err instanceof Error ? err.message : translateUi("workflow.couldNotLoadDetails"))
     } finally {
       if (!controller.signal.aborted) setDetailLoading(false)
     }
@@ -157,7 +160,7 @@ export default function SettingsToolRunsPanel() {
       const blob = await fetchMediaBlob(abs)
       triggerBlobDownload(blob, downloadName(item, abs))
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : '下载失败')
+      setActionError(err instanceof Error ? err.message : translateUi("workflow.downloadFailed"))
     } finally {
       setDownloading('')
     }
@@ -167,23 +170,23 @@ export default function SettingsToolRunsPanel() {
     <section className="pf-settings-card">
       <div className="pf-settings-card-head">
         <div>
-          <h1>工具创作</h1>
-          <p className="pf-muted">文生图、图生图、视频等独立工具的生成记录</p>
+          <h1>{translateUi("workflow.toolCreations")}</h1>
+          <p className="pf-muted">{translateUi("workflow.runsFromTextToImageImageEditingVideoAnd")}</p>
         </div>
         <div className="pf-settings-actions">
           <Link className="pf-btn pf-btn-lime pf-btn-sm" to="/tools">
-            去创作
+            {translateUi("workflow.create")}
           </Link>
         </div>
       </div>
-      {loading ? <p className="pf-muted">加载中…</p> : null}
+      {loading ? <p className="pf-muted">{translateUi("ecomSet.loading")}</p> : null}
       {error ? <BillingErrorNotice message={error} /> : null}
       {actionError ? <BillingErrorNotice message={actionError} /> : null}
       {!loading && !error && items.length === 0 ? (
         <div className="pf-settings-empty">
-          <p>还没有工具创作记录</p>
+          <p>{translateUi("workflow.noToolCreationsYet")}</p>
           <Link className="pf-btn pf-btn-lime pf-btn-sm" to="/tools">
-            去创作
+            {translateUi("workflow.create")}
           </Link>
         </div>
       ) : null}
@@ -211,7 +214,7 @@ export default function SettingsToolRunsPanel() {
                     <span className="pf-settings-list-main">
                       <strong>{tool?.title || item.tool_id}</strong>
                       <em className="pf-muted">
-                        {item.status === 'succeeded' && !item.urls.length ? '结果待恢复' : STATUS_CN[item.status] || item.status}
+                        {item.status === 'succeeded' && !item.urls.length ? translateUi("workflow.resultPendingRecovery") : STATUS_CN[item.status] || item.status}
                         {item.prompt ? ` · ${item.prompt.slice(0, 36)}` : ''}
                       </em>
                     </span>
@@ -224,7 +227,7 @@ export default function SettingsToolRunsPanel() {
                       onClick={() => void openDetail(item)}
                     >
                       <Eye size={14} aria-hidden />
-                      查看
+                      {translateUi("workflow.view")}
                     </button>
                     <button
                       type="button"
@@ -233,7 +236,7 @@ export default function SettingsToolRunsPanel() {
                       onClick={() => void downloadUrl(item, firstUrl)}
                     >
                       <Download size={14} aria-hidden />
-                      {downloading === resolveToolMediaUrl(firstUrl) ? '下载中…' : '下载'}
+                      {downloading === resolveToolMediaUrl(firstUrl) ? translateUi("workflow.downloading") : translateUi("workflow.download_2b9d01")}
                     </button>
                   </span>
                 </div>
@@ -252,20 +255,20 @@ export default function SettingsToolRunsPanel() {
           setPage(1)
         }}
         onChange={setPage}
-        ariaLabel="工具创作分页"
+        ariaLabel={translateUi("workflow.toolCreationPages")}
       />
 
       <Modal
         open={Boolean(detail)}
         onClose={closeDetail}
-        title={detail ? getToolDef(detail.tool_id)?.title || '创作详情' : '创作详情'}
+        title={detail ? getToolDef(detail.tool_id)?.title || translateUi("workflow.creationDetails") : translateUi("workflow.creationDetails")}
         size="lg"
         className="pf-tool-run-modal"
         footer={
           detail ? (
             <div className="pf-tool-run-foot">
               <Link className="pf-btn pf-btn-ghost pf-btn-sm" to={`/tools/${detail.tool_id}`} onClick={closeDetail}>
-                再创作
+                {translateUi("workflow.createAgain")}
               </Link>
               {detail.urls[0] || detail.preview_url ? (
                 <button
@@ -279,14 +282,14 @@ export default function SettingsToolRunsPanel() {
                   onClick={() => void downloadUrl(detail, detail.urls[0] || detail.preview_url || '')}
                 >
                   <Download size={14} aria-hidden />
-                  下载结果
+                  {translateUi("workflow.downloadResult")}
                 </button>
               ) : null}
             </div>
           ) : null
         }
       >
-        {detailLoading && !detail?.urls.length ? <p className="pf-muted">加载中…</p> : null}
+        {detailLoading && !detail?.urls.length ? <p className="pf-muted">{translateUi("ecomSet.loading")}</p> : null}
         {detail ? (
           <div className="pf-tool-run-detail">
             <div className="pf-tool-run-media">
@@ -296,52 +299,52 @@ export default function SettingsToolRunsPanel() {
                 ) : (
                   <img
                     src={resolveToolMediaUrl(detail.urls[0] || detail.preview_url)}
-                    alt="生成结果"
+                    alt={translateUi("workflow.generatedResults")}
                   />
                 )
               ) : (
                 <p className="pf-muted">
                   {STATUS_CN[detail.status] || detail.status}
-                  {detail.error ? ` · ${detail.error}` : ' · 结果尚未就绪'}
+                  {detail.error ? ` · ${detail.error}` : translateUi("workflow.resultNotReadyYet")}
                 </p>
               )}
             </div>
             <dl className="pf-tool-run-meta">
               <div>
-                <dt>状态</dt>
+                <dt>{translateUi("workflow.status")}</dt>
                 <dd>{STATUS_CN[detail.status] || detail.status}</dd>
               </div>
               <div>
-                <dt>时间</dt>
+                <dt>{translateUi("workflow.time")}</dt>
                 <dd>{formatWhen(detail.created_at)}</dd>
               </div>
               {detail.prompt ? (
                 <div className="is-block">
-                  <dt>提示词</dt>
+                  <dt>{translateUi("workflow.prompt")}</dt>
                   <dd>{detail.prompt}</dd>
                 </div>
               ) : null}
               {detail.params?.ratio ? (
                 <div>
-                  <dt>画幅</dt>
+                  <dt>{translateUi("daihuo.video.ratio")}</dt>
                   <dd>{detail.params.ratio}</dd>
                 </div>
               ) : null}
               {detail.params?.mode ? (
                 <div>
-                  <dt>输出类型</dt>
+                  <dt>{translateUi("workflow.outputType")}</dt>
                   <dd>{detail.params.mode}</dd>
                 </div>
               ) : null}
               {detail.params?.pack ? (
                 <div>
-                  <dt>工具包</dt>
+                  <dt>{translateUi("workflow.toolPack")}</dt>
                   <dd>{detail.params.pack}</dd>
                 </div>
               ) : null}
               {detail.error ? (
                 <div className="is-block">
-                  <dt>{detail.status === 'succeeded' ? '提示' : '错误'}</dt>
+                  <dt>{detail.status === 'succeeded' ? translateUi("ecomSet.plan.warnings") : translateUi("workflow.error")}</dt>
                   <dd className="pf-error">{detail.error}</dd>
                 </div>
               ) : null}
@@ -357,8 +360,7 @@ export default function SettingsToolRunsPanel() {
                     onClick={() => void downloadUrl(detail, url)}
                   >
                     <Download size={14} aria-hidden />
-                    下载文件 {idx + 1}
-                  </button>
+                    {translateUi("workflow.downloadFile", { v1: idx + 1 })}</button>
                 ))}
               </div>
             ) : null}

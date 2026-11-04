@@ -1,3 +1,4 @@
+import { translate as translateUi } from '../i18n/runtime'
 import type { DramaEpisode, DramaFragment } from '../api/drama'
 import { mergeFragmentRuntime, type FragmentEditSnapshot } from './dramaFragmentEditing.ts'
 
@@ -42,7 +43,7 @@ export function createFragmentAutosave(options: Options) {
     if (!active || !loaded || conflict || holds || epoch === savedEpoch || inFlight) return
     timer = setTimeout(() => { void flush().catch(() => undefined) }, options.delay ?? 900)
   }
-  const checkActive = () => { if (!active) throw new Error('分集已切换，本次结果不再应用') }
+  const checkActive = () => { if (!active) throw new Error(translateUi("workflow.theEpisodeChangedThisResponseWillNotBeApplied")) }
 
   function load(episode: DramaEpisode) {
     if (!active) return
@@ -86,7 +87,7 @@ export function createFragmentAutosave(options: Options) {
       const sentDeletes = [...deletedIds]
       const result = await options.persist(sent, { revision, deletedIds: sentDeletes })
       checkActive()
-      if (loadVersion !== sentVersion) throw Object.assign(new Error('已加载新版分镜'), { obsolete: true })
+      if (loadVersion !== sentVersion) throw Object.assign(new Error(translateUi("workflow.aNewerStoryboardWasLoaded")), { obsolete: true })
       const returned = result.fragments || []
       const idsByKey = new Map<string | undefined, number>()
       sent.forEach((row, index) => {
@@ -117,8 +118,8 @@ export function createFragmentAutosave(options: Options) {
 
   function flush(): Promise<DramaEpisode> {
     cancelTimer()
-    if (!active || !loaded) return Promise.reject(new Error('请先加载分镜'))
-    if (conflict) return Promise.reject(new Error('内容已在别处更新，请刷新；本地稿已保留'))
+    if (!active || !loaded) return Promise.reject(new Error(translateUi("workflow.loadTheStoryboardFirst")))
+    if (conflict) return Promise.reject(new Error(translateUi("workflow.contentChangedElsewhereYourLocalDraftIsKeptRefresh")))
     if (inFlight) return inFlight
     const request = drain().catch((error: unknown) => {
       if (active && !(error as { obsolete?: boolean })?.obsolete) {

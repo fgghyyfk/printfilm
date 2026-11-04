@@ -1,3 +1,4 @@
+import { useI18n } from '../../../i18n'
 /** 画布资产自定义节点：类型图标 + 媒体卡片 + 选中工具栏 */
 import {
   memo,
@@ -77,6 +78,7 @@ function PlaceholderIcon({ kind }: { kind: CanvasAssetNodeData['kind'] }) {
 
 /** 渲染单个画布资产节点 */
 function CanvasAssetNodeComponent({ id, data, selected }: NodeProps<Node<CanvasAssetNodeData>>) {
+  const { t: translateUi } = useI18n()
   const { updateNodeTextContent, renameNode } = useCanvasStore()
   const updateNodeInternals = useUpdateNodeInternals()
   const option = CANVAS_NODE_OPTION_BY_KIND[data.kind]
@@ -106,8 +108,8 @@ function CanvasAssetNodeComponent({ id, data, selected }: NodeProps<Node<CanvasA
   const footerLabel =
     data.kind === 'character'
       ? DRAMA_VOICE_BINDING_ENABLED && voiceLabel
-        ? `基础形象 · ${voiceLabel}`
-        : '基础形象'
+        ? translateUi("workflow.baseAppearanceVoice", { v1: String(voiceLabel) })
+        : translateUi("workflow.baseAppearance")
       : data.kind === 'scene'
         ? displayName
         : null
@@ -235,13 +237,13 @@ function CanvasAssetNodeComponent({ id, data, selected }: NodeProps<Node<CanvasA
             onBlur={commitRename}
             onKeyDown={handleRenameKeyDown}
             onMouseDown={(e) => e.stopPropagation()}
-            aria-label="节点名称"
+            aria-label={translateUi("workflow.nodeName")}
           />
         ) : (
           <button
             type="button"
             className="fc-node-title nodrag nopan"
-            title="双击重命名"
+            title={translateUi("workflow.doubleClickToRename")}
             onDoubleClick={startRename}
           >
             {displayName}
@@ -251,7 +253,7 @@ function CanvasAssetNodeComponent({ id, data, selected }: NodeProps<Node<CanvasA
 
       <div
         className={`fc-asset-card${canPreview ? ' is-previewable' : ''}`}
-        title={canPreview ? '双击放大预览' : undefined}
+        title={canPreview ? translateUi("workflow.doubleClickForALargerPreview") : undefined}
         onDoubleClick={handleCardDoubleClick}
       >
         <div
@@ -268,16 +270,16 @@ function CanvasAssetNodeComponent({ id, data, selected }: NodeProps<Node<CanvasA
                 className="fc-text-editor nodrag nowheel"
                 value={data.textContent || ''}
                 onChange={handleTextChange}
-                placeholder="输入文本…"
+                placeholder={translateUi("workflow.enterText")}
                 rows={4}
               />
             ) : (
-              <span>{data.textContent || data.label || '文本'}</span>
+              <span>{data.textContent || data.label || translateUi("workflow.text")}</span>
             )
           ) : data.generating ? (
             <div className="fc-generating">
               <Loader2 size={28} className="fc-spin" />
-              <span>生成中…</span>
+              <span>{translateUi("workflow.generating")}</span>
             </div>
           ) : mediaSrc && data.kind === 'video' && isPlayableVideoUrl(mediaSrc) ? (
             <CanvasAssetVideoPreview src={mediaSrc} onAspect={handleVideoAspect} />
@@ -310,8 +312,8 @@ function CanvasAssetNodeComponent({ id, data, selected }: NodeProps<Node<CanvasA
             <button
               type="button"
               className="fc-asset-expand nodrag nopan nowheel"
-              title="放大预览"
-              aria-label={`放大预览 ${displayName}`}
+              title={translateUi("workflow.largerPreview")}
+              aria-label={translateUi("workflow.largerPreviewOf", { v1: String(displayName) })}
               onClick={handleExpandClick}
               onPointerDown={(event) => event.stopPropagation()}
             >

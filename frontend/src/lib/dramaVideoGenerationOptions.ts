@@ -1,3 +1,4 @@
+import { translate as translateUi } from '../i18n/runtime'
 /** 漫剧画布 / 分集：视频生成选项（模型列表来自后台 TokenFree 目录） */
 import type { MediaModelOption, MediaModelsCatalog } from '../api'
 
@@ -105,7 +106,7 @@ export function formatVideoOutputLabel(
 /** 解析模型展示名（无目录时回退 id） */
 export function getVideoModelLabel(modelId: string | undefined | null) {
   const id = (modelId || '').trim()
-  return id || '视频模型'
+  return id || translateUi("workflow.videoModel")
 }
 
 /** 任意非空字符串均可作为视频模型 id（后台 TokenFree 目录） */

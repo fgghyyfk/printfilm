@@ -1,3 +1,5 @@
+import { useI18n } from '../../i18n'
+import { translate as translateUi } from '../../i18n/runtime'
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { api } from '../../api'
 import type { AvatarEngine, AvatarOptions, AvatarServiceStatus, Project } from '../../api'
@@ -5,9 +7,9 @@ import AvatarProductionOptions from './AvatarProductionOptions'
 
 /** 引擎选项：空串跟随后台默认 */
 const ENGINES: { id: AvatarEngine; label: string; desc: string }[] = [
-  { id: '', label: '后台默认', desc: '跟随管理后台「数字人」设置' },
-  { id: 'infinitetalk', label: 'InfiniteTalk', desc: '口型与表情更自然（推荐）' },
-  { id: 'longcat', label: 'LongCat', desc: '美团 LongCat 1.5，动作幅度更大' },
+  { id: '', get label() { return translateUi("workflow.siteDefault") }, get desc() { return translateUi("workflow.useTheAvatarSettingsFromTheAdminPanel") } },
+  { id: 'infinitetalk', label: 'InfiniteTalk', get desc() { return translateUi("workflow.moreNaturalLipSyncAndExpressionsRecommended") } },
+  { id: 'longcat', label: 'LongCat', get desc() { return translateUi("workflow.meituanLongcat15WithBroaderMovements") } },
 ]
 
 type Props = {
@@ -24,6 +26,7 @@ type Props = {
  * 后台没配形象生成服务时，跳过 ②，直接用上传的照片对口型。
  */
 export default function AvatarSetupBlock({ project, engine, onEngineChange, onProjectUpdated, disabled }: Props) {
+  const { t: translateUi } = useI18n()
   /* 上传 / 定妆照生成状态 */
   const [uploading, setUploading] = useState(false)
   const [generating, setGenerating] = useState(false)
@@ -49,7 +52,7 @@ export default function AvatarSetupBlock({ project, engine, onEngineChange, onPr
     try {
       onProjectUpdated(await api.uploadAvatarImage(project.id, file))
     } catch (err) {
-      setError(err instanceof Error ? err.message : '照片上传失败')
+      setError(err instanceof Error ? err.message : translateUi("workflow.couldNotUploadThePhoto"))
     } finally {
       setUploading(false)
     }
@@ -61,7 +64,7 @@ export default function AvatarSetupBlock({ project, engine, onEngineChange, onPr
     try {
       onProjectUpdated(await api.updateProject(project.id, { avatar_image_model: model }))
     } catch (err) {
-      setError(err instanceof Error ? err.message : '保存失败')
+      setError(err instanceof Error ? err.message : translateUi("workflow.couldNotSave"))
     }
   }
 
@@ -72,7 +75,7 @@ export default function AvatarSetupBlock({ project, engine, onEngineChange, onPr
     try {
       onProjectUpdated(await api.generateAvatarLook(project.id, style, project.avatar_image_model || ''))
     } catch (err) {
-      setError(err instanceof Error ? err.message : '定妆照生成失败')
+      setError(err instanceof Error ? err.message : translateUi("workflow.couldNotGenerateTheStyledPortrait"))
     } finally {
       setGenerating(false)
     }
@@ -89,33 +92,33 @@ export default function AvatarSetupBlock({ project, engine, onEngineChange, onPr
 
   return (
     <div className="pf-style-block">
-      <h3>数字人</h3>
+      <h3>{translateUi("workflow.talkingHead")}</h3>
       {service && !service.configured ? (
-        <p className="pf-avatar-warn">数字人服务尚未配置，请联系管理员在后台「系统设置 → 数字人」填写服务地址。</p>
+        <p className="pf-avatar-warn">{translateUi("workflow.talkingHeadServiceIsNotConfiguredAskAnAdministrator")}</p>
       ) : service && !service.online ? (
-        <p className="pf-avatar-warn">数字人服务暂时连不上，可以先准备素材，生成视频前请确认 GPU 服务已启动。</p>
+        <p className="pf-avatar-warn">{translateUi("workflow.theTalkingHeadServiceIsTemporarilyUnavailableYouCan")}</p>
       ) : null}
 
       <div className="pf-avatar-setup">
         <div className="pf-avatar-col">
-          <span className="pf-avatar-label">① 人脸照</span>
+          <span className="pf-avatar-label">{translateUi("workflow.facePhoto")}</span>
           <button type="button" className="pf-avatar-photo" disabled={busy} onClick={() => fileRef.current?.click()}>
-            {faceSrc ? <img src={faceSrc} alt="人脸照" /> : <span>{uploading ? '上传中…' : '上传照片'}</span>}
-            {faceSrc ? <span className="pf-avatar-photo-change">{uploading ? '上传中…' : '更换'}</span> : null}
+            {faceSrc ? <img src={faceSrc} alt={translateUi("workflow.facePhoto_26ccca")} /> : <span>{uploading ? translateUi("workflow.uploading") : translateUi("workflow.uploadPhoto")}</span>}
+            {faceSrc ? <span className="pf-avatar-photo-change">{uploading ? translateUi("workflow.uploading") : translateUi("workflow.replace")}</span> : null}
           </button>
           <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={onFile} />
         </div>
 
         {aiReady ? (
           <div className="pf-avatar-col">
-            <span className="pf-avatar-label">② 定妆照</span>
+            <span className="pf-avatar-label">{translateUi("workflow.styledPortrait")}</span>
             <div className="pf-avatar-photo pf-avatar-look">
               {generating ? (
-                <span>生成中…</span>
+                <span>{translateUi("workflow.generating")}</span>
               ) : lookSrc ? (
-                <img src={lookSrc} alt="定妆照" />
+                <img src={lookSrc} alt={translateUi("workflow.styledPortrait_beb785")} />
               ) : (
-                <span>未生成</span>
+                <span>{translateUi("workflow.notGenerated")}</span>
               )}
             </div>
           </div>
@@ -124,24 +127,24 @@ export default function AvatarSetupBlock({ project, engine, onEngineChange, onPr
         <div className="pf-avatar-tips">
           {aiReady ? (
             <>
-              <p>照片只取脸：服装、姿势、背景都会重新生成，每段口播还会换成与内容相关的场景。</p>
-              <p>正脸清晰、光线均匀即可，不必是半身照。</p>
+              <p>{translateUi("workflow.onlyYourFaceIsTakenFromThePhotoClothing")}</p>
+              <p>{translateUi("workflow.useAClearEvenlyLitFacePhotoItDoes")}</p>
             </>
           ) : (
             <>
-              <p>未配置形象生成服务，将直接用上传的照片对口型：请用正面半身照，脸部清晰、嘴巴闭合、背景简洁。</p>
-              <p>建议竖版 9:16 照片。</p>
+              <p>{translateUi("workflow.portraitGenerationIsNotConfiguredSoLipSyncWill")}</p>
+              <p>{translateUi("workflow.aVertical916PhotoIsRecommended")}</p>
             </>
           )}
-          <p>只上传本人或已获授权的人像，成片会标注 AI 生成。</p>
-          {hasVideos ? <p className="pf-avatar-warn-inline">更换照片或定妆照后，已生成的数字人视频需要重新生成。</p> : null}
+          <p>{translateUi("workflow.uploadOnlyYourOwnPortraitOrOneYouAre")}</p>
+          {hasVideos ? <p className="pf-avatar-warn-inline">{translateUi("workflow.afterChangingThePhotoOrStyledPortraitRegenerateAny")}</p> : null}
         </div>
       </div>
 
       {aiReady && faceSrc ? (
         <>
           <div className="pf-avatar-row">
-            <span className="pf-avatar-label">风格</span>
+            <span className="pf-avatar-label">{translateUi("ecomSet.form.style")}</span>
             <div className="pf-avatar-chips">
               {options?.look_styles.map((s) => (
                 <button
@@ -157,16 +160,16 @@ export default function AvatarSetupBlock({ project, engine, onEngineChange, onPr
             </div>
           </div>
           <div className="pf-avatar-row">
-            <span className="pf-avatar-label">改图模型</span>
+            <span className="pf-avatar-label">{translateUi("workflow.imageEditingModel")}</span>
             <div className="pf-avatar-chips">
               <button
                 type="button"
                 className={!currentModel ? 'pf-avatar-chip selected' : 'pf-avatar-chip'}
                 disabled={busy}
-                title={`后台默认：${options?.default_image_model || ''}`}
+                title={translateUi("workflow.siteDefault_c5581b", { v1: String(options?.default_image_model || '') })}
                 onClick={() => void onModel('')}
               >
-                后台默认
+                {translateUi("workflow.siteDefault")}
               </button>
               {options?.image_models.map((m) => (
                 <button
@@ -188,7 +191,7 @@ export default function AvatarSetupBlock({ project, engine, onEngineChange, onPr
             disabled={busy}
             onClick={() => void onGenerateLook()}
           >
-            {generating ? '生成中，约 10–60 秒…' : hasLook ? '重新生成定妆照' : '生成定妆照'}
+            {generating ? translateUi("workflow.generatingAbout1060Seconds") : hasLook ? translateUi("workflow.regenerateStyledPortrait") : translateUi("workflow.generateStyledPortrait")}
           </button>
         </>
       ) : null}

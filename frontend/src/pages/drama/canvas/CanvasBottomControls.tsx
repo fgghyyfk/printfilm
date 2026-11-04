@@ -1,3 +1,4 @@
+import { useI18n } from '../../../i18n'
 /** 画布左下角缩放与撤销控制条 */
 import { useCallback, useState } from 'react'
 import { LocateFixed, Magnet, Map, Minus, Plus, Redo2, Scan, Undo2 } from 'lucide-react'
@@ -6,6 +7,7 @@ import { useCanvasStore } from './CanvasStore'
 
 /** 渲染画布左下角控制条 */
 export function CanvasBottomControls() {
+  const { t: translateUi } = useI18n()
   const {
     snapToGrid,
     showMinimap,
@@ -36,8 +38,8 @@ export function CanvasBottomControls() {
         <button
           type="button"
           className="fc-icon-btn is-sm"
-          aria-label="撤销"
-          title="撤销"
+          aria-label={translateUi("workflow.undo")}
+          title={translateUi("workflow.undo")}
           disabled={!canUndo}
           onClick={undo}
         >
@@ -46,8 +48,8 @@ export function CanvasBottomControls() {
         <button
           type="button"
           className="fc-icon-btn is-sm"
-          aria-label="重做"
-          title="重做"
+          aria-label={translateUi("workflow.redo")}
+          title={translateUi("workflow.redo")}
           disabled={!canRedo}
           onClick={redo}
         >
@@ -59,8 +61,8 @@ export function CanvasBottomControls() {
         <button
           type="button"
           className="fc-icon-btn is-sm"
-          aria-label="定位到内容"
-          title="定位到内容"
+          aria-label={translateUi("workflow.findContent")}
+          title={translateUi("workflow.findContent")}
           onClick={() => void fitView({ duration: 200 })}
         >
           <LocateFixed size={16} strokeWidth={1.8} />
@@ -68,8 +70,8 @@ export function CanvasBottomControls() {
         <button
           type="button"
           className="fc-icon-btn is-sm"
-          aria-label="适应画布"
-          title="适应画布"
+          aria-label={translateUi("workflow.fitCanvas")}
+          title={translateUi("workflow.fitCanvas")}
           onClick={() => void fitView({ duration: 200, padding: 0.2 })}
         >
           <Scan size={16} strokeWidth={1.8} />
@@ -80,8 +82,8 @@ export function CanvasBottomControls() {
         <button
           type="button"
           className={`fc-icon-btn is-sm${snapToGrid ? ' is-active' : ''}`}
-          aria-label={snapToGrid ? '关闭网格吸附' : '开启网格吸附'}
-          title={snapToGrid ? '关闭网格吸附' : '开启网格吸附'}
+          aria-label={snapToGrid ? translateUi("workflow.turnOffGridSnapping") : translateUi("workflow.turnOnGridSnapping")}
+          title={snapToGrid ? translateUi("workflow.turnOffGridSnapping") : translateUi("workflow.turnOnGridSnapping")}
           aria-pressed={snapToGrid}
           onClick={toggleSnapToGrid}
         >
@@ -90,8 +92,8 @@ export function CanvasBottomControls() {
         <button
           type="button"
           className={`fc-icon-btn is-sm${showMinimap ? ' is-active' : ''}`}
-          aria-label={showMinimap ? '关闭小地图' : '开启小地图'}
-          title={showMinimap ? '关闭小地图' : '开启小地图'}
+          aria-label={showMinimap ? translateUi("workflow.hideMinimap") : translateUi("workflow.showMinimap")}
+          title={showMinimap ? translateUi("workflow.hideMinimap") : translateUi("workflow.showMinimap")}
           aria-pressed={showMinimap}
           onClick={toggleMinimap}
         >
@@ -103,8 +105,8 @@ export function CanvasBottomControls() {
         <button
           type="button"
           className="fc-icon-btn is-sm"
-          aria-label="缩小"
-          title="缩小"
+          aria-label={translateUi("workflow.zoomOut")}
+          title={translateUi("workflow.zoomOut")}
           onClick={() => zoomOut({ duration: 150 })}
         >
           <Minus size={16} strokeWidth={1.8} />
@@ -112,8 +114,8 @@ export function CanvasBottomControls() {
         <button
           type="button"
           className="fc-zoom-label"
-          aria-label="重置缩放"
-          title="重置缩放"
+          aria-label={translateUi("workflow.resetZoom")}
+          title={translateUi("workflow.resetZoom")}
           onClick={handleResetZoom}
         >
           {zoomPercent}%
@@ -121,8 +123,8 @@ export function CanvasBottomControls() {
         <button
           type="button"
           className="fc-icon-btn is-sm"
-          aria-label="放大"
-          title="放大"
+          aria-label={translateUi("workflow.zoomIn")}
+          title={translateUi("workflow.zoomIn")}
           onClick={() => zoomIn({ duration: 150 })}
         >
           <Plus size={16} strokeWidth={1.8} />

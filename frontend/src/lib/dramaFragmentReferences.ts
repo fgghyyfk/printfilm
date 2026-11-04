@@ -1,3 +1,4 @@
+import { translate as translateUi } from '../i18n/runtime'
 import type { DramaAsset, DramaFragment } from '../api/drama'
 
 /** 引用表顺序优先，正文新增引用追加；显式优先级只重排已有成员。 */
@@ -29,7 +30,7 @@ export function fragmentCharacterLimitWarning(fragment: DramaFragment | null | u
   const characters = orderedFragmentAssetIds(fragment).filter((id) => (byId.get(id)?.type || '').trim().toLowerCase() === 'character')
   if (characters.length <= 3) return null
   const ignored = characters.slice(3).map((id) => byId.get(id)?.name || `#${id}`)
-  return `本镜引用 ${characters.length} 个角色，仅前 3 个生效；忽略：${ignored.join('、')}。可调整角色优先级。`
+  return translateUi("workflow.thisShotReferencesCharactersOnlyTheFirst3Are", { v1: characters.length, v2: ignored.join('、') })
 }
 
 function referenceImageUrl(asset: DramaAsset): string {
@@ -67,9 +68,9 @@ export function fragmentReferenceFreshness(fragment: DramaFragment, assets: Dram
 export function fragmentReferenceStatusLabel(fragment: DramaFragment, assets: DramaAsset[]): string {
   if (!fragment.video) return ''
   switch (fragmentReferenceFreshness(fragment, assets)) {
-    case 'inputs_changed': return '参考顺序已变，建议重生成'
-    case 'image_updated': return '形象已更新，建议重生成'
-    case 'unknown': return '来源版本未知'
+    case 'inputs_changed': return translateUi("workflow.referenceOrderChangedRegenerationRecommended")
+    case 'image_updated': return translateUi("workflow.referenceImageUpdatedRegenerationRecommended")
+    case 'unknown': return translateUi("workflow.sourceVersionUnknown")
     default: return ''
   }
 }

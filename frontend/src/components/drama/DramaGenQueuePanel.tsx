@@ -1,3 +1,6 @@
+import { queueDisplayText } from '../../lib/dramaQueueDisplay'
+import { useI18n } from '../../i18n'
+import { translate as translateUi } from '../../i18n/runtime'
 /** 漫剧全局生成队列：右下角圆钮，展示图片 / 视频等任务 */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Clapperboard, ImageIcon, Layers, Octagon, Trash2, X } from 'lucide-react'
@@ -20,17 +23,17 @@ const OPEN_STORAGE_KEY = 'drama-gen-queue-fab-open'
 const POS_STORAGE_KEY = 'drama-gen-queue-fab-pos'
 
 const STATUS_LABEL: Record<string, string> = {
-  queued: '待处理',
-  running: '生成中',
-  done: '已完成',
-  failed: '失败',
+  get queued() { return translateUi("workflow.pending") },
+  get running() { return translateUi("ecomSet.result.running") },
+  get done() { return translateUi("ecomSet.status.done") },
+  get failed() { return translateUi("ecomSet.status.failed") },
 }
 
 const IMAGE_SUBTYPE_LABEL: Record<string, string> = {
-  character: '角色图',
-  scene: '场景图',
-  prop: '道具图',
-  material: '素材图',
+  get character() { return translateUi("workflow.characterImage") },
+  get scene() { return translateUi("workflow.sceneImage") },
+  get prop() { return translateUi("workflow.propImage") },
+  get material() { return translateUi("workflow.referenceImage") },
 }
 
 // 读取折叠偏好
@@ -44,8 +47,8 @@ function readOpenPreference(): boolean {
 
 // 任务类型展示
 function jobTypeLabel(job: DramaGenJob): string {
-  if (job.kind === 'video') return job.subtype || '分镜视频'
-  return IMAGE_SUBTYPE_LABEL[job.subtype] || job.subtype || '图片'
+  if (job.kind === 'video') return queueDisplayText(job.subtype) || translateUi("workflow.storyboardVideo")
+  return IMAGE_SUBTYPE_LABEL[job.subtype] || job.subtype || translateUi("workflow.image")
 }
 
 // 任务图标
@@ -56,6 +59,7 @@ function JobKindIcon({ kind }: { kind: DramaGenJob['kind'] }) {
 
 // 渲染右下角统一生成队列
 export function DramaGenQueuePanel() {
+  const { t: translateUi } = useI18n()
   const queue = useDramaGenQueue()
   const [open, setOpen] = useState(readOpenPreference)
   const [detailJob, setDetailJob] = useState<DramaGenJob | null>(null)
@@ -139,7 +143,7 @@ export function DramaGenQueuePanel() {
   return (
     <div className="drama-gen-fab-root is-draggable" style={fabStyle}>
       {open ? (
-        <div className="drama-gen-fab-panel" role="dialog" aria-label="生成队列">
+        <div className="drama-gen-fab-panel" role="dialog" aria-label={translateUi("workflow.generationQueue")}>
           {detailJob ? (
             <DramaGenTaskDetail job={detailJob} onClose={() => setDetailJob(null)} />
           ) : (
@@ -148,14 +152,14 @@ export function DramaGenQueuePanel() {
                 <div className="drama-gen-fab-title">
                   <Layers size={18} strokeWidth={1.75} aria-hidden />
                   <div>
-                    <strong>生成队列</strong>
+                    <strong>{translateUi("workflow.generationQueue")}</strong>
                     <span>
                       {active.length > 0
-                        ? `${active.length} 项进行中`
+                        ? translateUi("workflow.inProgress_2ed840", { v1: String(active.length) })
                         : failed.length > 0
-                          ? `${failed.length} 项失败`
+                          ? translateUi("workflow.failed", { v1: String(failed.length) })
                           : finished.length > 0
-                            ? '全部完成'
+                            ? translateUi("workflow.allComplete")
                             : ''}
                     </span>
                   </div>
@@ -166,8 +170,8 @@ export function DramaGenQueuePanel() {
                       type="button"
                       className="drama-gen-fab-icon-btn"
                       onClick={cancelAllVideo}
-                      title="取消全部视频任务"
-                      aria-label="取消全部视频任务"
+                      title={translateUi("workflow.cancelAllVideoTasks")}
+                      aria-label={translateUi("workflow.cancelAllVideoTasks")}
                     >
                       <Octagon size={16} />
                     </button>
@@ -177,8 +181,8 @@ export function DramaGenQueuePanel() {
                       type="button"
                       className="drama-gen-fab-icon-btn"
                       onClick={clearFinishedDramaGenJobs}
-                      title="清空已结束"
-                      aria-label="清空已结束"
+                      title={translateUi("workflow.clearFinishedTasks")}
+                      aria-label={translateUi("workflow.clearFinishedTasks")}
                     >
                       <Trash2 size={16} />
                     </button>
@@ -187,8 +191,8 @@ export function DramaGenQueuePanel() {
                     type="button"
                     className="drama-gen-fab-icon-btn"
                     onClick={close}
-                    title="关闭队列"
-                    aria-label="关闭队列"
+                    title={translateUi("workflow.closeQueue")}
+                    aria-label={translateUi("workflow.closeQueue")}
                   >
                     <X size={18} />
                   </button>
@@ -209,12 +213,12 @@ export function DramaGenQueuePanel() {
                           <div className="drama-gen-fab-item-main">
                             <span className="drama-gen-fab-kind">
                               <JobKindIcon kind={job.kind} />
-                              <em>{job.kind === 'video' ? '视频' : '图片'}</em>
+                              <em>{job.kind === 'video' ? translateUi("workflow.video") : translateUi("workflow.image")}</em>
                             </span>
                             <span className="drama-gen-fab-name">{job.title}</span>
                             <span className="drama-gen-fab-type">{jobTypeLabel(job)}</span>
                             {job.message ? (
-                              <span className="drama-gen-fab-msg">{job.message}</span>
+                              <span className="drama-gen-fab-msg">{queueDisplayText(job.message)}</span>
                             ) : null}
                           </div>
                           <span className="drama-gen-fab-status">
@@ -235,13 +239,13 @@ export function DramaGenQueuePanel() {
                             ) : null}
                             {errView.upstreamAccountBlocked ? (
                               <p className="drama-gen-fab-error-tip drama-gen-fab-upstream-tip">
-                                需管理员充值 TokenFree Seedream 账户，用户端充值无法解决。
+                                {translateUi("workflow.anAdministratorMustTopUpTheTokenfreeSeedreamAccount")}
                               </p>
                             ) : null}
-                            <span className="drama-gen-fab-open-hint">查看原因</span>
+                            <span className="drama-gen-fab-open-hint">{translateUi("workflow.viewReason")}</span>
                           </div>
                         ) : (
-                          <span className="drama-gen-fab-open-hint">查看详情</span>
+                          <span className="drama-gen-fab-open-hint">{translateUi("workflow.viewDetails")}</span>
                         )}
                         {(job.status === 'queued' || job.status === 'running') && (
                           <div className="drama-gen-fab-bar" aria-hidden />
@@ -266,9 +270,9 @@ export function DramaGenQueuePanel() {
         type="button"
         className={`drama-gen-fab-btn is-draggable${active.length > 0 ? ' is-busy' : ''}${failed.length > 0 && active.length === 0 ? ' is-failed' : ''}`}
         onClick={toggleOpen}
-        title={open ? '收起生成队列（可拖动）' : '展开生成队列（可拖动）'}
+        title={open ? translateUi("workflow.collapseGenerationQueueDraggable") : translateUi("workflow.expandGenerationQueueDraggable")}
         aria-expanded={open}
-        aria-label="生成队列"
+        aria-label={translateUi("workflow.generationQueue")}
         {...bindDrag}
       >
         <Layers size={22} strokeWidth={1.75} aria-hidden />

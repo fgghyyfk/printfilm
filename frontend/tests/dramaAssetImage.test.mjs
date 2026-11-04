@@ -1,6 +1,7 @@
+import { loadSource } from './bundleModule.mjs'
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { dramaAssetHasImage, dramaAssetHasReferenceImage, dramaAssetNeedsImageGeneration } from '../src/lib/dramaAssetImage.ts'
+const { dramaAssetHasImage, dramaAssetHasReferenceImage, dramaAssetNeedsImageGeneration } = await loadSource('../src/lib/dramaAssetImage.ts')
 
 // 与视频后端实际接受的cover优先、位图后缀规则保持一致。
 test('补缺图不把临时预览、无后缀地址或SVG当作可用参考图', () => {

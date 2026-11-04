@@ -1,3 +1,4 @@
+import { translate as translateUi } from '../../i18n/runtime'
 /** 画面风格卡片网格：无风格 + 缩略图选项 */
 import { Check } from 'lucide-react'
 import { DramaImageStylePreviewImg } from './DramaImageStylePreviewImg'
@@ -16,7 +17,7 @@ export function DramaImageStyleCardGrid({
   value,
   onChange,
   allowNone = true,
-  noneLabel = '无风格',
+  noneLabel = translateUi("workflow.noStyle"),
   className,
 }: Props) {
   return (

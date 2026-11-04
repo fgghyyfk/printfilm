@@ -1,3 +1,4 @@
+import { translate as translateUi } from '../i18n/runtime'
 /** Agent Skill 勾选：本地缓存与默认值 */
 
 import type { AgentSkill } from '../api/agentSkills'
@@ -43,7 +44,7 @@ export function resolveSelectedSkillIds(skills: AgentSkill[], stored: number[] |
 /** 按钮上显示已选 Skill 名称 */
 export function skillTriggerLabel(skills: AgentSkill[], selectedIds: number[]): string {
   if (skills.length === 0) return 'Skill'
-  if (selectedIds.length === 0) return '不使用 Skill'
+  if (selectedIds.length === 0) return translateUi("workflow.noSkill")
   if (selectedIds.length === 1) {
     const hit = skills.find((skill) => skill.id === selectedIds[0])
     return hit?.name || 'Skill'

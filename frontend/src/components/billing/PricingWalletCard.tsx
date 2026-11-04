@@ -1,3 +1,4 @@
+import { useI18n } from '../../i18n'
 import { Eye, EyeOff } from 'lucide-react'
 import { useState } from 'react'
 import type { UsageSummary, Wallet } from '../../api'
@@ -18,6 +19,7 @@ function formatUpdated(d: Date | null) {
 
 /** 定价页深色余额卡片：余额、本月消耗、冻结、充值记录 */
 export default function PricingWalletCard({ wallet, usage, loggedIn, updatedAt, onHistory }: Props) {
+  const { t: translateUi } = useI18n()
   const [balanceVisible, setBalanceVisible] = useState(true)
 
   const balanceYuan = wallet?.balance_yuan ?? usage?.balance_yuan ?? 0
@@ -27,12 +29,12 @@ export default function PricingWalletCard({ wallet, usage, loggedIn, updatedAt, 
   return (
     <aside className="pf-pricing-wallet-dark">
       <div className="pf-pricing-wallet-dark-head">
-        <span className="pf-pricing-wallet-dark-label">可用余额</span>
+        <span className="pf-pricing-wallet-dark-label">{translateUi("workflow.availableBalance")}</span>
         <div className="pf-pricing-wallet-dark-actions">
           <button
             type="button"
             className="pf-pricing-wallet-eye"
-            aria-label={balanceVisible ? '隐藏余额' : '显示余额'}
+            aria-label={balanceVisible ? translateUi("workflow.hideBalance") : translateUi("workflow.showBalance")}
             onClick={() => setBalanceVisible((v) => !v)}
           >
             {balanceVisible ? <Eye size={16} /> : <EyeOff size={16} />}
@@ -41,10 +43,10 @@ export default function PricingWalletCard({ wallet, usage, loggedIn, updatedAt, 
             type="button"
             className="pf-pricing-wallet-history"
             disabled={!loggedIn}
-            title={loggedIn ? '查看充值记录' : '请先登录'}
+            title={loggedIn ? translateUi("workflow.viewTopUpHistory") : translateUi("workflow.pleaseSignInFirst")}
             onClick={onHistory}
           >
-            充值记录
+            {translateUi("workflow.topUpHistory")}
           </button>
         </div>
       </div>
@@ -55,16 +57,16 @@ export default function PricingWalletCard({ wallet, usage, loggedIn, updatedAt, 
 
       <dl className="pf-pricing-wallet-dark-meta">
         <div>
-          <dt>本次消耗</dt>
+          <dt>{translateUi("workflow.costOfThisRun")}</dt>
           <dd>{loggedIn ? `¥${monthCharge.toFixed(2)}` : '—'}</dd>
         </div>
         <div>
-          <dt>冻结金额</dt>
+          <dt>{translateUi("workflow.reservedAmount")}</dt>
           <dd>{loggedIn ? `¥${frozenYuan.toFixed(2)}` : '—'}</dd>
         </div>
       </dl>
 
-      <p className="pf-pricing-wallet-dark-updated">更新于 {formatUpdated(updatedAt)}</p>
+      <p className="pf-pricing-wallet-dark-updated">{translateUi("workflow.updated", { v1: formatUpdated(updatedAt) })}</p>
     </aside>
   )
 }

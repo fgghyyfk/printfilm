@@ -1,6 +1,7 @@
+import { loadSource } from './bundleModule.mjs'
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { applyComplianceSuggestion } from '../src/lib/complianceChanges.ts'
+const { applyComplianceSuggestion } = await loadSource('../src/lib/complianceChanges.ts')
 
 test('emoji和重复词按原稿码点仅替换目标，替换后旧报告不能改下一处', () => {
   const text = '😀最好用，最好用'

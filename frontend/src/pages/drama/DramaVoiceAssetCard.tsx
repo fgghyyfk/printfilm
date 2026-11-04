@@ -1,3 +1,4 @@
+import { useI18n } from '../../i18n'
 /** 资产库「音色」Tab 单卡：描述编辑、试听与合成 */
 import { AudioLines, Trash2, Volume2 } from 'lucide-react'
 import { resolveDramaMediaUrl, type DramaAsset } from '../../api/drama'
@@ -25,6 +26,7 @@ export function DramaVoiceAssetCard({
   onDelete,
   onError,
 }: Props) {
+  const { t: translateUi } = useI18n()
   const audioSrc = resolveDramaMediaUrl(asset.url)
   const hasAudio = Boolean(audioSrc)
 
@@ -35,15 +37,15 @@ export function DramaVoiceAssetCard({
           <AudioLines size={18} strokeWidth={1.75} />
         </div>
         <div className="drama-voice-card-title">
-          <h3>{asset.name || '未命名音色'}</h3>
+          <h3>{asset.name || translateUi("workflow.untitledVoice")}</h3>
           <span className={`drama-voice-card-status${hasAudio ? ' is-ready' : ' is-pending'}`}>
-            {hasAudio ? '已合成' : '待合成'}
+            {hasAudio ? translateUi("workflow.synthesized") : translateUi("workflow.pendingSynthesis")}
           </span>
         </div>
         <button
           type="button"
           className="drama-voice-card-delete"
-          aria-label={`删除 ${asset.name || '音色'}`}
+          aria-label={translateUi("workflow.delete_697c8d", { v1: String(asset.name || translateUi("daihuo.video.voice")) })}
           disabled={synthBusy}
           onClick={onDelete}
         >
@@ -53,14 +55,14 @@ export function DramaVoiceAssetCard({
 
       <div className="drama-voice-card-body">
         <label className="drama-voice-card-field">
-          <span>音色描述</span>
+          <span>{translateUi("workflow.voiceDescription")}</span>
           <textarea
             rows={3}
             value={promptValue}
             disabled={synthBusy}
             onChange={(e) => onPromptChange(e.target.value)}
             onBlur={onPromptBlur}
-            placeholder="描述音色：年龄、性别、语气、语速…"
+            placeholder={translateUi("workflow.describeAgeGenderTonePaceAndVoiceQualities")}
           />
         </label>
 
@@ -79,7 +81,7 @@ export function DramaVoiceAssetCard({
           ) : (
             <>
               <Volume2 size={16} strokeWidth={1.75} aria-hidden />
-              <span>填写描述后合成试听</span>
+              <span>{translateUi("workflow.enterADescriptionToSynthesizeAPreview")}</span>
             </>
           )}
         </div>
@@ -92,7 +94,7 @@ export function DramaVoiceAssetCard({
           disabled={synthBusy || !promptValue.trim()}
           onClick={onSynth}
         >
-          {synthBusy ? '合成中…' : hasAudio ? '重新合成' : '按提示词合成'}
+          {synthBusy ? translateUi("workflow.synthesizing") : hasAudio ? translateUi("workflow.synthesizeAgain") : translateUi("workflow.synthesizeFromPrompt")}
         </button>
       </footer>
     </article>

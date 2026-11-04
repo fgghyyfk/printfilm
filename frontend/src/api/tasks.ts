@@ -1,9 +1,10 @@
+import { translate as translateUi } from '../i18n/runtime'
 import { throwApiError } from '../lib/apiError'
 import { createJsonRequester } from './client'
 
 /** 任务 API 沿用 HTTP 状态回退文案，共用统一传输层。 */
 const request = createJsonRequester((response, detail) =>
-  throwApiError(response.status, detail, '任务请求未完成，请稍后再试', response.headers.get('X-Error-Code')),
+  throwApiError(response.status, detail, translateUi("workflow.theTaskRequestDidNotCompletePleaseTryAgain"), response.headers.get('X-Error-Code')),
 )
 
 export type TaskEventOut = {

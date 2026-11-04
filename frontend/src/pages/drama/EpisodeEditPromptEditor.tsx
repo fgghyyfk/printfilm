@@ -1,3 +1,5 @@
+import { useI18n } from '../../i18n'
+import { translate as translateUi } from '../../i18n/runtime'
 /** 分集脚本 contentEditable：时长/资产 chip + @ 弹层 */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { resolveDramaMediaUrl, type DramaAsset } from '../../api/drama'
@@ -35,10 +37,11 @@ export function EpisodeEditPromptEditor({
   assets,
   referencedIds,
   editing,
-  placeholder = '输入画面描述、对白、旁白；键入 @ 引用资产或插入时长…',
+  placeholder = translateUi("workflow.enterVisualsDialogueAndNarrationTypeToReferenceAssets"),
   onContentChange,
   onOpenAsset,
 }: Props) {
+  const { t: translateUi } = useI18n()
   const editorRef = useRef<HTMLDivElement>(null)
   const lastEmittedRef = useRef(content)
   const mentionTriggerRangeRef = useRef<Range | null>(null)
@@ -189,7 +192,7 @@ export function EpisodeEditPromptEditor({
         className={`drama-ep-prompt-editor${editing ? ' is-editing' : ''}`}
         role="textbox"
         aria-multiline="true"
-        aria-label="分镜脚本"
+        aria-label={translateUi("workflow.storyboardScript")}
         aria-readonly={!editing}
         contentEditable={editing}
         suppressContentEditableWarning

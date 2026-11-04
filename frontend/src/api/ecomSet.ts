@@ -1,3 +1,4 @@
+import { translate as translateUi } from '../i18n/runtime'
 /** 一图出套图 API：/api/tools/ecom-set/* */
 
 import { throwApiError } from '../lib/apiError'
@@ -99,7 +100,7 @@ function requestEcom<T>(path: string, fallback: string, init?: RequestInit, noti
 
 // 拉取平台/风格/张数/价格等表单选项
 export function getEcomSetOptions(): Promise<EcomSetOptions> {
-  return requestEcom('/options', '加载选项失败')
+  return requestEcom('/options', translateUi("workflow.couldNotLoadOptions"))
 }
 
 // 上传商品图并生成出图方案（同步，约 10–20 秒，收规划费）
@@ -111,28 +112,28 @@ export function planEcomSet(payload: EcomSetPlanPayload): Promise<EcomSet> {
   body.append('style', payload.style)
   body.append('count', String(payload.count))
   body.append('notes', payload.notes || '')
-  return requestEcom('/plan', '方案生成失败', { method: 'POST', body }, true)
+  return requestEcom('/plan', translateUi("workflow.couldNotGenerateThePlan"), { method: 'POST', body }, true)
 }
 
 // 保存用户修改后的方案（仅 planned 可改，免费）
 export function saveEcomSetPlan(id: number, items: EcomSetPlanItemPatch[]): Promise<EcomSet> {
-  return requestEcom(`/${id}/plan`, '保存失败', { method: 'PUT', body: JSON.stringify({ items }) })
+  return requestEcom(`/${id}/plan`, translateUi("workflow.couldNotSave"), { method: 'PUT', body: JSON.stringify({ items }) })
 }
 
 // 确认方案，批量开始生成
 export function generateEcomSet(id: number): Promise<EcomSet> {
-  return requestEcom(`/${id}/generate`, '提交生成失败', { method: 'POST' }, true)
+  return requestEcom(`/${id}/generate`, translateUi("workflow.couldNotSubmitGeneration"), { method: 'POST' }, true)
 }
 
 // 查询套图详情（生成中轮询）
 export function getEcomSet(id: number): Promise<EcomSet> {
-  return requestEcom(`/${id}`, '加载套图失败')
+  return requestEcom(`/${id}`, translateUi("workflow.couldNotLoadTheImageSet"))
 }
 
 // 我的套图列表（服务端分页，按创建时间倒序）
 export function listEcomSets(page = 1, pageSize = 12): Promise<EcomSetList> {
   const qs = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
-  return requestEcom(`?${qs}`, '加载列表失败')
+  return requestEcom(`?${qs}`, translateUi("workflow.couldNotLoadTheList"))
 }
 
 // 单张重新生成，可选改画面描述（收一张生图费）
@@ -140,7 +141,7 @@ export function regenerateEcomSetItem(id: number, idx: number, scene?: string): 
   const body = scene === undefined ? {} : { scene }
   return requestEcom(
     `/${id}/items/${idx}/regenerate`,
-    '重新生成失败',
+    translateUi("workflow.couldNotRegenerate"),
     { method: 'POST', body: JSON.stringify(body) },
     true,
   )
@@ -148,7 +149,7 @@ export function regenerateEcomSetItem(id: number, idx: number, scene?: string): 
 
 // 单张改文案并同步重新排版（免费）
 export function updateEcomSetItemCopy(id: number, idx: number, copy: EcomSetCopyPatch): Promise<EcomSet> {
-  return requestEcom(`/${id}/items/${idx}/copy`, '修改文案失败', {
+  return requestEcom(`/${id}/items/${idx}/copy`, translateUi("workflow.couldNotUpdateTheCopy"), {
     method: 'PUT',
     body: JSON.stringify(copy),
   })
@@ -156,7 +157,7 @@ export function updateEcomSetItemCopy(id: number, idx: number, copy: EcomSetCopy
 
 // 带鉴权下载套图 zip 并触发浏览器保存
 export async function downloadEcomSetZip(id: number, fallbackName: string): Promise<void> {
-  const response = await requestResponse(`${BASE}/${id}/download`, undefined, errorHandler('下载失败', false))
+  const response = await requestResponse(`${BASE}/${id}/download`, undefined, errorHandler(translateUi("workflow.downloadFailed"), false))
   const blob = await response.blob()
   const filename = parseDispositionFilename(response.headers.get('Content-Disposition')) || fallbackName
   triggerBlobDownload(blob, filename)
@@ -164,7 +165,7 @@ export async function downloadEcomSetZip(id: number, fallbackName: string): Prom
 
 // 默认继续最近项目；明确 create_new 时由请求键幂等创建另一条视频。
 export function createDaihuoProject(id: number, payload: DaihuoProjectPayload): Promise<{ project_id: number }> {
-  return requestEcom(`/${id}/project`, '创建带货视频失败', { method: 'POST', body: JSON.stringify(payload) }, true)
+  return requestEcom(`/${id}/project`, translateUi("workflow.couldNotCreateTheProductVideo"), { method: 'POST', body: JSON.stringify(payload) }, true)
 }
 
 
@@ -179,5 +180,5 @@ export type DaihuoVideoQuote = {
 }
 
 export function quoteDaihuoProject(id: number, payload: DaihuoProjectPayload, signal?: AbortSignal): Promise<DaihuoVideoQuote> {
-  return requestEcom(`/${id}/project/quote`, '带货视频估价失败', { method: 'POST', body: JSON.stringify(payload), signal })
+  return requestEcom(`/${id}/project/quote`, translateUi("workflow.couldNotEstimateTheProductVideo"), { method: 'POST', body: JSON.stringify(payload), signal })
 }

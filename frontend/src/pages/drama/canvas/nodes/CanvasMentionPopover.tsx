@@ -1,3 +1,5 @@
+import { useI18n } from '../../../../i18n'
+import { translate as translateUi } from '../../../../i18n/runtime'
 /** 画布提示词：键入 @ 后选择角色/场景等节点插入（不 portal，避免点选时画布取消选中） */
 import { Landmark, UserRound, Image as ImageIcon, PlaySquare } from 'lucide-react'
 import { resolveDramaMediaUrl } from '../../../../api/drama'
@@ -31,11 +33,11 @@ function KindIcon({ kind }: { kind: CanvasNodeKind }) {
 
 /** 类型中文标签 */
 function kindLabel(kind: CanvasNodeKind) {
-  if (kind === 'character') return '角色'
-  if (kind === 'scene') return '场景'
-  if (kind === 'video') return '视频'
-  if (kind === 'image') return '图片'
-  return '资产'
+  if (kind === 'character') return translateUi("workflow.character")
+  if (kind === 'scene') return translateUi("workflow.scene")
+  if (kind === 'video') return translateUi("workflow.video")
+  if (kind === 'image') return translateUi("workflow.image")
+  return translateUi("workflow.asset_713fd9")
 }
 
 /** 按查询过滤可引用节点 */
@@ -59,6 +61,7 @@ export function CanvasMentionPopover({
   onSelect,
   onClose,
 }: CanvasMentionPopoverProps) {
+  const { t: translateUi } = useI18n()
   if (!open) return null
 
   const filtered = filterCanvasMentionItems(items, query)
@@ -67,7 +70,7 @@ export function CanvasMentionPopover({
     <div
       className="fc-mention-popover nodrag nopan nowheel"
       role="listbox"
-      aria-label="引用画布节点"
+      aria-label={translateUi("workflow.referenceCanvasNode")}
       onPointerDown={(e) => {
         e.preventDefault()
         e.stopPropagation()
@@ -78,7 +81,7 @@ export function CanvasMentionPopover({
       }}
     >
       <div className="fc-mention-head">
-        <span>引用节点</span>
+        <span>{translateUi("workflow.referenceNode")}</span>
         <button
           type="button"
           className="fc-mention-close"
@@ -87,13 +90,13 @@ export function CanvasMentionPopover({
             e.stopPropagation()
             onClose()
           }}
-          aria-label="关闭"
+          aria-label={translateUi("workflow.close")}
         >
           ×
         </button>
       </div>
       {filtered.length === 0 ? (
-        <div className="fc-mention-empty">无已连线节点 · 先把角色/场景连到本节点</div>
+        <div className="fc-mention-empty">{translateUi("workflow.noConnectedNodesConnectACharacterOrSceneTo")}</div>
       ) : (
         <ul className="fc-mention-list">
           {filtered.map((item, index) => {

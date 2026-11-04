@@ -1,3 +1,4 @@
+import { useI18n } from '../../i18n'
 import { useEffect, useId, useRef, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { cn } from '../../lib/cn'
@@ -25,6 +26,7 @@ export default function FilterSelect({
   className,
   disabled,
 }: Props) {
+  const { t: translateUi } = useI18n()
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
   const listId = useId()
@@ -59,7 +61,7 @@ export default function FilterSelect({
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
       >
-        <span className="pf-filter-trigger-label">{current?.label || '请选择'}</span>
+        <span className="pf-filter-trigger-label">{current?.label || translateUi("workflow.pleaseSelect")}</span>
         <ChevronDown size={15} strokeWidth={2} className="pf-filter-chevron" aria-hidden />
       </button>
       {open ? (

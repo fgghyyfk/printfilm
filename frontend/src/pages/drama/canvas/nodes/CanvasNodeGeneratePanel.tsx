@@ -1,3 +1,5 @@
+import { useI18n } from '../../../../i18n'
+import { translate as translateUi } from '../../../../i18n/runtime'
 /** 选中节点底部：AI 提示词浮动面板（生图 / 生视频） */
 import { useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent } from 'react'
 import { ArrowUp, CircleHelp, Loader2, Sparkles, Wand2 } from 'lucide-react'
@@ -40,29 +42,29 @@ type CanvasNodeGeneratePanelProps = {
 function panelCopy(kind: CanvasNodeKind, hasMedia: boolean) {
   if (kind === 'video') {
     return {
-      title: hasMedia ? '编辑并重生视频' : 'AI 生成视频',
-      placeholder: '描述视频画面、镜头运动与氛围；键入 @ 引用已连线节点…',
-      hint: 'Enter 生成视频 · @ 仅可引用已连线节点 · Shift+Enter 换行',
+      title: hasMedia ? translateUi("workflow.editAndRegenerateVideo") : translateUi("workflow.generateAiVideo"),
+      placeholder: translateUi("workflow.describeTheVideoCameraMovementAndMoodTypeTo"),
+      hint: translateUi("workflow.enterToGenerateVideoReferencesConnectedNodesOnlyShift"),
     }
   }
   if (kind === 'character') {
     return {
-      title: hasMedia ? '编辑并重生角色' : 'AI 生角色',
-      placeholder: '描述角色外貌、服饰与气质…',
-      hint: 'Enter 生成 · Shift+Enter 换行',
+      title: hasMedia ? translateUi("workflow.editAndRegenerateCharacter") : translateUi("workflow.generateAiCharacter"),
+      placeholder: translateUi("workflow.describeTheCharacterSAppearanceClothingAndPersonality"),
+      hint: translateUi("workflow.enterToGenerateShiftEnterForANewLine"),
     }
   }
   if (kind === 'scene') {
     return {
-      title: hasMedia ? '编辑并重生场景' : 'AI 生场景',
-      placeholder: '描述场景环境、光线与氛围…',
-      hint: 'Enter 生成 · Shift+Enter 换行',
+      title: hasMedia ? translateUi("workflow.editAndRegenerateScene") : translateUi("workflow.generateAiScene"),
+      placeholder: translateUi("workflow.describeTheSettingLightingAndAtmosphere"),
+      hint: translateUi("workflow.enterToGenerateShiftEnterForANewLine"),
     }
   }
   return {
-    title: hasMedia ? '编辑并重生图片' : 'AI 生图',
-    placeholder: '描述画面内容；键入 @ 引用已连线节点…',
-    hint: 'Enter 生成 · @ 仅可引用已连线节点 · Shift+Enter 换行',
+    title: hasMedia ? translateUi("workflow.editAndRegenerateImage") : translateUi("workflow.generateAiImage"),
+    placeholder: translateUi("workflow.describeTheImageTypeToReferenceConnectedNodes"),
+    hint: translateUi("workflow.enterToGenerateReferencesConnectedNodesOnlyShiftEnter"),
   }
 }
 
@@ -88,6 +90,7 @@ export function CanvasNodeGeneratePanel({
   videoOptions: savedVideoOptions,
   imageOptions: savedImageOptions,
 }: CanvasNodeGeneratePanelProps) {
+  const { t: translateUi } = useI18n()
   const {
     generateNodeImage,
     generateNodeVideo,
@@ -202,7 +205,7 @@ export function CanvasNodeGeneratePanel({
         await generateNodeImage(nodeId, finalPrompt, imageOptions)
       }
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : '生成失败')
+      setErrorMessage(err instanceof Error ? err.message : translateUi("ecomSet.result.failed"))
     } finally {
       setBusy(false)
     }
@@ -232,7 +235,7 @@ export function CanvasNodeGeneratePanel({
         updateNodePrompt(nodeId, next)
       }
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : '描述优化失败')
+      setErrorMessage(err instanceof Error ? err.message : translateUi("workflow.couldNotImproveTheDescription"))
     } finally {
       setOptimizing(false)
     }
@@ -254,13 +257,13 @@ export function CanvasNodeGeneratePanel({
       <div className="fc-generate-head">
         <Sparkles size={14} strokeWidth={1.8} />
         <span>{copy.title}</span>
-        {hasMedia ? <em className="fc-generate-tag">可再次生成</em> : null}
+        {hasMedia ? <em className="fc-generate-tag">{translateUi("workflow.readyToGenerateAgain")}</em> : null}
         {isVideo ? (
           <button
             type="button"
             className="fc-generate-help"
-            title="Seedance 传值与使用规则"
-            aria-label="Seedance 传值与使用规则"
+            title={translateUi("workflow.seedanceInputsAndUsage")}
+            aria-label={translateUi("workflow.seedanceInputsAndUsage")}
             disabled={isBusy}
             onClick={() => setRulesOpen(true)}
           >
@@ -318,15 +321,15 @@ export function CanvasNodeGeneratePanel({
             disabled={!canOptimize}
             title={
               selectedIds.length
-                ? '优化画面描述，并保留台词与 @ 引用'
-                : '请先选择 Skill'
+                ? translateUi("workflow.improveTheVisualDescriptionWhileKeepingDialogueAndReferences")
+                : translateUi("workflow.chooseASkillFirst")
             }
             onClick={() => void optimizePrompt()}
           >
             {optimizing ? <Loader2 size={14} className="fc-spin" /> : <Wand2 size={14} strokeWidth={1.8} />}
-            描述优化
+            {translateUi("workflow.improveDescription")}
           </button>
-          <button type="submit" className="fc-generate-submit" disabled={!canSubmit} aria-label="生成">
+          <button type="submit" className="fc-generate-submit" disabled={!canSubmit} aria-label={translateUi("workflow.generate")}>
             {isBusy && !optimizing ? (
               <Loader2 size={16} className="fc-spin" />
             ) : (

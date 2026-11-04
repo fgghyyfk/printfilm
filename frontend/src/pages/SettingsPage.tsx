@@ -67,7 +67,7 @@ function formatWhen(iso: string | undefined, locale: 'zh' | 'en') {
 
 export default function SettingsPage() {
   const nav = useNavigate()
-  const { t, locale } = useI18n()
+  const { t, locale , t: translateUi } = useI18n()
   const [params, setParams] = useSearchParams()
   /*
    * tab 当前侧栏分区
@@ -97,7 +97,7 @@ export default function SettingsPage() {
       .me()
       .then(setUser)
       .catch(() => {
-        setUserError('账号信息暂时无法加载，请稍后重试')
+        setUserError(translateUi("workflow.accountInformationIsTemporarilyUnavailableTryAgainLater"))
       })
     api.wallet().then(setWallet).catch(() => undefined)
   }, [nav])

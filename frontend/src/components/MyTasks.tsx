@@ -1,3 +1,5 @@
+import { useI18n } from '../i18n'
+import { translate as translateUi } from '../i18n/runtime'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { tasksApi, type TaskRunOut } from '../api/tasks'
@@ -8,25 +10,26 @@ const OPEN_TASKS = 'pf-open-my-tasks'
 const terminal = (task: TaskRunOut) => ['succeeded', 'failed', 'cancelled'].includes(task.status)
 
 export function MyTasksButton() {
-  return <button type="button" className="pf-nav-help-btn" onClick={() => window.dispatchEvent(new Event(OPEN_TASKS))}>我的任务</button>
+  const { t: translateUi } = useI18n()
+  return <button type="button" className="pf-nav-help-btn" onClick={() => window.dispatchEvent(new Event(OPEN_TASKS))}>{translateUi("workflow.myTasks")}</button>
 }
 
 function taskName(task: TaskRunOut) {
   const names: Record<string, string> = {
-    project_pipeline: '视频创作', project_compose_only: '成片合成', project_regen_audio: '整片配音',
-    shot_regen_audio: '镜头配音', shot_regen_image: '镜头出图', shot_regen_video: '镜头视频',
-    fragment_video: '分镜视频', fragment_plan: 'AI 分镜', episode_compose: '分集合成',
-    asset_image: '资产出图', asset_video: '资产视频', voice_synthesis: '音色合成', tool_video: '工具视频',
+    project_pipeline: translateUi("workflow.videoCreation"), project_compose_only: translateUi("workflow.finalVideoComposition"), project_regen_audio: translateUi("workflow.fullVoiceover"),
+    shot_regen_audio: translateUi("workflow.shotVoiceover"), shot_regen_image: translateUi("workflow.shotImage"), shot_regen_video: translateUi("workflow.videoClips"),
+    fragment_video: translateUi("workflow.storyboardVideo"), fragment_plan: translateUi("workflow.aiStoryboards"), episode_compose: translateUi("workflow.episodeComposition"),
+    asset_image: translateUi("workflow.assetImage"), asset_video: translateUi("workflow.assetVideo"), voice_synthesis: translateUi("workflow.voiceSynthesis"), tool_video: translateUi("workflow.toolVideo"),
   }
-  const domains: Record<string, string> = { kepu: '视频创作', drama: '漫剧生成', studio: '工具生成', tools: '工具任务' }
-  return names[task.task_type] || domains[task.domain] || '生成任务'
+  const domains: Record<string, string> = { kepu: translateUi("workflow.videoCreation"), drama: translateUi("workflow.dramaGeneration"), studio: translateUi("workflow.toolGeneration"), tools: translateUi("workflow.toolTask") }
+  return names[task.task_type] || domains[task.domain] || translateUi("workflow.generationTask")
 }
 
 function taskStatus(task: TaskRunOut) {
-  if (task.cancel_requested && !terminal(task)) return '等待停止'
-  const labels: Record<string, string> = { pending: '排队中（位置未知）', leased: '准备中', running: '生成中', awaiting_poll: '上游生成中',
-    awaiting_review: '费用待核对', succeeded: '已完成', failed: '失败', cancelled: '已取消' }
-  return labels[task.status] || '处理中'
+  if (task.cancel_requested && !terminal(task)) return translateUi("workflow.waitingToStop")
+  const labels: Record<string, string> = { pending: translateUi("workflow.queuedPositionUnknown"), leased: translateUi("workflow.preparing"), running: translateUi("ecomSet.result.running"), awaiting_poll: translateUi("workflow.providerIsGenerating"),
+    awaiting_review: translateUi("workflow.costAwaitingReview"), succeeded: translateUi("ecomSet.status.done"), failed: translateUi("ecomSet.status.failed"), cancelled: translateUi("workflow.cancelled") }
+  return labels[task.status] || translateUi("workflow.processing")
 }
 
 function taskHref(task: TaskRunOut) {
@@ -38,6 +41,7 @@ function taskHref(task: TaskRunOut) {
 
 /** 常驻但仅持当前账号的观察状态；历史第一页缺席绝不当成任务完成。 */
 export default function MyTasks() {
+  const { t: translateUi } = useI18n()
   const location = useLocation()
   const [open, setOpen] = useState(false)
   const [page, setPage] = useState(1)
@@ -82,10 +86,10 @@ export default function MyTasks() {
     const notify = (task: TaskRunOut, token: string) => {
       if (!valid(token) || announcedRef.current.has(task.id)) return
       announcedRef.current.add(task.id)
-      const message = `${taskName(task)} #${task.id}${task.status === 'succeeded' ? '已完成' : task.status === 'failed' ? '失败，请查看原因' : '已取消'}`
+      const message = `${taskName(task)} #${task.id}: ${task.status === 'succeeded' ? translateUi("ecomSet.status.done") : task.status === 'failed' ? translateUi("workflow.failedViewTheReason") : translateUi("workflow.cancelled")}`
       setNotice(message)
       const original = titleRef.current?.original || document.title
-      const applied = `【任务更新】${original}`
+      const applied = translateUi("workflow.taskUpdate", { v1: original })
       titleRef.current = { original, applied }
       document.title = applied
     }
@@ -132,7 +136,7 @@ export default function MyTasks() {
         failures = 0
         setError('')
       } catch {
-        if (valid(token)) { failures += 1; setError('连接中断，重试中') }
+        if (valid(token)) { failures += 1; setError(translateUi("workflow.connectionLostRetrying")) }
       } finally {
         clearTimeout(timeout)
         running = false
@@ -153,18 +157,18 @@ export default function MyTasks() {
   }, [location.key, open, page])
 
   return <>
-    {notice ? <div className="pf-task-toast" role="status">{notice}<button type="button" onClick={() => { setOpen(true); clearNotice() }}>查看</button><button type="button" aria-label="关闭提醒" onClick={clearNotice}>×</button></div> : null}
-    <Modal open={open} onClose={() => setOpen(false)} title={`我的任务${activeCount ? ` · ${activeCount} 项处理中` : ''}`} variant="drawer">
-      <p>排队位置由实际调度决定，当前位置未知。</p>
+    {notice ? <div className="pf-task-toast" role="status">{notice}<button type="button" onClick={() => { setOpen(true); clearNotice() }}>{translateUi("workflow.view")}</button><button type="button" aria-label={translateUi("workflow.dismissNotification")} onClick={clearNotice}>×</button></div> : null}
+    <Modal open={open} onClose={() => setOpen(false)} title={translateUi("workflow.myTasks_954b7f", { v1: String(activeCount ? translateUi("workflow.inProgress", { v1: String(activeCount) }) : '') })} variant="drawer">
+      <p>{translateUi("workflow.queueOrderDependsOnSchedulingYourPositionIsCurrently")}</p>
       {error ? <p role="status">{error}</p> : null}
-      {!items.length && !error ? <p>暂无任务</p> : null}
+      {!items.length && !error ? <p>{translateUi("workflow.noTasksYet")}</p> : null}
       <ul className="pf-my-tasks-list">{items.map(task => <li key={task.id}>
         <Link to={taskHref(task)} onClick={() => setOpen(false)}>{taskName(task)} #{task.id}</Link>
         <span>{taskStatus(task)}</span>
         {!terminal(task) ? <progress max={100} value={Math.max(0, Math.min(100, task.progress_percent || 0))} /> : null}
         {task.error_message ? <p>{task.error_message}</p> : null}
       </li>)}</ul>
-      <div className="pf-my-tasks-pages"><button type="button" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>上一页</button><span>{page} / {Math.max(1, Math.ceil(total / 20))}</span><button type="button" disabled={page * 20 >= total} onClick={() => setPage(p => p + 1)}>下一页</button></div>
+      <div className="pf-my-tasks-pages"><button type="button" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>{translateUi("workflow.previous")}</button><span>{page} / {Math.max(1, Math.ceil(total / 20))}</span><button type="button" disabled={page * 20 >= total} onClick={() => setPage(p => p + 1)}>{translateUi("workflow.next")}</button></div>
     </Modal>
   </>
 }

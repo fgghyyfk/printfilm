@@ -1,3 +1,5 @@
+import { useI18n } from '../../i18n'
+import { translate as translateUi } from '../../i18n/runtime'
 import { useEffect, useState } from 'react'
 import Modal from '../ui/Modal'
 import { api, type BillingOrder } from '../../api'
@@ -8,16 +10,16 @@ type Props = {
 }
 
 const SKU_LABELS: Record<string, string> = {
-  topup_10: '体验充值',
-  topup_49: '基础充值',
-  topup_99: '进阶充值',
-  topup_199: '专业充值',
+  get topup_10() { return translateUi("workflow.starterTopUp") },
+  get topup_49() { return translateUi("workflow.basicTopUp") },
+  get topup_99() { return translateUi("workflow.advancedTopUp") },
+  get topup_199() { return translateUi("workflow.proTopUp") },
 }
 
 const STATUS_CN: Record<string, string> = {
-  pending: '待支付',
-  paid: '已到账',
-  closed: '已关闭',
+  get pending() { return translateUi("workflow.awaitingPayment") },
+  get paid() { return translateUi("workflow.credited_ce9b10") },
+  get closed() { return translateUi("workflow.closed") },
 }
 
 function yuan(fen: number) {
@@ -34,6 +36,7 @@ function formatTime(iso?: string | null) {
 
 /** 充值记录弹窗：列出近期订单与到账状态（过期待支付由后台自动关闭） */
 export default function TopupHistoryModal({ open, onClose }: Props) {
+  const { t: translateUi } = useI18n()
   /*
    * orders 订单列表
    * loading 加载中
@@ -54,7 +57,7 @@ export default function TopupHistoryModal({ open, onClose }: Props) {
         if (!cancelled) setOrders(r.orders || [])
       })
       .catch((e) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : '加载失败')
+        if (!cancelled) setError(e instanceof Error ? e.message : translateUi("ecomSet.loadFailed"))
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -65,11 +68,11 @@ export default function TopupHistoryModal({ open, onClose }: Props) {
   }, [open])
 
   return (
-    <Modal open={open} onClose={onClose} title="充值记录" size="lg" className="pf-topup-history-modal">
-      {loading ? <p className="pf-muted">加载中…</p> : null}
+    <Modal open={open} onClose={onClose} title={translateUi("workflow.topUpHistory")} size="lg" className="pf-topup-history-modal">
+      {loading ? <p className="pf-muted">{translateUi("ecomSet.loading")}</p> : null}
       {error ? <p className="pf-error">{error}</p> : null}
       {!loading && !error && orders.length === 0 ? (
-        <p className="pf-muted">暂无充值记录</p>
+        <p className="pf-muted">{translateUi("workflow.noTopUpsYet")}</p>
       ) : null}
       {!loading && orders.length > 0 ? (
         <ul className="pf-topup-list">
@@ -81,7 +84,7 @@ export default function TopupHistoryModal({ open, onClose }: Props) {
               </div>
               <div className="pf-topup-meta">
                 <em>¥{yuan(o.amount_fen)}</em>
-                <span className="pf-muted">到账 ¥{yuan(o.credit_fen)}</span>
+                <span className="pf-muted">{translateUi("workflow.credited", { v1: yuan(o.credit_fen) })}</span>
                 <span className={`pf-topup-status is-${o.status}`}>
                   {STATUS_CN[o.status] || o.status}
                 </span>

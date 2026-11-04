@@ -1,3 +1,4 @@
+import { useI18n } from '../../i18n'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../../api'
@@ -13,6 +14,7 @@ type Props = {
  * GPU 串行排队，提交后到「作品」列表看进度。
  */
 export default function AvatarBatchBlock({ project, disabled }: Props) {
+  const { t: translateUi } = useI18n()
   const navigate = useNavigate()
   /* 输入与提交状态 */
   const [text, setText] = useState('')
@@ -36,13 +38,13 @@ export default function AvatarBatchBlock({ project, disabled }: Props) {
     try {
       const est = await api.estimateAvatarBatch(project.id, topics, sourceType)
       if (est.billing_enabled) {
-        costLine = `\n预计费用约 ¥${(est.estimate_fen / 100).toFixed(2)}（按实际用量结算，多退少补），当前余额 ¥${(est.balance_fen / 100).toFixed(2)}。`
+        costLine = translateUi("workflow.batchEstimatedCost", { v1: String((est.estimate_fen / 100).toFixed(2)), v2: String((est.balance_fen / 100).toFixed(2)) })
       }
     } catch {
       // 估价失败不阻止提交，提交时后端仍会校验余额
     }
     const ok = window.confirm(
-      `将新建 ${topics.length} 个数字人项目并全自动出片（GPU 排队，单条约 1–3 小时）。${costLine}\n确定吗？`,
+      translateUi("workflow.createTalkingHeadProjectsAndGenerateTheirVideosAutomatically", { v1: String(topics.length), v2: String(costLine) }),
     )
     if (!ok) {
       setSubmitting(false)
@@ -52,7 +54,7 @@ export default function AvatarBatchBlock({ project, disabled }: Props) {
       await api.createAvatarBatch(project.id, topics, sourceType)
       navigate('/history')
     } catch (err) {
-      setError(err instanceof Error ? err.message : '批量提交失败')
+      setError(err instanceof Error ? err.message : translateUi("workflow.couldNotSubmitTheBatch"))
     } finally {
       setSubmitting(false)
     }
@@ -60,9 +62,9 @@ export default function AvatarBatchBlock({ project, disabled }: Props) {
 
   return (
     <div className="pf-style-block">
-      <h3>批量生产</h3>
+      <h3>{translateUi("workflow.batchProduction")}</h3>
       <p className="pf-muted" style={{ fontSize: '0.78rem', margin: '0 0 0.6rem' }}>
-        沿用上面的形象、音色、场景、构图和文案风格，每个选题生成一条完整视频，最多 50 个。
+        {translateUi("workflow.useThePortraitVoiceSceneFramingAndScriptStyle")}
       </p>
       <div className="pf-avatar-chips" style={{ marginBottom: '0.5rem' }}>
         <button
@@ -70,14 +72,14 @@ export default function AvatarBatchBlock({ project, disabled }: Props) {
           className={sourceType === 'theme' ? 'pf-avatar-chip selected' : 'pf-avatar-chip'}
           onClick={() => setSourceType('theme')}
         >
-          按选题（每行一个）
+          {translateUi("workflow.byTopicOnePerLine")}
         </button>
         <button
           type="button"
           className={sourceType === 'script' ? 'pf-avatar-chip selected' : 'pf-avatar-chip'}
           onClick={() => setSourceType('script')}
         >
-          按口播稿（空行分隔）
+          {translateUi("workflow.byScriptSeparateWithABlankLine")}
         </button>
       </div>
       <textarea
@@ -87,12 +89,12 @@ export default function AvatarBatchBlock({ project, disabled }: Props) {
         disabled={disabled || submitting || !ready}
         placeholder={
           sourceType === 'theme'
-            ? '长寿行业不怕没机会，怕选错平台\n高端健康管理，为什么要去香港\n…'
-            : '第一篇口播稿全文…\n\n第二篇口播稿全文…'
+            ? translateUi("workflow.oneTopicPerLineAnotherTopicToExplain")
+            : translateUi("workflow.fullNarrationScriptOneFullNarrationScriptTwo")
         }
         onChange={(e) => setText(e.target.value)}
       />
-      {!ready ? <p className="pf-avatar-warn">请先上传数字人照片（并生成定妆照）再批量生产。</p> : null}
+      {!ready ? <p className="pf-avatar-warn">{translateUi("workflow.uploadAPortraitAndPrepareTheStyledImageBefore")}</p> : null}
       {error ? <p className="pf-avatar-warn">{error}</p> : null}
       <button
         type="button"
@@ -100,7 +102,7 @@ export default function AvatarBatchBlock({ project, disabled }: Props) {
         disabled={disabled || submitting || !ready || topics.length === 0}
         onClick={() => void submit()}
       >
-        {submitting ? '提交中…' : `批量生成 ${topics.length || ''} 条`}
+        {submitting ? translateUi("workflow.submitting") : translateUi("workflow.generateVideos", { v1: String(topics.length || '') })}
       </button>
     </div>
   )

@@ -1,3 +1,4 @@
+import { useI18n } from '../../i18n'
 /** 自定义集数弹层：预设 + 手填 1–999 */
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { ChevronDown } from 'lucide-react'
@@ -28,6 +29,7 @@ function parseCustom(raw: string): number | null {
 
 // 渲染集数选择弹层
 export function DramaEpisodeCountPopover({ value, onChange, disabled = false }: Props) {
+  const { t: translateUi } = useI18n()
   /*
    * open 弹层开关
    * customInput 自定义输入
@@ -91,13 +93,13 @@ export function DramaEpisodeCountPopover({ value, onChange, disabled = false }: 
         aria-haspopup="dialog"
         onClick={toggle}
       >
-        <span>{value} 集</span>
+        <span>{translateUi("workflow.episodes", { v1: value })}</span>
         <ChevronDown size={13} strokeWidth={2} className={open ? 'is-open' : ''} />
       </button>
 
       {open ? (
-        <div className="drama-ep-count-panel" role="dialog" aria-label="自定义集数">
-          <p className="drama-ep-count-title">自定义集数</p>
+        <div className="drama-ep-count-panel" role="dialog" aria-label={translateUi("workflow.customEpisodeCount")}>
+          <p className="drama-ep-count-title">{translateUi("workflow.customEpisodeCount")}</p>
           <div className="drama-ep-count-presets">
             {EPISODE_COUNT_PRESETS.map((count) => (
               <button
@@ -106,12 +108,11 @@ export function DramaEpisodeCountPopover({ value, onChange, disabled = false }: 
                 className={value === count ? 'is-active' : ''}
                 onClick={() => selectPreset(count)}
               >
-                {count} 集
-              </button>
+                {translateUi("workflow.episodes", { v1: count })}</button>
             ))}
           </div>
           <div className="drama-ep-count-custom">
-            <p>自定义集数</p>
+            <p>{translateUi("workflow.customEpisodeCount")}</p>
             <div className="drama-ep-count-custom-row">
               <input
                 type="number"
@@ -124,7 +125,7 @@ export function DramaEpisodeCountPopover({ value, onChange, disabled = false }: 
                 className={usingCustom ? 'is-custom' : ''}
               />
               <button type="button" className="drama-ep-count-confirm" onClick={applyCustom}>
-                确定
+                {translateUi("workflow.confirm")}
               </button>
             </div>
           </div>

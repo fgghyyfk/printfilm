@@ -1,3 +1,4 @@
+import { useI18n } from '../../i18n'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api, defaultsFromTemplate } from '../../api'
@@ -8,7 +9,7 @@ import DaihuoEntryCard from '../../components/daihuo/DaihuoEntryCard'
 import Stepper from '../../components/ui/Stepper'
 import PillTabs from '../../components/ui/PillTabs'
 import { IconChevronLeft, IconRefresh, IconSparkles } from '../../components/ui/Icons'
-import { CATEGORY_ORDER } from '../../lib/categories'
+import { CATEGORY_ORDER, HOME_CATEGORY_LABELS } from '../../lib/categories'
 import { kepuStepIndex, kepuSteps } from '../../lib/status'
 
 type Inspiration = {
@@ -182,6 +183,7 @@ function deriveTitle(text: string) {
 }
 
 export default function CreateProjectPage() {
+  const { t: translateUi } = useI18n()
   const nav = useNavigate()
   const [params] = useSearchParams()
   const [templates, setTemplates] = useState<Template[]>([])
@@ -204,7 +206,7 @@ export default function CreateProjectPage() {
       nav('/auth')
       return
     }
-    api.me().catch(() => setError('暂时无法确认登录状态，请稍后重试'))
+    api.me().catch(() => setError(translateUi("workflow.sessionCheckUnavailable")))
     api.templates().then((list) => {
       setTemplates(list)
       const fromUrl = params.get('template') || ''
@@ -268,7 +270,7 @@ export default function CreateProjectPage() {
         setTitle(result.title.slice(0, 24))
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'AI 生成失败')
+      setError(err instanceof Error ? err.message : translateUi("workflow.aiGenerationFailed"))
     } finally {
       setAiBusy(false)
     }
@@ -276,7 +278,7 @@ export default function CreateProjectPage() {
 
   async function next() {
     if (!templateId || !sourceText.trim()) {
-      setError('请选择模板并填写主题内容')
+      setError(translateUi("workflow.chooseATemplateAndEnterATopic"))
       return
     }
     setBusy(true)
@@ -303,7 +305,7 @@ export default function CreateProjectPage() {
       })
       nav(`/studio/${project.id}/style`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : '创建失败')
+      setError(err instanceof Error ? err.message : translateUi("workflow.couldNotCreate"))
     } finally {
       setBusy(false)
     }
@@ -316,9 +318,9 @@ export default function CreateProjectPage() {
           <div>
             <button type="button" className="pf-back" onClick={() => nav('/')}>
               <IconChevronLeft size={18} />
-              新建项目 / 开始创作
+              {translateUi("workflow.newProjectStartCreating")}
             </button>
-            <h1 className="pf-page-title">创建项目</h1>
+            <h1 className="pf-page-title">{translateUi("workflow.createProject")}</h1>
           </div>
           <Stepper steps={kepuSteps()} current={kepuStepIndex('create')} doneThrough={-1} />
         </div>
@@ -327,11 +329,11 @@ export default function CreateProjectPage() {
       <div className="pf-create">
         <aside className="pf-create-col">
           <DaihuoEntryCard />
-          <h3>选择模板</h3>
+          <h3>{translateUi("workflow.chooseTemplate")}</h3>
           <div className="pf-search">
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索模板…" />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={translateUi("workflow.searchTemplates")} />
           </div>
-          <PillTabs items={categories.slice(0, 6)} value={category} onChange={setCategory} ariaLabel="模板分类" />
+          <PillTabs labels={{ ...HOME_CATEGORY_LABELS, 热门推荐: translateUi("workflow.recommended_285780") }} items={categories.slice(0, 6)} value={category} onChange={setCategory} ariaLabel={translateUi("workflow.templateCategories")} />
           <div className="pf-tpl-list" style={{ marginTop: '0.75rem' }}>
             {filtered.map((t) => (
               <button
@@ -344,7 +346,7 @@ export default function CreateProjectPage() {
                 <div>
                   <strong>{t.name}</strong>
                   <span>
-                    {t.default_ratio} · {(t.category || [])[0] || '通用'}
+                    {t.default_ratio} · {HOME_CATEGORY_LABELS[(t.category || [])[0]] || (t.category || [])[0] || translateUi("workflow.general")}
                   </span>
                 </div>
               </button>
@@ -353,22 +355,22 @@ export default function CreateProjectPage() {
         </aside>
 
         <section className="pf-create-col">
-          <h3>输入内容</h3>
+          <h3>{translateUi("workflow.enterContent")}</h3>
           <div className="pf-input-tabs">
             {['一句话主题', '粘贴完整文案'].map((tab) => (
               <button
-                key={tab}
+                key={tab === '一句话主题' ? translateUi("workflow.oneLineTopic") : translateUi("workflow.fullScript_ba342b")}
                 type="button"
                 className={['pf-pill', inputTab === tab ? 'lime active' : ''].join(' ')}
                 onClick={() => setInputTab(tab)}
               >
-                {tab}
+                {tab === '一句话主题' ? translateUi("workflow.oneLineTopic") : translateUi("workflow.fullScript_ba342b")}
               </button>
             ))}
           </div>
 
           <label className="pf-field">
-            <span className="pf-field-label">项目名称</span>
+            <span className="pf-field-label">{translateUi("workflow.projectName")}</span>
             <input
               className="pf-field-input"
               value={title}
@@ -382,7 +384,7 @@ export default function CreateProjectPage() {
                   setTitleTouched(false)
                 }
               }}
-              placeholder="将根据内容自动填充"
+              placeholder={translateUi("workflow.filledAutomaticallyFromYourContent")}
             />
           </label>
 
@@ -395,10 +397,10 @@ export default function CreateProjectPage() {
                 onClick={aiExpand}
               >
                 <IconSparkles size={14} />
-                {aiBusy ? '生成中…' : sourceType === 'script' ? 'AI 扩写文案' : 'AI 生成主题'}
+                {aiBusy ? translateUi("workflow.generating") : sourceType === 'script' ? translateUi("workflow.expandScriptWithAi") : translateUi("workflow.generateTopicWithAi")}
               </button>
               <span className="pf-muted" style={{ fontSize: '0.75rem' }}>
-                {sourceType === 'script' ? '可从一句话扩成完整口播' : '补全受众与知识点'}
+                {sourceType === 'script' ? translateUi("workflow.expandASingleSentenceIntoACompleteNarration") : translateUi("workflow.addAudienceAndKeyPoints")}
               </span>
             </div>
             <textarea
@@ -412,23 +414,23 @@ export default function CreateProjectPage() {
               }}
               placeholder={
                 sourceType === 'theme'
-                  ? '例如：黑洞是如何形成的？用通俗方式讲清引力与时空'
-                  : '粘贴或 AI 生成完整口播文案…'
+                  ? translateUi("workflow.forExampleHowDoBlackHolesFormExplainGravity")
+                  : translateUi("workflow.pasteACompleteNarrationScriptOrGenerateOneWith")
               }
             />
             {sourceType === 'theme' ? (
               <span className="pf-char-count">{sourceText.length}/100</span>
             ) : (
-              <span className="pf-char-count">{sourceText.length} 字</span>
+              <span className="pf-char-count">{translateUi("workflow.characters_0bc0b7", { v1: sourceText.length })}</span>
             )}
           </div>
 
           <div className="pf-inspire">
             <div className="pf-inspire-head">
-              <strong>灵感示例</strong>
+              <strong>{translateUi("workflow.ideasToTry")}</strong>
               <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm pf-btn-icon" onClick={shuffleInspirations}>
                 <IconRefresh size={14} />
-                换一批
+                {translateUi("workflow.moreIdeas")}
               </button>
             </div>
             <div className="pf-chips">
@@ -445,18 +447,17 @@ export default function CreateProjectPage() {
               ))}
             </div>
             <p className="pf-muted" style={{ fontSize: '0.78rem', margin: '0.55rem 0 0' }}>
-              点击示例会填充完整{sourceType === 'script' ? '文案' : '主题'}并自动写入项目名称
-            </p>
+              {translateUi("workflow.chooseAnExampleToFillTheAndProjectName", { v1: sourceType === 'script' ? translateUi("workflow.script") : translateUi("workflow.topic_e848dd") })}</p>
           </div>
 
           <div className="pf-hint" style={{ marginTop: '1rem' }}>
-            主题越具体，AI 越容易生成准确的科普分镜与旁白。可写清受众与核心知识点。
+            {translateUi("workflow.aSpecificTopicHelpsAiCreateMoreAccurateStoryboards")}
           </div>
           {error ? <BillingErrorNotice message={error} /> : null}
         </section>
 
         <aside className="pf-create-col">
-          <h3>创作摘要</h3>
+          <h3>{translateUi("workflow.creationSummary")}</h3>
           {selected ? (
             <div style={{ marginBottom: '0.85rem' }}>
               <img
@@ -470,42 +471,42 @@ export default function CreateProjectPage() {
               </p>
             </div>
           ) : (
-            <p className="pf-muted">请选择模板</p>
+            <p className="pf-muted">{translateUi("workflow.chooseATemplate")}</p>
           )}
           <div className="pf-summary-row">
-            <span>作品名称</span>
-            <span>{title.trim() || '未命名作品'}</span>
+            <span>{translateUi("workflow.workTitle")}</span>
+            <span>{title.trim() || translateUi("workflow.untitledWork")}</span>
           </div>
           <div className="pf-summary-row">
-            <span>输出模式</span>
-            <span>{selected?.default_ratio === '9:16' ? '视频 · 9:16' : '视频 · 16:9'}</span>
+            <span>{translateUi("workflow.outputMode")}</span>
+            <span>{selected?.default_ratio === '9:16' ? translateUi("workflow.video916") : translateUi("workflow.video169")}</span>
           </div>
           <div className="pf-summary-row">
-            <span>预估时长</span>
-            <span>~1–3 分钟</span>
+            <span>{translateUi("workflow.estimatedDuration")}</span>
+            <span>{translateUi("workflow.text13Minutes")}</span>
           </div>
           <div className="pf-summary-row">
-            <span>语言</span>
-            <span>中文（普通话）</span>
+            <span>{translateUi("workflow.language")}</span>
+            <span>{translateUi("workflow.chineseMandarin")}</span>
           </div>
           <div className="pf-summary-row">
-            <span>输入方式</span>
-            <span>{inputTab}</span>
+            <span>{translateUi("workflow.inputMethod")}</span>
+            <span>{inputTab === '一句话主题' ? translateUi("workflow.oneLineTopic") : translateUi("workflow.fullScript_ba342b")}</span>
           </div>
           {params.get('mode') !== 'avatar' ? (
             <label className="pf-field" style={{ marginTop: '1rem' }}>
-              <span>批量出图参考策略</span>
+              <span>{translateUi("workflow.batchImageReferenceStrategy")}</span>
               <select value={imageReferenceMode} onChange={(e) => setImageReferenceMode(e.target.value as 'chain' | 'independent')}>
-                <option value="chain">连续参考上一镜（默认）</option>
-                <option value="independent">独立出图，不参考上一镜</option>
+                <option value="chain">{translateUi("workflow.continuousPreviousShotDefault")}</option>
+                <option value="independent">{translateUi("workflow.independentImageGeneration")}</option>
               </select>
-              <small>独立模式保留模板参考图，并发受上游配置限制，可能仍为单路。单镜重绘沿用连续参考规则。</small>
+              <small>{translateUi("workflow.independentReferencesLimits")}</small>
             </label>
           ) : null}
           {params.get('mode') !== 'avatar' ? (
             <label className="pf-field" style={{ marginTop: '1rem' }}>
-              <span><input type="checkbox" checked={autoAdvance} onChange={(e) => setAutoAdvance(e.target.checked)} /> 全自动生成到成片</span>
-              <small>逐阶段自动预扣和结算，余额不足暂停；首阶段报价不是整片总价，可随时请求取消。</small>
+              <span><input type="checkbox" checked={autoAdvance} onChange={(e) => setAutoAdvance(e.target.checked)} /> {translateUi("workflow.automaticUntilFinished")}</span>
+              <small>{translateUi("workflow.automaticPhaseBilling")}</small>
             </label>
           ) : null}
           <button
@@ -515,7 +516,7 @@ export default function CreateProjectPage() {
             disabled={busy || aiBusy || !templateId || !sourceText.trim()}
             onClick={next}
           >
-            {busy ? '创建中…' : '下一步：风格配置'}
+            {busy ? translateUi("workflow.creating") : translateUi("workflow.nextStyleSettings")}
             {!busy ? <span aria-hidden>→</span> : null}
           </button>
           <button
@@ -526,10 +527,10 @@ export default function CreateProjectPage() {
             onClick={aiExpand}
           >
             <IconSparkles size={14} />
-            {aiBusy ? 'AI 生成中…' : '不够完整？让 AI 帮你写'}
+            {aiBusy ? translateUi("workflow.aiGenerating") : translateUi("workflow.needMoreDetailLetAiHelpWriteIt")}
           </button>
           <p className="pf-muted" style={{ fontSize: '0.78rem', marginTop: '0.5rem' }}>
-            画风已随模板带上。下一步确认配音与成片方式。
+            {translateUi("workflow.theTemplateIncludesAVisualStyleNextChooseA")}
           </p>
         </aside>
       </div>

@@ -1,3 +1,4 @@
+import { useI18n } from '../../../i18n'
 import { MyTasksButton } from '../../../components/MyTasks'
 /** 分集分镜故事板全屏画布：按分镜连线，节点含视频 / 出境资产 / 提示词 */
 import { createFragmentEditSnapshot, type FragmentEditSnapshot } from '../../../lib/dramaFragmentEditing'
@@ -72,6 +73,7 @@ export default function EpisodeStoryboardPage() {
 
 // 加载分集并渲染全屏故事板
 function EpisodeStoryboardInner() {
+  const { t: translateUi } = useI18n()
   const { projectId, episodeId } = useParams()
   const pid = Number(projectId)
   const eid = Number(episodeId)
@@ -150,7 +152,7 @@ function EpisodeStoryboardInner() {
         setAssets(assetList || [])
       })
       .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : '加载分集失败')
+        if (!cancelled) setError(err instanceof Error ? err.message : translateUi("workflow.couldNotLoadTheEpisode"))
       })
       .finally(() => {
         if (!cancelled) setBusy(false)
@@ -194,14 +196,14 @@ function EpisodeStoryboardInner() {
         const changedWhileSaving = fragmentsRef.current !== next
         if (!changedWhileSaving) setFragments(saved.fragments || [])
         setDirty(changedWhileSaving)
-        setStatus(changedWhileSaving ? '' : '已保存')
+        setStatus(changedWhileSaving ? '' : translateUi("ecomSet.plan.saved"))
         if (changedWhileSaving) {
           if (saveTimer.current) window.clearTimeout(saveTimer.current)
           saveTimer.current = window.setTimeout(() => { void persistFragments(fragmentsRef.current) }, SAVE_DEBOUNCE_MS)
         }
         window.setTimeout(() => setStatus(''), 1600)
       } catch (err) {
-        setError(err instanceof Error ? err.message : '保存失败')
+        setError(err instanceof Error ? err.message : translateUi("workflow.couldNotSave"))
       } finally {
         saveInFlight.current = false
         setBusy(false)
@@ -322,18 +324,16 @@ function EpisodeStoryboardInner() {
           <button
             type="button"
             className="ep-storyboard-back"
-            aria-label="返回分集"
-            title="返回分集"
+            aria-label={translateUi("workflow.backToEpisode")}
+            title={translateUi("workflow.backToEpisode")}
             onClick={() => navigate(backHref)}
           >
             <ChevronLeft size={20} strokeWidth={1.8} />
           </button>
           <div className="ep-storyboard-title">
-            <strong>{episode?.name || `分集 ${eid}`}</strong>
+            <strong>{episode?.name || translateUi("workflow.episode_ebaa6d", { v1: String(eid) })}</strong>
             <span>
-              分镜故事板 · {fragments.length} 镜
-              {dirty ? ' · 未保存' : status ? ` · ${status}` : ''}
-            </span>
+              {translateUi("workflow.storyboardShots_0dd76e", { v1: fragments.length, v2: dirty ? translateUi("workflow.unsaved_b01c72") : status ? ` · ${status}` : '' })}</span>
           </div>
         </div>
         <div className="ep-storyboard-actions">
@@ -342,7 +342,7 @@ function EpisodeStoryboardInner() {
             className="ep-storyboard-btn ghost"
             onClick={() => navigate(`/drama/projects/${pid}/canvas`)}
           >
-            资产画布
+            {translateUi("workflow.assetCanvas")}
           </button>
           <button
             type="button"
@@ -350,7 +350,7 @@ function EpisodeStoryboardInner() {
             disabled={busy || !dirty}
             onClick={() => void persistFragments(fragments)}
           >
-            {busy ? '保存中…' : '保存'}
+            {busy ? translateUi("workflow.saving") : translateUi("workflow.save")}
           </button>
         </div>
         <MyTasksButton />
@@ -359,8 +359,8 @@ function EpisodeStoryboardInner() {
       <div className="ep-storyboard-flow">
         {fragments.length === 0 && !busy ? (
           <div className="ep-storyboard-empty">
-            <strong>暂无分镜</strong>
-            <span>请先回分集编辑页添加分镜</span>
+            <strong>{translateUi("workflow.noStoryboardShotsYet")}</strong>
+            <span>{translateUi("workflow.addShotsInTheEpisodeEditorFirst")}</span>
           </div>
         ) : null}
         <ReactFlow
@@ -385,19 +385,19 @@ function EpisodeStoryboardInner() {
           </p>
         ) : null}
         {busy && fragments.length === 0 ? (
-          <p className="ep-storyboard-toast">加载中…</p>
+          <p className="ep-storyboard-toast">{translateUi("ecomSet.loading")}</p>
         ) : null}
       </div>
 
       <Modal
         open={linkTargetFragId != null}
         onClose={() => setLinkTargetFragId(null)}
-        title="关联出境资产"
+        title={translateUi("workflow.assetsAppearingInThisShot")}
         size="lg"
       >
-        <p className="ep-storyboard-picker-hint">选择本镜出场的角色 / 场景 / 道具</p>
+        <p className="ep-storyboard-picker-hint">{translateUi("workflow.chooseCharactersScenesAndPropsAppearingInThisShot")}</p>
         {pickerAssets.length === 0 ? (
-          <p className="ep-storyboard-picker-empty">暂无可选资产，请先到资产画布生成</p>
+          <p className="ep-storyboard-picker-empty">{translateUi("workflow.noAssetsAvailableGenerateSomeOnTheAssetCanvas")}</p>
         ) : (
           <div className="ep-storyboard-picker-grid">
             {pickerAssets.map((asset) => {
@@ -412,8 +412,8 @@ function EpisodeStoryboardInner() {
                   <div className="ep-storyboard-picker-thumb">
                     {cover ? <img src={cover} alt="" /> : <span>{(asset.name || '?')[0]}</span>}
                   </div>
-                  <strong>{asset.name || `资产 ${asset.id}`}</strong>
-                  <em>{normalizeAssetTab(asset.type || '') || asset.type || '资产'}</em>
+                  <strong>{asset.name || translateUi("workflow.asset", { v1: String(asset.id) })}</strong>
+                  <em>{normalizeAssetTab(asset.type || '') || asset.type || translateUi("workflow.asset_713fd9")}</em>
                 </button>
               )
             })}

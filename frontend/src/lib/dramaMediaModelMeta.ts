@@ -1,3 +1,4 @@
+import { translate as translateUi } from '../i18n/runtime'
 /** 漫剧模型选择：图标族与展示文案辅助 */
 import type { MediaModelOption } from '../api'
 
@@ -36,19 +37,19 @@ export function mediaModelCapabilityBadge(model: MediaModelOption): string {
   if (id.includes('seedance')) return 'Seedance'
   if (id.includes('seedream')) return 'Seedream'
   if (id.includes('gpt-image')) return 'GPT Image'
-  return model.provider === 'tokenfree' ? 'TokenFree' : model.provider || '模型'
+  return model.provider === 'tokenfree' ? 'TokenFree' : model.provider || translateUi("workflow.model")
 }
 
 /** 悬停 / title 完整介绍 */
 export function mediaModelHoverText(model: MediaModelOption): string {
   const clip =
     typeof model.duration_min === 'number' && typeof model.duration_max === 'number'
-      ? `成片 ${model.duration_min}–${model.duration_max}s`
+      ? translateUi("workflow.modelDurationRange", { v1: String(model.duration_min), v2: String(model.duration_max) })
       : ''
   const parts = [
     model.label || model.id,
     model.description?.trim(),
-    model.eta_hint?.trim() ? `耗时：${model.eta_hint.trim()}` : '',
+    model.eta_hint?.trim() ? translateUi("workflow.modelTimeHint", { v1: String(model.eta_hint.trim()) }) : '',
     clip,
     model.pricing_hint?.trim() || '',
   ].filter(Boolean)
@@ -60,6 +61,6 @@ export function mediaModelClipDurationLabel(model: MediaModelOption): string {
   const lo = Number(model.duration_min)
   const hi = Number(model.duration_max)
   if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo <= 0 || hi <= 0) return ''
-  if (lo === hi) return `成片 ${lo}s`
-  return `成片 ${lo}–${hi}s`
+  if (lo === hi) return translateUi("workflow.videoS", { v1: String(lo) })
+  return translateUi("workflow.videoS_a821f3", { v1: String(lo), v2: String(hi) })
 }

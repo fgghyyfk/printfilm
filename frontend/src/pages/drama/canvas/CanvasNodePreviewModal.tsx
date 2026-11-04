@@ -1,3 +1,4 @@
+import { useI18n } from '../../../i18n'
 /** 画布节点大屏预览：图片 / 视频 / 音频 / 文本，可下载 */
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -41,6 +42,7 @@ function previewMode(payload: CanvasNodePreviewPayload) {
 
 /** 节点媒体大屏弹层 */
 export function CanvasNodePreviewModal({ payload, onClose }: CanvasNodePreviewModalProps) {
+  const { t: translateUi } = useI18n()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const media = (payload.mediaUrl || '').trim()
@@ -78,7 +80,7 @@ export function CanvasNodePreviewModal({ payload, onClose }: CanvasNodePreviewMo
         mode === 'video' ? 'mp4' : mode === 'audio' ? 'mp3' : 'png'
       await downloadCanvasMedia(url, canvasMediaFilename(payload.title, url, fallback))
     } catch (err) {
-      setError(err instanceof Error ? err.message : '下载失败')
+      setError(err instanceof Error ? err.message : translateUi("workflow.downloadFailed"))
     } finally {
       setBusy(false)
     }
@@ -89,7 +91,7 @@ export function CanvasNodePreviewModal({ payload, onClose }: CanvasNodePreviewMo
       className="fc-node-preview-backdrop"
       role="dialog"
       aria-modal="true"
-      aria-label={`${payload.title} 预览`}
+      aria-label={translateUi("workflow.preview_56edba", { v1: String(payload.title) })}
       onClick={onClose}
     >
       <div className="fc-node-preview-bar" onClick={(event) => event.stopPropagation()}>
@@ -103,11 +105,11 @@ export function CanvasNodePreviewModal({ payload, onClose }: CanvasNodePreviewMo
             onClick={() => void handleDownload()}
           >
             <Download size={16} strokeWidth={2} />
-            {busy ? '下载中…' : '下载'}
+            {busy ? translateUi("workflow.downloading") : translateUi("workflow.download_2b9d01")}
           </button>
-          <button type="button" className="fc-node-preview-btn is-ghost" onClick={onClose} aria-label="关闭">
+          <button type="button" className="fc-node-preview-btn is-ghost" onClick={onClose} aria-label={translateUi("workflow.close")}>
             <X size={16} strokeWidth={2} />
-            关闭
+            {translateUi("workflow.close")}
           </button>
         </div>
       </div>
@@ -122,14 +124,14 @@ export function CanvasNodePreviewModal({ payload, onClose }: CanvasNodePreviewMo
             <audio src={audioSrc} controls autoPlay />
           </div>
         ) : mode === 'text' ? (
-          <pre className="fc-node-preview-text">{text || '（空文本）'}</pre>
+          <pre className="fc-node-preview-text">{text || translateUi("workflow.emptyText")}</pre>
         ) : mode === 'image' ? (
           <div className="fc-node-preview-still">
             <img className="fc-node-preview-media" src={media} alt={payload.title} />
             {audioSrc ? <audio src={audioSrc} controls /> : null}
           </div>
         ) : (
-          <p className="fc-node-preview-empty">暂无内容可预览</p>
+          <p className="fc-node-preview-empty">{translateUi("workflow.nothingToPreviewYet")}</p>
         )}
       </div>
     </div>,

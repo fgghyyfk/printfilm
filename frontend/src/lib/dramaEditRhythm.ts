@@ -1,3 +1,4 @@
+import { translate as translateUi } from '../i18n/runtime'
 /**
  * 短剧剪辑节奏公式（社区 Skill 六式，用于分镜时长建议 / 整集导出规划）
  * 对齐 docs/EPISODE_RULES.md §10 P3
@@ -22,38 +23,38 @@ export type DramaEditRhythmPreset = {
 export const DRAMA_EDIT_RHYTHM_PRESETS: DramaEditRhythmPreset[] = [
   {
     id: 'breath',
-    label: '呼吸式',
-    hint: '缓入—展开—回落，适合建立与抒情',
+    get label() { return translateUi("workflow.breathing") },
+    get hint() { return translateUi("workflow.easeInUnfoldAndSettleSuitedToEstablishingScenes") },
     weights: [3, 5, 4, 3],
   },
   {
     id: 'heartbeat',
-    label: '心跳式',
-    hint: '短促加速，适合冲突与对峙',
+    get label() { return translateUi("workflow.heartbeat") },
+    get hint() { return translateUi("workflow.shortAcceleratingBeatsForConflictAndConfrontation") },
     weights: [2, 2, 3, 2, 4],
   },
   {
     id: 'wave',
-    label: '海浪式',
-    hint: '层层推高再泄力，适合高潮戏',
+    get label() { return translateUi("workflow.wave") },
+    get hint() { return translateUi("workflow.buildInWavesThenReleaseSuitedToClimacticScenes") },
     weights: [3, 4, 5, 6, 3],
   },
   {
     id: 'elastic',
-    label: '弹性时间',
-    hint: '关键动作拉长，其余压缩',
+    get label() { return translateUi("workflow.elasticTime") },
+    get hint() { return translateUi("workflow.extendKeyActionsAndCompressTheRest") },
     weights: [2, 6, 2, 3],
   },
   {
     id: 'pulse',
-    label: '脉冲式',
-    hint: '规律跳动，适合卡点与群像',
+    get label() { return translateUi("workflow.pulse") },
+    get hint() { return translateUi("workflow.regularBeatsForRhythmicCutsAndEnsembleScenes") },
     weights: [3, 3, 3, 3],
   },
   {
     id: 'silence_hammer',
-    label: '静默锤击',
-    hint: '蓄势静场后猛切，适合反转',
+    get label() { return translateUi("workflow.silenceAndImpact") },
+    get hint() { return translateUi("workflow.buildTensionInSilenceThenCutSharplyForA") },
     weights: [5, 2, 6],
   },
 ]

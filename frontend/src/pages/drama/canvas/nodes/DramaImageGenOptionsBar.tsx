@@ -1,3 +1,4 @@
+import { useI18n } from '../../../../i18n'
 /** 漫剧生图：风格 / 模型 / 画幅选择条（内置风格，无手填） */
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import { BarChart3, ChevronDown, RectangleVertical, Smile } from 'lucide-react'
@@ -43,6 +44,7 @@ export function DramaImageGenOptionsBar({
   disabled = false,
   onStylePersist,
 }: DramaImageGenOptionsBarProps) {
+  const { t: translateUi } = useI18n()
   const rootRef = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState<OpenPanel>(null)
   const catalog = useMediaModelsCatalog()
@@ -111,8 +113,8 @@ export function DramaImageGenOptionsBar({
     e.stopPropagation()
   }
 
-  const styleLabel = getImageStyleLabel(value.image_style_id) || '风格'
-  const modelLabel = catalogModelLabel(value.model_id, imageModels, '图片模型')
+  const styleLabel = getImageStyleLabel(value.image_style_id) || translateUi("ecomSet.form.style")
+  const modelLabel = catalogModelLabel(value.model_id, imageModels, translateUi("workflow.imageModel"))
   const outputLabel = formatOutputSettingsLabel(value.aspect_ratio, value.resolution)
 
   return (
@@ -151,8 +153,8 @@ export function DramaImageGenOptionsBar({
       </div>
 
       {open === 'style' ? (
-        <div className="fc-gen-opt-panel fc-gen-style-panel" role="dialog" aria-label="图片风格">
-          <div className="fc-gen-opt-panel-title">图片风格</div>
+        <div className="fc-gen-opt-panel fc-gen-style-panel" role="dialog" aria-label={translateUi("workflow.imageStyle")}>
+          <div className="fc-gen-opt-panel-title">{translateUi("workflow.imageStyle")}</div>
           <div className="fc-gen-style-grid">
             {IMAGE_STYLE_OPTIONS.map((opt) => {
               const selected = value.image_style_id === opt.id
@@ -177,8 +179,8 @@ export function DramaImageGenOptionsBar({
       ) : null}
 
       {open === 'model' ? (
-        <div className="fc-gen-opt-panel" role="dialog" aria-label="生图模型">
-          <div className="fc-gen-opt-panel-title">模型</div>
+        <div className="fc-gen-opt-panel" role="dialog" aria-label={translateUi("workflow.imageModel_bfdc47")}>
+          <div className="fc-gen-opt-panel-title">{translateUi("workflow.model")}</div>
           <DramaMediaModelPicker
             models={imageModels}
             selectedId={value.model_id}
@@ -198,8 +200,8 @@ export function DramaImageGenOptionsBar({
       ) : null}
 
       {open === 'output' ? (
-        <div className="fc-gen-opt-panel" role="dialog" aria-label="输出设置">
-          <div className="fc-gen-opt-panel-title">比例</div>
+        <div className="fc-gen-opt-panel" role="dialog" aria-label={translateUi("workflow.outputSettings")}>
+          <div className="fc-gen-opt-panel-title">{translateUi("workflow.aspectRatio")}</div>
           <div className="fc-gen-chip-row">
             {GENERATION_ASPECT_RATIO_OPTIONS.filter((opt) => aspectOptions.includes(opt.id)).map((opt) => (
               <button
@@ -215,7 +217,7 @@ export function DramaImageGenOptionsBar({
             ))}
           </div>
           <div className="fc-gen-opt-panel-title" style={{ marginTop: 10 }}>
-            清晰度
+            {translateUi("workflow.resolution")}
           </div>
           <div className="fc-gen-chip-row">
             {resolutionOptions.map((res) => (

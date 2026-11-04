@@ -1,3 +1,5 @@
+import { useI18n } from '../../i18n'
+import { translate as translateUi } from '../../i18n/runtime'
 /** 全局资产库选择弹窗：跨项目挑选图片资产（导入或应用到节点） */
 import { useEffect, useMemo, useState } from 'react'
 import { dramaApi, resolveDramaMediaUrl, type DramaAsset } from '../../api/drama'
@@ -26,10 +28,10 @@ type Props = {
 }
 
 const TABS: Array<{ key: GlobalAssetTabKey; label: string }> = [
-  { key: 'character', label: '角色' },
-  { key: 'scene', label: '场景' },
-  { key: 'prop', label: '道具' },
-  ...(DRAMA_VOICE_BINDING_ENABLED ? [{ key: 'voice' as const, label: '音色' }] : []),
+  { key: 'character', get label() { return translateUi("workflow.character") } },
+  { key: 'scene', get label() { return translateUi("workflow.scene") } },
+  { key: 'prop', get label() { return translateUi("workflow.prop") } },
+  ...(DRAMA_VOICE_BINDING_ENABLED ? [{ key: 'voice' as const, get label() { return translateUi("daihuo.video.voice") } }] : []),
 ]
 
 // 资产是否匹配 Tab
@@ -55,10 +57,11 @@ export function GlobalAssetPickerModal({
   projectId,
   defaultTab = 'character',
   allowedTypes,
-  title = '从资产库选择',
-  confirmLabel = '确认使用',
+  title = translateUi("workflow.chooseFromAssetLibrary"),
+  confirmLabel = translateUi("workflow.useSelected"),
   onPick,
 }: Props) {
+  const { t: translateUi } = useI18n()
   /*
    * allAssets 用户全部项目资产
    * tab 当前分类
@@ -90,7 +93,7 @@ export function GlobalAssetPickerModal({
     dramaApi
       .listAssets(undefined, { libraryOnly: true })
       .then((rows) => setAllAssets(filterDramaLibraryAssets(rows)))
-      .catch((err) => setError(err instanceof Error ? err.message : '加载资产库失败'))
+      .catch((err) => setError(err instanceof Error ? err.message : translateUi("workflow.couldNotLoadTheAssetLibrary")))
       .finally(() => setLoading(false))
   }, [open, defaultTab])
 
@@ -122,7 +125,7 @@ export function GlobalAssetPickerModal({
       await onPick(picked)
       onClose()
     } catch (err) {
-      setError(err instanceof Error ? err.message : '应用失败')
+      setError(err instanceof Error ? err.message : translateUi("workflow.couldNotApply"))
     } finally {
       setBusy(false)
     }
@@ -141,7 +144,7 @@ export function GlobalAssetPickerModal({
       footer={
         <>
           <button type="button" className="pf-btn" onClick={onClose} disabled={busy}>
-            取消
+            {translateUi("ecomSet.copyModal.cancel")}
           </button>
           <button
             type="button"
@@ -149,13 +152,13 @@ export function GlobalAssetPickerModal({
             disabled={!selectedId || busy}
             onClick={() => void handleConfirm()}
           >
-            {busy ? '处理中…' : confirmLabel}
+            {busy ? translateUi("workflow.processing_1cac8a") : confirmLabel}
           </button>
         </>
       }
     >
       <p className="drama-muted drama-global-picker-lead">
-        展示你名下全部漫剧项目的已生成图片，选中后可导入或应用到当前节点
+        {translateUi("workflow.browseGeneratedImagesFromAllYourDramaProjectsThen")}
       </p>
 
       {showTabs ? (
@@ -180,11 +183,11 @@ export function GlobalAssetPickerModal({
         className="pf-dialog-input drama-global-picker-search"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        placeholder="搜索名称或项目 ID"
+        placeholder={translateUi("workflow.searchNameOrProjectId")}
       />
 
       {error ? <BillingErrorNotice message={error} className="drama-error" /> : null}
-      {loading ? <p className="drama-muted">加载资产库…</p> : null}
+      {loading ? <p className="drama-muted">{translateUi("workflow.loadingAssetLibrary")}</p> : null}
 
       <div className="drama-global-picker-grid">
         {filtered.map((asset) => {
@@ -206,10 +209,10 @@ export function GlobalAssetPickerModal({
                 <img src={src} alt={asset.name || ''} />
               ) : null}
               <div className="drama-global-picker-card-meta">
-                <strong>{asset.name || '未命名'}</strong>
+                <strong>{asset.name || translateUi("workflow.untitled")}</strong>
                 <span>
-                  {fromCurrent ? '本项目' : `项目 #${asset.project_id}`}
-                  {isVoice && audioSrc ? ' · 已合成' : isVoice ? ' · 未合成' : ''}
+                  {fromCurrent ? translateUi("workflow.thisProject") : translateUi("workflow.project", { v1: String(asset.project_id) })}
+                  {isVoice && audioSrc ? translateUi("workflow.synthesized_030844") : isVoice ? translateUi("workflow.notSynthesized") : ''}
                 </span>
               </div>
               {selected ? <span className="drama-global-picker-check">✓</span> : null}
@@ -218,7 +221,7 @@ export function GlobalAssetPickerModal({
         })}
       </div>
       {!loading && filtered.length === 0 ? (
-        <p className="drama-muted">当前分类下暂无可用图片，请先在其它项目生成资产</p>
+        <p className="drama-muted">{translateUi("workflow.noImagesInThisCategoryGenerateAssetsInAnother")}</p>
       ) : null}
     </Modal>
   )
@@ -230,7 +233,7 @@ export async function importGlobalAssetToProject(
   source: DramaAsset,
 ): Promise<DramaAsset> {
   if (!source.url && !source.cover) {
-    throw new Error('所选资产没有可用图片')
+    throw new Error(translateUi("workflow.theSelectedAssetHasNoUsableImage"))
   }
   const params = {
     ...(source.params || {}),
@@ -241,7 +244,7 @@ export async function importGlobalAssetToProject(
     project_id: projectId,
     type: source.type || 'none',
     asset_type: source.asset_type || 'image',
-    name: source.name || '未命名',
+    name: source.name || translateUi("workflow.untitled"),
     cover: source.cover || source.url,
     url: source.url || source.cover,
     params,

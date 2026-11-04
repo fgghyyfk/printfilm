@@ -1,3 +1,4 @@
+import { translate as translateUi } from '../i18n/runtime'
 /**
  * 漫剧运镜 / 景别词库（对齐 docs/EPISODE_RULES.md §5）
  * 供分集编辑 @ 菜单插入画面行前缀或运镜短语
@@ -18,27 +19,27 @@ export type DramaCameraLexiconItem = {
 
 /** 景别标签：写入画面行，勿标成对白 */
 export const DRAMA_SHOT_SIZE_LEXICON: DramaCameraLexiconItem[] = [
-  { id: 'empty', group: 'shot', label: '空镜', insert: '空镜：', hint: '环境建立，无对白无旁白' },
-  { id: 'wide', group: 'shot', label: '远景', insert: '远景：', hint: '交代空间关系' },
-  { id: 'full', group: 'shot', label: '全景', insert: '全景：', hint: '全身与环境同框' },
-  { id: 'medium', group: 'shot', label: '中景', insert: '中景：', hint: '腰部以上，对白常用' },
-  { id: 'close', group: 'shot', label: '近景', insert: '近景：', hint: '胸部以上，情绪贴近' },
-  { id: 'closeup', group: 'shot', label: '特写', insert: '特写：', hint: '脸或关键道具' },
-  { id: 'ecu', group: 'shot', label: '大特写', insert: '大特写：', hint: '眼、手、细节' },
-  { id: 'establish', group: 'shot', label: '建立镜头', insert: '建立镜头：', hint: '开场定场景气氛' },
-  { id: 'atmosphere', group: 'shot', label: '气氛镜头', insert: '气氛镜头：', hint: '光影/天气/物件烘托' },
+  { id: 'empty', group: 'shot', get label() { return translateUi("workflow.cutaway") }, insert: '空镜：', get hint() { return translateUi("workflow.establishTheSettingWithoutDialogueOrNarration") } },
+  { id: 'wide', group: 'shot', get label() { return translateUi("workflow.wideShot") }, insert: '远景：', get hint() { return translateUi("workflow.showSpatialRelationships") } },
+  { id: 'full', group: 'shot', get label() { return translateUi("workflow.fullShot") }, insert: '全景：', get hint() { return translateUi("workflow.frameTheFullBodyAndSettingTogether") } },
+  { id: 'medium', group: 'shot', get label() { return translateUi("workflow.mediumShot") }, insert: '中景：', get hint() { return translateUi("workflow.waistUpFramingOftenUsedForDialogue") } },
+  { id: 'close', group: 'shot', get label() { return translateUi("workflow.closeShot") }, insert: '近景：', get hint() { return translateUi("workflow.chestUpFramingForAnIntimateViewOfEmotion") } },
+  { id: 'closeup', group: 'shot', get label() { return translateUi("workflow.closeUp") }, insert: '特写：', get hint() { return translateUi("workflow.aFaceOrKeyProp") } },
+  { id: 'ecu', group: 'shot', get label() { return translateUi("workflow.extremeCloseUp") }, insert: '大特写：', get hint() { return translateUi("workflow.eyesHandsOrSmallDetails") } },
+  { id: 'establish', group: 'shot', get label() { return translateUi("workflow.establishingShot") }, insert: '建立镜头：', get hint() { return translateUi("workflow.establishTheSceneAndMoodAtTheOpening") } },
+  { id: 'atmosphere', group: 'shot', get label() { return translateUi("workflow.atmosphereShot") }, insert: '气氛镜头：', get hint() { return translateUi("workflow.setTheMoodThroughLightWeatherOrObjects") } },
 ]
 
 /** 运镜短语：单段运动轴建议 ≤ 2 */
 export const DRAMA_CAMERA_MOVE_LEXICON: DramaCameraLexiconItem[] = [
-  { id: 'push', group: 'move', label: '推镜', insert: '推镜：', hint: '镜头前推靠近主体' },
-  { id: 'pull', group: 'move', label: '拉镜', insert: '拉镜：', hint: '镜头后拉展开空间' },
-  { id: 'pan', group: 'move', label: '摇镜', insert: '摇镜：', hint: '机位不动，水平/垂直扫视' },
-  { id: 'truck', group: 'move', label: '移镜', insert: '移镜：', hint: '机位平移跟随' },
-  { id: 'follow', group: 'move', label: '跟拍', insert: '跟拍：', hint: '跟随人物移动' },
-  { id: 'high', group: 'move', label: '俯拍', insert: '俯拍：', hint: '高角度向下' },
-  { id: 'low', group: 'move', label: '仰拍', insert: '仰拍：', hint: '低角度向上' },
-  { id: 'aerial', group: 'move', label: '航拍', insert: '航拍：', hint: '大全景俯视' },
+  { id: 'push', group: 'move', get label() { return translateUi("workflow.pushIn") }, insert: '推镜：', get hint() { return translateUi("workflow.moveTheCameraTowardTheSubject") } },
+  { id: 'pull', group: 'move', get label() { return translateUi("workflow.pullOut") }, insert: '拉镜：', get hint() { return translateUi("workflow.moveTheCameraBackToRevealTheSetting") } },
+  { id: 'pan', group: 'move', get label() { return translateUi("workflow.panTilt") }, insert: '摇镜：', get hint() { return translateUi("workflow.keepTheCameraPositionFixedAndLookHorizontallyOr") } },
+  { id: 'truck', group: 'move', get label() { return translateUi("workflow.trackingShot") }, insert: '移镜：', get hint() { return translateUi("workflow.moveTheCameraLaterallyToFollow") } },
+  { id: 'follow', group: 'move', get label() { return translateUi("workflow.followShot") }, insert: '跟拍：', get hint() { return translateUi("workflow.followTheCharacterSMovement") } },
+  { id: 'high', group: 'move', get label() { return translateUi("workflow.highAngle") }, insert: '俯拍：', get hint() { return translateUi("workflow.lookDownFromAHighAngle") } },
+  { id: 'low', group: 'move', get label() { return translateUi("workflow.lowAngle") }, insert: '仰拍：', get hint() { return translateUi("workflow.lookUpFromALowAngle") } },
+  { id: 'aerial', group: 'move', get label() { return translateUi("workflow.aerialShot") }, insert: '航拍：', get hint() { return translateUi("workflow.aBroadViewFromAbove") } },
 ]
 
 /** 合并词库（插入列表用） */
