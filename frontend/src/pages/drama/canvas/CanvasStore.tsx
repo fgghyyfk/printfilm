@@ -366,7 +366,7 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
         pushHistory(prev, {
           nodes: nodesRef.current,
           edges: edgesRef.current,
-        }).catch(() => undefined),
+        }),
       )
       setEdges((current) => {
         const next = addEdge({ ...connection, id: `e-${Date.now()}` }, current)
