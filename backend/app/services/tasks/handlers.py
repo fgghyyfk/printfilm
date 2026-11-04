@@ -190,7 +190,8 @@ async def _run_kepu_project_pipeline(task: TaskRun) -> dict[str, Any] | None:
         task,
         run_pipeline(
             _require_int(task.project_id, "project_id"),
-            phase=str(phase) if phase is not None else None,
+            phase="script" if payload.get("restart") else (str(phase) if phase is not None else None),
+            restart=bool(payload.get("restart")),
         ),
         phase=phase,
     )

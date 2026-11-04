@@ -151,11 +151,11 @@ async def expand_content(
 
 
 async def _get_owned_project(
-    db: AsyncSession, project_id: int, user: User, *, for_undo: bool = False, shot_id: int | None = None,
+    db: AsyncSession, project_id: int, user: User, *, for_undo: bool = False, shot_id: int | None = None, lock: bool = False,
 ) -> Project:
-    """读取拥有的项目；仅撤销先锁Project→目标Shot并新读，锁保持到原PATCH提交。"""
+    """读取归属项目；写入/入队先锁 Project，撤销另锁目标 Shot。"""
     statement = select(Project).where(Project.id == project_id, Project.user_id == user.id)
-    if for_undo:
+    if for_undo or lock:
         # 首次读取之前禁止autoflush陈旧ORM，再用数据库当前值覆盖身份映射。
         with db.no_autoflush:
             locked = (await db.execute(statement.with_for_update().execution_options(populate_existing=True))).scalar_one_or_none()
@@ -437,7 +437,7 @@ async def update_project(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> Project:
-    project = await _get_owned_project(db, project_id, user, for_undo=body.compliance_undo is not None)
+    project = await _get_owned_project(db, project_id, user, for_undo=body.compliance_undo is not None, lock=True)
     _ensure_project_idle(project, detail="生成进行中，无法修改")
 
     data = body.model_dump(exclude_unset=True)
@@ -553,21 +553,13 @@ async def generate_project(
 
     - First run / restart: script stage only, then pauses at SCRIPT_READY for review.
     - Continue: one billing stage per click — assets → videos → compose（各自预扣）。
-    - restart=true: wipe shots/media and regenerate storyboard from scratch.
+    - restart=true: keep the previous work until a new storyboard is ready.
     """
-    project = await _get_owned_project(db, project_id, user)
+    project = await _get_owned_project(db, project_id, user, lock=True)
     _ensure_project_idle(project, detail="生成进行中，请稍后")
-
-    if restart:
-        for shot in list(project.shots):
-            await db.delete(shot)
-        await db.flush()
-        await pipeline.delete_project_assets(project_id)
-        project.cover_url = None
 
     # Resume: clear error, keep existing shots/media (pipeline skips finished stages)
     project.error_msg = None
-    project.final_video_url = None
     shots = list(project.shots or [])
     phase = "script" if (restart or not shots) else resolve_kepu_billing_phase(project)
     if phase == "compose":
@@ -823,7 +815,8 @@ async def update_shot(
     from app.models import Template
     from app.services.pipeline import clamp_shot_duration
 
-    project = await _get_owned_project(db, project_id, user, for_undo=body.compliance_undo is not None, shot_id=shot_id)
+    project = await _get_owned_project(db, project_id, user, for_undo=body.compliance_undo is not None, shot_id=shot_id, lock=True)
+    _ensure_side_task_allowed(project)
     shot = next((s for s in project.shots if s.id == shot_id), None)
     if not shot:
         raise HTTPException(status_code=404, detail="分镜不存在")
@@ -1038,7 +1031,7 @@ async def compose_only(
     user: User = Depends(get_current_user),
 ) -> Project:
     """Recompose final video from existing images/audio/(videos)."""
-    project = await _get_owned_project(db, project_id, user)
+    project = await _get_owned_project(db, project_id, user, lock=True)
     _ensure_project_idle(project)
     if not project.shots or not (
         any(s.image_url for s in project.shots) or any(s.video_url for s in project.shots)

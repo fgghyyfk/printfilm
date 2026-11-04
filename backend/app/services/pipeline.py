@@ -7,6 +7,7 @@ import logging
 import shutil
 from pathlib import Path
 from types import SimpleNamespace
+from uuid import uuid4
 
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -336,7 +337,7 @@ async def _synthesize_continuous_audio(
         raise ValueError("全部镜头旁白为空，无法配音")
 
     ark = get_ark()
-    regenerated = force or not _continuous_audio_ok(project_id)
+    regenerated = force or not all(getattr(s, "audio_url", None) for s in shot_rows) or not _continuous_audio_ok(project_id)
     if regenerated:
         hint = sum(max(float(getattr(s, "duration", 4) or 4), 2.0) for s in shot_rows)
         audio_url = await ark.tts(
@@ -406,7 +407,7 @@ async def _resume_plan(project_id: int) -> tuple[bool, bool, bool, bool]:
 
 
 @storage.without_intermediate_oss
-async def run_pipeline(project_id: int, *, phase: str | None = None) -> None:
+async def run_pipeline(project_id: int, *, phase: str | None = None, restart: bool = False) -> None:
     """跑科普流水线；phase 指定时只执行该计费阶段，避免冻 A 跑 B。"""
     from app.services.kepu_stages import normalize_kepu_pipeline_phase
 
@@ -426,7 +427,7 @@ async def run_pipeline(project_id: int, *, phase: str | None = None) -> None:
                 ).scalar_one_or_none()
             requested = normalize_kepu_pipeline_phase(phase, project)
 
-        if not skip_script:
+        if restart or not skip_script:
             if requested and requested not in {"script", "produce"}:
                 raise RuntimeError(
                     f"分镜尚未就绪，无法执行阶段 {requested}；请先生成分镜脚本"
@@ -773,9 +774,9 @@ async def _script_stage(project_id: int) -> None:
             or (plans[0].bgm if plans else "")
             or "轻快专业"
         )
-        for shot in list(project.shots):
-            await db.delete(shot)
-        await db.flush()
+        from app.services.kepu_shot_edits import clear_storyboard_rows
+
+        await clear_storyboard_rows(db, project)
         bible = project.character_bible
         for plan in plans:
             segment_script = (plan.segment_script or plan.video_prompt or "").strip()
@@ -981,7 +982,7 @@ async def _parallel_image_and_audio(project_id: int) -> None:
     progress_lock = asyncio.Lock()
     # 静图成片仍走外部 TTS；full + Seedance 内置口播则跳过
     need_audio = (not _kepu_seedance_native_audio(project)) and (
-        not _continuous_audio_ok(project_id)
+        not all(getattr(s, "audio_url", None) for s in shot_rows) or not _continuous_audio_ok(project_id)
     )
 
     async def bump_images(shot_no: int) -> None:
@@ -1426,7 +1427,8 @@ async def _compose_stage(project_id: int) -> None:
             .options(selectinload(Project.shots), selectinload(Project.template))
         )
         project = result.scalar_one()
-        out = storage.project_dir(project_id) / "final.mp4"
+        out = storage.project_dir(project_id) / "kepu" / uuid4().hex / "final.mp4"
+        out.parent.mkdir(parents=True, exist_ok=True)
 
         media: list[ShotMedia] = []
         for shot in sorted(project.shots, key=lambda s: s.shot_no):
@@ -1489,7 +1491,7 @@ async def _compose_stage(project_id: int) -> None:
         native_audio = _kepu_seedance_native_audio(project)
         # 视频内置口播：不叠外部 full_narration；回退/静图仍可用整片 TTS
         full_audio = None
-        if not native_audio and not avatar:
+        if not native_audio and not avatar and all(s.audio_url for s in project.shots):
             full_audio = _full_narration_path(project_id)
             if not full_audio.exists():
                 full_audio = None

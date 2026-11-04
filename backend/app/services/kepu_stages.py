@@ -70,7 +70,7 @@ def project_audio_ready(project: Any) -> bool:
             # 配置异常时不 fail-open，避免误跳过外部 TTS
             pass
     project_id = getattr(project, "id", None)
-    if project_id is not None and continuous_narration_ok(int(project_id)):
+    if project_id is not None and shots and all(getattr(s, "audio_url", None) for s in shots) and continuous_narration_ok(int(project_id)):
         return True
     return bool(shots) and all(shot_audio_file_ok(s) for s in shots)
 
