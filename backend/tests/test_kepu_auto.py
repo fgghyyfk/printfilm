@@ -141,3 +141,20 @@ async def test_each_auto_stage_freezes_and_settles_separately(db_session, monkey
     assert phases == expected
     assert await db_session.scalar(select(func.count()).select_from(WalletLedger).where(
         WalletLedger.user_id == user.id, WalletLedger.kind == "freeze")) == len(expected)
+
+
+async def test_disabled_billing_auto_does_not_need_price_service(db_session, monkeypatch):
+    from app.config import get_settings
+    from unittest.mock import AsyncMock
+
+    user, project, task = await auto_parent(db_session)
+    monkeypatch.setattr(get_settings(), "billing_enabled", False)
+    user.balance_fen = user.frozen_fen = 0
+    task.billing_status = "skipped"
+    await db_session.commit()
+    quote = AsyncMock(side_effect=AssertionError("关闭计费不得请求价目"))
+    monkeypatch.setattr("app.services.tokenfree_pricing.ensure_official_rates", quote)
+    await _complete_task(db_session, await get_task_for_runtime(db_session, task.id), {"ok": True})
+    child = await db_session.get(TaskRun, task.result_payload["next_task_id"])
+    assert child.billing_estimate_fen == 0 and child.status == "pending"
+    quote.assert_not_awaited()

@@ -56,7 +56,7 @@ async def complete_auto_stage(db, task: TaskRun, result: dict) -> None:
     from app.schemas_tasks import TaskCreateRequest, TaskTargetBind
     from app.services.billing.estimates import estimate_phase_fen, is_free_local_task
     from app.services.billing.newapi_bill import prepare_newapi_bill_logs
-    from app.services.billing.settlement import PreparedTaskSettlements, finish_prepared_task_settlements
+    from app.services.billing.settlement import PreparedTaskSettlements, finish_prepared_task_settlements, billing_active
     from app.services.kepu_stages import resolve_kepu_billing_phase
     from app.services.public_errors import InsufficientBalanceError
     from app.services.tasks.executor import _complete_task
@@ -75,8 +75,10 @@ async def complete_auto_stage(db, task: TaskRun, result: dict) -> None:
     finished = project.status == ProjectStatus.DONE and bool(project.final_video_url)
     next_phase = None if finished else resolve_kepu_billing_phase(project)
     # 价目、音频检查、上游账单全部在项目/任务/钱包锁外准备。
-    await ensure_official_rates()
-    estimate = estimate_phase_fen(project, next_phase) if next_phase else 0
+    estimate = 0
+    if next_phase and billing_active():
+        await ensure_official_rates()
+        estimate = estimate_phase_fen(project, next_phase)
     events = list((await db.scalars(select(UsageEvent).where(
         UsageEvent.task_run_id == task.id, UsageEvent.settled.is_(False),
     ))).all())
@@ -110,7 +112,7 @@ async def complete_auto_stage(db, task: TaskRun, result: dict) -> None:
                 pending = list((await db.scalars(select(TaskRun).where(
                     TaskRun.requested_by == user.id, TaskRun.billing_status == "none",
                     TaskRun.status.in_(tuple(ACTIVE_TASK_STATUSES)), TaskRun.billing_estimate_fen <= 0,
-                ))).all())
+                ))).all()) if billing_active(user) else []
                 if any(not is_free_local_task(row) for row in pending):
                     raise ValueError("排队任务报价尚未确认")
                 child = await create_task(db, user, TaskCreateRequest(
