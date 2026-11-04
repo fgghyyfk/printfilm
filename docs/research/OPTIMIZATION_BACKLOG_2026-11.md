@@ -58,11 +58,13 @@
   4. 删除分镜改为只删客户端明确标记删除的，而不是「不在列表里就删」。
 - 验收：生成完成后再保存，历史版本与尾帧仍在；两个标签页并发保存不会互删。
 
-### [ ] 4. 漫剧：画布自动保存用旧图覆盖资产图（已抽查）
+### [x] 4. 漫剧：画布自动保存用旧图覆盖资产图（已抽查）
 - 位置：`backend/app/api/drama/canvas.py` 约 80-90 行，`if url:` 把节点 `mediaUrl` 写回 `asset.url / asset.cover`。
 - 现象：画布打开期间在资产库重做角色图，拖动节点后被写回旧图（且带 API 主机前缀）；视频节点会把 mp4 写进 cover，缩略图坏掉。
 - 改法：画布保存只存布局（`params["canvas"]`、名称等），不再写资产媒体字段；媒体只由资产库/生成流程写。
 - 验收：画布开着时换资产图 → 拖动节点保存 → 资产图仍为新图。
+- 完成（2026-11-04）：已有资产自动保存仅更新名称和画布参数，保留媒体 URL、封面与类型；新节点保留媒体 URL，音视频仅接受明确的图片封面，独立上传与导入流程保持。
+- 验证：`backend/.venv/bin/python .tmp/optimization-20261104/run_tests.py -q tests/test_drama_canvas.py tests/test_asset_params_merge.py tests/test_asset_image_versions.py tests/test_seed_asset_params_structure.py` → **26 passed**（1 条已有依赖弃用警告）；规格与质量审查通过，`git diff --check` 通过。未做浏览器操作验收、未部署。
 
 ### [ ] 5. 豆包 TTS 疑似重复计费（两处记账已抽查，第二笔是否真的入账待验证）
 - 位置：`backend/app/services/pipeline.py` 约 349 行，整片配音后无条件 `_record_usage_est(..., "tts")`；`backend/app/services/volc_tts.py` 约 109 行成功后再 `record_avatar_ai("avatar_tts", ...)`。

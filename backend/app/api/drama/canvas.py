@@ -78,30 +78,28 @@ async def save_canvas(
         if matched is not None:
             asset = matched
             asset.name = name
-            if kind and kind != "none":
-                asset.type = kind
-            asset.asset_type = asset_type
-            if url:
-                asset.url = str(url)
-                # 音频/音色节点勿把媒体 URL 写进 cover（否则 Seedance 会当参考图）
-                if asset_type in {"audio", "voice"} or kind in {"audio", "voice"}:
-                    asset.cover = None
-                else:
-                    asset.cover = str(url)
+            # 自动保存仅更新布局与名称；媒体及类型由资产库和生成流程维护。
             params = dict(asset.params or {})
             params["canvas"] = node
             params["canvas_node_id"] = nid
             asset.params = params
             existing[nid] = asset
         else:
-            is_audio_node = asset_type in {"audio", "voice"} or kind in {"audio", "voice"}
+            # 新节点保留媒体 URL；音视频仅使用明确的图片封面。
+            is_timed_media = asset_type in {"video", "audio", "voice"} or kind in {"video", "audio", "voice"}
+            cover = str(url) if url else None
+            if is_timed_media:
+                cover = str(data.get("cover") or "")
+                cover_path = cover.split("?", 1)[0].split("#", 1)[0].lower()
+                if not cover_path.endswith((".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp")):
+                    cover = None
             db.add(
                 DramaAsset(
                     project_id=project.id,
                     type=kind if kind else "none",
                     asset_type=asset_type,
                     name=name,
-                    cover=None if is_audio_node else (str(url) if url else None),
+                    cover=cover,
                     url=str(url) if url else None,
                     params={"canvas_node_id": nid, "canvas": node},
                 )
