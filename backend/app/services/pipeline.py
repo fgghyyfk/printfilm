@@ -50,6 +50,7 @@ from app.services.bgm import clip_shot_bgm, resolve_bgm_path
 from app.services.compliance.content import is_ad_template
 from app.services.compliance.changes import clean_fields
 from app.services.tts_billing import TTSBillingPending
+from app.services.kepu_privacy_audio import ensure_privacy_audio
 
 logger = logging.getLogger(__name__)
 
@@ -1235,7 +1236,8 @@ async def _parallel_videos(project_id: int) -> None:
             done += 1
             pct = 55 + int(30 * done / max(total, 1))
             if meta.get("video_skip_reason") == VIDEO_SKIP_REASON_PRIVACY:
-                # 上一轮已确认真人隐私拦截：不再重提上游，直接沿用静图
+                # 上一轮已确认真人隐私拦截：不再重提上游，补本镜旁白。
+                await ensure_privacy_audio(project_id, meta["id"])
                 await publish_progress(
                     project_id,
                     {
@@ -1244,7 +1246,7 @@ async def _parallel_videos(project_id: int) -> None:
                         "shot": meta["shot_no"],
                         "total": total,
                         "percent": pct,
-                        "message": f"镜头 {meta['shot_no']} 含真人已跳过 AI 视频，将用静图合成",
+                        "message": f"镜头 {meta['shot_no']} 含真人已跳过 AI 视频，保留静图并使用备用配音",
                     },
                 )
                 return proxy
@@ -1325,6 +1327,7 @@ async def _parallel_videos(project_id: int) -> None:
                         if skipped_shot:
                             skipped_shot.video_skip_reason = VIDEO_SKIP_REASON_PRIVACY
                             await db.commit()
+                await ensure_privacy_audio(project_id, meta["id"])
                 done += 1
                 pct = 55 + int(30 * done / max(total, 1))
                 await publish_progress(
@@ -1337,7 +1340,7 @@ async def _parallel_videos(project_id: int) -> None:
                         "percent": pct,
                         "message": (
                             f"镜头 {meta['shot_no']} 含真人已跳过 AI 视频"
-                            + ("（成片将缺该镜）" if generate_audio else "，将用静图合成")
+                            + ("，保留静图并使用备用配音" if generate_audio else "，将用静图合成")
                         ),
                     },
                 )
@@ -1419,6 +1422,11 @@ async def _parallel_videos(project_id: int) -> None:
 
 
 async def _compose_stage(project_id: int) -> None:
+    # 历史隐私镜也必须有本镜旁白，不能拿共享整片音轨误配到单镜。
+    async with AsyncSessionLocal() as db:
+        privacy_ids = (await db.execute(select(Shot.id).where(Shot.project_id == project_id, Shot.video_skip_reason == "privacy"))).scalars().all()
+    for shot_id in privacy_ids:
+        await ensure_privacy_audio(project_id, shot_id)
     await _set_status(project_id, ProjectStatus.COMPOSING, 92, "COMPOSING")
     async with AsyncSessionLocal() as db:
         result = await db.execute(

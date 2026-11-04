@@ -146,6 +146,23 @@ def _estimate_assets_fen(project: Project, settings: Settings) -> int:
     return max(total, 1)
 
 
+def _estimate_privacy_audio_fen(project: Project, settings: Settings, *, possible: bool = False) -> int:
+    """内置口播静图兜底沿用既有 TTS 费率；视频阶段预留可能触发的配音。"""
+    from app.services.pipeline import _kepu_seedance_native_audio, _project_voice
+    from app.services.kepu_privacy_audio import privacy_audio_ready
+
+    if not _kepu_seedance_native_audio(project):
+        return 0
+    voice = _project_voice(project)
+    count = sum(1 for shot in project.shots if (shot.narration or "").strip() and not shot.video_url
+                and (possible or shot.video_skip_reason == "privacy")
+                and not privacy_audio_ready(project.id, shot, voice))
+    if not count:
+        return 0
+    _, charge = charge_fen_for_tokens(settings.billing_est_tts_tokens * count, "tts", settings=settings)
+    return _buffered_fen(charge, settings)
+
+
 def _estimate_videos_fen(project: Project, settings: Settings) -> int:
     """只估尚未出片的镜头视频。"""
     if (getattr(project, "pipeline_mode", "") or "") == "avatar":
@@ -154,7 +171,7 @@ def _estimate_videos_fen(project: Project, settings: Settings) -> int:
         return max(1, estimate_videos_fen(project))
     shots = [s for s in list(project.shots or []) if not shot_video_ready(s)]
     if not shots:
-        return 1
+        return max(1, _estimate_privacy_audio_fen(project, settings))
     total = 0
     mid = _payload_video_model({}, settings)
     for sh in shots:
@@ -165,7 +182,7 @@ def _estimate_videos_fen(project: Project, settings: Settings) -> int:
             model=mid,
             resolution=_kepu_video_resolution(project, settings),
         )
-    return _buffered_fen(total, settings)
+    return _buffered_fen(total, settings) + _estimate_privacy_audio_fen(project, settings, possible=True)
 
 
 def estimate_phase_fen(project: Project, phase: str, settings: Settings | None = None) -> int:
@@ -184,7 +201,7 @@ def estimate_phase_fen(project: Project, phase: str, settings: Settings | None =
         return _estimate_videos_fen(project, s)
 
     if raw == "compose":
-        return 1
+        return max(1, _estimate_privacy_audio_fen(project, s))
 
     return _estimate_assets_fen(project, s)
 
@@ -210,7 +227,7 @@ async def estimate_task_fen(db: AsyncSession, task: TaskRun, settings: Settings 
             charge = charge_fen_official_llm(s.billing_est_llm_tokens, s)
             return _buffered_fen(charge, s)
         result = await db.execute(
-            select(Project).where(Project.id == int(project_id)).options(selectinload(Project.shots))
+            select(Project).where(Project.id == int(project_id)).options(selectinload(Project.shots), selectinload(Project.template))
         )
         project = result.scalar_one_or_none()
         if not project:
@@ -239,7 +256,10 @@ async def estimate_task_fen(db: AsyncSession, task: TaskRun, settings: Settings 
             _, c = charge_fen_for_tokens(s.billing_est_tts_tokens * 3, "tts", settings=s)
             return _buffered_fen(c, s)
         if task_type == "project_compose_only":
-            return 1
+            pid = task.project_id or payload.get("project_id")
+            project = (await db.execute(select(Project).where(Project.id == int(pid)).options(
+                selectinload(Project.shots), selectinload(Project.template)))).scalar_one_or_none() if pid else None
+            return max(1, _estimate_privacy_audio_fen(project, s)) if project else 1
         if task_type == "avatar_auto":
             # 全自动出片：写稿 + 场景图 + 配音 + 对口型，按文稿字数估时长
             from app.services.kepu_avatar_billing import estimate_auto_fen
