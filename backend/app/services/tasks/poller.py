@@ -210,7 +210,7 @@ async def _poll_one_task(task_id: int) -> None:
 # 后台轮询 api/studio 轻量视频任务：主动查上游终态，超时则失败并解冻。
 async def _poll_ephemeral_deferred_tasks() -> None:
     now = datetime.now(UTC)
-    timeout_sec = float(get_settings().ark_video_poll_timeout or 900.0)
+    timeout_sec = min(float(get_settings().ark_video_poll_timeout or 900.0), float(get_settings().video_task_total_timeout))
 
     async with AsyncSessionLocal() as db:
         # next_action_at 为 NULL（尚未安排退避）视为到期；否则只查到期任务，

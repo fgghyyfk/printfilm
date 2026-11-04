@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.services.public_errors import public_message
+from app.services.video_recovery import VideoBillingPending, video_deadline_exceeded
 
 import logging
 from datetime import UTC, datetime, timedelta
@@ -1199,6 +1200,13 @@ async def submit_fragment_video_task(task: TaskRun) -> dict[str, Any]:
         task_row = await get_task_for_runtime(db, task.id)
         if not task_row:
             return {"ok": False, "error": "missing_task"}
+        if task_row.provider_task_id:
+            task_row.status = "awaiting_poll"
+            task_row.next_action_at = datetime.now(UTC)
+            await db.commit()
+            return {"awaiting_poll": True, "provider_task_id": task_row.provider_task_id}
+        if (task_row.result_payload or {}).get("video_submission_pending"):
+            raise VideoBillingPending("interrupted_submission_unknown")
         ep = await db.get(
             DramaEpisode,
             episode_id,
@@ -1335,9 +1343,15 @@ async def submit_fragment_video_task(task: TaskRun) -> dict[str, Any]:
         frag.params = params
         task_row.progress_percent = max(int(task_row.progress_percent or 0), 30)
         task_row.current_step_status = "submitting"
+        task_row.result_payload = {**(task_row.result_payload or {}), "video_submission_pending": True}
         await db.commit()
 
         provider_task_id = await submit_prepared_fragment_video(prepared, project_id=project.id)
+        task_row.provider_task_id = provider_task_id
+        try:
+            await db.commit()
+        except Exception as exc:
+            raise VideoBillingPending("persist_task_id_failed", provider_task_id=provider_task_id) from exc
         poll_interval = max(1.0, float(get_settings().ark_video_poll_interval or 8.0))
         now = datetime.now(UTC)
         # 提交成功后立刻写成 running/polling，避免前端长期停在「排队」
@@ -1457,6 +1471,8 @@ async def _recover_complete_fragment_video(
     await db.refresh(locked, attribute_names=["steps"])
     # 先 complete（commit 后锁释放），再激活后续；避免 activate 提前 commit 导致并发双 complete
     locked.progress_percent = 100
+    locked.result_payload = {k: v for k, v in (locked.result_payload or {}).items() if k not in {"video_submission_pending", "video_billing_pending"}}
+    locked.result_payload = {**locked.result_payload, "video_terminal_confirmed": True}
     result_payload: dict[str, Any] = {"ok": True, "fragment_id": int(fragment_id)}
     if recovered:
         result_payload["recovered"] = True
@@ -1489,6 +1505,8 @@ async def _settle_cancelled_after_finalized(db: AsyncSession, task_id: int) -> b
     if not locked:
         return False
     locked.payload = clear_finalizing_window(locked.payload)
+    locked.result_payload = {k: v for k, v in (locked.result_payload or {}).items() if k not in {"video_submission_pending", "video_billing_pending"}}
+    locked.result_payload = {**locked.result_payload, "video_terminal_confirmed": True}
     locked.status = "cancelled"
     locked.cancel_requested = True
     locked.current_step_status = "done"
@@ -1556,9 +1574,7 @@ async def poll_fragment_video_task(task_id: int) -> None:
                 if na is not None and na > now:
                     return
 
-            if task.cancel_requested or _is_episode_video_cancelled(episode_id):
-                await _fail_task(db, task, RuntimeError("任务已取消"))
-                return
+            locally_cancelled = task.cancel_requested or _is_episode_video_cancelled(episode_id)
 
             # 旧 Kie 任务号不能拿去查 TokenFree，否则会一直轮询并占着冻结余额
             if str(payload.get("video_provider") or "") == "kie":
@@ -1566,25 +1582,27 @@ async def poll_fragment_video_task(task_id: int) -> None:
                 return
 
             result = await get_ark().fetch_task_once(task.provider_task_id)
-            if result.status == "running":
+            if result.status in {"running", "pending"}:
+                if locally_cancelled or video_deadline_exceeded(task.started_at or task.created_at, now=now):
+                    await _fail_task(db, task, VideoBillingPending("cancelled_or_total_deadline", provider_task_id=task.provider_task_id))
+                    return
                 task.next_action_at = now + timedelta(seconds=poll_interval)
                 task.progress_percent = min(95, int(task.progress_percent or 40) + 3)
                 task.current_step_status = "polling"
                 await db.commit()
                 return
             if result.status != "succeeded":
-                frag = await db.get(DramaEpisodeFragment, fragment_id)
-                if frag:
-                    await lock_fragment_for_update(db, frag)
-                    params = dict(frag.params or {})
-                    prev_gen = params.get("generation") if isinstance(params.get("generation"), dict) else None
-                    params["generation"] = build_failed_generation_params(
-                        prev_gen if isinstance(prev_gen, dict) else None,
-                        str(result.error or "上游生成失败"),
-                        attempts=attempts,
-                        attempt_limit=attempt_limit,
-                    )
-                    frag.params = params
+                if not (result.total_tokens or result.upstream_cost_fen):
+                    await _fail_task(db, task, VideoBillingPending("upstream_terminal_cost_unknown", provider_task_id=task.provider_task_id))
+                    return
+                from app.services.drama.billing_util import record_seedance_video_usage, seedance_billing_key
+
+                await record_seedance_video_usage(
+                    db, user_id=user_id, billing_key=seedance_billing_key(generate_audio=bool(payload.get("generate_audio", True))),
+                    model=str(payload.get("model_id") or get_settings().model_video), domain="drama", task_result=result,
+                    provider_task_id=task.provider_task_id, drama_project_id=task.drama_project_id,
+                )
+                task.result_payload = {"video_terminal_confirmed": True}
                 await _fail_task(db, task, RuntimeError(result.error or "上游生成失败"))
                 return
 
@@ -1986,6 +2004,9 @@ async def run_asset_video_job(
                 provider_task_id=provider_task_id,
                 on_provider_task=on_provider_task,
             )
+            from app.services.video_recovery import finish_current_video_task
+
+            await finish_current_video_task()
             logger.info(
                 "资产生视频完成 project_id=%s asset_id=%s url=%s",
                 project_id,
@@ -1994,6 +2015,10 @@ async def run_asset_video_job(
             )
             return {"ok": True, "asset_id": asset.id}
         except Exception as exc:  # noqa: BLE001
+            from app.services.video_recovery import VideoGenerationFailed
+
+            if isinstance(exc, (VideoBillingPending, VideoGenerationFailed)):
+                raise
             from app.services.drama.asset_video import DOWNLOAD_RETRY_MESSAGE
             from app.services.exc_format import format_exception_message
             from app.services.storage import RetryableMediaDownloadError
@@ -2028,6 +2053,15 @@ async def run_asset_video_job(
                     "error": public_message(exc),
                 }
 
+            # 此处只剩明确的提交前拒绝；已知ID的后处理失败仍保原任务核对。
+            from app.services.billing.context import get_current_task_run_id
+            from app.services.video_recovery import finish_current_video_task
+
+            scope_id = get_current_task_run_id()
+            row = await db.get(TaskRun, scope_id) if scope_id else None
+            if row and row.provider_task_id:
+                raise VideoBillingPending("accepted_result_processing_unknown", provider_task_id=row.provider_task_id) from exc
+            await finish_current_video_task()
             err_text = format_exception_message(exc, fallback="生视频失败", limit=500)
             asset = await db.get(DramaAsset, asset_id)
             if asset:

@@ -81,7 +81,7 @@ def public_error(error, *, code: str | None = None, fallback: str = "生成失�
             r"余额不足：[\d\s¥.,：，（）()\u4e00-\u9fff]+", text,
         ) else "余额不足，请先充值后再继续"
         return PublicError("insufficient_balance", safe, 402)
-    if code in {"tts_billing_pending", "TTSBillingPending"} or name == "TTSBillingPending" or re.search(
+    if code in {"tts_billing_pending", "TTSBillingPending", "billing_review_pending"} or name in {"TTSBillingPending", "VideoBillingPending"} or re.search(
         r"费用待核对|费用.*待核对|音色合成请求中断", text,
     ):
         return _fixed("billing_review_pending")

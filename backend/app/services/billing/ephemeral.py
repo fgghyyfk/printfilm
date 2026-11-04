@@ -186,7 +186,13 @@ async def run_billed_ephemeral(
         logger.exception("ephemeral task failed task_id=%s", task.id)
         from app.services.tts_billing import mark_tts_billing_pending
 
+        if commit_before_execute:
+            # HTTP已返回，费用记录已独立提交；仅移除inflight预留，真实pending仍保留。
+            task.result_payload = {k: v for k, v in (task.result_payload or {}).items() if k != "voice_billing_reservation"}
         billing_pending = mark_tts_billing_pending(task, exc)
+        from app.services.video_recovery import mark_video_billing_pending
+
+        mark_video_billing_pending(task, exc)
         task.status = "failed"
         task.error_code = "TTSBillingPending" if billing_pending else "ephemeral_failed"
         task.error_message = public_message(exc)
@@ -297,6 +303,9 @@ async def run_billed_ephemeral_deferred(
         )
     except Exception as exc:
         logger.exception("ephemeral task failed task_id=%s", task.id)
+        from app.services.video_recovery import mark_video_billing_pending
+
+        mark_video_billing_pending(task, exc)
         task.status = "failed"
         task.error_code = "ephemeral_failed"
         task.error_message = public_message(exc)
@@ -359,6 +368,16 @@ async def settle_deferred_video_poll(
         return None
 
     task_id = int(probe.id)
+    if failure_code == "poll_timeout" or (terminal != "succeeded" and not int(usage_tokens or 0)):
+        probe.result_payload = {**(probe.result_payload or {}), "video_billing_pending": {
+            "reason": "poll_timeout" if failure_code == "poll_timeout" else "upstream_terminal_cost_unknown", "provider_task_id": provider_task_id,
+        }}
+        await settle_task(db, task_id)
+        if probe.domain == "studio" and probe.task_type == "tool_video":
+            await update_tool_run_task(db, user.id, provider_task_id, {
+                "status": "running", "error": "视频结果和费用待核对，请勿重新生成",
+            }, billing_task_id=task_id)
+        return None
     payload = probe.payload if isinstance(probe.payload, dict) else {}
     key = billing_key or seedance_billing_key(generate_audio=bool(payload.get("generate_audio", True)))
     raw_model = str(payload.get("model_id") or payload.get("model") or get_settings().model_video or "")
@@ -368,7 +387,7 @@ async def settle_deferred_video_poll(
     ))).all())
     prepared_usage = None
     async with billing_scope(task_id):
-        if terminal == "succeeded":
+        if terminal == "succeeded" or int(usage_tokens or 0) > 0:
             from app.services.ark import TaskResult
 
             result = TaskResult(status="succeeded", total_tokens=int(usage_tokens),
@@ -404,7 +423,7 @@ async def settle_deferred_video_poll(
         task.progress_percent = 100
     data = {**(result_data or {}), "status": task.status, "error": task.error_message}
     # 只持久化用于恢复记录的有限结果，不保存上游整包响应。
-    task.result_payload = {"status": task.status, "kind": "video", "urls": list(data.get("urls") or []),
+    task.result_payload = {"video_terminal_confirmed": True, "status": task.status, "kind": "video", "urls": list(data.get("urls") or []),
                            "preview_url": data.get("preview_url"), "error": task.error_message}
     if task.domain == "studio" and task.task_type == "tool_video":
         await update_tool_run_task(db, user.id, provider_task_id, data, billing_task_id=task_id)

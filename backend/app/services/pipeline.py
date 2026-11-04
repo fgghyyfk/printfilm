@@ -51,6 +51,8 @@ from app.services.compliance.content import is_ad_template
 from app.services.compliance.changes import clean_fields
 from app.services.tts_billing import TTSBillingPending
 from app.services.kepu_privacy_audio import ensure_privacy_audio
+from app.services.kepu_video_tasks import generate_shot_video, finish_shot_video
+from app.services.video_recovery import VideoBillingPending
 
 logger = logging.getLogger(__name__)
 
@@ -155,6 +157,9 @@ async def _record_seedance_usage(
             await db.commit()
     except Exception:  # noqa: BLE001
         logger.exception("seedance billing record failed project=%s key=%s", project_id, billing_key)
+        from app.services.video_recovery import VideoBillingPending
+
+        raise VideoBillingPending("usage_record_failed", provider_task_id=getattr(task_result, "provider_task_id", None))
 # Seedream min pixels ~3686400; portrait 9:16 ≈ 1440x2560
 _IMAGE_SIZE_BY_RATIO = {
     "9:16": "1440x2560",
@@ -1290,10 +1295,9 @@ async def _parallel_videos(project_id: int) -> None:
             hi=cfg.seedance_duration_max,
         )
         try:
-            local_video, task_result = await ark.gen_and_wait_video(
-                meta["image_ref"],
-                prompt,
-                int(dur),
+            local_video, task_result = await generate_shot_video(
+                ark, shot_id=meta["id"], image_url=meta["image_ref"],
+                prompt=prompt, duration=int(dur),
                 project_id=project_id,
                 shot_no=meta["shot_no"],
                 character_consistency=consistency,
@@ -1306,7 +1310,7 @@ async def _parallel_videos(project_id: int) -> None:
         except Exception as exc:  # noqa: BLE001
             msg = str(exc)
             # Real-person privacy blocks — skip AI video; compose will use still image
-            if any(
+            if not isinstance(exc, VideoBillingPending) and any(
                 k in msg
                 for k in (
                     "PrivacyInformation",
@@ -1327,6 +1331,7 @@ async def _parallel_videos(project_id: int) -> None:
                         if skipped_shot:
                             skipped_shot.video_skip_reason = VIDEO_SKIP_REASON_PRIVACY
                             await db.commit()
+                await finish_shot_video(meta["id"])
                 await ensure_privacy_audio(project_id, meta["id"])
                 done += 1
                 pct = 55 + int(30 * done / max(total, 1))
@@ -1364,6 +1369,7 @@ async def _parallel_videos(project_id: int) -> None:
             fallback_duration_sec=dur,
             shot_id=meta["id"],
         )
+        await finish_shot_video(meta["id"])
         async with _db_write_lock():
             async with AsyncSessionLocal() as db:
                 shot = await db.get(Shot, meta["id"])
@@ -1676,6 +1682,7 @@ async def regen_shot_image(project_id: int, shot_id: int) -> None:
         model=s.model_image,
         shot_id=shot_id,
     )
+    await finish_shot_video(shot_id)
     if cancelled:
         raise PipelineCancelled(f"project {project_id} cancelled during regen image")
 
@@ -1732,10 +1739,8 @@ async def regen_shot_video(project_id: int, shot_id: int) -> None:
         extra_refs = video_extra_refs_for_shot(previous_usable_shot(list(project.shots), shot_no))
         video_model = (getattr(project, "video_model", None) or "").strip()
         ratio = _project_output_ratio(project) or cfg.ark_video_ratio
-    local_video, task_result = await ark.gen_and_wait_video(
-        image_ref,
-        prompt,
-        int(dur),
+    local_video, task_result = await generate_shot_video(
+        ark, shot_id=shot_id, image_url=image_ref, prompt=prompt, duration=int(dur),
         project_id=project_id,
         shot_no=shot_no,
         character_consistency=consistency,

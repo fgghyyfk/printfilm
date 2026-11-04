@@ -111,6 +111,7 @@ async def record_seedance_video_usage(
                 .where(
                     UsageEvent.task_run_id == int(tid),
                     UsageEvent.billing_key == billing_key,
+                    *([_provider_task_id_match(provider_id)] if provider_id else []),
                 )
                 .order_by(UsageEvent.id.asc())
                 .limit(1)

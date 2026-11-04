@@ -62,6 +62,8 @@ class Settings(BaseSettings):
     ark_video_ratio: str = "16:9"
     ark_video_poll_interval: float = 8.0
     ark_video_poll_timeout: float = 900.0
+    # 单镜从首次提交起的总时限；到限保留任务号/费用待核对，不重提。
+    video_task_total_timeout: float = 900.0
     # Parallel generation concurrency (per project)
     pipeline_image_concurrency: int = 3
     # TokenFree / New API 同时观察的生图任务上限（超出会 429）

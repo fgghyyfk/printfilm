@@ -137,7 +137,7 @@ async def _complete_task(db, task, result: dict) -> None:
     set_task_step_state(task, step, status="done", now=now)
     task.status = "cancelled" if task.cancel_requested else "succeeded"
     task.progress_percent = 100 if task.status == "succeeded" else task.progress_percent
-    task.result_payload = result
+    task.result_payload = {**(task.result_payload or {}), **result}
     task.error_code = None
     task.error_message = None
     task.finished_at = now
@@ -214,6 +214,25 @@ async def _fail_task(db, task, exc: Exception) -> None:
     from app.services.tts_billing import mark_tts_billing_pending
 
     mark_tts_billing_pending(task, exc)
+    from app.services.video_recovery import mark_video_billing_pending
+
+    mark_video_billing_pending(task, exc)
+    from app.services.video_recovery import VideoGenerationFailed
+
+    if isinstance(exc, VideoGenerationFailed):
+        from app.services.drama.billing_util import record_seedance_video_usage, seedance_billing_key
+        from app.config import get_settings
+
+        payload = task.payload if isinstance(task.payload, dict) else {}
+        await record_seedance_video_usage(
+            db, user_id=task.requested_by, billing_key=seedance_billing_key(generate_audio=bool(payload.get("generate_audio", True))),
+            model=str(payload.get("model_id") or get_settings().model_video), domain=task.domain,
+            task_result=exc.result, provider_task_id=exc.result.provider_task_id or task.provider_task_id,
+            project_id=task.project_id, drama_project_id=task.drama_project_id, shot_id=getattr(exc, "shot_id", None) or task.shot_id,
+        )
+        task.result_payload = {k: v for k, v in (task.result_payload or {}).items()
+                               if k not in {"video_submission_pending", "video_billing_pending"}}
+        task.result_payload = {**task.result_payload, "video_terminal_confirmed": True}
     now = datetime.now(UTC)
     step = task.steps[0] if task.steps else None
     set_task_step_state(task, step, status="failed", now=now)
@@ -277,6 +296,14 @@ async def _mark_cancelled(db, task) -> None:
             "cancel deferred: task %s inside finalizing window, poller will settle",
             task.id,
         )
+        return
+    from app.services.video_recovery import video_cost_unconfirmed
+
+    if (isinstance(task.result_payload, dict) and task.result_payload.get("voice_billing_reservation")) or video_cost_unconfirmed(task):
+        await settle_task(db, task.id)
+        await append_task_event(db, task.id, event_type="task.awaiting_review", status=task.status,
+                                message=task.error_message)
+        await db.commit()
         return
     now = datetime.now(UTC)
     step = task.steps[0] if task.steps else None

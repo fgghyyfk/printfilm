@@ -104,13 +104,28 @@ async def _download_existing_asset_video(
     result = await ark.fetch_task_once(provider_task_id)
     result.provider_task_id = provider_task_id
     if result.status in {"", "running", "queued"}:
+        from app.services.billing.context import get_current_task_run_id
+        from app.services.video_recovery import VideoBillingPending, video_deadline_exceeded
+        from app.database import AsyncSessionLocal
+        from app.models_tasks import TaskRun
+
+        scope_id = get_current_task_run_id()
+        if scope_id:
+            async with AsyncSessionLocal() as timing_db:
+                task = await timing_db.get(TaskRun, scope_id)
+                if task and video_deadline_exceeded(task.started_at or task.created_at):
+                    raise VideoBillingPending("total_deadline", provider_task_id=provider_task_id)
         raise RetryableMediaDownloadError(
             "上游成片尚未就绪",
             provider_task_id=provider_task_id,
             counts_attempt=False,
         )
     if result.status != "succeeded" or not result.url:
-        raise RuntimeError(result.error or "上游生成失败")
+        from app.services.video_recovery import VideoBillingPending, VideoGenerationFailed
+
+        if result.total_tokens or result.upstream_cost_fen:
+            raise VideoGenerationFailed(result)
+        raise VideoBillingPending("upstream_terminal_cost_unknown", provider_task_id=provider_task_id)
     try:
         local_video, local_last_frame = await ark.save_video_assets_from_result(
             result,
@@ -245,6 +260,9 @@ async def generate_asset_video(
             "character_intro": False,
         }
     )
+    from app.services.video_recovery import note_video_submission_started
+
+    await note_video_submission_started()
     local_video, local_last_frame, task_result = await ark.gen_and_wait_seedance_body(
         body,
         project_id=project.id,

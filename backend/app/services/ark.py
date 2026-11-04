@@ -51,6 +51,7 @@ from app.services.tokenfree_image import (
     tokenfree_image_user_error,
 )
 from app.services.voices import edge_tts_voice_for_speaker, openai_voice
+from app.services.video_recovery import VideoBillingPending, VideoGenerationFailed
 from app.services.tts_billing import AudioResponseHook, TTSBillingPending, TTSResult, record_tts_response, tts_response_usage
 from app.services.tokenfree_video import (
     extract_video_result_url,
@@ -1407,7 +1408,7 @@ class ArkGateway:
                     headers=self._route_headers(route),
                     json=self._video_json(body, route),
                 )
-                if resp.status_code >= 400 and prompt_as_json:
+                if resp.status_code == 400 and prompt_as_json:
                     # Fallback: plain text prompt
                     body["content"][0]["text"] = plain
                     resp = await observed_request(client, "POST",
@@ -1416,7 +1417,7 @@ class ArkGateway:
                         json=self._video_json(body, route),
                     )
                 # 文案策略：在 ratio/adaptive 结构回退前，对当前意图 body 追加 CG 重试
-                if resp.status_code >= 400:
+                if resp.status_code == 400:
                     raw_err = resp.text or ""
                     if self._is_seedance_input_privacy_error(raw_err):
                         raise RuntimeError(_format_seedance_create_error(resp.status_code, raw_err))
@@ -1438,7 +1439,8 @@ class ArkGateway:
                     err_text = resp.text or ""
                     # 仅「误用 first_frame + ratio」时去掉 ratio；有目标画幅时不得回落到 adaptive 横屏
                     if (
-                        not target_ratio
+                        resp.status_code == 400
+                        and not target_ratio
                         and "ratio" in err_text.lower()
                         and "ratio" in body
                     ):
@@ -1448,7 +1450,7 @@ class ArkGateway:
                             headers=self._route_headers(route),
                             json=self._video_json(body, route),
                         )
-                if resp.status_code >= 400 and not target_ratio:
+                if resp.status_code == 400 and not target_ratio:
                     # 无目标画幅时的兼容回退；有竖屏目标时禁止 adaptive，避免再次出横屏
                     body["content"][1].pop("role", None)
                     body["ratio"] = "adaptive"
@@ -1457,15 +1459,17 @@ class ArkGateway:
                         headers=self._route_headers(route),
                         json=self._video_json(body, route),
                     )
+                if resp.status_code >= 500 or resp.status_code == 429:
+                    raise VideoBillingPending("submit_http_unknown")
                 if resp.status_code >= 400:
                     raise RuntimeError(_format_seedance_create_error(resp.status_code, resp.text))
                 data = resp.json()
-        except httpx.TimeoutException as exc:
-            reraise_upstream_timeout(exc, kind="生视频", read_sec=VIDEO_CREATE_READ_SEC)
+        except (httpx.HTTPError, ValueError) as exc:
+            raise VideoBillingPending("submit_transport_unknown") from exc
 
         task_id = extract_video_task_id(data)
         if not task_id:
-            raise RuntimeError(f"Seedance missing task id: {data}")
+            raise VideoBillingPending("submit_missing_task_id")
         return task_id
 
     async def _resolve_media_ref(self, media_url: str, *, prefer_https: bool = False) -> str:
@@ -1553,6 +1557,8 @@ class ArkGateway:
                     headers=self._route_headers(route),
                     json=self._video_json(payload, route),
                 )
+                if resp.status_code >= 500 or resp.status_code == 429:
+                    raise VideoBillingPending("submit_http_unknown")
                 if resp.status_code >= 400:
                     raw_err = resp.text or ""
                     # 参考图真人：改文案无效
@@ -1565,7 +1571,7 @@ class ArkGateway:
                             )
                         )
                     cg_content = None
-                    if self._is_seedance_text_policy_error(raw_err):
+                    if resp.status_code == 400 and self._is_seedance_text_policy_error(raw_err):
                         cg_content = self._seedance_content_with_cg_style(payload.get("content"))
                     if cg_content is not None:
                         logger.warning(
@@ -1578,6 +1584,8 @@ class ArkGateway:
                             headers=self._route_headers(route),
                             json=self._video_json(payload, route),
                         )
+                    if resp.status_code >= 500 or resp.status_code == 429:
+                        raise VideoBillingPending("submit_http_unknown")
                     if resp.status_code >= 400:
                         raise RuntimeError(
                             _format_seedance_create_error(
@@ -1587,12 +1595,12 @@ class ArkGateway:
                             )
                         )
                 data = resp.json()
-        except httpx.TimeoutException as exc:
-            reraise_upstream_timeout(exc, kind="生视频", read_sec=VIDEO_CREATE_READ_SEC)
+        except (httpx.HTTPError, ValueError) as exc:
+            raise VideoBillingPending("submit_transport_unknown") from exc
 
         task_id = extract_video_task_id(data)
         if not task_id:
-            raise RuntimeError(f"Seedance missing task id: {data}")
+            raise VideoBillingPending("submit_missing_task_id")
         return task_id
 
     async def gen_and_wait_seedance_body(
@@ -1644,14 +1652,10 @@ class ArkGateway:
         audio_fallback_used = False
 
         def _audio_fallback(exc: Exception, *, accepted: bool) -> bool:
-            """仅"参考音频下载失败"允许去掉参考音频重提一次；其他错误一律不重建任务。
-
-            上游接受任务后的重提会产生第二个计费任务，故必须严格白名单，
-            隐私拦截/失败/轮询超时等异常必须立即上抛，避免重复扣费。
-            """
+            """仅未接受的参考音频结构拒绝允许修正；接受后永不重提。"""
             nonlocal fallback_body, audio_fallback_used, last_err
             last_err = exc
-            if audio_fallback_used or not _is_audio_download_error(exc):
+            if accepted or audio_fallback_used or not _is_audio_download_error(exc):
                 return False
             stripped = _strip_reference_audio(fallback_body)
             if not stripped:
@@ -1689,7 +1693,7 @@ class ArkGateway:
                         provider_task_id=task_id,
                         counts_attempt=False,
                     ) from exc
-            # 等待阶段失败：隐私/任务失败/超时等立即上抛；仅参考音频下载失败重提一次
+            # 已接受后只查询/下载原任务；参考音频失败也不能另建计费任务。
             try:
                 return await self.wait_video_assets(
                     task_id, project_id=project_id, shot_no=shot_no
@@ -1709,7 +1713,9 @@ class ArkGateway:
                     raise
                 if is_retryable_download_error(exc):
                     raise RetryableMediaDownloadError(str(exc), provider_task_id=task_id) from exc
-                raise
+                if isinstance(exc, (VideoBillingPending, VideoGenerationFailed)):
+                    raise
+                raise VideoBillingPending("accepted_result_processing_unknown", provider_task_id=task_id) from exc
         raise RuntimeError(str(last_err) if last_err else "Seedance multimodal failed")
 
     async def poll_task(self, task_id: str) -> TaskResult:
@@ -1720,7 +1726,29 @@ class ArkGateway:
                 last_frame_url=f"/static/mock/last_{task_id[-8:]}.jpg",
             )
 
-        deadline = time.monotonic() + self.settings.ark_video_poll_timeout
+        timeout_sec = min(self.settings.ark_video_poll_timeout, self.settings.video_task_total_timeout)
+        from app.services.billing.context import get_current_task_run_id
+
+        scope_id = get_current_task_run_id()
+        if scope_id:
+            from app.database import AsyncSessionLocal
+            from app.models_tasks import TaskRun
+            from datetime import UTC, datetime
+
+            async with AsyncSessionLocal() as db:
+                row = await db.get(TaskRun, scope_id)
+                if row and row.task_type == "asset_video":
+                    started = row.started_at or row.created_at
+                    if started:
+                        if started.tzinfo is None:
+                            started = started.replace(tzinfo=UTC)
+                        timeout_sec = min(timeout_sec, self.settings.video_task_total_timeout - (datetime.now(UTC) - started).total_seconds())
+        if timeout_sec <= 0:
+            result = await self.fetch_task_once(task_id)
+            if result.status in {"succeeded", "failed"}:
+                return result
+            raise VideoBillingPending("total_deadline", provider_task_id=task_id)
+        deadline = time.monotonic() + timeout_sec
         async with httpx.AsyncClient(timeout=_upstream_timeout(VIDEO_POLL_READ_SEC, connect=15.0)) as client:
             while time.monotonic() < deadline:
                 try:
@@ -1770,7 +1798,7 @@ class ArkGateway:
                 if result.status == "failed":
                     return result
                 await asyncio.sleep(self.settings.ark_video_poll_interval)
-        return TaskResult(status="failed", error="poll timeout", provider_task_id=task_id)
+        raise VideoBillingPending("poll_timeout", provider_task_id=task_id)
 
     async def fetch_task_once(self, task_id: str) -> TaskResult:
         """单次查询 Seedance 任务，不阻塞等待。"""
@@ -1847,6 +1875,12 @@ class ArkGateway:
     ) -> tuple[str, str | None, TaskResult]:
         """等待任务完成并落盘视频；若有尾帧则一并落盘。"""
         result = await self.poll_task(task_id)
+        result.provider_task_id = result.provider_task_id or task_id
+        if result.status != "succeeded":
+            if result.total_tokens or result.upstream_cost_fen:
+                raise VideoGenerationFailed(result)
+            # 已接受任务的失败并不能证明上游免费；保留结果供核对。
+            raise VideoBillingPending("upstream_terminal_cost_unknown", provider_task_id=task_id)
         video_local, last_local = await self.save_video_assets_from_result(
             result,
             project_id=project_id,
@@ -1884,51 +1918,24 @@ class ArkGateway:
         generate_audio: bool = False,
         model: str | None = None,
         extra_image_urls: list[str] | None = None,
+        provider_task_id: str | None = None,
+        on_task_created: Any | None = None,
     ) -> tuple[str, TaskResult]:
-        """Create i2v task and wait；开源版只走 TokenFree（不直连 Kie / 火山）。"""
-        last_err: Exception | None = None
-        for attempt in range(max_attempts):
-            use_json = attempt != 1  # attempt0 json, attempt1 plain, attempt2 json again
-            try:
-                task_id = await self.gen_video_i2v(
-                    image_url,
-                    prompt,
-                    duration,
-                    character_consistency=character_consistency,
-                    resolution=resolution,
-                    ratio=ratio,
-                    prompt_as_json=use_json,
-                    generate_audio=generate_audio,
-                    extra_image_urls=extra_image_urls,
-                )
-                return await self.wait_video(
-                    task_id,
-                    project_id=project_id,
-                    shot_no=shot_no,
-                )
-            except Exception as exc:  # noqa: BLE001
-                last_err = exc
-                msg = str(exc)
-                retryable = any(
-                    k in msg
-                    for k in (
-                        "summary_caption",
-                        "BodyFormat",
-                        "InvalidParameter",
-                        "poll timeout",
-                    )
-                )
-                logger.warning(
-                    "Seedance attempt %s/%s shot=%s failed: %s",
-                    attempt + 1,
-                    max_attempts,
-                    shot_no,
-                    msg[:300],
-                )
-                if not retryable or attempt >= max_attempts - 1:
-                    break
-                await asyncio.sleep(1.5 * (attempt + 1))
-        raise RuntimeError(str(last_err) if last_err else "video generation failed")
+        """创建一次并持久化原任务号，轮询/下载失败不再提交另一付费任务。"""
+        if provider_task_id:
+            task_id = provider_task_id
+        else:
+            task_id = await self.gen_video_i2v(
+                image_url, prompt, duration, character_consistency=character_consistency,
+                resolution=resolution, ratio=ratio, generate_audio=generate_audio,
+                extra_image_urls=extra_image_urls,
+            )
+            if on_task_created is not None:
+                try:
+                    await on_task_created(task_id)
+                except Exception as exc:
+                    raise VideoBillingPending("persist_task_id_failed", provider_task_id=task_id) from exc
+        return await self.wait_video(task_id, project_id=project_id, shot_no=shot_no)
 
     def _resolved_audio_model(self) -> str:
         from app.services.provider_profiles import is_byteplus

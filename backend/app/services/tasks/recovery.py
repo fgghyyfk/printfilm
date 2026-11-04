@@ -48,6 +48,18 @@ async def recover_interrupted_task(db, task_id: int, *, stale_clause=None, job_a
                                 status=task.status, message=task.error_message)
         await db.commit()
         return True
+    result = task.result_payload if isinstance(task.result_payload, dict) else {}
+    if result.get("video_billing_pending") or result.get("video_submission_pending"):
+        rows = list((result.get("video_tasks") or {}).values())
+        recoverable = ((task.domain == "kepu" and rows and all(
+            row.get("state") == "done" or row.get("provider_task_id") for row in rows))
+            or (task.domain == "drama" and task.task_type in {"fragment_video", "asset_video"} and task.provider_task_id))
+        if not recoverable or task.cancel_requested:
+            from app.services.billing.settlement import settle_task
+
+            await settle_task(db, task.id)
+            await db.commit()
+            return True
     if task.cancel_requested or task.status == "cancel_requested":
         await _mark_cancelled(db, task)
         return True
