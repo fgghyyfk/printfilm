@@ -73,19 +73,33 @@ def apply_log_quota(event: UsageEvent, log: dict[str, Any]) -> bool:
     return True
 
 
-async def apply_newapi_bills(events: list[UsageEvent]) -> int:
-    """结算前按时间窗拉消费日志，能唯一对上的改成账单 quota。"""
+async def prepare_newapi_bill_logs(events: list[UsageEvent]) -> list[dict[str, Any]]:
+    """锁外按原用量时间窗读取消费日志快照，不修改用量或钱包。"""
     pending = [event for event in events if not _already_billed(event)]
     if not pending:
-        return 0
+        return []
     start, end = _window(pending)
     if start is None or end is None:
-        return 0
+        return []
     try:
         logs = await fetch_tokenfree_consume_logs(int(start.timestamp()), int(end.timestamp()))
     except Exception:  # noqa: BLE001
         logger.info("拉取 TokenFree 消费日志失败，沿用价目报价")
+        return []
+    if not logs:
+        return []
+    return logs
+
+
+async def apply_newapi_bills(
+    events: list[UsageEvent], *, logs: list[dict[str, Any]] | None = None,
+) -> int:
+    """结算前按时间窗拉消费日志，能唯一对上的改成账单 quota。"""
+    pending = [event for event in events if not _already_billed(event)]
+    if not pending:
         return 0
+    if logs is None:
+        logs = await prepare_newapi_bill_logs(pending)
     if not logs:
         return 0
     used: set[int] = set()

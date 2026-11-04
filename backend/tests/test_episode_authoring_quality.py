@@ -65,9 +65,10 @@ def test_episode_output_marks_stale_storyboard_without_mutating_params(changed):
         id=2, episode_id=1, sort_order=0, content="@duration:5\n空镜：森林。",
         cover="", video="", duration_sec=5, params={}, asset_references=[],
     )
-    episode = SimpleNamespace(id=1, name="春芽", project_id=1, params=params, fragments=[frag])
+    episode = SimpleNamespace(id=1, revision=3, name="春芽", project_id=1, params=params, fragments=[frag])
     current_body = body + "\n△ 松鼠抬头。" if changed else body
     out = _episode_out(episode, script_bodies={1: current_body})
+    assert out.revision == 3
     assert out.params["fragment_script_changed"] is changed
     assert "fragment_script_changed" not in params
     assert len(out.fragments) == 1

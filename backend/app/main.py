@@ -159,6 +159,7 @@ async def _pg_columns(conn, table: str) -> set[str]:
 async def _apply_schema_patches() -> None:
     """Lightweight additive migrations（仅 PostgreSQL）。"""
     async with engine.begin() as conn:
+        await conn.execute(text("ALTER TABLE drama_episodes ADD COLUMN IF NOT EXISTS revision INTEGER NOT NULL DEFAULT 0"))
         scols = await _pg_columns(conn, "shots")
         if "segment_script" not in scols:
             await conn.execute(text("ALTER TABLE shots ADD COLUMN segment_script TEXT DEFAULT ''"))

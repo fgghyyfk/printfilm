@@ -68,3 +68,25 @@ async def test_record_seedance_video_usage_fallback_estimate(db_session: AsyncSe
     row = (await db_session.execute(select(UsageEvent).where(UsageEvent.user_id == user.id))).scalar_one()
     assert row.estimated is True
     assert row.total_tokens > 0
+
+
+async def test_prepared_video_usage_matches_default_without_early_persistence(db_session: AsyncSession) -> None:
+    """锁外快照不写库，锁内写入的费用、token、估算标记与默认路径相同。"""
+    from sqlalchemy import func, inspect
+    from app.services.drama.billing_util import prepare_seedance_video_usage
+    user = await make_user(db_session)
+    values = {
+        'user_id': user.id,
+        'billing_key': 'seedance2:video0',
+        'model': 'doubao-seedance-2-0',
+        'domain': 'drama',
+        'task_result': TaskResult(status='succeeded', total_tokens=100_000, raw_usage={'total_tokens': 100_000}),
+        'fallback_duration_sec': 8,
+    }
+    prepared = await prepare_seedance_video_usage(**values)
+    assert inspect(prepared).transient
+    assert await db_session.scalar(select(func.count()).select_from(UsageEvent).where(UsageEvent.user_id == user.id)) == 0
+    normal = await record_seedance_video_usage(db_session, **values)
+    recorded = await record_seedance_video_usage(db_session, **values, prepared_usage=prepared)
+    for field in ['total_tokens', 'completion_tokens', 'estimated', 'cost_fen', 'charge_fen', 'raw_usage_json']:
+        assert getattr(recorded, field) == getattr(normal, field)

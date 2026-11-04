@@ -1,3 +1,4 @@
+import { fragmentSaveBody, type FragmentEditSnapshot } from '../lib/dramaFragmentEditing'
 import { throwApiError } from '../lib/apiError'
 import { API_BASE, createJsonRequester, uploadFile } from './client'
 import { apiErrorMessage } from './http'
@@ -161,6 +162,7 @@ export type DramaFragment = {
 
 export type DramaEpisode = {
   id: number
+  revision: number
   name: string
   params?: Record<string, unknown> | null
   project_id: number
@@ -390,10 +392,11 @@ export const dramaApi = {
       params?: Record<string, unknown> | null
       asset_ids?: number[]
     }>,
+    snapshot: FragmentEditSnapshot,
   ) =>
     request<DramaEpisode>(`/api/drama/episodes/${episodeId}/fragments`, {
       method: 'POST',
-      body: JSON.stringify({ fragments }),
+      body: JSON.stringify(fragmentSaveBody(snapshot, fragments)),
     }),
   generateEpisode: (episodeId: number, fragment_ids?: number[], model_id?: string) =>
     request<{

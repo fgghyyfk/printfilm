@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.models import UsageEvent, User
 from app.services.billing import record_line
+from app.services.billing.usage import prepare_usage_line
 from app.services.billing.context import get_current_task_run_id
 from app.services.drama.seed import SeedAssetsResult
 
@@ -90,6 +91,7 @@ async def record_seedance_video_usage(
     drama_project_id: int | None = None,
     project_id: int | None = None,
     shot_id: int | None = None,
+    prepared_usage: UsageEvent | None = None,
 ) -> UsageEvent:
     """按官方任务 usage / 成本或时长估算写入 Seedance 视频用量行。
 
@@ -135,6 +137,44 @@ async def record_seedance_video_usage(
         if by_provider is not None:
             return by_provider
 
+    if prepared_usage is None:
+        prepared_usage = await prepare_seedance_video_usage(
+            user_id=user_id,
+            billing_key=billing_key,
+            model=model,
+            domain=domain,
+            task_result=task_result,
+            fallback_duration_sec=fallback_duration_sec,
+            resolution=resolution,
+            provider_task_id=provider_task_id,
+            drama_project_id=drama_project_id,
+            project_id=project_id,
+            shot_id=shot_id,
+        )
+    db.add(prepared_usage)
+    await db.flush()
+    return prepared_usage
+
+
+async def prepare_seedance_video_usage(
+    *,
+    user_id: int,
+    billing_key: str,
+    model: str,
+    domain: str,
+    task_result: TaskResult | None = None,
+    fallback_duration_sec: float | None = None,
+    resolution: str = "",
+    provider_task_id: str | None = None,
+    drama_project_id: int | None = None,
+    project_id: int | None = None,
+    shot_id: int | None = None,
+) -> UsageEvent:
+    """锁外补查上游用量及价目，返回费用算法不变的待写入快照。"""
+    from app.services.tokenfree_pricing import canonicalize_channel_model_id
+
+    model = canonicalize_channel_model_id((model or "").strip()) or (model or "").strip() or "seedance-2.5"
+    provider_id = (provider_task_id or "").strip()
     if (
         (not task_result or int(getattr(task_result, "total_tokens", 0) or 0) <= 0)
         and provider_id
@@ -220,8 +260,7 @@ async def record_seedance_video_usage(
         raw["usage"] = {**(raw.get("usage") or {}), "cost_fen": upstream_cost}
 
     if total_tokens > 0 or upstream_cost:
-        return await record_line(
-            db,
+        return await prepare_usage_line(
             user_id=user_id,
             billing_key=billing_key,
             model=model,
@@ -236,8 +275,7 @@ async def record_seedance_video_usage(
             provider="ark",
         )
 
-    return await record_line(
-        db,
+    return await prepare_usage_line(
         user_id=user_id,
         billing_key=billing_key,
         model=model,

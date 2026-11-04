@@ -6,12 +6,20 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from fastapi import HTTPException
+
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.services.billing.settlement import finish_prepared_task_settlements
+from app.services.tasks.service import prepare_fragment_cancellation_settlements
+from app.services.drama.fragment_editing import (
+    EDIT_CONFLICT, lock_fragment_for_update, patch_fragment_params,
+)
+
 from app.services.drama.fragment_dialogue import summarize_locked_fragment
 from app.database import AsyncSessionLocal
 from app.models import User
@@ -24,6 +32,7 @@ from app.models_drama import (
     DramaProject,
 )
 from app.services.billing import record_line, record_llm_chat_line
+from app.services.billing.usage import prepare_usage_line
 from app.services.drama.billing_util import record_seed_assets_llm_usage
 from app.services.drama.seed import seed_assets_from_episode_body
 from app.services.drama.agents import (
@@ -102,8 +111,7 @@ async def _reset_fragment_video_generation(
         status = str(gen.get("status") or "") if isinstance(gen, dict) else ""
         if status not in ACTIVE_VIDEO_GEN_STATUSES:
             continue
-        params["generation"] = {"status": "cancelled", "error": "任务已取消"}
-        frag.params = params
+        await patch_fragment_params(db, frag, {"generation": {"status": "cancelled", "error": "任务已取消"}})
         changed += 1
     if changed:
         await db.commit()
@@ -923,6 +931,7 @@ async def _run_single_episode_script_job(
 async def run_episode_fragment_plan_job(
     episode_id: int,
     *,
+    expected_revision: int,
     fallback_rules: bool = True,
     subtitle_enabled: bool | None = None,
     force: bool = False,
@@ -1095,27 +1104,13 @@ async def run_episode_fragment_plan_job(
             mode_used = "rules_fallback"
             continuation = False
 
-        await replace_episode_fragments_with_drafts(
-            db,
-            episode,
-            body,
-            assets,
-            drafts,
-            preserve_protected=not force,
-            continuation=continuation,
+        prepared_settlements = await prepare_fragment_cancellation_settlements(
+            db, [int(fragment.id) for fragment in (episode.fragments or [])],
         )
-        # 重新加载 params（replace 会写 fingerprint）
-        params = dict(episode.params or {})
-        params["fragment_plan_status"] = "completed"
-        params["fragment_plan_mode"] = mode_used
-        params.pop("fragment_plan_error", None)
-        params["fragment_plan_count"] = len(protected_frags) + len(drafts)
-        params["fragment_plan_preserved"] = len(protected_frags)
-        episode.params = params
         user = await db.get(User, project.user_id)
+        prepared_llm_usage = None
         if user and mode_used == "llm":
-            await record_line(
-                db,
+            prepared_llm_usage = await prepare_usage_line(
                 user_id=user.id,
                 project_id=None,
                 drama_project_id=project.id,
@@ -1124,7 +1119,47 @@ async def run_episode_fragment_plan_job(
                 estimated=True,
                 domain="drama",
             )
+        try:
+            await replace_episode_fragments_with_drafts(
+                db,
+                episode,
+                body,
+                assets,
+                drafts,
+                preserve_protected=not force,
+                continuation=continuation,
+                expected_revision=expected_revision,
+                prepared_settlements=prepared_settlements,
+            )
+        except HTTPException as exc:
+            if exc.status_code != 409:
+                raise
+            # 用量保留并结算；旧草稿不触碰较新规划的完成状态。
+            await db.refresh(episode, attribute_names=["params", "revision"], with_for_update=True)
+            current_params = episode.params or {}
+            if (current_params.get("fragment_plan_status") == "generating"
+                    and current_params.get("fragment_plan_revision", expected_revision) == expected_revision):
+                params = dict(episode.params or {})
+                params["fragment_plan_status"] = "failed"
+                params["fragment_plan_error"] = EDIT_CONFLICT
+                episode.params = params
+            if prepared_llm_usage is not None:
+                db.add(prepared_llm_usage)
+            await db.commit()
+            await finish_prepared_task_settlements(db, prepared_settlements)
+            return {"ok": False, "error": EDIT_CONFLICT}
+        if prepared_llm_usage is not None:
+            db.add(prepared_llm_usage)
+        # 重新加载 params（replace 会写 fingerprint）
+        params = dict(episode.params or {})
+        params["fragment_plan_status"] = "completed"
+        params["fragment_plan_mode"] = mode_used
+        params.pop("fragment_plan_error", None)
+        params["fragment_plan_count"] = len(protected_frags) + len(drafts)
+        params["fragment_plan_preserved"] = len(protected_frags)
+        episode.params = params
         await db.commit()
+        await finish_prepared_task_settlements(db, prepared_settlements)
         logger.info(
             "单集分镜完成 episode_id=%s mode=%s new=%s preserved=%s continuation=%s",
             episode_id,
@@ -1184,6 +1219,7 @@ async def submit_fragment_video_task(task: TaskRun) -> dict[str, Any]:
             raise ValueError("分镜不存在")
 
         if _is_episode_video_cancelled(episode_id):
+            await lock_fragment_for_update(db, frag)
             params = dict(frag.params or {})
             params.pop("generation_attempts", None)
             params["generation"] = {"status": "cancelled", "error": "任务已取消"}
@@ -1205,6 +1241,7 @@ async def submit_fragment_video_task(task: TaskRun) -> dict[str, Any]:
         max_attempts = max(1, int(get_settings().drama_fragment_max_attempts or 3))
         attempts = prev_attempts + 1 if nio_phase == "prepare" else int(payload.get("generation_attempts") or prev_attempts + 1)
         if nio_phase == "prepare" and attempts > max_attempts:
+            await lock_fragment_for_update(db, frag)
             params = dict(frag.params or {})
             # raise 用纯超限文案；展示拼接交给 build_failed_generation_params / _fail_task
             limit_msg = f"分镜内部自动重试超过上限（{max_attempts} 次）"
@@ -1219,6 +1256,7 @@ async def submit_fragment_video_task(task: TaskRun) -> dict[str, Any]:
             raise RuntimeError(limit_msg)
 
         if nio_phase == "prepare":
+            await lock_fragment_for_update(db, frag)
             params = dict(frag.params or {})
             params["generation_attempts"] = attempts
             params["generation"] = {
@@ -1278,6 +1316,7 @@ async def submit_fragment_video_task(task: TaskRun) -> dict[str, Any]:
         else:
             prepared = deserialize_fragment_video_prepared(prepared_raw)
 
+        await lock_fragment_for_update(db, frag)
         params = dict(frag.params or {})
         params["generation"] = {
             "status": "running",
@@ -1294,6 +1333,7 @@ async def submit_fragment_video_task(task: TaskRun) -> dict[str, Any]:
         poll_interval = max(1.0, float(get_settings().ark_video_poll_interval or 8.0))
         now = datetime.now(UTC)
         # 提交成功后立刻写成 running/polling，避免前端长期停在「排队」
+        await lock_fragment_for_update(db, frag)
         params = dict(frag.params or {})
         params["generation"] = {
             "status": "running",
@@ -1525,6 +1565,7 @@ async def poll_fragment_video_task(task_id: int) -> None:
             if result.status != "succeeded":
                 frag = await db.get(DramaEpisodeFragment, fragment_id)
                 if frag:
+                    await lock_fragment_for_update(db, frag)
                     params = dict(frag.params or {})
                     prev_gen = params.get("generation") if isinstance(params.get("generation"), dict) else None
                     params["generation"] = build_failed_generation_params(

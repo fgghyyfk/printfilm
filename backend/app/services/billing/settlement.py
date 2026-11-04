@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -27,6 +28,41 @@ _PENDING_BILLING_TASK_STATUSES = frozenset(
         "cancel_requested",
     }
 )
+
+
+@dataclass
+class PreparedTaskSettlements:
+    """本次分镜变更的锁外日志快照及提交后管理员检查标记。"""
+    newapi_logs: dict[int, list[dict[str, Any]]] = field(default_factory=dict)
+    event_ids: dict[int, set[int]] = field(default_factory=dict)
+    check_admin_after_commit: bool = False
+
+
+class PreparedSettlementChanged(RuntimeError):
+    """结算实际读取的已有用量超出锁外快照，本次编辑必须回滚。"""
+
+
+def _require_prepared_events(
+    prepared: PreparedTaskSettlements | None, task_id: int, events: list[UsageEvent],
+) -> None:
+    """以结算实际读点为界拒绝未覆盖用量，读取之后的迟到成本由任务补偿单独处理。"""
+    if prepared is not None and not {int(event.id) for event in events} <= prepared.event_ids.get(task_id, set()):
+        raise PreparedSettlementChanged("内容已在别处更新，请刷新")
+
+
+async def finish_prepared_task_settlements(db: AsyncSession, prepared: PreparedTaskSettlements) -> None:
+    """业务提交成功后才在独立小事务检查管理员邮件；失败不反转业务结果。"""
+    if not prepared.check_admin_after_commit:
+        return
+    prepared.check_admin_after_commit = False
+    from app.services.billing.alerts import process_admin_cost_alert
+
+    try:
+        async with AsyncSession(bind=db.bind, expire_on_commit=False) as alert_db:
+            await process_admin_cost_alert(alert_db)
+            await alert_db.commit()
+    except Exception:  # noqa: BLE001
+        logger.exception("分镜变更已提交，管理员费用提醒检查失败")
 
 
 def billing_active(user: User | None = None, settings: Settings | None = None) -> bool:
@@ -205,7 +241,9 @@ async def freeze_for_task(db: AsyncSession, task: TaskRun) -> int:
     return need
 
 
-async def settle_task(db: AsyncSession, task_id: int) -> dict[str, int]:
+async def settle_task(
+    db: AsyncSession, task_id: int, *, prepared_settlements: PreparedTaskSettlements | None = None,
+) -> dict[str, int]:
     """任务结束时按 usage_events 结算，多退少补冻结额。"""
     task = await _lock_task(db, task_id)
     if not task:
@@ -236,7 +274,9 @@ async def settle_task(db: AsyncSession, task_id: int) -> dict[str, int]:
                     UsageEvent.settled.is_(False),
                 )
             )
-            for e in result.scalars().all():
+            prior_events = list(result.scalars().all())
+            _require_prepared_events(prepared_settlements, task_id, prior_events)
+            for e in prior_events:
                 e.settled = True
             task.billing_status = "settled"
             await db.flush()
@@ -252,11 +292,15 @@ async def settle_task(db: AsyncSession, task_id: int) -> dict[str, int]:
         )
     )
     events = list(result.scalars().all())
+    _require_prepared_events(prepared_settlements, task_id, events)
     if events:
         try:
             from app.services.billing.newapi_bill import apply_newapi_bills
 
-            await apply_newapi_bills(events)
+            if prepared_settlements is None:
+                await apply_newapi_bills(events)
+            else:
+                await apply_newapi_bills(events, logs=prepared_settlements.newapi_logs.get(task_id, []))
         except Exception:  # noqa: BLE001
             logger.exception("New API 账单对账失败，沿用已记录费用 task=%s", task_id)
     # 用量已结但状态仍 frozen（异常中断）：按已落账实扣对齐，禁止把整笔预扣当退款
@@ -318,7 +362,11 @@ async def settle_task(db: AsyncSession, task_id: int) -> dict[str, int]:
         if charged > 0:
             from app.services.billing.alerts import process_billing_alerts_after_charge
 
-            await process_billing_alerts_after_charge(db, user, charged_fen=charged)
+            if prepared_settlements is None:
+                await process_billing_alerts_after_charge(db, user, charged_fen=charged)
+            else:
+                prepared_settlements.check_admin_after_commit = True
+                await process_billing_alerts_after_charge(db, user, charged_fen=charged, defer_admin_check=True)
         return {"charged": charged, "refunded": 0}
 
     frozen_for_task = int(task.billing_estimate_fen or 0)
@@ -370,7 +418,11 @@ async def settle_task(db: AsyncSession, task_id: int) -> dict[str, int]:
     if charged > 0 and user:
         from app.services.billing.alerts import process_billing_alerts_after_charge
 
-        await process_billing_alerts_after_charge(db, user, charged_fen=charged)
+        if prepared_settlements is None:
+            await process_billing_alerts_after_charge(db, user, charged_fen=charged)
+        else:
+            prepared_settlements.check_admin_after_commit = True
+            await process_billing_alerts_after_charge(db, user, charged_fen=charged, defer_admin_check=True)
     return {"charged": charged, "refunded": refund}
 
 

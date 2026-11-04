@@ -28,7 +28,7 @@ def test_fragment_plan_handler_passes_force_flag():
     fake_run = AsyncMock(return_value={"ok": True})
     task = SimpleNamespace(
         episode_id=99,
-        payload={"force": True, "fallback_rules": False},
+        payload={"force": True, "fallback_rules": False, "expected_revision": 7},
     )
     with patch("app.services.drama.jobs.run_episode_fragment_plan_job", fake_run):
         import asyncio
@@ -40,4 +40,5 @@ def test_fragment_plan_handler_passes_force_flag():
         fallback_rules=False,
         subtitle_enabled=None,
         force=True,
+        expected_revision=7,
     )

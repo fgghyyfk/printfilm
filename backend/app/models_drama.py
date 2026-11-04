@@ -92,6 +92,8 @@ class DramaEpisode(Base):
     __tablename__ = "drama_episodes"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # 仅分镜编辑集合变化递增，生成进度不推进编辑快照。
+    revision: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     name: Mapped[str] = mapped_column(String(200))
     params: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

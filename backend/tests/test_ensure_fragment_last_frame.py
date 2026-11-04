@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
+from app.models_drama import DramaEpisodeFragment
 from app.services.drama.generation import (
     ensure_fragment_last_frame_url,
     read_fragment_last_frame_url,
@@ -34,7 +35,7 @@ async def test_ensure_extracts_when_video_ready(tmp_path):
     video = tmp_path / "shot.mp4"
     video.write_bytes(b"fake")
     project = SimpleNamespace(id=1)
-    frag = SimpleNamespace(
+    frag = DramaEpisodeFragment(
         id=9,
         params={"generation": {"status": "done"}},
         video=str(video),

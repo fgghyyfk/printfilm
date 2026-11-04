@@ -96,6 +96,7 @@ class DramaFragmentOut(BaseModel):
 
 class DramaEpisodeOut(BaseModel):
     id: int
+    revision: int
     name: str
     params: dict | None = None
     project_id: int
@@ -267,6 +268,8 @@ class DramaFragmentSaveItem(BaseModel):
 
 
 class DramaSaveFragmentsRequest(BaseModel):
+    revision: int = Field(ge=0)
+    deleted_ids: list[int] = Field(default_factory=list)
     fragments: list[DramaFragmentSaveItem]
 
 

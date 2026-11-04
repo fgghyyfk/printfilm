@@ -10,11 +10,12 @@ from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import raiseload, selectinload
 
-from app.models import Project, Shot, User
+from app.models import Project, Shot, UsageEvent, User
 from app.models_drama import DramaAsset, DramaEpisode, DramaEpisodeFragment, DramaProject, DramaScript
 from app.models_tasks import TaskEvent, TaskRun, TaskStep, TaskTarget
 from app.schemas_tasks import TaskCreateRequest, TaskEventCreate, TaskStepCreate
 from app.services.tasks.handlers import get_task_handler
+from app.services.billing.settlement import PreparedSettlementChanged, PreparedTaskSettlements
 
 logger = logging.getLogger("app.tasks.service")
 
@@ -235,6 +236,7 @@ async def fail_remaining_sequential_batch(
     if not batch_key:
         return 0
     from app.models_drama import DramaEpisodeFragment
+    from app.services.drama.fragment_editing import patch_fragment_params
 
     stmt = select(TaskRun).where(
         TaskRun.batch_key == batch_key,
@@ -255,12 +257,11 @@ async def fail_remaining_sequential_batch(
         if task.fragment_id:
             frag = await db.get(DramaEpisodeFragment, int(task.fragment_id))
             if frag:
-                params = dict(frag.params or {})
-                params["generation"] = {
+                generation = {
                     "status": "failed",
                     "error": reason[:500],
                 }
-                frag.params = params
+                await patch_fragment_params(db, frag, {"generation": generation})
         await append_task_event(
             db,
             task.id,
@@ -336,7 +337,10 @@ def stale_pending_fragment_video_reason(frags: list[Any], task: Any | None = Non
 
 
 # 将任务标记为因分镜变更而取消（立即终态，不走 cancel_requested）。
-async def _mark_task_cancelled_stale(db: AsyncSession, task: TaskRun, reason: str, now: datetime) -> None:
+async def _mark_task_cancelled_stale(
+    db: AsyncSession, task: TaskRun, reason: str, now: datetime, *,
+    prepared_settlements: PreparedTaskSettlements | None = None,
+) -> None:
     task.status = "cancelled"
     task.cancel_requested = True
     task.error_code = "stale_fragment_ref"
@@ -358,9 +362,39 @@ async def _mark_task_cancelled_stale(db: AsyncSession, task: TaskRun, reason: st
         from app.services.billing.settlement import settle_task
 
         try:
-            await settle_task(db, int(task.id))
+            if prepared_settlements is None:
+                await settle_task(db, int(task.id))
+            else:
+                await settle_task(db, int(task.id), prepared_settlements=prepared_settlements)
+        except PreparedSettlementChanged:
+            raise
         except Exception:  # noqa: BLE001
             logger.exception("settle_task after stale cancel failed task_id=%s", task.id)
+
+
+async def prepare_fragment_cancellation_settlements(
+    db: AsyncSession, fragment_ids: list[int],
+) -> PreparedTaskSettlements:
+    """分集锁外只读定位待取消任务，逐任务按原时间窗准备补账日志。"""
+    from app.services.billing.newapi_bill import prepare_newapi_bill_logs
+
+    prepared = PreparedTaskSettlements()
+    ids = set(fragment_ids)
+    if not ids:
+        return prepared
+    tasks = list((await db.scalars(select(TaskRun).where(
+        TaskRun.domain == "drama", TaskRun.task_type == "fragment_video",
+        TaskRun.status.in_(tuple(_STALE_FRAGMENT_VIDEO_STATUSES)), TaskRun.billing_status == "frozen",
+    ).order_by(TaskRun.id))).all())
+    for task in tasks:
+        if not ids.intersection(task_fragment_ids(task)):
+            continue
+        events = list((await db.scalars(select(UsageEvent).where(
+            UsageEvent.task_run_id == task.id, UsageEvent.settled.is_(False),
+        ))).all())
+        prepared.event_ids[int(task.id)] = {int(event.id) for event in events}
+        prepared.newapi_logs[int(task.id)] = await prepare_newapi_bill_logs(events)
+    return prepared
 
 
 # 分镜删除/重切时作废仍引用旧 id 的在途 fragment_video（含轮询中），勿重试旧任务。
@@ -369,6 +403,7 @@ async def cancel_fragment_video_tasks_for_fragments(
     fragment_ids: list[int],
     *,
     reason: str = _STALE_FRAGMENT_REASON,
+    prepared_settlements: PreparedTaskSettlements | None = None,
 ) -> int:
     ids = [int(x) for x in fragment_ids if int(x) > 0]
     if not ids:
@@ -379,6 +414,7 @@ async def cancel_fragment_video_tasks_for_fragments(
         TaskRun.task_type == "fragment_video",
         TaskRun.status.in_(tuple(_STALE_FRAGMENT_VIDEO_STATUSES)),
     )
+    stmt = stmt.order_by(TaskRun.id)
     rows = list((await db.execute(stmt)).scalars().all())
     changed = 0
     now = datetime.now(UTC)
@@ -386,7 +422,7 @@ async def cancel_fragment_video_tasks_for_fragments(
         refs = task_fragment_ids(task)
         if not refs or not id_set.intersection(refs):
             continue
-        await _mark_task_cancelled_stale(db, task, reason, now)
+        await _mark_task_cancelled_stale(db, task, reason, now, prepared_settlements=prepared_settlements)
         changed += 1
     if changed:
         logger.info(

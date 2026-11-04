@@ -31,6 +31,46 @@ async def record_line(
     task_run_id: int | None = None,
     domain: str | None = None,
 ) -> UsageEvent:
+    """准备价格与用量后，在调用方事务中写入用量行。"""
+    event = await prepare_usage_line(
+        user_id=user_id,
+        billing_key=billing_key,
+        model=model,
+        tokens=tokens,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        estimated=estimated,
+        raw=raw,
+        project_id=project_id,
+        drama_project_id=drama_project_id,
+        shot_id=shot_id,
+        provider=provider,
+        task_run_id=task_run_id,
+        domain=domain,
+    )
+    db.add(event)
+    await db.flush()
+    return event
+
+
+async def prepare_usage_line(
+    *,
+    user_id: int,
+    billing_key: str,
+    model: str = "",
+    tokens: int = 0,
+    prompt_tokens: int = 0,
+    completion_tokens: int = 0,
+    estimated: bool = False,
+    raw: dict | None = None,
+    project_id: int | None = None,
+    drama_project_id: int | None = None,
+    shot_id: int | None = None,
+    provider: str = "ark",
+    task_run_id: int | None = None,
+    domain: str | None = None,
+) -> UsageEvent:
+    """锁外完成价目加载与费用计算，返回尚未绑定事务的用量快照。"""
     s = get_settings()
     from app.services.tokenfree_pricing import ensure_official_rates
 
@@ -94,8 +134,6 @@ async def record_line(
         raw_usage_json=json.dumps(raw, ensure_ascii=False)[:4000] if raw else None,
         created_at=datetime.now(UTC),
     )
-    db.add(ev)
-    await db.flush()
     return ev
 
 

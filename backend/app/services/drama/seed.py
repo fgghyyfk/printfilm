@@ -9,10 +9,16 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.services.drama.fragment_editing import EDIT_CONFLICT, claim_episode_revision
+from app.services.billing.settlement import (
+    PreparedSettlementChanged, PreparedTaskSettlements, finish_prepared_task_settlements,
+)
+from app.services.tasks.service import prepare_fragment_cancellation_settlements
 from app.models_drama import (
     DramaAsset,
     DramaAssetEpisode,
@@ -846,10 +852,16 @@ async def seed_episodes_from_script(
         ).scalars().all()
     )
 
+    cancellation_ids = list((await db.scalars(
+        select(DramaEpisodeFragment.id).join(DramaEpisode).where(DramaEpisode.project_id == project.id)
+    )).all())
+    prepared = await prepare_fragment_cancellation_settlements(db, cancellation_ids)
+
     # 无论是否重切，先合并同集号重复行，避免侧栏出现两个「第1集」
     merged = await merge_duplicate_episodes_by_number(db, int(project.id))
     if merged:
         await db.commit()
+        await finish_prepared_task_settlements(db, prepared)
         existing = await _reload_episodes(db, project.id)
 
     should_rebuild = force or _should_auto_replan(existing, bodies)
@@ -885,6 +897,7 @@ async def seed_episodes_from_script(
                 assets,
                 already_introduced=series_introduced,
                 summary=summary,
+                prepared_settlements=prepared,
             )
             for frag in planned:
                 series_introduced.update(
@@ -892,6 +905,7 @@ async def seed_episodes_from_script(
                 )
             created.append(episode)
         await db.commit()
+        await finish_prepared_task_settlements(db, prepared)
         return await _reload_episodes(db, project.id)
 
     # 已有分集：按集号同步名称与分镜（已生成视频 / 用户编辑过的分镜默认保留，除非 force）
@@ -923,6 +937,7 @@ async def seed_episodes_from_script(
                 assets,
                 already_introduced=series_introduced,
                 summary=summary,
+                prepared_settlements=prepared,
                 preserve_protected=not force,
             )
             for frag in planned:
@@ -958,12 +973,14 @@ async def seed_episodes_from_script(
             assets,
             already_introduced=series_introduced,
             summary=summary,
+                prepared_settlements=prepared,
         )
         for frag in planned:
             series_introduced.update(
                 extract_introduced_names_from_content(str(frag.get("content") or ""))
             )
     await db.commit()
+    await finish_prepared_task_settlements(db, prepared)
     return await _reload_episodes(db, project.id)
 
 
@@ -1056,6 +1073,8 @@ async def merge_duplicate_episodes_by_number(db: AsyncSession, project_id: int) 
                     )
                 )
                 .order_by(DramaEpisode.id.asc())
+                .with_for_update()
+                .execution_options(populate_existing=True)
             )
         )
         .scalars()
@@ -1113,6 +1132,11 @@ async def seed_single_episode_from_script(
         .all()
     )
     summary = script.summary if isinstance(script.summary, dict) else None
+    cancellation_ids = list((await db.scalars(
+        select(DramaEpisodeFragment.id).join(DramaEpisode).where(DramaEpisode.project_id == project.id)
+    )).all())
+    prepared = await prepare_fragment_cancellation_settlements(db, cancellation_ids)
+
     # 进入分镜前先清同号重复，避免再建一条第 N 集
     await merge_duplicate_episodes_by_number(db, int(project.id))
     existing = list(
@@ -1162,6 +1186,7 @@ async def seed_single_episode_from_script(
             assets,
             already_introduced=series_introduced,
             summary=summary,
+            prepared_settlements=prepared,
         )
     else:
         target.name = title
@@ -1173,9 +1198,11 @@ async def seed_single_episode_from_script(
                 assets,
                 already_introduced=series_introduced,
                 summary=summary,
+                prepared_settlements=prepared,
                 preserve_protected=not force,
             )
     await db.commit()
+    await finish_prepared_task_settlements(db, prepared)
     reloaded = await _reload_episode(db, int(target.id))
     if reloaded is None:
         raise ValueError("分集写入后未能重新加载")
@@ -1198,6 +1225,7 @@ async def _list_episode_fragments(
         select(DramaEpisodeFragment)
         .where(DramaEpisodeFragment.episode_id == episode_id)
         .order_by(DramaEpisodeFragment.sort_order.asc())
+        .execution_options(populate_existing=True)
     )
     return list(result.scalars().all())
 
@@ -1213,70 +1241,90 @@ async def _replace_episode_fragments(
     *,
     preserve_protected: bool = False,
     continuation: bool = False,
+    expected_revision: int | None = None,
+    prepared_settlements: PreparedTaskSettlements | None = None,
 ) -> list[dict[str, Any]]:
     # 删除旧分镜并重建；preserve_protected 时保留已有视频/手改分镜
-    existing = await _list_episode_fragments(db, episode.id)
-    protected = (
-        sorted(
-            [f for f in existing if _fragment_is_protected(f)],
-            key=lambda f: int(f.sort_order or 0),
-        )
-        if preserve_protected
-        else []
-    )
-    protected_ids = {int(f.id) for f in protected}
-    stale_ids = [int(f.id) for f in existing if int(f.id) not in protected_ids]
-    if stale_ids:
-        from app.services.tasks.service import cancel_fragment_video_tasks_for_fragments
+    if prepared_settlements is None:
+        ids = list((await db.scalars(select(DramaEpisodeFragment.id).where(
+            DramaEpisodeFragment.episode_id == episode.id,
+        ))).all())
+        prepared_settlements = await prepare_fragment_cancellation_settlements(db, ids)
+    check_admin_before = prepared_settlements.check_admin_after_commit
+    try:
+        async with db.begin_nested():
+            expected = episode.revision if expected_revision is None else expected_revision
+            await claim_episode_revision(db, episode.id, expected)
+            await db.refresh(episode, attribute_names=["params", "revision"])
+            existing = await _list_episode_fragments(db, episode.id)
+            protected = (
+                sorted(
+                    [f for f in existing if _fragment_is_protected(f)],
+                    key=lambda f: int(f.sort_order or 0),
+                )
+                if preserve_protected
+                else []
+            )
+            protected_ids = {int(f.id) for f in protected}
+            stale_ids = [int(f.id) for f in existing if int(f.id) not in protected_ids]
+            if stale_ids:
+                from app.services.tasks.service import cancel_fragment_video_tasks_for_fragments
 
-        await cancel_fragment_video_tasks_for_fragments(db, stale_ids)
-        await detach_task_fragment_refs(db, stale_ids)
-    for old in existing:
-        if int(old.id) not in protected_ids:
-            await db.delete(old)
-    await db.flush()
+                await cancel_fragment_video_tasks_for_fragments(db, stale_ids, prepared_settlements=prepared_settlements)
+                await detach_task_fragment_refs(db, stale_ids)
+            for old in existing:
+                if int(old.id) not in protected_ids:
+                    await db.delete(old)
+            await db.flush()
 
-    planned = (
-        drafts
-        if drafts is not None
-        else build_fragments_from_episode_body(
-            body,
-            assets,
-            already_introduced=already_introduced,
-            summary=summary,
-        )
-    )
-    # 全量重拆时跳过与已拍前缀等量的草稿；续拆（continuation）则草稿全是后续镜
-    if protected and not continuation:
-        skip = min(len(protected), len(planned))
-        planned = planned[skip:]
-    if protected:
-        for i, frag in enumerate(protected):
-            frag.sort_order = i
+            planned = (
+                drafts
+                if drafts is not None
+                else build_fragments_from_episode_body(
+                    body,
+                    assets,
+                    already_introduced=already_introduced,
+                    summary=summary,
+                )
+            )
+            # 全量重拆时跳过与已拍前缀等量的草稿；续拆（continuation）则草稿全是后续镜
+            if protected and not continuation:
+                skip = min(len(protected), len(planned))
+                planned = planned[skip:]
+            if protected:
+                for i, frag in enumerate(protected):
+                    frag.sort_order = i
 
-    base = len(protected)
-    for i, frag in enumerate(planned):
-        row = DramaEpisodeFragment(
-            episode_id=episode.id,
-            sort_order=base + i,
-            content=str(frag.get("content") or ""),
-            duration_sec=int(frag.get("duration_sec") or 8),
-            params={
-                "sceneName": frag.get("scene_name"),
-                "characterNames": frag.get("character_names") or [],
-                "user_edited": False,
-            },
-        )
-        db.add(row)
-        await db.flush()
-        for asset_id in frag.get("asset_ids") or []:
-            db.add(DramaFragmentAssetRef(fragment_id=row.id, asset_id=int(asset_id)))
+            base = len(protected)
+            for i, frag in enumerate(planned):
+                row = DramaEpisodeFragment(
+                    episode_id=episode.id,
+                    sort_order=base + i,
+                    content=str(frag.get("content") or ""),
+                    duration_sec=int(frag.get("duration_sec") or 8),
+                    params={
+                        "sceneName": frag.get("scene_name"),
+                        "characterNames": frag.get("character_names") or [],
+                        "user_edited": False,
+                    },
+                )
+                db.add(row)
+                await db.flush()
+                for asset_id in frag.get("asset_ids") or []:
+                    db.add(DramaFragmentAssetRef(fragment_id=row.id, asset_id=int(asset_id)))
 
-    # 记录切分所用剧本身份，供后续判断是否需要自动重切
-    ep_params = dict(episode.params) if isinstance(episode.params, dict) else {}
-    ep_params["fragment_source_fp"] = _script_body_fingerprint(body)
-    episode.params = ep_params
-    return planned
+            # 记录切分所用剧本身份，供后续判断是否需要自动重切
+            ep_params = dict(episode.params) if isinstance(episode.params, dict) else {}
+            ep_params["fragment_source_fp"] = _script_body_fingerprint(body)
+            episode.params = ep_params
+            return planned
+
+    except PreparedSettlementChanged as exc:
+        prepared_settlements.check_admin_after_commit = check_admin_before
+        raise HTTPException(status_code=409, detail=EDIT_CONFLICT) from exc
+    except BaseException:
+        prepared_settlements.check_admin_after_commit = check_admin_before
+        raise
 
 
 def resolve_episode_script_body(episode_content: Any, episode: DramaEpisode) -> str:
@@ -1299,6 +1347,8 @@ async def replace_episode_fragments_with_drafts(
     *,
     preserve_protected: bool = True,
     continuation: bool = False,
+    expected_revision: int | None = None,
+    prepared_settlements: PreparedTaskSettlements | None = None,
 ) -> None:
     # 用外部草稿（LLM）覆盖本集分镜；默认保留已生成视频/手改
     await _replace_episode_fragments(
@@ -1309,6 +1359,8 @@ async def replace_episode_fragments_with_drafts(
         drafts=drafts,
         preserve_protected=preserve_protected,
         continuation=continuation,
+        expected_revision=expected_revision,
+        prepared_settlements=prepared_settlements,
     )
 
 

@@ -11,13 +11,14 @@ from pathlib import Path
 from typing import Any
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_object_session
 
 from app.config import get_settings
+from app.services.drama.fragment_editing import lock_fragment_for_update, patch_fragment_params
 from app.models import User
 from app.models_drama import DramaAsset, DramaEpisode, DramaEpisodeFragment, DramaFragmentAssetRef, DramaProject
 from app.services.ark import TaskResult, get_ark
-from app.services.drama.billing_util import record_seedance_video_usage, record_seedream_image_usage, seedance_billing_key
+from app.services.drama.billing_util import prepare_seedance_video_usage, record_seedance_video_usage, record_seedream_image_usage, seedance_billing_key
 from app.services.drama.output_settings import (
     infer_aspect_ratio_from_pixels,
     resolve_episode_video_output,
@@ -170,7 +171,16 @@ async def ensure_fragment_last_frame_url(
         return None
     rel = storage_svc.rel_static_url(frame_dest)
     url = storage_svc.republish_url(rel, sync=True) or rel
+    # 补帧期间允许编辑；写入前再刷新，避免旧 JSON 覆盖新设置。
+    db = async_object_session(fragment)
+    if db is not None:
+        await lock_fragment_for_update(db, fragment)
+        if (fragment.video or "").strip() != video:
+            await db.commit()
+            return read_fragment_last_frame_url(fragment)
     write_fragment_last_frame_url(fragment, url)
+    if db is not None:
+        await db.commit()
     return url
 
 
@@ -445,6 +455,29 @@ def archive_fragment_video_version(fragment: DramaEpisodeFragment) -> dict[str, 
     return entry
 
 
+async def _lock_and_archive_fragment_video(db: AsyncSession, fragment: DramaEpisodeFragment) -> None:
+    """锁外准备媒体快照，锁内校验媒体未变并合并当前历史，避免长时间阻塞编辑。"""
+    while True:
+        await db.refresh(fragment, attribute_names=["video", "cover", "params"])
+        media = (fragment.video or "", fragment.cover or "", read_fragment_last_frame_url(fragment))
+        snapshot = DramaEpisodeFragment(
+            id=fragment.id, video=media[0], cover=media[1], params={"lastFrameUrl": media[2]},
+        )
+        entry = archive_fragment_video_version(snapshot)
+        await lock_fragment_for_update(db, fragment)
+        current_media = (fragment.video or "", fragment.cover or "", read_fragment_last_frame_url(fragment))
+        if media == current_media:
+            if entry is not None:
+                params = dict(fragment.params or {})
+                versions = params.get("video_versions")
+                versions = [version for version in versions if isinstance(version, dict)] if isinstance(versions, list) else []
+                params["video_versions"] = [entry, *versions][:FRAGMENT_VIDEO_VERSION_LIMIT]
+                fragment.params = params
+            return
+        # 等待锁期间其它生成/版本切换已改变媒体，释放锁后为新媒体重新准备快照。
+        await db.commit()
+
+
 # 将历史版本切换为当前成片，并把原当前片压入版本列表
 def activate_fragment_video_version(
     fragment: DramaEpisodeFragment,
@@ -697,12 +730,11 @@ async def reconcile_orphaned_fragment_generations(
         gen = params.get("generation") if isinstance(params.get("generation"), dict) else None
         if generation_queued_recently(gen if isinstance(gen, dict) else None):
             continue
-        params.pop("generation_attempts", None)
-        params["generation"] = {
+        generation = {
             "status": "idle",
             "message": "任务已中断，请重新生成",
         }
-        fragment.params = params
+        await patch_fragment_params(db, fragment, {"generation": generation}, remove=("generation_attempts",))
         changed += 1
     if changed:
         await db.commit()
@@ -820,6 +852,7 @@ async def _set_fragment_generation(
     payload: dict[str, Any],
 ) -> None:
     # 写入分镜 generation 状态供前端轮询
+    await lock_fragment_for_update(db, fragment)
     params = dict(fragment.params or {})
     params["generation"] = payload
     fragment.params = params
@@ -1436,6 +1469,8 @@ async def prepare_fragment_video_for_submit(
     ).strip() or "短剧分镜"
     duration = int(fragment.duration_sec or 8)
     episode = await db.get(DramaEpisode, fragment.episode_id)
+    if episode is not None:
+        await db.refresh(episode, attribute_names=["params"], with_for_update=True)
     ratio, resolution = resolve_episode_video_output(
         episode.params if episode else None,
         project.params,
@@ -1462,6 +1497,9 @@ async def prepare_fragment_video_for_submit(
             changed = True
         if changed:
             episode.params = ep_params
+
+    # 画幅设置的短事务在参考图、音频及尾帧网络调用前提交。
+    await db.commit()
 
     refs = (
         await db.execute(
@@ -1687,8 +1725,6 @@ async def apply_fragment_video_assets(
     from app.services.ffmpeg_compose import extract_video_last_frame, extract_video_poster_frame
 
     settings = get_settings()
-    # 覆盖前归档旧成片，供版本切换
-    archive_fragment_video_version(fragment)
     video_url = storage_svc.republish_url(local_video, sync=True) or local_video
     cover_url = ""
     video_path = storage_svc.local_path_from_url(local_video)
@@ -1718,35 +1754,14 @@ async def apply_fragment_video_assets(
         if extract_video_last_frame(video_path, frame_dest):
             frame_src = storage_svc.rel_static_url(frame_dest)
             last_frame_url = storage_svc.republish_url(frame_src, sync=True) or frame_src
-    fragment.video = video_url
-    fragment.cover = cover_url or ""
-    write_fragment_last_frame_url(fragment, last_frame_url)
     episode = await db.get(DramaEpisode, fragment.episode_id)
     ratio, resolution = resolve_episode_video_output(
         episode.params if episode else None,
         project.params,
     )
-    write_fragment_video_output_meta(
-        fragment,
-        aspect_ratio=ratio,
-        resolution=resolution,
-        video_path=video_path,
-    )
-    params = dict(fragment.params or {})
-    params.pop("generation_attempts", None)
-    gen = dict(params.get("generation") or {}) if isinstance(params.get("generation"), dict) else {}
-    gen.update({
-        "status": "done",
-        "video": fragment.video,
-        "cover": fragment.cover,
-        "lastFrameUrl": last_frame_url or None,
-        "attempts": attempts,
-        "attempt_limit": attempt_limit,
-    })
-    params["generation"] = gen
-    if last_frame_url:
-        params["lastFrameUrl"] = last_frame_url
-    fragment.params = params
+    # 在短锁前探测像素，锁内只把计算好的元数据合并到当前分镜。
+    output = DramaEpisodeFragment(params={})
+    write_fragment_video_output_meta(output, aspect_ratio=ratio, resolution=resolution, video_path=video_path)
     generate_audio = bool((fragment.params or {}).get("generate_audio", True))
     # 计费 model：有入参则只用入参（禁止被站点默认盖掉）；空入参才与上游一致走 model_video
     from app.services.tokenfree_pricing import canonicalize_channel_model_id
@@ -1762,6 +1777,38 @@ async def apply_fragment_video_assets(
         billing_model = canonicalize_channel_model_id(
             str(settings.model_video or "").strip()
         ) or "seedance-2.5"
+    prepared_usage = await prepare_seedance_video_usage(
+        user_id=user.id,
+        billing_key=seedance_billing_key(generate_audio=generate_audio),
+        model=billing_model,
+        domain="drama",
+        task_result=task_result,
+        fallback_duration_sec=fragment.duration_sec,
+        resolution=resolution,
+        provider_task_id=provider_task_id,
+        drama_project_id=project.id,
+    )
+    await _lock_and_archive_fragment_video(db, fragment)
+    fragment.video = video_url
+    fragment.cover = cover_url or ""
+    write_fragment_last_frame_url(fragment, last_frame_url)
+    params = dict(fragment.params or {})
+    params.pop("generation_attempts", None)
+    gen = dict(params.get("generation") or {}) if isinstance(params.get("generation"), dict) else {}
+    params.update({key: value for key, value in output.params.items() if key != "generation"})
+    gen.update(output.params.get("generation") or {})
+    gen.update({
+        "status": "done",
+        "video": fragment.video,
+        "cover": fragment.cover,
+        "lastFrameUrl": last_frame_url or None,
+        "attempts": attempts,
+        "attempt_limit": attempt_limit,
+    })
+    params["generation"] = gen
+    if last_frame_url:
+        params["lastFrameUrl"] = last_frame_url
+    fragment.params = params
     await record_seedance_video_usage(
         db,
         user_id=user.id,
@@ -1773,6 +1820,7 @@ async def apply_fragment_video_assets(
         resolution=resolution,
         provider_task_id=provider_task_id,
         drama_project_id=project.id,
+        prepared_usage=prepared_usage,
     )
     await db.commit()
     await db.refresh(fragment)

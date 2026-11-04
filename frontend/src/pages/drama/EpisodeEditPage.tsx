@@ -8,6 +8,10 @@ import {
   type DramaEpisode,
   type DramaFragment,
 } from '../../api/drama'
+import {
+  createFragmentEditSnapshot, duplicateEditableFragment, markFragmentDeleted,
+  mergeFragmentRuntime, saveFragmentsAfterSetting, type FragmentEditSnapshot,
+} from '../../lib/dramaFragmentEditing'
 import { type ImageStyleId } from '../../lib/dramaImageStyles'
 import {
   RATIO_OPTIONS,
@@ -147,6 +151,8 @@ function EpisodeEditInner() {
    * videoStyleId / modelId / aspectRatio 生成参数（UI）
    * busy / status / error 状态
    */
+  // 编辑快照只随完整采用的分镜列表推进，不能从设置响应或轮询借用版本。
+  const editSnapshot = useRef<FragmentEditSnapshot | null>(null)
   const [episode, setEpisode] = useState<DramaEpisode | null>(null)
   // complianceKey 已保存分镜签名：保存/重新分镜/重新加载后变化即自动做广告法检查
   const complianceKey = useMemo(() => episodeComplianceKey(episode), [episode])
@@ -195,7 +201,6 @@ function EpisodeEditInner() {
   const applyStatusRef = useRef<(st: Awaited<ReturnType<typeof dramaApi.generateStatus>>) => Awaited<
     ReturnType<typeof dramaApi.generateStatus>
   >>(() => ({ episode_id: 0, done: 0, failed: 0, running: 0, total: 0, tasks: [], fragments: [] }))
-  const reloadRef = useRef<() => Promise<void>>(async () => {})
   const projectParamsRef = useRef<Record<string, unknown>>({})
   const episodeParamsRef = useRef<Record<string, unknown>>({})
 
@@ -354,8 +359,7 @@ function EpisodeEditInner() {
       // 刷新本集任务态，让底部分镜条立刻反映串行/并行调整
       try {
         const ep = await dramaApi.getEpisode(eid)
-        setEpisode(ep)
-        if (Array.isArray(ep.fragments)) setFragments(ep.fragments)
+        if (Array.isArray(ep.fragments)) setFragments((local) => mergeFragmentRuntime(local, ep.fragments))
       } catch {
         /* ignore refresh errors */
       }
@@ -449,43 +453,57 @@ function EpisodeEditInner() {
       subtitleEnabled: subtitleModeUsesModelOutput(mode),
     }
     const nextFragments = applySubtitleModeToFragments(fragments, mode)
+    // 与 nextFragments 同时捕获基线，用于迟到结果的状态归属判断。
+    const sourceSnapshot = editSnapshot.current
     setSubtitleMode(mode)
     setEpisodeParams(nextParams)
     episodeParamsRef.current = nextParams
     setFragments(nextFragments)
     try {
-      const updated = await dramaApi.updateEpisode(eid, { params: nextParams })
-      const updatedParams =
-        updated.params && typeof updated.params === 'object' && !Array.isArray(updated.params)
-          ? (updated.params as Record<string, unknown>)
-          : nextParams
-      setEpisode(updated)
-      setEpisodeParams(updatedParams)
-      episodeParamsRef.current = updatedParams
-      setSubtitleMode(readEffectiveSubtitleMode(updatedParams, projectParamsRef.current))
-      const contentChanged = nextFragments.some(
-        (frag, index) => frag.content !== prevFragments[index]?.content,
+      const ep = await saveFragmentsAfterSetting(
+        editSnapshot,
+        async () => {
+          const updated = await dramaApi.updateEpisode(eid, { params: nextParams })
+          const updatedParams =
+            updated.params && typeof updated.params === 'object' && !Array.isArray(updated.params)
+              ? (updated.params as Record<string, unknown>)
+              : nextParams
+          if (editSnapshot.current !== sourceSnapshot) return
+          setEpisode(updated)
+          setEpisodeParams(updatedParams)
+          episodeParamsRef.current = updatedParams
+          setSubtitleMode(readEffectiveSubtitleMode(updatedParams, projectParamsRef.current))
+        },
+        async (snapshot) => {
+          const contentChanged = nextFragments.some(
+            (frag, index) => frag.content !== prevFragments[index]?.content,
+          )
+          if (!contentChanged) return null
+          return dramaApi.saveFragments(
+            eid,
+            nextFragments.map((f, i) => {
+              const prevFragParams =
+                f.params && typeof f.params === 'object' && !Array.isArray(f.params)
+                  ? (f.params as Record<string, unknown>)
+                  : {}
+              return {
+                id: typeof f.id === 'number' && f.id > 0 ? f.id : undefined,
+                sort_order: i,
+                content: f.content,
+                cover: f.cover,
+                video: f.video,
+                duration_sec: resolveFragmentDurationSec(f.content, f.duration_sec),
+                params: { ...prevFragParams, user_edited: true },
+                asset_ids: f.asset_ids || [],
+              }
+            }),
+            snapshot,
+          )
+        },
       )
-      if (contentChanged) {
-        const ep = await dramaApi.saveFragments(
-          eid,
-          nextFragments.map((f, i) => {
-            const prevFragParams =
-              f.params && typeof f.params === 'object' && !Array.isArray(f.params)
-                ? (f.params as Record<string, unknown>)
-                : {}
-            return {
-              id: typeof f.id === 'number' && f.id > 0 ? f.id : undefined,
-              sort_order: i,
-              content: f.content,
-              cover: f.cover,
-              video: f.video,
-              duration_sec: resolveFragmentDurationSec(f.content, f.duration_sec),
-              params: { ...prevFragParams, user_edited: true },
-              asset_ids: f.asset_ids || [],
-            }
-          }),
-        )
+      if (editSnapshot.current !== sourceSnapshot) return
+      if (ep) {
+        editSnapshot.current = createFragmentEditSnapshot(ep)
         setEpisode(ep)
         setFragments(ep.fragments || nextFragments)
       }
@@ -496,10 +514,12 @@ function EpisodeEditInner() {
       )
       setError('')
     } catch (err) {
-      setSubtitleMode(readEffectiveSubtitleMode(prevParams, projectParamsRef.current))
-      setEpisodeParams(prevParams)
-      episodeParamsRef.current = prevParams
-      setFragments(prevFragments)
+      if (editSnapshot.current === sourceSnapshot) {
+        setSubtitleMode(readEffectiveSubtitleMode(prevParams, projectParamsRef.current))
+        setEpisodeParams(prevParams)
+        episodeParamsRef.current = prevParams
+        setFragments(prevFragments)
+      }
       setError(err instanceof Error ? err.message : '本集字幕方式保存失败')
     }
   }
@@ -515,43 +535,57 @@ function EpisodeEditInner() {
       characterIntroEnabled: characterIntroModeEnabled(mode),
     }
     const nextFragments = applyCharacterIntroModeToFragments(fragments, mode)
+    // 与 nextFragments 同时捕获基线，用于迟到结果的状态归属判断。
+    const sourceSnapshot = editSnapshot.current
     setCharacterIntroMode(mode)
     setEpisodeParams(nextParams)
     episodeParamsRef.current = nextParams
     setFragments(nextFragments)
     try {
-      const updated = await dramaApi.updateEpisode(eid, { params: nextParams })
-      const updatedParams =
-        updated.params && typeof updated.params === 'object' && !Array.isArray(updated.params)
-          ? (updated.params as Record<string, unknown>)
-          : nextParams
-      setEpisode(updated)
-      setEpisodeParams(updatedParams)
-      episodeParamsRef.current = updatedParams
-      setCharacterIntroMode(readEffectiveCharacterIntroMode(updatedParams, projectParamsRef.current))
-      const contentChanged = nextFragments.some(
-        (frag, index) => frag.content !== prevFragments[index]?.content,
+      const ep = await saveFragmentsAfterSetting(
+        editSnapshot,
+        async () => {
+          const updated = await dramaApi.updateEpisode(eid, { params: nextParams })
+          const updatedParams =
+            updated.params && typeof updated.params === 'object' && !Array.isArray(updated.params)
+              ? (updated.params as Record<string, unknown>)
+              : nextParams
+          if (editSnapshot.current !== sourceSnapshot) return
+          setEpisode(updated)
+          setEpisodeParams(updatedParams)
+          episodeParamsRef.current = updatedParams
+          setCharacterIntroMode(readEffectiveCharacterIntroMode(updatedParams, projectParamsRef.current))
+        },
+        async (snapshot) => {
+          const contentChanged = nextFragments.some(
+            (frag, index) => frag.content !== prevFragments[index]?.content,
+          )
+          if (!contentChanged) return null
+          return dramaApi.saveFragments(
+            eid,
+            nextFragments.map((f, i) => {
+              const prevFragParams =
+                f.params && typeof f.params === 'object' && !Array.isArray(f.params)
+                  ? (f.params as Record<string, unknown>)
+                  : {}
+              return {
+                id: typeof f.id === 'number' && f.id > 0 ? f.id : undefined,
+                sort_order: i,
+                content: f.content,
+                cover: f.cover,
+                video: f.video,
+                duration_sec: resolveFragmentDurationSec(f.content, f.duration_sec),
+                params: { ...prevFragParams, user_edited: true },
+                asset_ids: f.asset_ids || [],
+              }
+            }),
+            snapshot,
+          )
+        },
       )
-      if (contentChanged) {
-        const ep = await dramaApi.saveFragments(
-          eid,
-          nextFragments.map((f, i) => {
-            const prevFragParams =
-              f.params && typeof f.params === 'object' && !Array.isArray(f.params)
-                ? (f.params as Record<string, unknown>)
-                : {}
-            return {
-              id: typeof f.id === 'number' && f.id > 0 ? f.id : undefined,
-              sort_order: i,
-              content: f.content,
-              cover: f.cover,
-              video: f.video,
-              duration_sec: resolveFragmentDurationSec(f.content, f.duration_sec),
-              params: { ...prevFragParams, user_edited: true },
-              asset_ids: f.asset_ids || [],
-            }
-          }),
-        )
+      if (editSnapshot.current !== sourceSnapshot) return
+      if (ep) {
+        editSnapshot.current = createFragmentEditSnapshot(ep)
         setEpisode(ep)
         setFragments(ep.fragments || nextFragments)
       }
@@ -562,10 +596,12 @@ function EpisodeEditInner() {
       )
       setError('')
     } catch (err) {
-      setCharacterIntroMode(readEffectiveCharacterIntroMode(prevParams, projectParamsRef.current))
-      setEpisodeParams(prevParams)
-      episodeParamsRef.current = prevParams
-      setFragments(prevFragments)
+      if (editSnapshot.current === sourceSnapshot) {
+        setCharacterIntroMode(readEffectiveCharacterIntroMode(prevParams, projectParamsRef.current))
+        setEpisodeParams(prevParams)
+        episodeParamsRef.current = prevParams
+        setFragments(prevFragments)
+      }
       setError(err instanceof Error ? err.message : '本集人物介绍设置保存失败')
     }
   }
@@ -672,6 +708,7 @@ function EpisodeEditInner() {
           const cur = await dramaApi.getEpisode(eid)
           const st = readFragmentPlanStatus(cur)
           if (st === 'completed') {
+            editSnapshot.current = createFragmentEditSnapshot(cur)
             setEpisode(cur)
             setFragments(cur.fragments || [])
             setSelectedIndex(0)
@@ -704,6 +741,7 @@ function EpisodeEditInner() {
   // 重新加载分集
   async function reload() {
     const ep = await dramaApi.getEpisode(eid)
+    editSnapshot.current = createFragmentEditSnapshot(ep)
     setEpisode(ep)
     const epParams =
       ep.params && typeof ep.params === 'object' && !Array.isArray(ep.params)
@@ -732,15 +770,14 @@ function EpisodeEditInner() {
     await resumeGenerateIfNeeded()
   }
 
-  reloadRef.current = reload
-
   // 复用全局 generate_status 轮询，避免与 dramaGenQueue 重复请求
   useEffect(() => {
     return subscribeEpisodeGenerateStatus(async (episodeId, st) => {
       if (episodeId !== eid) return
       const result = applyStatusRef.current(st)
       if (result.running === 0) {
-        await reloadRef.current()
+        const ep = await dramaApi.getEpisode(eid)
+        setFragments((local) => mergeFragmentRuntime(local, ep.fragments || []))
       }
     })
   }, [eid])
@@ -821,8 +858,7 @@ function EpisodeEditInner() {
     setFragments((prev) => {
       const next = [...prev]
       next.splice(index + 1, 0, {
-        ...source,
-        id: 0,
+        ...duplicateEditableFragment(source),
         sort_order: index + 1,
       })
       return next
@@ -833,6 +869,7 @@ function EpisodeEditInner() {
   // 删除分镜
   function deleteFrag(index: number) {
     if (fragments.length <= 1) return
+    if (editSnapshot.current) markFragmentDeleted(editSnapshot.current, fragments[index]?.id || 0)
     setFragments((prev) => prev.filter((_, i) => i !== index))
     setSelectedIndex((cur) => {
       if (cur === index) return Math.max(0, index - 1)
@@ -864,7 +901,9 @@ function EpisodeEditInner() {
             asset_ids: f.asset_ids || [],
           }
         }),
+        editSnapshot.current!,
       )
+      editSnapshot.current = createFragmentEditSnapshot(ep)
       setEpisode(ep)
       setFragments(ep.fragments || [])
       setStatus('已保存')
@@ -1185,6 +1224,7 @@ function EpisodeEditInner() {
         const ep = await dramaApi.getEpisode(eid)
         const st = readFragmentPlanStatus(ep)
         if (st === 'completed') {
+          editSnapshot.current = createFragmentEditSnapshot(ep)
           setEpisode(ep)
           const nextParams = (ep.params as Record<string, unknown>) || {}
           setEpisodeParams(nextParams)

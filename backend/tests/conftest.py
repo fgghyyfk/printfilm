@@ -64,11 +64,17 @@ def skip_tokenfree_pricing_network(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("app.services.tokenfree_pricing.ensure_official_rates", _empty)
     monkeypatch.setattr("app.services.billing.estimates.ensure_official_rates", _empty)
 
-    async def _no_newapi_bills(_events):
+    async def _no_newapi_bills(_events, **_kwargs):
         """单测不拉 New API 消费日志。"""
         return 0
 
     monkeypatch.setattr("app.services.billing.newapi_bill.apply_newapi_bills", _no_newapi_bills)
+
+    async def _no_newapi_logs(_events):
+        """锁外日志准备同样不得在单测中请求真实上游。"""
+        return []
+
+    monkeypatch.setattr("app.services.billing.newapi_bill.prepare_newapi_bill_logs", _no_newapi_logs)
     from app.services.tokenfree_pricing import set_cached_rates
 
     set_cached_rates(None)

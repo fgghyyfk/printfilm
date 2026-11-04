@@ -233,17 +233,18 @@ async def _fail_task(db, task, exc: Exception) -> None:
     if task.fragment_id:
         from app.models_drama import DramaEpisodeFragment
         from app.services.drama.generation import build_failed_generation_params
+        from app.services.drama.fragment_editing import patch_fragment_params
 
         frag = await db.get(DramaEpisodeFragment, int(task.fragment_id))
         if frag:
             params = dict(frag.params or {})
             prev_gen = params.get("generation") if isinstance(params.get("generation"), dict) else None
             # 保留 root_error（避免「内部重试超限」盖掉真人审核等真实原因）
-            params["generation"] = build_failed_generation_params(
+            generation = build_failed_generation_params(
                 prev_gen if isinstance(prev_gen, dict) else None,
                 task.error_message or str(exc),
             )
-            frag.params = params
+            await patch_fragment_params(db, frag, {"generation": generation})
     await _fail_kepu_project_if_needed(db, task)
     payload = task.payload if isinstance(task.payload, dict) else {}
     if payload.get("sequential") and task.batch_key:

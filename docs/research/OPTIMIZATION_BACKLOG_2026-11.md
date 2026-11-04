@@ -50,7 +50,7 @@
 - 完成（2026-11-04）：重绘、配音与合成的任务和项目状态同事务提交；预扣失败与已有 handler 失败路径共用恢复逻辑，并行镜头一成功一失败仍保留中文原因。生成、项目编辑与取消以用户隔离的活跃任务为准，取消请求未终态前保持忙碌；分镜页接入二次确认取消与等待停止。
 - 验证：`backend/.venv/bin/python .tmp/optimization-20261104/run_tests.py -q tests/test_kepu_task_recovery.py tests/test_task_executor_freeze_steps.py tests/test_kepu_cancel_propagation.py tests/test_side_task_gate.py tests/test_project_runtime_view.py` → **75 passed**（5 条已有依赖弃用警告）；前端 `npm test` **13 passed**，lint 0 error（39 条既有 warning），`npx tsc -b --noEmit` 通过。规格复审与质量审查通过；未部署、未真实收费。重做磁盘清理与单镜编辑合成门禁留第 18 项。
 
-### [ ] 3. 漫剧：保存分镜覆盖服务端写的视频历史版本与尾帧
+### [x] 3. 漫剧：保存分镜覆盖服务端写的视频历史版本与尾帧
 - 位置：`backend/app/api/drama/episodes.py` 约 575-577 行，用客户端 `video` / `params` 整体覆盖。
 - 现象：前端轮询只回填 `generation`，服务端收尾写的 `video_versions`、`lastFrameUrl` 不在本地；界面又提示「入队后可继续编辑」，一保存就丢。双标签页编辑时，后保存的一方会把对方新增分镜当多余删掉并取消其视频任务。
 - 改法：
@@ -59,6 +59,10 @@
   3. 分集加 `version`（或 `updated_at`）乐观锁，冲突返回 409 + 中文提示「内容已在别处更新，请刷新」。
   4. 删除分镜改为只删客户端明确标记删除的，而不是「不在列表里就删」。
 - 验收：生成完成后再保存，历史版本与尾帧仍在；两个标签页并发保存不会互删。
+- 完成（2026-11-04）：分集新增原子 `revision` 乐观锁，缺版本或旧版本明确拒绝；仅删除经过归属和冲突校验的 `deleted_ids`，保留服务端媒体、历史、尾帧与生成元数据。四处前端保存绑定编辑快照，设置请求跨等待不借用新版本；seed 和旧 AI 草稿也受版本约束。
+- 并发与事务：提交、下载、补尾帧与公共失败回填不会以旧 JSON 覆盖新稿；媒体、价目和用量查询在分集锁外准备，结果与费用同事务提交。取消补账快照超出覆盖范围时整体回滚，已发生 LLM 成本保留；管理员邮件在成功提交后检查并串行去重。已同步 `docs/BILLING.md`。
+- 验证：`backend/.venv/bin/python .tmp/optimization-20261104/run_tests.py -q` → **1143 passed，2 skipped**（6 条已有依赖弃用/异步连接警告）；前端 `npm test` **19 passed**，lint 0 error（39 条既有 warning），`npx tsc -b --noEmit` 与 `git diff --check` 通过。规格复审与质量审查通过；未部署、未真实收费。
+- 边界：旧客户端和缺少合法版本的旧重拆任务会明确失败；未保存本地稿的编辑 epoch 保护由第 17 项闭合，结算读取之后的迟到上游成本由第 20 项处理。
 
 ### [x] 4. 漫剧：画布自动保存用旧图覆盖资产图（已抽查）
 - 位置：`backend/app/api/drama/canvas.py` 约 80-90 行，`if url:` 把节点 `mediaUrl` 写回 `asset.url / asset.cover`。

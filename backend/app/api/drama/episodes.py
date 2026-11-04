@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import attributes, selectinload
 
 from app.database import get_db
 from app.deps import get_current_user
@@ -34,6 +34,7 @@ from app.schemas_drama import (
 from app.schemas_tasks import TaskCreateRequest, TaskTargetBind
 from app.services.agent.compose import parse_skill_ids
 from app.services.billing import run_billed_ephemeral
+from app.services.billing.settlement import PreparedSettlementChanged, finish_prepared_task_settlements
 from app.services.billing.http import http_exception_for_value_error
 from app.services.drama.access import (
     count_user_inflight_fragment_video_tasks,
@@ -55,6 +56,9 @@ from app.services.drama.generation import (
     read_fragment_last_frame_url,
     reconcile_orphaned_fragment_generations,
 )
+from app.services.drama.fragment_editing import (
+    claim_episode_revision, editable_fragment_params, patch_fragment_params, EDIT_CONFLICT,
+)
 from app.services.drama.build_fragments import prepare_fragment_content
 from app.services.drama.fragment_content_duration import resolve_seedance_duration_from_content
 from app.services.drama.billing_util import record_seed_assets_llm_usage
@@ -74,6 +78,7 @@ from app.services.drama.seed import (
 )
 from app.services.tasks.service import (
     cancel_fragment_video_tasks_for_fragments,
+    prepare_fragment_cancellation_settlements,
     cancel_tasks_for_scope,
     create_task,
     list_active_tasks_for_owner,
@@ -121,6 +126,7 @@ def _episode_out(
         )
     return DramaEpisodeOut(
         id=ep.id,
+        revision=ep.revision,
         name=ep.name,
         params=params,
         project_id=ep.project_id,
@@ -495,6 +501,7 @@ async def plan_episode_fragments(
             )
 
     params["fragment_plan_status"] = "generating"
+    params["fragment_plan_revision"] = ep.revision
     params.pop("fragment_plan_error", None)
     params["fragment_plan_mode"] = "llm"
     if req.subtitle_enabled is not None:
@@ -519,6 +526,7 @@ async def plan_episode_fragments(
                     "episode_id": episode_id,
                     "fallback_rules": bool(req.fallback_rules),
                     "force": bool(req.force),
+                    "expected_revision": ep.revision,
                     "skill_ids": parse_skill_ids(req.skill_ids) if req.skill_ids is not None else None,
                     "subtitle_enabled": bool(req.subtitle_enabled) if req.subtitle_enabled is not None else None,
                 },
@@ -551,48 +559,65 @@ async def save_fragments(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> DramaEpisodeOut:
-    """按 id 更新已有分镜、新增无 id 项、删除未提交项；删除时作废旧视频任务，避免 ID 轮转导致上下文丢失。"""
-    ep = await get_owned_episode(db, episode_id, user)
-    existing = {int(f.id): f for f in (ep.fragments or [])}
-    keep_ids: set[int] = set()
+    """按编辑快照保存，只删除显式指定且属于本集的分镜。"""
+    ep = await get_owned_episode(db, episode_id, user, with_fragments=False)
+    try:
+        # 先校验编号，再按 task → fragment 顺序取消；避免与任务失败收敛反向取锁。
+        existing_ids = set((await db.scalars(
+            select(DramaEpisodeFragment.id).where(DramaEpisodeFragment.episode_id == episode_id)
+        )).all())
+        item_ids = [int(item.id) for item in body.fragments if item.id]
+        stale_ids = list(body.deleted_ids)
+        if (len(item_ids) != len(set(item_ids))
+                or len(stale_ids) != len(set(stale_ids))
+                or set(item_ids) & set(stale_ids)):
+            raise HTTPException(status_code=400, detail="分镜编号重复或同时保存和删除")
+        if not (set(item_ids) | set(stale_ids)) <= existing_ids:
+            raise HTTPException(status_code=409, detail=EDIT_CONFLICT)
+        prepared = await prepare_fragment_cancellation_settlements(db, stale_ids)
+        revision = await claim_episode_revision(db, episode_id, body.revision)
+        if stale_ids:
+            await cancel_fragment_video_tasks_for_fragments(db, stale_ids, prepared_settlements=prepared)
+            await detach_task_fragment_refs(db, stale_ids)
+        frags = list((await db.scalars(
+            select(DramaEpisodeFragment)
+            .where(DramaEpisodeFragment.episode_id == episode_id)
+            .order_by(DramaEpisodeFragment.id)
+            .with_for_update()
+            .options(selectinload(DramaEpisodeFragment.asset_references))
+            .execution_options(populate_existing=True)
+        )).all())
+        existing = {int(f.id): f for f in frags}
+        attributes.set_committed_value(ep, "fragments", frags)
+        attributes.set_committed_value(ep, "revision", revision)
+        for item in body.fragments:
+            frag = existing.get(int(item.id)) if item.id else None
+            if frag is None:
+                frag = DramaEpisodeFragment(episode_id=ep.id, cover="", video="", params={})
+                frag.asset_references = []
+                ep.fragments.append(frag)
+                await db.flush()
+            frag.sort_order = item.sort_order
+            frag.content = prepare_fragment_content(
+                item.content or "",
+                duration_sec=int(item.duration_sec or 0) or None,
+                is_opening=int(item.sort_order or 0) == 0,
+            )
+            frag.duration_sec = item.duration_sec
+            frag.params = {**(frag.params or {}), **editable_fragment_params(item.params)}
+            asset_ids = await filter_valid_project_asset_ids(db, ep.project_id, list(item.asset_ids or []))
+            await replace_fragment_asset_refs(db, frag, asset_ids)
 
-    for item in body.fragments:
-        item_id = int(item.id) if item.id else 0
-        frag = existing.get(item_id) if item_id > 0 else None
-        if frag is None:
-            # 先挂上空集合，flush 后不要再 lazy load asset_references
-            frag = DramaEpisodeFragment(episode_id=ep.id)
-            frag.asset_references = []
-            ep.fragments.append(frag)
+        if stale_ids:
+            for fid in stale_ids:
+                await db.delete(existing[fid])
             await db.flush()
-        frag.sort_order = item.sort_order
-        frag.content = prepare_fragment_content(
-            item.content or "",
-            duration_sec=int(item.duration_sec or 0) or None,
-            is_opening=int(item.sort_order or 0) == 0,
-        )
-        frag.cover = (item.cover or "")[:1024]
-        frag.video = (item.video or "")[:1024]
-        frag.duration_sec = item.duration_sec
-        frag.params = item.params
-        keep_ids.add(int(frag.id))
-
-        asset_ids = await filter_valid_project_asset_ids(
-            db,
-            ep.project_id,
-            list(item.asset_ids or []),
-        )
-        await replace_fragment_asset_refs(db, frag, asset_ids)
-
-    stale_ids = [fid for fid in existing if fid not in keep_ids]
-    if stale_ids:
-        await cancel_fragment_video_tasks_for_fragments(db, stale_ids)
-        await detach_task_fragment_refs(db, stale_ids)
-        for fid in stale_ids:
-            old = existing.get(fid)
-            if old is not None:
-                await db.delete(old)
-        await db.flush()
+    except PreparedSettlementChanged as exc:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail=EDIT_CONFLICT) from exc
+    except Exception:
+        await db.rollback()
+        raise
 
     await db.commit()
     frags = await load_episode_fragments(db, episode_id)
@@ -604,7 +629,9 @@ async def save_fragments(
         stale_ids,
     )
     ep.fragments = frags
-    return await _episode_out_with_tasks(db, user, ep)
+    out = await _episode_out_with_tasks(db, user, ep)
+    await finish_prepared_task_settlements(db, prepared)
+    return out
 
 
 @router.post("/fragments/{fragment_id}/activate_video_version")
@@ -709,13 +736,6 @@ async def generate_episode(
     frag_ids = [f.id for f in idle_frags]
     batch_key = f"drama:episode:{episode_id}:video:{uuid.uuid4().hex[:12]}"
     queued_at = datetime.now(UTC).isoformat()
-    for f in idle_frags:
-        params = dict(f.params or {})
-        # 用户主动点生成：清零内部重试计数（上限只约束同一次任务内的自动重试）
-        params.pop("generation_attempts", None)
-        params["generation"] = {"status": "queued", "queued_at": queued_at, "message": "已入队"}
-        f.params = params
-
     created_tasks: list[int] = []
     deferred_count = 0
     for index, f in enumerate(idle_frags):
@@ -767,6 +787,13 @@ async def generate_episode(
             await db.rollback()
             raise http_exception_for_value_error(exc) from exc
         created_tasks.append(task.id)
+    # 先创建任务再写分镜，维持 task → fragment 锁序，并基于当前 JSON 合并运行态。
+    for f in idle_frags:
+        await patch_fragment_params(
+            db, f,
+            {"generation": {"status": "queued", "queued_at": queued_at, "message": "已入队"}},
+            remove=("generation_attempts",),
+        )
     await db.commit()
     if sequential:
         await rebalance_project_fragment_video_queue(

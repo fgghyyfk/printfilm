@@ -6,7 +6,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, get_settings
@@ -49,7 +49,7 @@ def _period_key(period: str, now: datetime | None = None) -> tuple[str, datetime
 
 
 async def _get_or_create_settings_row(db: AsyncSession) -> AppSettings:
-    row = (await db.execute(select(AppSettings).where(AppSettings.id == "default"))).scalar_one_or_none()
+    row = (await db.execute(select(AppSettings).where(AppSettings.id == "default").execution_options(populate_existing=True))).scalar_one_or_none()
     if row:
         return row
     row = AppSettings(id="default", config_json={"flat": _settings_to_dict()})
@@ -143,6 +143,9 @@ async def process_admin_cost_alert(
     if threshold <= 0:
         return False
 
+    # 提交后的不同保存可并发到达此处；串行读取档位、发送和写回去重状态。
+    await db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": 79542013011})
+
     period = str(s.billing_admin_cost_alert_period or "monthly")
     period_key, since = _period_key(period)
     totals = await _usage_window_totals(db, since=since)
@@ -198,6 +201,7 @@ async def process_billing_alerts_after_charge(
     *,
     charged_fen: int,
     settings: Settings | None = None,
+    defer_admin_check: bool = False,
 ) -> None:
     """结算产生扣费后触发用户弹窗与管理员邮件检查。"""
     if int(charged_fen or 0) <= 0:
@@ -205,7 +209,8 @@ async def process_billing_alerts_after_charge(
     s = settings or get_settings()
     if user is not None:
         await process_user_milestone_alert(db, user, settings=s)
-    await process_admin_cost_alert(db, settings=s)
+    if not defer_admin_check:
+        await process_admin_cost_alert(db, settings=s)
 
 
 async def list_pending_user_alerts(db: AsyncSession, user_id: int) -> list[BillingAlertNotification]:

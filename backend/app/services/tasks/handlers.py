@@ -60,11 +60,15 @@ async def _run_drama_fragment_plan(task: TaskRun) -> dict[str, Any] | None:
     from app.services.drama.jobs import run_episode_fragment_plan_job
 
     payload = task.payload or {}
+    expected_revision = payload.get("expected_revision")
+    if type(expected_revision) is not int or expected_revision < 0:
+        raise ValueError("内容已在别处更新，请刷新")
     return await run_episode_fragment_plan_job(
         _require_int(task.episode_id, "episode_id"),
         fallback_rules=bool(payload.get("fallback_rules", True)),
         subtitle_enabled=payload.get("subtitle_enabled"),
         force=bool(payload.get("force")),
+        expected_revision=expected_revision,
     )
 
 

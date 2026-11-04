@@ -1,4 +1,5 @@
 /** 分集分镜故事板全屏画布：按分镜连线，节点含视频 / 出境资产 / 提示词 */
+import { createFragmentEditSnapshot, type FragmentEditSnapshot } from '../../../lib/dramaFragmentEditing'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Background,
@@ -81,6 +82,8 @@ function EpisodeStoryboardInner() {
    * linkTargetFragId 正在选资产关联的分镜
    * dirty / busy / error / status 状态
    */
+  // 与当前画布列表绑定的版本，独立于运行态刷新。
+  const editSnapshot = useRef<FragmentEditSnapshot | null>(null)
   const [episode, setEpisode] = useState<DramaEpisode | null>(null)
   const [fragments, setFragments] = useState<DramaFragment[]>([])
   const [assets, setAssets] = useState<DramaAsset[]>([])
@@ -93,6 +96,8 @@ function EpisodeStoryboardInner() {
   const fragmentsRef = useRef<DramaFragment[]>([])
   const assetsRef = useRef<DramaAsset[]>([])
   const saveTimer = useRef<number | null>(null)
+  // 防抖期间的新编辑应留在本地，当前请求成功后再提交下一快照。
+  const saveInFlight = useRef(false)
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<EpisodeFlowNodeData>>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
@@ -138,6 +143,7 @@ function EpisodeStoryboardInner() {
     Promise.all([dramaApi.getEpisode(eid), dramaApi.listAssets(pid)])
       .then(([ep, assetList]) => {
         if (cancelled) return
+        editSnapshot.current = createFragmentEditSnapshot(ep)
         setEpisode(ep)
         setFragments(ep.fragments || [])
         setAssets(assetList || [])
@@ -157,7 +163,8 @@ function EpisodeStoryboardInner() {
   // 持久化全部分镜（保序，保留成片与引用）
   const persistFragments = useCallback(
     async (next: DramaFragment[]) => {
-      if (!eid) return
+      if (!eid || !editSnapshot.current || saveInFlight.current) return
+      saveInFlight.current = true
       setBusy(true)
       setError('')
       try {
@@ -179,15 +186,23 @@ function EpisodeStoryboardInner() {
               asset_ids: collectFragmentAssetIds(f),
             }
           }),
+          editSnapshot.current!,
         )
+        editSnapshot.current = createFragmentEditSnapshot(saved)
         setEpisode(saved)
-        setFragments(saved.fragments || [])
-        setDirty(false)
-        setStatus('已保存')
+        const changedWhileSaving = fragmentsRef.current !== next
+        if (!changedWhileSaving) setFragments(saved.fragments || [])
+        setDirty(changedWhileSaving)
+        setStatus(changedWhileSaving ? '' : '已保存')
+        if (changedWhileSaving) {
+          if (saveTimer.current) window.clearTimeout(saveTimer.current)
+          saveTimer.current = window.setTimeout(() => { void persistFragments(fragmentsRef.current) }, SAVE_DEBOUNCE_MS)
+        }
         window.setTimeout(() => setStatus(''), 1600)
       } catch (err) {
         setError(err instanceof Error ? err.message : '保存失败')
       } finally {
+        saveInFlight.current = false
         setBusy(false)
       }
     },
