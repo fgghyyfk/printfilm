@@ -212,7 +212,9 @@ async def _fail_kepu_project_if_needed(db, task) -> None:
 # 把任务收敛到失败态。
 async def _fail_task(db, task, exc: Exception) -> None:
     from app.services.exc_format import format_exception_message
+    from app.services.tts_billing import mark_tts_billing_pending
 
+    mark_tts_billing_pending(task, exc)
     now = datetime.now(UTC)
     step = task.steps[0] if task.steps else None
     set_task_step_state(task, step, status="failed", now=now)

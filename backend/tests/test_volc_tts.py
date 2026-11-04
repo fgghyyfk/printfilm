@@ -59,15 +59,21 @@ def _use_transport(monkeypatch, transport):
 
 
 @pytest.mark.asyncio
-async def test_synthesize_joins_chunks_and_bills(monkeypatch, tmp_path, patched):
-    """多块 base64 拼成一个 mp3；2.0 音色带语气指令；按字记账。"""
+async def test_synthesize_joins_chunks_and_notifies_gateway(monkeypatch, tmp_path, patched):
+    """多块 base64 拼音频；成功响应通知 gateway，低层不再独立记账。"""
     audio = b"\xff\xfb" + b"a" * 3000
     lines = [{"code": 0, "data": base64.b64encode(audio[:1500]).decode()},
              {"code": 0, "data": base64.b64encode(audio[1500:]).decode()},
              {"code": 20000000, "message": "ok", "data": None}]
     seen = {}
     _use_transport(monkeypatch, _mock_transport(lines, seen))
-    dest = await volc_tts.synthesize("你好世界", "zh_female_vv_uranus_bigtts", tmp_path / "a.mp3")
+    received = []
+
+    async def on_audio(usage):
+        """通知发生在本地落盘之前，只包含计费用量。"""
+        assert not (tmp_path / "a.mp3").exists()
+        received.append(usage)
+    dest = await volc_tts.synthesize("你好世界", "zh_female_vv_uranus_bigtts", tmp_path / "a.mp3", on_audio=on_audio)
     assert dest.read_bytes() == audio
     assert seen["headers"]["x-api-key"] == "k"
     assert seen["headers"]["x-api-resource-id"] == "seed-tts-2.0"
@@ -75,7 +81,8 @@ async def test_synthesize_joins_chunks_and_bills(monkeypatch, tmp_path, patched)
     assert req["speaker"] == "zh_female_vv_uranus_bigtts"
     assert req["audio_params"]["speech_rate"] == 10
     assert json.loads(req["additions"])["context_texts"] == ["热情口播"]
-    assert patched and patched[0][0][0] == "avatar_tts"
+    assert received == [{}]
+    assert patched == []
 
 
 @pytest.mark.asyncio

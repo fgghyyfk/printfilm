@@ -248,6 +248,18 @@ async def settle_task(
     task = await _lock_task(db, task_id)
     if not task:
         return {"charged": 0, "refunded": 0}
+    if isinstance(task.result_payload, dict) and task.result_payload.get("tts_billing_pending"):
+        # 已成功的付费配音尚未落账；取消、失败补偿或直接结算都不能当成零成本退款。
+        task.status = "awaiting_review"
+        task.error_code = "tts_billing_pending"
+        task.error_message = "配音已生成，计费记录待核对，请勿重新生成"
+        task.finished_at = None
+        task.next_action_at = None
+        task.lease_until = None
+        task.current_step_status = "awaiting_review"
+        task.progress_percent = min(int(task.progress_percent or 0), 99)
+        await db.flush()
+        return {"charged": 0, "refunded": 0}
     if task.billing_status == "settled":
         return {
             "charged": int(task.billing_charged_fen or 0),

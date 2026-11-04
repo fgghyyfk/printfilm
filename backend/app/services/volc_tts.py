@@ -16,6 +16,7 @@ from pathlib import Path
 import httpx
 
 from app.config import get_settings
+from app.services.tts_billing import AudioResponseHook, tts_usage_fields
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,7 @@ def resource_for(speaker: str) -> str:
 
 
 async def synthesize(text: str, speaker: str, dest: Path, *, speech_rate: int | None = None,
-                     instruction: str | None = None) -> Path:
+                     instruction: str | None = None, on_audio: AudioResponseHook | None = None) -> Path:
     """合成一段 mp3 写到 dest。speech_rate：-50~100（0 为正常）；instruction：2.0 音色的语气指令。
 
     失败抛 RuntimeError（中文短句）。
@@ -71,6 +72,7 @@ async def synthesize(text: str, speaker: str, dest: Path, *, speech_rate: int | 
                "X-Api-Request-Id": uuid.uuid4().hex, "Content-Type": "application/json"}
     url = f"{(s.volc_tts_base_url or 'https://openspeech.bytedance.com').rstrip('/')}/api/v3/tts/unidirectional"
     chunks: list[bytes] = []
+    usage: dict = {}
     timeout = httpx.Timeout(connect=15.0, read=120.0, write=30.0, pool=30.0)
     async with httpx.AsyncClient(timeout=timeout) as client:
         async with client.stream("POST", url, headers=headers, json=body) as resp:
@@ -91,6 +93,7 @@ async def synthesize(text: str, speaker: str, dest: Path, *, speech_rate: int | 
                 except ValueError:
                     continue
                 code = int(msg.get("code") or 0)
+                usage.update(tts_usage_fields(msg))
                 if code == END_CODE:
                     break
                 if code != 0:
@@ -101,11 +104,9 @@ async def synthesize(text: str, speaker: str, dest: Path, *, speech_rate: int | 
     audio = b"".join(chunks)
     if len(audio) < 1000:
         raise RuntimeError("火山配音失败：没有返回音频")
+    if on_audio is not None:
+        await on_audio(usage)
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_bytes(audio)
     logger.info("volc tts speaker=%s chars=%d -> %s (%d bytes)", speaker, len(text), dest.name, len(audio))
-    from app.services.kepu_avatar_billing import record_avatar_ai, volc_tts_cost_fen
-
-    await record_avatar_ai("avatar_tts", model=f"volc/{speaker}", cost_fen=volc_tts_cost_fen(len(text)),
-                           detail={"chars": len(text)})
     return dest

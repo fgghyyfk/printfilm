@@ -19,6 +19,7 @@ import httpx
 
 from app.config import get_settings
 from app.services.tasks.upstream import observed_request
+from app.services.tts_billing import AudioResponseHook
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +113,8 @@ async def edit_image(ref: Path, prompt: str, dest: Path, *, model: str | None = 
     return dest
 
 
-async def speech(text: str, voice: str, dest: Path, *, model: str = "tts-1-hd") -> Path:
+async def speech(text: str, voice: str, dest: Path, *, model: str = "tts-1-hd",
+                 on_audio: AudioResponseHook | None = None) -> Path:
     """OpenAI 兼容配音：POST {base}/audio/speech，mp3 写到 dest。失败抛 RuntimeError。"""
     base, headers = _base_and_headers()
     payload = {"model": model, "voice": voice, "input": text[:4000], "response_format": "mp3"}
@@ -122,13 +124,13 @@ async def speech(text: str, voice: str, dest: Path, *, model: str = "tts-1-hd") 
                                       headers=headers, json=payload)
     if resp.status_code >= 400:
         raise RuntimeError(f"配音失败（{model}/{voice}，HTTP {resp.status_code}）：{_detail(resp)}")
+    if len(resp.content) < 1000:
+        raise RuntimeError("配音失败：没有返回音频")
+    if on_audio is not None:
+        await on_audio({})
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_bytes(resp.content)
     logger.info("avatar_ai speech model=%s voice=%s -> %s (%d bytes)", model, voice, dest.name, len(resp.content))
-    from app.services.kepu_avatar_billing import record_avatar_ai, speech_cost_fen
-
-    await record_avatar_ai("avatar_tts", model=f"{model}/{voice}", cost_fen=speech_cost_fen(len(text)),
-                           detail={"chars": len(text)})
     return dest
 
 

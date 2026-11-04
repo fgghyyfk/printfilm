@@ -51,14 +51,17 @@ async def test_tts_tokenfree_qwen_skips_speech_endpoint(tmp_path: Path, monkeypa
     monkeypatch.setattr("app.services.ark.is_near_silent_audio", lambda _p: False)
     captured: dict = {}
 
-    async def fake_chat(text: str, voice: str, dest_path, *, model=None):
+    async def fake_chat(text: str, voice: str, dest_path, *, model=None, on_audio=None):
         dest_path.write_bytes(b"a" * 4000)
         captured["model"] = model
         captured["voice"] = voice
+        if on_audio is not None:
+            await on_audio({})
         return True
 
     chat = AsyncMock(side_effect=fake_chat)
     monkeypatch.setattr(gw, "_tts_openai_chat_audio", chat)
+    monkeypatch.setattr(gw, "_tts_edge", AsyncMock(side_effect=AssertionError("不应调用 edge")))
 
     class BoomClient:
         def __init__(self, *args, **kwargs):
@@ -88,8 +91,10 @@ async def test_tts_tokenfree_tried_before_edge_for_doubao_speaker(tmp_path: Path
     monkeypatch.setattr(gw, "_tts_openai_speech", speech)
     monkeypatch.setattr("app.services.ark.is_near_silent_audio", lambda _p: False)
 
-    async def fake_speech(text: str, voice: str, dest_path, *, model=None):
+    async def fake_speech(text: str, voice: str, dest_path, *, model=None, on_audio=None):
         dest_path.write_bytes(b"a" * 4000)
+        if on_audio is not None:
+            await on_audio({})
         return True
 
     speech.side_effect = fake_speech

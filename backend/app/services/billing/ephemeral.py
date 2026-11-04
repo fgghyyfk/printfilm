@@ -2,6 +2,7 @@
 """轻量 TaskRun：同步执行并计费（聊天、API、工具）。"""
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any, TypeVar
@@ -21,6 +22,15 @@ from app.services.tasks.service import append_task_event, build_task_event, buil
 from app.services.tasks.upstream import upstream_event_session
 
 T = TypeVar("T")
+
+# 仅显式音色持久预扣后的 HTTP 执行协程；不占调度器槽位，也不得被当作孤儿重排。
+_durable_voice_jobs: dict[int, asyncio.Task] = {}
+
+
+def durable_voice_request_alive(task_id: int) -> bool:
+    """判断已提交预扣的显式音色请求是否仍在本进程执行。"""
+    job = _durable_voice_jobs.get(task_id)
+    return bool(job and not job.done())
 
 
 async def create_ephemeral_task_row(
@@ -96,11 +106,14 @@ async def run_billed_ephemeral(
     asset_id: int | None = None,
     episode_id: int | None = None,
     commit: bool = True,
+    commit_before_execute: bool = False,
 ) -> tuple[TaskRun, T]:
     """
     创建轻量 TaskRun → 预扣 → 在 billing_scope 内执行 → 结算。
     用于聊天、开放 API、工作室工具等同步调用。
     """
+    if commit_before_execute and (not commit or (domain, task_type) != ("drama", "voice_synthesis")):
+        raise ValueError("持久预扣仅用于显式音色合成")
     task = await create_ephemeral_task_row(
         db,
         user,
@@ -137,6 +150,19 @@ async def run_billed_ephemeral(
     )
     await db.flush()
 
+    task_id = int(task.id)
+    if commit_before_execute:
+        task.result_payload = {"voice_billing_reservation": True}
+        job = asyncio.current_task()
+        _durable_voice_jobs[task_id] = job
+        job.add_done_callback(lambda _job: _durable_voice_jobs.pop(task_id, None))
+        try:
+            # 付费外调之前必须真实提交 TaskRun + 冻结；失败不进入 executor。
+            await db.commit()
+        except BaseException:
+            _durable_voice_jobs.pop(task_id, None)
+            raise
+
     result: T
     try:
         async with billing_scope(task.id), upstream_event_session(db):
@@ -153,8 +179,11 @@ async def run_billed_ephemeral(
             message="轻量任务完成",
         )
     except Exception as exc:
+        from app.services.tts_billing import mark_tts_billing_pending
+
+        billing_pending = mark_tts_billing_pending(task, exc)
         task.status = "failed"
-        task.error_code = "ephemeral_failed"
+        task.error_code = "TTSBillingPending" if billing_pending else "ephemeral_failed"
         task.error_message = str(exc)[:500]
         task.finished_at = datetime.now(UTC)
         await append_task_event(
@@ -167,12 +196,14 @@ async def run_billed_ephemeral(
         await settle_task(db, task.id)
         if commit:
             await db.commit()
+        _durable_voice_jobs.pop(task_id, None)
         raise
 
     await settle_task(db, task.id)
     if commit:
         await db.commit()
     await db.refresh(task)
+    _durable_voice_jobs.pop(task_id, None)
     return task, result
 
 

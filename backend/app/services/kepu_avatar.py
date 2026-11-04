@@ -63,13 +63,11 @@ async def shot_image_path(project: Project, shot: Shot) -> Path:
 
 async def prepare_assets(project_id: int) -> None:
     """逐段配音并把半身照设为每段分镜图；已有可用配音的段跳过。"""
-    from app.services.pipeline import _ensure_not_cancelled, _project_voice, _record_usage_est, _set_status
+    from app.services.pipeline import _ensure_not_cancelled, _project_voice, _set_status
     from app.services.kepu_stages import shot_audio_file_ok
 
     from app.services import avatar_ai
     from app.services.kepu_avatar_look import ensure_scene_images
-    from app.services import volc_tts
-    from app.services.voices import openai_voice
 
     await _set_status(project_id, ProjectStatus.IMAGING, 18, "AVATAR_TTS")
     async with AsyncSessionLocal() as db:
@@ -109,14 +107,11 @@ async def prepare_assets(project_id: int) -> None:
                                             "percent": 33 + int(15 * i / max(1, len(todo))),
                                             "message": f"配音第 {shot_no} 段（{i}/{len(todo)}）"})
         url = await ark.tts(text, voice, project_id=project_id, shot_no=shot_no,
-                            duration_hint=max(3.0, len(text) / 4.5))
+                            duration_hint=max(3.0, len(text) / 4.5), billing_shot_id=shot_id)
         path = storage.local_path_from_url(url)
         if not path or not path.exists() or is_near_silent_audio(path):
             raise RuntimeError(f"第 {shot_no} 段配音失败（无声音），请稍后重试")
         seconds = probe_duration(path) or 0.0
-        # OpenAI 音色、火山豆包音色在各自客户端里已按字记账，不再叠加通用 TTS 估算
-        if not (openai_voice(voice) or (volc_tts.is_configured() and volc_tts.is_volc_speaker(voice))):
-            await _record_usage_est(project_id, "tts", shot_id=shot_id)
         async with AsyncSessionLocal() as db:
             row = await db.get(Shot, shot_id)
             if row:

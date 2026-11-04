@@ -424,6 +424,37 @@ async def recover_orphaned_tasks() -> int:
         for task in rows:
             if _job_alive(int(task.id)):
                 continue
+            if isinstance(task.result_payload, dict) and task.result_payload.get("voice_billing_reservation"):
+                from app.services.billing.ephemeral import durable_voice_request_alive
+
+                if durable_voice_request_alive(int(task.id)):
+                    continue
+                # bulk 扫描后 HTTP 可能已完成；只在 TaskRun 行锁内按当前状态重判，禁止旧快照覆盖终态。
+                task = (await db.execute(
+                    stmt.where(TaskRun.id == task.id).with_for_update()
+                    .execution_options(populate_existing=True)
+                )).scalar_one_or_none()
+                if (task is None or not isinstance(task.result_payload, dict)
+                        or not task.result_payload.get("voice_billing_reservation")
+                        or durable_voice_request_alive(int(task.id))):
+                    continue
+                # HTTP 请求已消失，上游结果和费用未知；禁止 noop 重排后按零成本退款。
+                task.result_payload = {**task.result_payload, "tts_billing_pending": {
+                    "reason": "voice_request_interrupted", "cost_unknown": True,
+                }}
+                task.status = "awaiting_review"
+                task.error_code = "tts_billing_pending"
+                task.error_message = "音色合成请求中断，结果和费用待核对，请勿重新生成"
+                task.current_step_status = "awaiting_review"
+                task.progress_percent = min(int(task.progress_percent or 0), 99)
+                task.finished_at = None
+                task.next_action_at = None
+                task.lease_token = None
+                task.lease_until = None
+                await append_task_event(db, task.id, event_type="task.awaiting_review",
+                                        status=task.status, message=task.error_message)
+                changed += 1
+                continue
             task.status = "cancel_requested" if task.cancel_requested else "pending"
             task.next_action_at = now
             task.lease_token = None

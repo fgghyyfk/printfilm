@@ -269,8 +269,9 @@ async def generate_voice(
         if (character_asset.type or "").lower() != "character":
             raise HTTPException(status_code=400, detail="character_asset_id 须为角色资产")
 
-    try:
-        updated = await generate_voice_asset_audio(
+    async def synthesize():
+        """业务仅写回资产，由外层轻量任务统一提交用量和钱包结算。"""
+        return await generate_voice_asset_audio(
             db,
             user,
             project,
@@ -279,7 +280,20 @@ async def generate_voice(
             sample_text=body.sample_text,
             speaker=body.speaker,
             character_asset=character_asset,
+            commit=False,
         )
+    try:
+        task, updated = await run_billed_ephemeral(
+            db, user, domain="drama", task_type="voice_synthesis", executor=synthesize,
+            drama_project_id=project.id, asset_id=asset.id, payload={"asset_id": asset.id},
+            commit_before_execute=True,
+        )
+    except ValueError as exc:
+        params = dict(asset.params or {})
+        params["generation"] = {"status": "failed", "error": str(exc)[:500]}
+        asset.params = params
+        await db.commit()
+        raise http_exception_for_value_error(exc) from exc
     except Exception as exc:  # noqa: BLE001
         params = dict(asset.params or {})
         params["generation"] = {"status": "failed", "error": str(exc)[:500]}
@@ -296,5 +310,6 @@ async def generate_voice(
     )
     return {
         "ok": True,
+        "task_id": task.id,
         "asset": DramaAssetOut.model_validate(updated).model_dump(),
     }

@@ -72,11 +72,15 @@
 - 完成（2026-11-04）：已有资产自动保存仅更新名称和画布参数，保留媒体 URL、封面与类型；新节点保留媒体 URL，音视频仅接受明确的图片封面，独立上传与导入流程保持。
 - 验证：`backend/.venv/bin/python .tmp/optimization-20261104/run_tests.py -q tests/test_drama_canvas.py tests/test_asset_params_merge.py tests/test_asset_image_versions.py tests/test_seed_asset_params_structure.py` → **26 passed**（1 条已有依赖弃用警告）；规格与质量审查通过，`git diff --check` 通过。未做浏览器操作验收、未部署。
 
-### [ ] 5. 豆包 TTS 疑似重复计费（两处记账已抽查，第二笔是否真的入账待验证）
+### [x] 5. 豆包 TTS 疑似重复计费（两处记账已抽查，第二笔是否真的入账待验证）
 - 位置：`backend/app/services/pipeline.py` 约 349 行，整片配音后无条件 `_record_usage_est(..., "tts")`；`backend/app/services/volc_tts.py` 约 109 行成功后再 `record_avatar_ai("avatar_tts", ...)`。
 - 先验证：非数字人上下文中 `record_avatar_ai` 是否真的写 `usage_events`。
 - 改法：TTS 调用返回实际服务商（volc / tokenfree / edge），按实际服务商只记一笔。同时修反向问题：`services/kepu_avatar.py` 约 118 行只要配了火山 Key 就跳过通用 TTS 记账，回退到其它服务商时会漏计。
 - 验收：开计费跑一次豆包配音，usage_events 只有一条；火山失败回退时也只有一条且服务商正确。更新 `docs/BILLING.md`。
+- 完成（2026-11-04）：真实数据库复现普通科普一次配音落两行，改为按每次实际成功的付费响应统一记账，保留字符串 URL 兼容与局部服务商结果；同一次调用不再补记通用费用。静音、写盘或转码失败后的真实已发生费用保留，多个真实付费响应分别计费，edge/mock 不记付费估价，原费率及镜数估量不变。
+- 事务与失败：显式漫剧音色复用既有估价，付费前持久化原任务和冻结，费用使用独立短事务；其它轻量任务默认语义保持。记账失败只在明确回滚后本地重试，持续或确认不明时保媒体、成本快照与冻结进入待核对，普通取消和分镜作废均不能当零费用退款；恢复扫描不会重排存活请求或覆盖刚完成任务。已同步 `docs/BILLING.md`。
+- 验证：`backend/.venv/bin/python .tmp/optimization-20261104/run_tests.py -q` → **1181 passed，2 skipped**（6 条已有依赖弃用/异步连接警告）；真实独立连接、故障注入、并发和恢复交错均有红绿回归，规格复审与质量复审通过（质量独立专项 54 passed），`git diff --check` 通过。最终测试使用隔离数据库、外网阻断及排他测试锁；未部署、未调用真实付费上游。
+- 边界：费用待核对任务需人工处理，未自动追扣历史；镜头服务商持久化、试听缓存与原音频路径隔离继续由第 23 / 18 项闭合。
 
 ### [ ] 6. 带货：极限词自动替换改坏句意，且用户无感知
 - 位置：`backend/app/services/daihuo/script.py` 约 84-87 行；`backend/app/api/projects.py` 约 835 行；词表 `backend/app/services/compliance/ad_words.py` 约 90-196 行。

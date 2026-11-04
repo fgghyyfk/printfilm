@@ -4,12 +4,9 @@ import logging
 import re
 from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.config import get_settings
 from app.models import User
 from app.models_drama import DramaAsset, DramaProject
 from app.services.ark import get_ark
-from app.services.logical_model_router import resolve_upstream_model
-from app.services.billing import record_line
 from app.services.drama.voice_reference_audio import finalize_voice_reference_url
 from app.services.voices import infer_drama_speaker_from_prompt
 logger = logging.getLogger(__name__)
@@ -67,9 +64,9 @@ async def synthesize_voice_asset(
     speaker: str | None = None,
     character_name: str | None = None,
     character_asset: DramaAsset | None = None,
+    commit: bool = True,
 ) -> DramaAsset:
     """按提示词合成音色参考音频并写回 voice 资产。"""
-    settings = get_settings()
     ark = get_ark()
     prompt = (voice_prompt or "").strip()
     if not prompt:
@@ -91,6 +88,7 @@ async def synthesize_voice_asset(
         resolved_speaker,
         display_name,
     )
+    # 显式音色预扣和既有分镜任务均已提交；费用独立落账，不污染或依赖资产事务。
     audio_url = await ark.tts(
         text,
         resolved_speaker,
@@ -117,17 +115,9 @@ async def synthesize_voice_asset(
     gen = params.get("generation") if isinstance(params.get("generation"), dict) else {}
     params["generation"] = {**gen, "status": "done", "url": audio_url}
     asset.params = params
-    await record_line(
-        db,
-        user_id=user.id,
-        project_id=None,
-        drama_project_id=project.id,
-        billing_key="tts",
-        model=(resolve_upstream_model("audio", None) or settings.model_audio),
-        estimated=True,
-        domain="drama",
-    )
-    await db.commit()
+    await db.flush()
+    if commit:
+        await db.commit()
     await db.refresh(asset)
     return asset
 

@@ -18,6 +18,8 @@ def test_archive_and_activate_asset_image_version(tmp_path, monkeypatch):
 
     image_file = tmp_path / "asset_1.png"
     image_file.write_bytes(b"old-image")
+    # 激活旧版本会先归档当前 CDN 媒体；用受控本地副本验证，不请求伪造的外部域名。
+    (tmp_path / "new.png").write_bytes(b"new-image")
 
     def fake_local_path(url: str):
         name = str(url).rsplit("/", 1)[-1]
@@ -54,6 +56,8 @@ def test_archive_and_activate_asset_image_version(tmp_path, monkeypatch):
     assert asset.cover == out["cover"]
     assert asset.url == out["cover"]
     assert len(asset.params["image_versions"]) >= 1
+    assert any((tmp_path / item["url"].rsplit("/", 1)[-1]).read_bytes() == b"new-image"
+               for item in asset.params["image_versions"])
 
 
 def test_archive_skips_empty_image():

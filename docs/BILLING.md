@@ -87,10 +87,19 @@ billing_expr USD sell = official_CNY / 7.3 * 1.5
 - 单价在管理后台「系统设置 → 数字人」配置 `avatar_price_fen_per_sec`（分/秒成片），**默认 0 不收费**。
 - 视频阶段预扣 = 未完成段的配音秒数 × 单价；单段重做按该段时长预扣。
 - 每段下载成功后写一行 `billing_key=avatar_video`、`provider=avatar` 的用量，`raw.cost_fen` = 成片秒数 × 单价，结算按实际秒数。
-- 逐段配音：微软/TokenFree 音色按 `tts` 估价；OpenAI 音色（`openai_shimmer` 等）走 promptoll `tts-1-hd`，写 `billing_key=avatar_tts`，按字数 × $30/百万字符。
+- 配音统一由 gateway 按实际成功响应记账：TokenFree 写 `billing_key=tts`、`provider=tokenfree`，优先真实 usage/quota，无用量时沿用原估量；整片连续配音仍按默认估量 × 镜数，逐段和漫剧参考音仍用原默认估量。Qwen-TTS 实际转发 Omni 时记录实际请求模型 `qwen3-omni-flash`。
+- 火山豆包直连写 `billing_key=avatar_tts`、`provider=volc`，沿用后台每万字符单价；OpenAI 音色（`openai_shimmer` 等）写 `billing_key=avatar_tts`、`provider=avatar_ai`，仍按字数 × $30/百万字符。业务入口不再额外叠加通用 TTS 估算。edge-tts、mock、无凭据未请求上游、HTTP 成功但未返回音频的调用不记付费行。
 - 定妆照、场景图走 promptoll 改图，写 `billing_key=avatar_image`，按张价（`services/kepu_avatar_billing.py` 的 `IMAGE_USD`：gpt-image-2 $0.2625、Gemini Flash Image $0.07035，其余 $0.08）× `billing_usd_cny`。
 - AI 写稿走 promptoll 文本模型，写 `billing_key=llm_chat`（取返回的 total_tokens）。
-- 这些用量只在 TaskRun 计费范围内写入；不在任务里的调用不记账（日志告警）。
+- 这些用量只在 TaskRun 计费范围内写入；不在任务里的配音试听不记付费行。
+
+单个服务商成功并产出可用音频时仅记一条费用。已返回真实音频但静音验收、写盘或本地转码失败时，保留这次已发生的付费成本；随后付费备用服务再次成功则再记一条，不能为凑「一次配音一条」抹去真实成本。上游请求失败后回退时，仅记录实际成功的付费服务商。用量原始字段只保留有界的计费数值及服务商/模型，不保存音频 base64 或整份响应。
+
+音频已成功但记账 SQL 失败时，仅在确认本地写入未成功后重试一次落账，不重新请求 TTS；提交确认不明时不重复插行。持续失败且计费已开启的任务保留媒体和有界成本快照，转 `awaiting_review` 并保留原冻结金额，取消、直接结算或失败补偿均不会把已知付费当作零成本全退；核对后处理，不自动补调上游。
+
+显式漫剧音色合成沿用已注册的 `drama/voice_synthesis` 轻量任务估价：付费外调前先提交 started TaskRun 与钱包冻结，提交失败不请求 TTS；费用使用独立短事务落账，资产写回和最终结算随后提交，响应返回 `task_id`。计费连接故障不会污染资产事务，也不会随资产回滚抹去先前已发生的备用服务成本。其余同步任务保持原事务语义。已有分镜任务内自动补参考音仍归属该 TaskRun 并独立记成本。本次只影响后续调用，不回填或追扣历史。
+
+本进程仍执行中的显式音色 HTTP 请求不会被孤儿扫描回收；真正中断且结果、费用未知的持久预扣任务只转待核对并保留冻结，不自动重排无操作任务或按零费用全退。
 
 预扣：
 
@@ -161,7 +170,7 @@ sequenceDiagram
 |------|----------|
 | 科普 pipeline / 单镜重生 | 任务平台 executor 自动 freeze/settle |
 | 漫剧剧本/分镜/资产（异步） | `create_task` 入队，handler 内 `record_line` |
-| 漫剧聊天 / Skill 优化 / 音色描述 | `run_billed_ephemeral`（见下表） |
+| 漫剧聊天 / Skill 优化 / 音色描述 / 音色合成 | `run_billed_ephemeral`（音色合成为 `drama/voice_synthesis`） |
 | 科普选题扩写 | `run_billed_ephemeral(domain=kepu, content_expand)` |
 | 漫剧资产 seed（轻量同步） | `run_billed_ephemeral(domain=drama, seed_assets)` |
 | 工作室工具 | `run_billed_ephemeral(domain=studio, tool_image/tool_video)` |

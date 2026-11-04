@@ -51,6 +51,7 @@ from app.services.tokenfree_image import (
     tokenfree_image_user_error,
 )
 from app.services.voices import edge_tts_voice_for_speaker, openai_voice
+from app.services.tts_billing import AudioResponseHook, TTSBillingPending, TTSResult, record_tts_response, tts_response_usage
 from app.services.tokenfree_video import (
     extract_video_result_url,
     extract_video_task_id,
@@ -1945,6 +1946,7 @@ class ArkGateway:
         dest: Path,
         *,
         model: str | None = None,
+        on_audio: AudioResponseHook | None = None,
     ) -> bool:
         """TokenFree 上 Qwen-TTS 的 /audio/speech 未实现，改走 Omni/Gemini chat。"""
         base = (self.settings.ark_base_url or "").rstrip("/")
@@ -1956,7 +1958,7 @@ class ArkGateway:
         )
         voice = tokenfree_speech_voice(voice, model_id)
         if tokenfree_tts_uses_chat_audio(model_id):
-            return await self._tts_openai_chat_audio(text, voice, dest, model=model_id)
+            return await self._tts_openai_chat_audio(text, voice, dest, model=model_id, on_audio=on_audio)
         async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await observed_request(client, "POST",
                 f"{base}/audio/speech",
@@ -1969,6 +1971,8 @@ class ArkGateway:
                 },
             )
         if resp.status_code < 400 and resp.content and len(resp.content) >= 1000:
+            if on_audio is not None:
+                await on_audio({})
             dest.write_bytes(resp.content)
             return True
         if resp.status_code >= 400:
@@ -1987,6 +1991,7 @@ class ArkGateway:
         dest: Path,
         *,
         model: str,
+        on_audio: AudioResponseHook | None = None,
     ) -> bool:
         """Gemini 非流式 chat 出音频；Qwen-Omni 必须 SSE 流式。"""
         base = (self.settings.ark_base_url or "").rstrip("/")
@@ -2023,6 +2028,8 @@ class ArkGateway:
                 audio = extract_chat_audio_bytes(payload)
         if not audio:
             return False
+        if on_audio is not None:
+            await on_audio(tts_response_usage(resp.text or ""))
         dest.parent.mkdir(parents=True, exist_ok=True)
         wav = wrap_pcm_s16le_wav(audio)
         if not wav:
@@ -2037,8 +2044,21 @@ class ArkGateway:
         project_id: int | None = None,
         shot_no: int | None = None,
         duration_hint: float = 4.0,
+        billing_tokens: int = 0,
+        billing_shot_id: int | None = None,
     ) -> str:
-        """整片/单镜配音：TokenFree 多 TTS → edge-tts；失败则抛错，不写静音。"""
+        """兼容原 URL 接口，配音及实际响应记账统一由 tts_with_result 执行。"""
+        result = await self.tts_with_result(
+            text, voice, project_id=project_id, shot_no=shot_no, duration_hint=duration_hint,
+            billing_tokens=billing_tokens, billing_shot_id=billing_shot_id,
+        )
+        return result.url
+
+    async def tts_with_result(
+        self, text: str, voice: str, *, project_id: int | None = None, shot_no: int | None = None,
+        duration_hint: float = 4.0, billing_tokens: int = 0, billing_shot_id: int | None = None,
+    ) -> TTSResult:
+        """返回本次真实服务商；成功付费响应先记账，再验本地处理与静音。"""
         voice_map = {
             "narrator_calm": "zh_female_cancan_uranus_bigtts",
             "warm_storyteller": "zh_female_tianmeixiaoyuan_uranus_bigtts",
@@ -2050,16 +2070,45 @@ class ArkGateway:
         speaker = voice_map.get(voice, voice) or "zh_female_cancan_uranus_bigtts"
         clean = (text or "").strip() or "这一幕。"
 
-        if self.mock:
+        if self.settings.ark_mock:
             digest = hashlib.md5(f"{speaker}:{clean}".encode()).hexdigest()[:8]
             dest = Path(__file__).resolve().parents[2] / "static" / "mock" / f"audio_{digest}.mp3"
             dest.parent.mkdir(parents=True, exist_ok=True)
             if not dest.exists() or dest.stat().st_size < 1000:
                 await self._tts_edge(clean, dest)
-            return f"/static/mock/audio_{digest}.mp3"
+            return TTSResult(f"/static/mock/audio_{digest}.mp3", "mock", "mock")
 
         dest_dir = storage.project_dir(project_id or 0)
         dest = dest_dir / f"shot_{(shot_no or 0):03d}_tts.mp3"
+
+        # 每个调用和每次尝试各自持有记录状态，避免同 gateway 并发串 provider / TaskRun。
+        attempted = False
+        usage_recorded = False
+        pending_error: TTSBillingPending | None = None
+
+        def response_hook(provider: str, model: str) -> AudioResponseHook:
+            """成功音频通知只记本次实际付费响应；失败反馈不会触发合成重试。"""
+            async def record(raw: dict) -> None:
+                """音频落盘与静音验收前记录已产生的真实成本。"""
+                nonlocal usage_recorded, pending_error
+                try:
+                    usage_recorded = await record_tts_response(
+                        provider, model, chars=len(clean), tokens=billing_tokens,
+                        shot_id=billing_shot_id, raw=raw,
+                    )
+                except TTSBillingPending as exc:
+                    pending_error = exc
+            return record
+
+        def raise_if_billing_pending() -> None:
+            """保留已生成媒体并停止备用调用，原任务不得按零费用退尽冻结。"""
+            if pending_error is not None:
+                if dest.is_file():
+                    try:
+                        pending_error.snapshot["audio_url"] = storage.publish_local(dest)
+                    except Exception:  # noqa: BLE001 — 保持计费待核对异常，不得落到备用付费服务
+                        pending_error.snapshot["audio_path"] = str(dest)[:512]
+                raise pending_error
 
         async def _accept_if_audible(label: str) -> str | None:
             if not dest.exists() or dest.stat().st_size < 2000:
@@ -2076,24 +2125,33 @@ class ArkGateway:
 
             if avatar_ai.is_configured():
                 try:
-                    await avatar_ai.speech(clean, oa_voice, dest)
+                    usage_recorded = False
+                    await avatar_ai.speech(clean, oa_voice, dest,
+                                           on_audio=response_hook("avatar_ai", f"tts-1-hd/{oa_voice}"))
+                    raise_if_billing_pending()
                     url = await _accept_if_audible("openai-speech")
                     if url:
-                        return url
+                        return TTSResult(url, "avatar_ai", f"tts-1-hd/{oa_voice}", attempted, usage_recorded)
                 except Exception as exc:  # noqa: BLE001
+                    raise_if_billing_pending()
                     logger.warning("openai speech failed voice=%s: %s", oa_voice, exc)
+                attempted = True
 
         # 豆包音色：配了火山引擎 Key 时直连豆包语音合成（比 TokenFree 中转更稳，2.0 音色可加语气指令）
         from app.services import volc_tts
 
         if volc_tts.is_configured() and volc_tts.is_volc_speaker(speaker):
             try:
-                await volc_tts.synthesize(clean, speaker, dest)
+                usage_recorded = False
+                await volc_tts.synthesize(clean, speaker, dest, on_audio=response_hook("volc", f"volc/{speaker}"))
+                raise_if_billing_pending()
                 url = await _accept_if_audible("volc-tts")
                 if url:
-                    return url
+                    return TTSResult(url, "volc", f"volc/{speaker}", attempted, usage_recorded)
             except Exception as exc:  # noqa: BLE001
+                raise_if_billing_pending()
                 logger.warning("volc tts failed speaker=%s: %s", speaker, exc)
+            attempted = True
 
         try:
             audio_model = self._resolved_audio_model()
@@ -2105,7 +2163,12 @@ class ArkGateway:
         # TokenFree：默认模型 + Gemini / ElevenLabs / Qwen 其它 TTS 依次试
         for model_id in (iter_tokenfree_tts_models(audio_model) if audio_model else []):
             try:
-                ok = await self._tts_openai_speech(clean, speaker, dest, model=model_id)
+                usage_recorded = False
+                actual_model = tokenfree_tts_chat_model(resolve_tokenfree_tts_model(model_id))
+                ok = await self._tts_openai_speech(
+                    clean, speaker, dest, model=model_id, on_audio=response_hook("tokenfree", actual_model),
+                )
+                raise_if_billing_pending()
                 if ok:
                     url = await _accept_if_audible("tokenfree-speech")
                     if url:
@@ -2115,9 +2178,12 @@ class ArkGateway:
                             model_id,
                             dest.stat().st_size,
                         )
-                        return url
+                        return TTSResult(url, "tokenfree", actual_model, attempted, usage_recorded)
             except Exception as exc:  # noqa: BLE001
+                raise_if_billing_pending()
                 logger.warning("tokenfree speech failed model=%s: %s", model_id, exc)
+            # 无凭据没有请求付费上游，不把配置缺失当作一次真实服务商尝试。
+            attempted = attempted or bool((self.settings.ark_api_key or "").strip())
 
         # edge-tts：按 speaker 映射不同 neural，上游都失败时仍能分出角色声线
         try:
@@ -2125,7 +2191,7 @@ class ArkGateway:
             url = await _accept_if_audible("edge-tts")
             if url:
                 logger.info("TTS edge-tts ok shot=%s speaker=%s bytes=%s", shot_no, speaker, dest.stat().st_size)
-                return url
+                return TTSResult(url, "edge", edge_tts_voice_for_speaker(speaker), attempted)
         except Exception as exc:  # noqa: BLE001
             logger.warning("edge-tts failed: %s", exc)
 

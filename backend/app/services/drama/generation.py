@@ -41,6 +41,7 @@ from app.services.drama.generation_prompt import append_style_prompt, build_gene
 from app.services.drama.image_styles import resolve_image_style_board_url
 from app.services.drama.seedream_options import resolve_seedream_model_endpoint, resolve_seedream_size
 from app.services.drama.voice_synthesis import build_voice_sample_text, synthesize_voice_asset
+from app.services.tts_billing import TTSBillingPending
 from app.services.drama.voice_prompt import fallback_voice_prompt
 from app.services.drama.voice_reference_audio import (
     finalize_voice_reference_url,
@@ -1152,6 +1153,8 @@ async def ensure_fragment_reference_audios(
                 asset.params = patch_params_voice_url(params, new_url)
                 assets_by_id[asset.id] = asset
                 regenerated += 1
+        except TTSBillingPending:
+            raise
         except Exception:  # noqa: BLE001
             logger.exception(
                 "参考音频重生成失败 fragment_id=%s character_id=%s",
@@ -1211,6 +1214,8 @@ async def ensure_fragment_reference_audios(
                             }
                             project.params = proj_params
                             regenerated += 1
+                except TTSBillingPending:
+                    raise
                 except Exception:  # noqa: BLE001
                     logger.exception(
                         "旁白参考音频重生成失败 project_id=%s fragment_id=%s",
@@ -1384,6 +1389,7 @@ async def generate_voice_asset_audio(
     sample_text: str | None = None,
     speaker: str | None = None,
     character_asset: DramaAsset | None = None,
+    commit: bool = True,
 ) -> DramaAsset:
     """为 voice 类型资产按提示词合成参考音频。"""
     return await synthesize_voice_asset(
@@ -1396,6 +1402,7 @@ async def generate_voice_asset_audio(
         speaker=speaker,
         character_name=character_asset.name if character_asset else None,
         character_asset=character_asset,
+        commit=commit,
     )
 
 

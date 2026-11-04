@@ -48,6 +48,7 @@ from app.services import seedance_segments as segplan
 from app.services.bgm import clip_shot_bgm, resolve_bgm_path
 from app.services.compliance.ad_words import REPLACE
 from app.services.compliance.content import is_ad_template, sanitize_shot_fields
+from app.services.tts_billing import TTSBillingPending
 
 logger = logging.getLogger(__name__)
 
@@ -344,13 +345,7 @@ async def _synthesize_continuous_audio(
             project_id=project_id,
             shot_no=0,
             duration_hint=hint,
-        )
-        s = get_settings()
-        await _record_usage_est(
-            project_id,
-            "tts",
-            tokens=s.billing_est_tts_tokens * max(len(shot_rows), 1),
-            model=s.model_audio,
+            billing_tokens=get_settings().billing_est_tts_tokens * max(len(shot_rows), 1),
         )
         src = storage.local_path_from_url(audio_url or "")
         if not src or not src.exists():
@@ -618,6 +613,8 @@ async def run_pipeline(project_id: int, *, phase: str | None = None) -> None:
         )
         raise
     except Exception as exc:  # noqa: BLE001
+        if isinstance(exc, TTSBillingPending):
+            raise
         if is_cancelled(project_id):
             logger.info("pipeline cancelled (during error) project=%s", project_id)
             async with AsyncSessionLocal() as db:
@@ -1123,6 +1120,10 @@ async def _parallel_image_and_audio(project_id: int) -> None:
     )
     errors = [r for r in results if isinstance(r, Exception)]
     if errors:
+        # 已付费但尚未落账必须原样传到任务结算，不能被出图失败或取消覆盖成零成本。
+        for err in errors:
+            if isinstance(err, TTSBillingPending):
+                raise err
         # Prefer cancel over generic failure
         for err in errors:
             if isinstance(err, (PipelineCancelled, asyncio.CancelledError)):
