@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowRight, Clapperboard, Loader2 } from 'lucide-react'
 import { api, resolveVoiceId, type VoicePreset } from '../../api'
-import { createDaihuoProject, type DaihuoRatio, type EcomSet } from '../../api/ecomSet'
+import { createDaihuoProject, quoteDaihuoProject, type DaihuoVideoQuote, type DaihuoRatio, type EcomSet } from '../../api/ecomSet'
+import { useVoicePreview } from '../../hooks/useVoicePreview'
+import { dialog } from '../../lib/dialog'
 import { useI18n } from '../../i18n'
 import { DAIHUO_RATIOS } from '../../lib/ecomSet'
 import BillingErrorNotice from '../billing/BillingErrorNotice'
@@ -29,6 +31,22 @@ export default function DaihuoVideoPanel({ set }: { set: EcomSet }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [projectId, setProjectId] = useState<number | null>(set.project_id)
+  const [quote, setQuote] = useState<DaihuoVideoQuote | null>(null)
+  const [quoteError, setQuoteError] = useState('')
+  const { previewBusy, playingId, isFallback, previewVoice, stopPreview } = useVoicePreview(setError)
+
+  useEffect(() => {
+    if (projectId) return
+    const controller = new AbortController()
+    setQuote(null)
+    setQuoteError('')
+    const timer = setTimeout(() => {
+      quoteDaihuoProject(set.id, { output_ratio: ratio, voice_id: voiceId }, controller.signal)
+        .then((next) => { if (!controller.signal.aborted) setQuote(next) })
+        .catch((err) => { if (!controller.signal.aborted) setQuoteError(err instanceof Error ? err.message : '估价失败') })
+    }, 300)
+    return () => { clearTimeout(timer); controller.abort() }
+  }, [set.id, ratio, voiceId, projectId])
 
   // 未关联项目时加载音色列表，默认选第一个
   useEffect(() => {
@@ -57,7 +75,15 @@ export default function DaihuoVideoPanel({ set }: { set: EcomSet }) {
     setError('')
     let pid: number | null = null
     try {
-      pid = (await createDaihuoProject(set.id, { output_ratio: ratio, voice_id: voiceId || undefined })).project_id
+      stopPreview()
+      const payload = { output_ratio: ratio, voice_id: voiceId }
+      const estimate = quote?.output_ratio === ratio && quote.voice_id === voiceId ? quote : await quoteDaihuoProject(set.id, payload)
+      const confirmed = await dialog.confirm({ title: '生成带货口播分镜',
+        message: `复用 ${estimate.usable_images} 张底图，新增生图费用 ¥0。写稿预估 ¥${(estimate.script_fen / 100).toFixed(2)}；后续配音预估 ¥${(estimate.tts_fen / 100).toFixed(2)}。本次先生成口播分镜，后续按阶段继续并预扣，按实际服务商用量结算。`,
+        confirmText: '开始写稿',
+      })
+      if (!confirmed) return
+      pid = (await createDaihuoProject(set.id, payload)).project_id
       await api.generate(pid)
       nav(`/studio/${pid}`)
     } catch (err) {
@@ -124,7 +150,7 @@ export default function DaihuoVideoPanel({ set }: { set: EcomSet }) {
                 type="button"
                 disabled={busy}
                 className={voiceId === voiceKey(v) ? 'active' : ''}
-                onClick={() => setVoiceId(voiceKey(v))}
+                onClick={() => { stopPreview(); setVoiceId(voiceKey(v)) }}
               >
                 {v.label}
                 {v.gender === 'female' || v.gender === 'male' ? ` · ${t(`daihuo.video.gender.${v.gender}`)}` : ''}
@@ -136,12 +162,21 @@ export default function DaihuoVideoPanel({ set }: { set: EcomSet }) {
         )}
       </div>
 
+      <div className="pf-ecom-actions">
+        <Button variant="ghost" size="sm" disabled={!voiceId || busy || previewBusy === voiceId}
+          onClick={() => { setError(''); void previewVoice(voiceId, 'daihuo') }}>
+          {previewBusy === voiceId ? '试听生成中…' : playingId === voiceId ? '停止试听' : '试听当前音色'}
+        </Button>
+        {isFallback ? <span role="status">本次试听使用备用音色</span> : null}
+      </div>
+      <p className="pf-muted" role="status">{quote ? `复用 ${quote.usable_images} 张底图 ¥0；写稿预估 ¥${(quote.script_fen / 100).toFixed(2)}；后续配音预估 ¥${(quote.tts_fen / 100).toFixed(2)}` : quoteError || '正在估价…'}</p>
+      <p className="pf-muted">先生成口播分镜，后续按阶段继续。配音为预估，按实际服务商用量结算。</p>
       {error ? <BillingErrorNotice message={error} className="pf-tool-error" /> : null}
 
       <div className="pf-ecom-actions pf-daihuo-submit">
-        <Button variant="lime" icon disabled={busy || voices == null} onClick={onCreate}>
+        <Button variant="lime" icon disabled={busy || voices == null || !quote} onClick={onCreate}>
           {busy ? <Loader2 size={16} className="pf-tool-spin" aria-hidden /> : <Clapperboard size={16} aria-hidden />}
-          {busy ? t('daihuo.video.creating') : t('daihuo.video.create')}
+          {busy ? t('daihuo.video.creating') : '生成口播分镜'}
         </Button>
       </div>
     </section>

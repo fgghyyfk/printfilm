@@ -153,3 +153,30 @@ async def build_daihuo_shots(project_id: int) -> int:
         await _record_usage_est(project_id, "llm_chat", tokens=4000, model=s.model_llm)
     logger.info("daihuo shots built project=%s set=%s shots=%d", project_id, ecom.id, len(items))
     return len(items)
+
+
+async def quote_project_from_set(db: AsyncSession, user: User, set_id: int, *, output_ratio: str = '9:16', voice_id: str = '') -> dict:
+    """只读套图归属与可用底图；沿现有阶段估价，不创建项目、任务或冻结。"""
+    from app.services.billing.estimates import estimate_phase_fen
+    from app.services.billing.settlement import billing_active
+    from app.services.tokenfree_pricing import ensure_official_rates
+
+    ecom = (await db.execute(select(EcomSet).where(EcomSet.id == set_id, EcomSet.user_id == user.id))).scalar_one_or_none()
+    if ecom is None:
+        raise LookupError('套图不存在')
+    items = usable_items(ecom)
+    if not items:
+        raise ValueError('套图还没有生成好的图片')
+    ratio = output_ratio if output_ratio in ALLOWED_RATIOS else '9:16'
+    voice = (voice_id or '').strip()
+    # transient 模型只供已有估价函数读取；所有图均已存在，不估重复生图费用。
+    probe = Project(pipeline_mode='image_text', output_ratio=ratio, voice_id=voice,
+                    shots=[Shot(image_url=item['base_path'], narration='', duration=8) for item in items])
+    settings = get_settings()
+    script = tts = 0
+    if billing_active(user, settings):
+        await ensure_official_rates(settings)
+        script = estimate_phase_fen(probe, 'script', settings)
+        tts = estimate_phase_fen(probe, 'assets', settings)
+    return {'output_ratio': ratio, 'voice_id': voice, 'usable_images': len(items), 'image_fen': 0,
+            'script_fen': script, 'tts_fen': tts, 'estimate_fen': script + tts}

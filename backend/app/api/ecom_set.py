@@ -158,3 +158,13 @@ async def to_project(
         db, user, set_id, output_ratio=body.output_ratio, voice_id=body.voice_id,
     ))
     return EcomToProjectOut(project_id=project.id)
+
+
+@router.post("/{set_id}/project/quote")
+async def quote_project(
+    set_id: int, body: EcomToProjectIn,
+    db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user),
+):
+    from app.services.daihuo.service import quote_project_from_set
+
+    return await _guard(db, quote_project_from_set(db, user, set_id, output_ratio=body.output_ratio, voice_id=body.voice_id))

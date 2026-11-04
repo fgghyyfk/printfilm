@@ -166,3 +166,18 @@ export async function downloadEcomSetZip(id: number, fallbackName: string): Prom
 export function createDaihuoProject(id: number, payload: DaihuoProjectPayload): Promise<{ project_id: number }> {
   return requestEcom(`/${id}/project`, '创建带货视频失败', { method: 'POST', body: JSON.stringify(payload) }, true)
 }
+
+
+export type DaihuoVideoQuote = {
+  output_ratio: DaihuoRatio
+  voice_id: string
+  usable_images: number
+  image_fen: number
+  script_fen: number
+  tts_fen: number
+  estimate_fen: number
+}
+
+export function quoteDaihuoProject(id: number, payload: DaihuoProjectPayload, signal?: AbortSignal): Promise<DaihuoVideoQuote> {
+  return requestEcom(`/${id}/project/quote`, '带货视频估价失败', { method: 'POST', body: JSON.stringify(payload), signal })
+}
