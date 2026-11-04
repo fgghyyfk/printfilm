@@ -110,7 +110,7 @@ SCARF_SLOTS: dict[str, Slot] = {
     "scarf_knot": Slot(
         "scarf_knot", "颈前打结",
         "近景胸像，脸约占画面高度三分之一，丝巾折成三角在颈前打一个小结，两端自然垂落胸前，一只手轻捏结口",
-        "title_corner", "3:4", "top", is_main=True, ref="model",
+        "label_bar", "3:4", "bottom", is_main=True, ref="model",
     ),
     "scarf_size": Slot(
         "scarf_size", "尺寸规格",
@@ -130,7 +130,7 @@ SCARF_SLOTS: dict[str, Slot] = {
     "scarf_long": Slot(
         "scarf_long", "长条领结",
         "模特半身，丝巾折成约 8 厘米宽的长条，在颈前打一个领结，两条长飘带垂到胸前，飘带上的图案清晰",
-        "title_corner", "3:4", "top", ref="model",
+        "label_bar", "3:4", "bottom", ref="model",
     ),
     "scarf_street": Slot(
         "scarf_street", "街拍大衣",

@@ -101,3 +101,10 @@ async def test_scarf_plan_and_start(db_session, monkeypatch, tmp_path):
     assert by_slot["scarf_size"].status == "succeeded" and by_slot["scarf_size"].final_url
     assert by_slot["scarf_size"].task_run_id is None
     assert all(it.status == "queued" and it.task_run_id for k, it in by_slot.items() if k != "scarf_size")
+
+
+# 封面文案：款名 + 真丝方巾，副标题为规格
+def test_cover_copy():
+    c = scarf.cover_copy("国风方巾", "110")
+    assert c["title"] == "国风·真丝方巾" and c["subtitle"].startswith("110×110cm")
+    assert scarf.cover_copy("牡丹亭", "88")["title"] == "牡丹亭·真丝方巾"

@@ -79,6 +79,12 @@ def build_prompt(*, slot_prompt: str, scene: str, ref: str, size: str | None) ->
     return "。".join(p.strip("。 ") for p in parts if p and p.strip())
 
 
+def cover_copy(name: str, size: str | None) -> dict:
+    """封面固定文案：竖排款名「XX·真丝方巾」+ 规格副标题（不用规划模型写的口号）。"""
+    base = (name or "").replace("真丝方巾", "").replace("方巾", "").strip(" ·") or (name or "")
+    return {"title": f"{base}·真丝方巾"[:12], "subtitle": f"{SIZES[normalize_size(size)][1]}×{SIZES[normalize_size(size)][1]}cm 原创设计", "bullets": []}
+
+
 def plan_notes(size: str | None, notes: str) -> str:
     """给规划模型的补充信息：尺寸与佩戴建议。"""
     head = f"品类：真丝方巾；规格：{size_label(size)}；适合的系法：{wear_hint(size)}"
@@ -119,7 +125,7 @@ def draw_vertical_title(img: Image.Image, *, title: str, subtitle: str) -> None:
     bright, _ = region_tone(img, (0, 0, int(W * 0.3), int(H * 0.5)))
     ink, muted = (INK, MUTED) if bright else ((255, 255, 255), (235, 235, 235))
     draw = ImageDraw.Draw(img)
-    t_font, s_font = _serif(int(W * 0.06)), _serif(int(W * 0.026))
+    t_font, s_font = _serif(int(W * 0.074)), _serif(int(W * 0.03))
     step = int(t_font.size * 1.12)
     title_chars = [c for c in title.replace(" ", "") if c][:12]
     col_x = x0 + int(s_font.size * 1.8)

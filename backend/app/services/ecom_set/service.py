@@ -161,7 +161,8 @@ async def create_plan(
         db.add(EcomSetItem(
             set_id=ecom.id, idx=idx, slot=slot.key, layout=slot.layout,
             ratio=gen_ratio(platform, slot.key), blank=slot.blank,
-            scene=it["scene"], copy_json=it["copy"], status="planned",
+            scene=it["scene"], status="planned",
+            copy_json=scarf_mod.cover_copy(name, scarf["size"]) if scarf is not None and slot.key == "scarf_cover" else it["copy"],
         ))
     await db.commit()
     return await get_set(db, user, ecom.id)
