@@ -535,8 +535,8 @@ export const api = {
     const filename = m?.[1] || `framecut_videos_${Date.now()}.zip`
     return { blob, filename }
   },
-  getProject(id: number) {
-    return request<Project>(`/api/projects/${id}`)
+  getProject(id: number, opts?: { signal?: AbortSignal }) {
+    return request<Project>(`/api/projects/${id}`, { signal: opts?.signal })
   },
   generate(id: number, opts?: { restart?: boolean }) {
     const q = opts?.restart ? '?restart=true' : ''
@@ -685,5 +685,12 @@ export const api = {
   },
   eventsUrl(projectId: number) {
     return `${API_BASE}/api/projects/${projectId}/events`
+  },
+  /** 使用统一鉴权传输读取进度流，令牌不进入 URL。 */
+  projectEvents(projectId: number, signal: AbortSignal) {
+    return requestResponse(`/api/projects/${projectId}/events`, {
+      signal,
+      headers: { Accept: 'text/event-stream' },
+    })
   },
 }

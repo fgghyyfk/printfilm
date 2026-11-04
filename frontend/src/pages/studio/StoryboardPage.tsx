@@ -25,6 +25,7 @@ import EcomSetSourceLink from '../../components/daihuo/EcomSetSourceLink'
 import { getProjectCompliance, undoProjectReplacement } from '../../api/compliance'
 import { kepuComplianceLabel, projectComplianceKey, scrollToShotRow, shotRowDomId } from '../../lib/compliance'
 import { useI18n } from '../../i18n'
+import { useKepuProgress } from '../../hooks/useKepuProgress'
 import {
   effectiveStatus,
   formatMmSs,
@@ -136,6 +137,7 @@ export default function StoryboardPage() {
   const [batchDuration, setBatchDuration] = useState('')
   const [batchRegenAudio, setBatchRegenAudio] = useState(false)
   const coverInputRef = useRef<HTMLInputElement>(null)
+  const liveProgress = useKepuProgress(project?.id === projectId ? project : null, setProject)
 
   useEffect(() => {
     if (!localStorage.getItem('token')) {
@@ -146,30 +148,24 @@ export default function StoryboardPage() {
       nav('/studio/new')
       return
     }
+    const controller = new AbortController()
+    setProject(null)
+    setTemplate(null)
+    setError('')
     api
-      .getProject(projectId)
+      .getProject(projectId, { signal: controller.signal })
       .then((p) => {
+        if (controller.signal.aborted) return
         setProject(p)
         return api.templates().then((list) => {
-          setTemplate(list.find((t) => t.id === p.template_id) || null)
+          if (!controller.signal.aborted) setTemplate(list.find((t) => t.id === p.template_id) || null)
         })
       })
-      .catch((err) => setError(err instanceof Error ? err.message : '加载失败'))
+      .catch((err) => {
+        if (!controller.signal.aborted) setError(err instanceof Error ? err.message : '加载失败')
+      })
+    return () => controller.abort()
   }, [nav, projectId])
-
-  useEffect(() => {
-    if (!project) return
-    // Only poll while pipeline is actively running — idle checkpoints
-    // (IMAGE_READY / VIDEO_READY / SCRIPT_READY) must not spin forever.
-    if (!isProjectBusy(project)) return
-    const timer = setInterval(() => {
-      api
-        .getProject(project.id)
-        .then(setProject)
-        .catch(() => undefined)
-    }, 1500)
-    return () => clearInterval(timer)
-  }, [project?.id, project?.status, project?.active_tasks])
 
   useEffect(() => {
     if (menuShotId == null) return
@@ -1097,7 +1093,7 @@ title="用当前镜头重新拼接"
                       const { cues, beats } = parseSegmentScript(script)
                       const desc = scenePromptForDisplay(shot.img_prompt).trim()
                       return (
-                        <tr key={shot.id} id={shotRowDomId(shot.id)}>
+                        <tr key={shot.id} id={shotRowDomId(shot.id)} className={liveProgress?.shot === shot.shot_no ? 'pf-shot-progress-current' : undefined}>
                           <td className="col-no">{String(shot.shot_no).padStart(2, '0')}</td>
                           <td className="col-thumb">
                             <button
@@ -1306,6 +1302,7 @@ title="用当前镜头重新拼接"
 
         <aside className="pf-create-col pf-board-settings">
           <h3>生成进度</h3>
+          {liveProgress?.message ? <p className="pf-live-progress" role="status">{liveProgress.message}</p> : null}
           <ul className="pf-progress-list">
             {progressItems.map((item) => (
               <li key={item.label}>

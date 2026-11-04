@@ -4407,6 +4407,18 @@ button.pf-shot-editable:disabled {
   padding: 0;
 }
 
+/* SSE 仅突出当前镜与服务端进度消息，实际状态仍由项目回读展示。 */
+.pf-shot-progress-current > td {
+  background: color-mix(in srgb, var(--pf-lime, #d9ef68) 18%, transparent);
+}
+
+.pf-live-progress {
+  padding: 0.65rem 0.8rem;
+  border-left: 3px solid var(--pf-lime, #d9ef68);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
 .pf-progress-list li {
   display: flex;
   justify-content: space-between;

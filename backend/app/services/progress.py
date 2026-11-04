@@ -47,6 +47,13 @@ def channel(project_id: int) -> str:
 
 
 async def publish_progress(project_id: int, payload: dict[str, Any]) -> None:
+    # 当前任务只写进局部副本，避免重放旧任务进度或并发上下文相互污染。
+    from app.services.billing.context import get_current_task_run_id
+
+    payload = dict(payload)
+    task_id = get_current_task_run_id()
+    if task_id is not None:
+        payload["task_id"] = task_id
     _latest[project_id] = payload
     r = _get_redis()
     if r is not None:

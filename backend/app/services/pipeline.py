@@ -981,7 +981,7 @@ async def _parallel_image_and_audio(project_id: int) -> None:
         not _continuous_audio_ok(project_id)
     )
 
-    async def bump_images() -> None:
+    async def bump_images(shot_no: int) -> None:
         nonlocal done_img
         async with progress_lock:
             done_img += 1
@@ -1006,7 +1006,7 @@ async def _parallel_image_and_audio(project_id: int) -> None:
                     "stage": "PARALLEL_ASSETS",
                     "percent": pct,
                     "message": msg,
-                    "shot": None,
+                    "shot": shot_no,
                     "total": total,
                 },
             )
@@ -1026,13 +1026,13 @@ async def _parallel_image_and_audio(project_id: int) -> None:
                 elif not shot.video_url:
                     shot.status = ShotStatus.IMAGE_READY
                 await db.commit()
-        await bump_images()
+        await bump_images(meta["shot_no"])
 
     async def one_image(meta: dict, ref_urls: list[str]) -> SimpleNamespace | None:
         """生成一镜；返回静帧代理供下一镜参考。"""
         await _ensure_not_cancelled(project_id)
         if meta.get("has_image"):
-            await bump_images()
+            await bump_images(meta["shot_no"])
             return None
         prompt = build_locked_image_prompt(
             style_prefix,
@@ -1073,7 +1073,7 @@ async def _parallel_image_and_audio(project_id: int) -> None:
                     image_ark_url=meta.get("image_ark_url"),
                     image_url=meta.get("image_url"),
                 )
-                await bump_images()
+                await bump_images(meta["shot_no"])
                 continue
             refs = image_refs_for_shot(prev_proxy, base_refs)
             proxy = await one_image(meta, refs)
