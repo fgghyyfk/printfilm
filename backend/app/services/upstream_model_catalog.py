@@ -9,6 +9,7 @@ import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.model_routing_config import infer_model_capability, normalize_model_name
+from app.services.provider_profiles import is_ark_native
 from app.services.tokenfree_gateway import TOKENFREE_BASE_URL
 
 logger = logging.getLogger(__name__)
@@ -41,15 +42,17 @@ async def _resolve_channel_credentials(
         channels = await _load_channels(db, runtime=True)
         channel = next((item for item in channels if item.id == channel_id), None)
         if channel is not None:
+            # 地址更改时必须提供该地址的新密钥，禁止沿用原渠道凭据
+            saved_base = (channel.base_url or "").strip().rstrip("/")
+            if base and base != saved_base and not key:
+                raise RuntimeError("接口地址已更改，请重新填写 API Key")
             if not key:
                 key = (channel.api_key or "").strip()
             if not base:
-                base = (channel.base_url or "").strip().rstrip("/")
+                base = saved_base
             if proto in {"", "auto"}:
                 proto = (channel.protocol or "auto").strip().lower() or "auto"
 
-    if proto == "ark" and not base:
-        base = TOKENFREE_BASE_URL.rstrip("/")
     return proto, base, key
 
 
@@ -135,22 +138,14 @@ async def list_upstream_models(
         api_key_override=api_key_override,
     )
 
-    # 已下线的方舟 / 豆包协议或 volces 地址不再直连，改拉 TokenFree 目录
-    if proto in {"ark", "volc_tts"} or "volces.com" in base.lower() or "openspeech.bytedance.com" in base.lower():
-        from app.services.tokenfree_gateway import TOKENFREE_BASE_URL, resolve_tokenfree_api_key
-
-        base = TOKENFREE_BASE_URL
-        key = key or resolve_tokenfree_api_key()
-        return await _list_openai_compatible_models(
-            base_url=base,
-            api_key=key,
-            capability=capability,
-        )
-
-    if not base:
-        from app.services.tokenfree_gateway import TOKENFREE_BASE_URL
-
-        base = TOKENFREE_BASE_URL
+    # Ark 能力模型由账号填写，目录不跨平台回退，更不能向替代上游发送原 Key
+    if is_ark_native(base) or proto in {"ark", "volc_tts"}:
+        raise RuntimeError("该渠道暂不支持拉取模型目录，请填写已开通的模型或接入点 ID")
+    if not base and channel_id:
+        raise RuntimeError("请先填写渠道的 Base URL")
+    base = base or TOKENFREE_BASE_URL
+    if base != TOKENFREE_BASE_URL:
+        raise RuntimeError("模型目录仅支持 TokenFree 官方接口地址")
 
     return await _list_openai_compatible_models(
         base_url=base,

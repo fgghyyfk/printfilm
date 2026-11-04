@@ -26,10 +26,10 @@ VIDEO_FAILED_STATUSES = {"failed", "cancelled", "canceled", "expired", "failure"
 
 
 def uses_tokenfree_video(*, base_url: str = "", channel_id: str = "") -> bool:
-    """视频只走 TokenFree / New API，不再按主机切方舟原生。"""
-    from app.services.provider_profiles import is_byteplus
+    """官方 Ark 原生接口保留任务协议，其余沿用 TokenFree / New API。"""
+    from app.services.provider_profiles import is_ark_native
 
-    return not is_byteplus(base_url)
+    return not is_ark_native(base_url)
 
 
 def remap_video_path(path: str, *, base_url: str = "", channel_id: str = "") -> str:

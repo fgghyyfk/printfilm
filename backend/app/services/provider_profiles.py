@@ -8,16 +8,24 @@ from app.schemas_routing import (
 from app.services.media_model_presets import all_preset_channel_models, clamp_default_to_preset
 
 TOKENFREE_BASE = 'https://www.tokenfree.com/v1'
+# 国内站地址与国际站区域列表分开维护，协议判定使用完整 Ark 白名单
+VOLC_ARK_BEIJING = 'https://ark.cn-beijing.volces.com/api/v3'
 BYTEPLUS_BASES = {
     'https://ark.ap-southeast.bytepluses.com/api/v3',
     'https://ark.eu-west.bytepluses.com/api/v3',
 }
+ARK_NATIVE_BASES = BYTEPLUS_BASES | {VOLC_ARK_BEIJING}
 CAPABILITIES = ('text', 'image', 'video', 'audio')
 
 
+def is_ark_native(base_url: str) -> bool:
+    """仅识别官方 Ark 原生接口，避免按模糊字符串发送凭据。"""
+    return base_url.rstrip('/') in ARK_NATIVE_BASES
+
+
 def is_byteplus(base_url: str) -> bool:
-    """仅识别官方 ModelArk 区域接口，避免按模糊字符串发送凭据。"""
-    return base_url.rstrip('/') in BYTEPLUS_BASES
+    """兼容既有协议调用方；原生接口同时包含 BytePlus 和火山方舟。"""
+    return is_ark_native(base_url)
 
 
 def normalize_profiles(items: list[SystemModelChannelIn]) -> list[SystemModelChannelIn]:
@@ -34,8 +42,8 @@ def normalize_profiles(items: list[SystemModelChannelIn]) -> list[SystemModelCha
         })
         base = item.base_url.strip().rstrip('/')
         if advanced.provider == 'byteplus':
-            if base not in BYTEPLUS_BASES:
-                raise ValueError('BytePlus 接口地址必须选择官方区域')
+            if not is_ark_native(base):
+                raise ValueError('BytePlus / 火山方舟接口地址必须选择官方区域')
             if advanced.audio_model:
                 raise ValueError('BytePlus 暂不支持独立配音模型')
             models = [getattr(advanced, cap+'_model').strip() for cap in CAPABILITIES]
@@ -70,7 +78,7 @@ def profile_state(channels: list[SystemModelChannel], legacy_defaults: DefaultMo
     if active is None:
         return [], DefaultModels()
     advanced = active.advanced_config
-    if not is_byteplus(active.base_url):
+    if not is_ark_native(active.base_url):
         raw = advanced.model_dump() if advanced else legacy_defaults.model_dump()
         defaults = DefaultModels(**{
             cap+'_model': clamp_default_to_preset(cap, raw.get(cap+'_model', ''))
@@ -99,7 +107,7 @@ def profile_overlay(flat: dict, channels: list[SystemModelChannel], defaults: De
                openai_api_key=active.api_key, ark_api_key=active.api_key)
     for cap, setting in [('text', 'model_llm'), ('image', 'model_image'), ('video', 'model_video'), ('audio', 'model_audio')]:
         out[setting] = getattr(defaults, cap+'_model')
-    byteplus = is_byteplus(active.base_url)
-    out['model_image_45'] = defaults.image_model if byteplus else 'seedream-4-5'
-    out['model_video_2'] = defaults.video_model if byteplus else 'seedance-2.0'
+    ark_native = is_ark_native(active.base_url)
+    out['model_image_45'] = defaults.image_model if ark_native else 'seedream-4-5'
+    out['model_video_2'] = defaults.video_model if ark_native else 'seedance-2.0'
     return out

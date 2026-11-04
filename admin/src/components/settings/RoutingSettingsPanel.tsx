@@ -7,6 +7,8 @@ import { CAPABILITY_LABELS, CAPABILITY_ORDER, defaultPresetDefaults, PRESET_MODE
 const TOKENFREE_BASE = "https://www.tokenfree.com/v1";
 const BYTEPLUS_AP = "https://ark.ap-southeast.bytepluses.com/api/v3";
 const BYTEPLUS_EU = "https://ark.eu-west.bytepluses.com/api/v3";
+// 火山方舟国内站，与 BytePlus ModelArk 同一套 Ark 接口
+const VOLC_ARK_BJ = "https://ark.cn-beijing.volces.com/api/v3";
 type Provider = "tokenfree" | "byteplus";
 
 // 旧单渠道配置按原默认模型显示，密钥始终仅保留已保存标记。
@@ -90,14 +92,14 @@ export function RoutingSettingsPanel() {
       <SettingsPanel title="模型渠道与 API Key" description="可保存多组 Key，手动选择一组并保存后生效。不会自动轮换或跨渠道回退；有未结束任务时暂不能修改。">
         <div className="flex gap-2">
           <button className="admin-btn admin-btn-secondary" type="button" onClick={() => add("tokenfree")}>添加 TokenFree 配置</button>
-          <button className="admin-btn admin-btn-secondary" type="button" onClick={() => add("byteplus")}>添加 BytePlus 配置</button>
+          <button className="admin-btn admin-btn-secondary" type="button" onClick={() => add("byteplus")}>添加 BytePlus / 火山方舟配置</button>
         </div>
       </SettingsPanel>
       {channels.map((channel) => {
         const advanced = channel.advanced_config!;
         const byteplus = advanced.provider === "byteplus";
         return (
-          <SettingsPanel key={channel.id} title={channel.name} description={byteplus ? "BytePlus ModelArk：填写该区域已开通的模型或接入点 ID。" : "TokenFree New API：保留现有模型预设。"}>
+          <SettingsPanel key={channel.id} title={channel.name} description={byteplus ? "BytePlus ModelArk / 火山方舟：填写该区域已开通的模型或接入点 ID。" : "TokenFree New API：保留现有模型预设。"}>
             <label className="mb-4 flex items-center gap-2">
               <input type="radio" name="active-channel" checked={channel.enabled}
                 onChange={() => setChannels((items) => items.map((item) => ({ ...item, enabled: item.id === channel.id })))} />
@@ -111,6 +113,7 @@ export function RoutingSettingsPanel() {
                 {byteplus ? <select className="settings-select" value={channel.base_url} onChange={(e) => update(channel.id, { base_url: e.target.value })}>
                   <option value={BYTEPLUS_AP}>亚太（Johor）</option>
                   <option value={BYTEPLUS_EU}>欧洲（Dublin）</option>
+                  <option value={VOLC_ARK_BJ}>火山方舟·国内站（北京）</option>
                 </select> : <input className="settings-input" value={TOKENFREE_BASE} readOnly />}
               </LabeledControl>
               <LabeledControl label="API Key" hint={channel.has_api_key ? "已保存，留空不修改" : "未配置"} className="settings-field-span-full">
@@ -136,7 +139,7 @@ export function RoutingSettingsPanel() {
                 );
               })}
             </div>
-            {byteplus && <p className="mt-3 text-xs text-[#909399]">Key、模型和接入点必须属于所选区域；区域及可用能力以 BytePlus 账号控制台为准。</p>}
+            {byteplus && <p className="mt-3 text-xs text-[#909399]">Key、模型和接入点必须属于所选区域；区域及可用能力以 BytePlus 或火山方舟账号控制台为准。</p>}
           </SettingsPanel>
         );
       })}

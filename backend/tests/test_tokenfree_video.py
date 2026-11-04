@@ -28,14 +28,14 @@ def test_remap_video_path_on_tokenfree():
     assert poll == "/videos/task-1"
 
 
-def test_remap_video_path_ignores_volces_host():
-    """方舟主机不再保留原生任务路径。"""
+def test_remap_video_path_keeps_volces_native_path():
+    """火山方舟北京区域保留原生任务路径，不改写为 TokenFree。"""
     path = remap_video_path(
         "/contents/generations/tasks",
         base_url="https://ark.cn-beijing.volces.com/api/v3",
     )
-    assert path == "/videos"
-    assert uses_tokenfree_video(base_url="https://ark.cn-beijing.volces.com/api/v3") is True
+    assert path == "/contents/generations/tasks"
+    assert uses_tokenfree_video(base_url="https://ark.cn-beijing.volces.com/api/v3") is False
 
 
 def test_wrap_seedance_payload_canonicalizes_mini_hyphen_id():
@@ -235,15 +235,24 @@ def test_wrap_seedance_payload_caps_reference_images():
     assert "input" not in wrapped["metadata"]
 
 
-def test_prepare_video_create_body_always_wraps():
+def test_prepare_video_create_body_wraps_tokenfree():
+    """TokenFree 仍使用 New API 包装，避免北京支持影响原渠道。"""
     body = {"model": "seedance-2-5", "content": [{"type": "text", "text": "hi"}], "duration": 5}
     wrapped = prepare_video_create_body(
         body,
-        base_url="https://ark.cn-beijing.volces.com/api/v3",
+        base_url=TOKENFREE_BASE_URL,
     )
     assert wrapped["prompt"] == "hi"
     assert wrapped["metadata"]["duration"] == 5
     assert "input" not in wrapped["metadata"]
+
+
+def test_prepare_video_create_body_keeps_volces_native_body():
+    """火山方舟保留原始 content、模型和时长字段。"""
+    body = {"model": "ep-video", "content": [{"type": "text", "text": "hi"}], "duration": 5}
+    assert prepare_video_create_body(
+        body, base_url="https://ark.cn-beijing.volces.com/api/v3",
+    ) == body
 
 
 def test_extract_video_task_id_from_newapi_and_wrapped_data():
