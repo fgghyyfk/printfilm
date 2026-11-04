@@ -182,10 +182,11 @@ def _flat_canvas(product: Path, size: tuple[int, int], *, top_ratio: float, widt
     return canvas, (x, y, x + im.width, y + im.height)
 
 
-def render_size_spec(product: Path, out: Path, *, size_id: str | None, copy: dict) -> Path:
+def render_size_spec(product: Path, out: Path, *, size_id: str | None, copy: dict,
+                     size: tuple[int, int] = OUTPUT_SIZE) -> Path:
     """尺寸规格图：平铺图 + 两条尺寸标注线 + 规格文字（不调模型）。"""
-    W, H = OUTPUT_SIZE
-    canvas, (x1, y1, x2, y2) = _flat_canvas(product, OUTPUT_SIZE, top_ratio=0.2, width_ratio=0.68, shift=0.04)
+    W, H = size
+    canvas, (x1, y1, x2, y2) = _flat_canvas(product, size, top_ratio=0.2, width_ratio=0.68, shift=0.04)
     draw = ImageDraw.Draw(canvas)
     cm = SIZES[normalize_size(size_id)][1]
     label_font, title_font, sub_font = _serif(int(W * 0.03)), _serif(int(W * 0.05)), _serif(int(W * 0.026))
@@ -235,10 +236,10 @@ def _busiest_box(im: Image.Image, frac: float) -> tuple[int, int, int, int]:
     return box
 
 
-def render_crop(product: Path, out: Path, *, copy: dict) -> Path:
+def render_crop(product: Path, out: Path, *, copy: dict, size: tuple[int, int] = OUTPUT_SIZE) -> Path:
     """纹样细节：从平铺原图裁出细节最丰富的局部放大，底部一行说明（不调模型）。"""
-    W, H = OUTPUT_SIZE
-    canvas = Image.new("RGBA", OUTPUT_SIZE, PAPER + (255,))
+    W, H = size
+    canvas = Image.new("RGBA", size, PAPER + (255,))
     with Image.open(product) as src:
         im = ImageOps.exif_transpose(src).convert("RGB")
     crop = im.crop(_busiest_box(im, 0.42))
@@ -256,10 +257,10 @@ def render_crop(product: Path, out: Path, *, copy: dict) -> Path:
     return out
 
 
-def render_flat(product: Path, out: Path, *, copy: dict) -> Path:
+def render_flat(product: Path, out: Path, *, copy: dict, size: tuple[int, int] = OUTPUT_SIZE) -> Path:
     """平铺原图页：浅底居中平铺图 + 底部一行说明（不调模型）。"""
-    W, H = OUTPUT_SIZE
-    canvas, (_, _, _, y2) = _flat_canvas(product, OUTPUT_SIZE, top_ratio=0.16)
+    W, H = size
+    canvas, (_, _, _, y2) = _flat_canvas(product, size, top_ratio=0.16 if H > W else 0.1)
     draw = ImageDraw.Draw(canvas)
     title_font, sub_font = _serif(int(W * 0.045)), _serif(int(W * 0.026))
     title, sub = str(copy.get("title") or ""), str(copy.get("subtitle") or "")

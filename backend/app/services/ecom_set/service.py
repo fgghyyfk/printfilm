@@ -24,13 +24,14 @@ from app.services.ecom_set.jobs import (
     public_url,
     reconcile_stuck_items,
     render_flat_item,
-    scarf_info,
     refresh_set_status,
     render_final,
     set_dir,
 )
 from app.services.ecom_set.planner import plan_set
-from app.services.ecom_set import scarf as scarf_mod
+from app.services.ecom_set import categories
+from app.services.ecom_set.categories import is_styled
+from app.services.ecom_set.styled import build_long_image, create_styled_plan, recolor_set, styled_out
 from app.services.ecom_set.presets import (
     CATEGORIES,
     SLOTS,
@@ -76,8 +77,16 @@ def save_product_image(user_id: int, data: bytes, filename: str) -> Path:
 
 # 单张生图预估价（分）
 async def image_unit_fen(db: AsyncSession) -> int:
-    probe = TaskRun(domain="studio", task_type="ecom_set_image", payload={})
+    from app.services.media_models.planning import prepare_task_media
+
+    probe = TaskRun(domain="studio", task_type="ecom_set_image", payload=image_task_payload("3:4"))
+    await prepare_task_media(db, probe)
     return int(await estimate_task_fen(db, probe))
+
+
+# 套图单张生图任务的计价参数（与图片生成页同一张价目表：2K）
+def image_task_payload(ratio: str) -> dict:
+    return {"aspect_ratio": ratio or "3:4", "resolution": "2K"}
 
 
 # 前端选项：平台/风格/张数/价格
@@ -88,9 +97,11 @@ async def get_options(db: AsyncSession) -> dict:
         "styles": [{"id": k, "name": v[0]} for k, v in STYLES.items()],
         "counts": list(COUNTS),
         "categories": [{"id": k, "name": v} for k, v in CATEGORIES.items()],
-        "scarf_sizes": [{"id": k, "name": v[0]} for k, v in scarf_mod.SIZES.items()],
-        "scarf_counts": list(scarf_mod.COUNTS),
-        "scarf_materials": [{"id": k, "name": v[0]} for k, v in scarf_mod.MATERIALS.items()],
+        "styled": categories.options(),
+        "frames": [{"id": k, "name": v[0]} for k, v in categories.FRAMES.items()],
+        "scarf_sizes": next(c["sizes"] for c in categories.options() if c["id"] == "scarf"),
+        "scarf_counts": next(c["counts"] for c in categories.options() if c["id"] == "scarf"),
+        "scarf_materials": next(c["materials"] for c in categories.options() if c["id"] == "scarf"),
         "plan_fen": int(s.ecom_set_plan_fen),
         "image_fen": await image_unit_fen(db),
         "billing_enabled": billing_active(),
@@ -117,24 +128,31 @@ async def _record_plan_charge(db: AsyncSession, user_id: int) -> None:
 
 
 async def create_plan(
-    db: AsyncSession, user: User, *, data: bytes, filename: str,
+    db: AsyncSession, user: User, *, data: bytes | None, filename: str,
     name: str, platform: str, style: str, count: int | str | None, notes: str,
     category: str = "general", scarf_size: str | None = None, model_asset_id: int | None = None,
-    scarf_material: str | None = None,
+    scarf_material: str | None = None, frame: str | None = None, slots_picked: list[str] | None = None,
+    product_id: int | None = None, color_index: int = 0, fabric: tuple[bytes, str] | None = None,
 ) -> EcomSet:
-    """上传商品图 → 计费规划 → 落库套图与各张方案（status=planned）。
+    """上传商品图（或从商品库选）→ 计费规划 → 落库套图与各张方案（status=planned）。
 
-    category=scarf 时为丝巾详情页：按尺寸规划系法，模特槽位以模特库里的模特（默认或指定）为原型。
+    丝巾 / 服饰 / 首饰 / 包袋为「模特上身」套图：模特槽位以模特库里的模特为原型，材质、尺寸、画幅与槽位可选。
     """
+    category = normalize_category(category)
+    if is_styled(category) or product_id:
+        set_id = await create_styled_plan(
+            db, user, category=category, name=name, notes=notes, count=count, size=scarf_size,
+            material=scarf_material, model_asset_id=model_asset_id, frame=frame, slots_picked=slots_picked,
+            product_id=product_id, color_index=color_index, data=data, filename=filename, fabric=fabric,
+        )
+        return await get_set(db, user, set_id)
     name = clip(name, 60)
     if not name:
         raise ValueError("请填写品名")
-    category = normalize_category(category)
+    if not data:
+        raise ValueError("请上传商品图")
     platform, style = normalize_platform(platform), normalize_style(style)
-    count = scarf_mod.normalize_count(count) if category == "scarf" else normalize_count(count)
-    scarf = await _scarf_setup(db, user, scarf_size, model_asset_id, scarf_material) if category == "scarf" else None
-    if scarf is not None:
-        notes = scarf_mod.plan_notes(scarf["size"], notes, scarf["material"])
+    count = normalize_count(count)
     path = save_product_image(user.id, data, filename)
     slots = slots_for(category, count)
 
@@ -153,8 +171,7 @@ async def create_plan(
         user_id=user.id, status="planned", name=name, platform=platform, style=style, count=count,
         notes=clip(notes, 500), product_image_path=str(path),
         product_image_url=await asyncio.to_thread(public_url, path),
-        plan={"product": plan["product"], "warnings": plan["warnings"], "vision": plan["vision"],
-              **({"scarf": scarf} if scarf is not None else {})},
+        plan={"product": plan["product"], "warnings": plan["warnings"], "vision": plan["vision"]},
         plan_task_id=billing_task.id,
     )
     db.add(ecom)
@@ -163,26 +180,10 @@ async def create_plan(
         db.add(EcomSetItem(
             set_id=ecom.id, idx=idx, slot=slot.key, layout=slot.layout,
             ratio=gen_ratio(platform, slot.key), blank=slot.blank,
-            scene=it["scene"], status="planned",
-            copy_json=scarf_mod.cover_copy(name, scarf["size"], scarf["material"]) if scarf is not None and slot.key == "scarf_cover" else it["copy"],
+            scene=it["scene"], status="planned", copy_json=it["copy"],
         ))
     await db.commit()
     return await get_set(db, user, ecom.id)
-
-
-# 丝巾详情页：规整尺寸并取模特（指定的，或模特库默认模特）；没有模特时报错提示先设置
-async def _scarf_setup(db: AsyncSession, user: User, size: str | None, model_asset_id: int | None,
-                       material: str | None = None) -> dict:
-    from app.services import tool_models
-
-    if model_asset_id:
-        model = await tool_models.get_model(db, user.id, model_asset_id)
-    else:
-        model = next((m for m in await tool_models.list_models(db, user.id) if tool_models.is_default_model(m)), None)
-        if model is None:
-            raise ValueError("请先在图片生成页的「模特」里设置一个默认模特，或在这里选择模特")
-    return {"size": scarf_mod.normalize_size(size), "material": scarf_mod.normalize_material(material), "model_asset_id": model.id,
-            "model_name": model.name or "", "model_url": model.url or model.cover or ""}
 
 
 # 是否为不调模型的槽位（尺寸图、平铺图）
@@ -256,14 +257,16 @@ async def update_plan(db: AsyncSession, user: User, set_id: int, items: list[dic
 async def _enqueue_items(db: AsyncSession, user: User, ecom: EcomSet, items: list[EcomSetItem]) -> None:
     from app.services.tasks.service import create_task
 
-    probe = TaskRun(domain="studio", task_type="ecom_set_image", requested_by=user.id, payload={})
+    probe = TaskRun(domain="studio", task_type="ecom_set_image", requested_by=user.id,
+                    payload=image_task_payload(items[0].ratio if items else "3:4"))
     await ensure_balance_for_task_batch(db, user, probe, len(items))
     for it in items:
         task = await create_task(
             db, user,
             TaskCreateRequest(
                 domain="studio", task_type="ecom_set_image",
-                payload={"set_id": ecom.id, "idx": it.idx, "slot": it.slot, "ratio": it.ratio},
+                payload={"set_id": ecom.id, "idx": it.idx, "slot": it.slot, "ratio": it.ratio,
+                         **image_task_payload(it.ratio)},
                 dedupe_key=f"ecomset:{ecom.id}:{it.idx}:{uuid.uuid4().hex[:6]}",
             ),
             commit=False,
@@ -331,14 +334,39 @@ async def build_zip(db: AsyncSession, user: User, set_id: int) -> tuple[bytes, s
         raise ValueError("还没有生成好的图片")
     buf = io.BytesIO()
     workdir = set_dir(ecom.user_id, ecom.id)
+    locals_: list[Path] = []
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for it in done:
             local = storage.local_path_from_url(it.final_url or "")
             if local is None or not local.exists():
                 local = await storage.ensure_local_media(it.final_url or "", workdir / f"dl_{it.idx:02d}.jpg")
+            locals_.append(Path(local))
             zf.write(local, f"{it.idx + 1:02d}-{slot_label(it.slot)}.jpg")
+        if len(locals_) >= 2:
+            zf.writestr("00-详情长图.jpg", await asyncio.to_thread(build_long_image, locals_))
     safe = "".join(ch for ch in ecom.name if ch.isalnum())[:20] or "ecomset"
     return buf.getvalue(), f"{safe}-{ecom.id}.zip"
+
+
+async def long_image(db: AsyncSession, user: User, set_id: int) -> tuple[bytes, str]:
+    """已完成成图按顺序拼成的详情长图，返回 (JPEG 字节, 文件名)。"""
+    ecom = await get_set(db, user, set_id)
+    paths = []
+    for it in ecom.items:
+        if not it.final_url:
+            continue
+        local = storage.local_path_from_url(it.final_url)
+        if local is None or not local.exists():
+            local = await storage.ensure_local_media(it.final_url, set_dir(ecom.user_id, ecom.id) / f"dl_{it.idx:02d}.jpg")
+        paths.append(Path(local))
+    data = await asyncio.to_thread(build_long_image, paths)
+    safe = "".join(ch for ch in ecom.name if ch.isalnum())[:20] or "ecomset"
+    return data, f"{safe}-{ecom.id}-详情长图.jpg"
+
+
+async def recolor(db: AsyncSession, user: User, set_id: int, color_index: int) -> EcomSet:
+    """同款换色：新建一套沿用原方案的套图（待生成）。"""
+    return await get_set(db, user, await recolor_set(db, user, set_id, color_index))
 
 
 async def list_sets(db: AsyncSession, user: User, *, page: int, page_size: int) -> tuple[list[EcomSet], int]:
@@ -360,7 +388,7 @@ async def list_sets(db: AsyncSession, user: User, *, page: int, page_size: int) 
 # 序列化一套图给前端
 def to_out(ecom: EcomSet, *, image_fen: int) -> dict:
     plan = ecom.plan or {}
-    scarf = scarf_info(ecom)
+    styled = styled_out(ecom)
     items = []
     for it in ecom.items:
         copy = it.copy_json or {}
@@ -377,11 +405,8 @@ def to_out(ecom: EcomSet, *, image_fen: int) -> dict:
         "product": plan.get("product") or {"name": ecom.name, "category": "", "colors": [], "selling_points": []},
         "warnings": list(plan.get("warnings") or []), "image_fen": image_fen,
         "total_fen": image_fen * sum(1 for it in items if it["billable"]), "items": items,
-        "category": "scarf" if scarf is not None else "general",
-        "scarf": ({"size": scarf.get("size"), "size_label": scarf_mod.size_label(scarf.get("size")),
-                   "material": scarf_mod.normalize_material(scarf.get("material")),
-                   "model_asset_id": scarf.get("model_asset_id"), "model_name": scarf.get("model_name") or "",
-                   "model_url": scarf.get("model_url") or ""} if scarf is not None else None),
+        "category": styled["category"] if styled else "general",
+        "scarf": styled, "styled": styled,
         "created_at": ecom.created_at.isoformat() if ecom.created_at else "",
         "project_id": ecom.project_id,
     }

@@ -86,3 +86,62 @@ def check_model_first(asset_ids: list[int], model_asset_id: int) -> None:
 def model_prompt(prompt: str, params: dict | None) -> str:
     """生成时的提示词：选了固定模特就在前面加身份约束；历史记录里仍保存用户原文。"""
     return MODEL_PROMPT_PREFIX + (prompt or "") if (params or {}).get("model_asset_id") else (prompt or "")
+
+
+MODEL_LIBRARY_TITLE = "模特库"
+MODEL_GEN_PROMPT = (
+    "生成一张原创模特定妆照：{desc}。半身构图，正面或微侧，脸部清晰占画面较大，五官立体自然，真实皮肤质感，自然妆容；"
+    "穿素色简约上衣，不戴夸张饰品；浅灰色纯色影棚背景，柔和均匀的影棚光；商业人像摄影，高清锐利；"
+    "画面中不要出现任何文字、水印或 logo；不要模仿任何真实名人"
+)
+
+
+async def _model_library_project(db: AsyncSession, user_id: int) -> DramaProject:
+    """本人的「模特库」项目（存放生成的模特图），没有就建一个。"""
+    row = (await db.execute(select(DramaProject).where(
+        DramaProject.user_id == user_id, DramaProject.team_id.is_(None), DramaProject.title == MODEL_LIBRARY_TITLE,
+    ).limit(1))).scalar_one_or_none()
+    if row is None:
+        row = DramaProject(user_id=user_id, title=MODEL_LIBRARY_TITLE, params={})
+        db.add(row)
+        await db.flush()
+    return row
+
+
+async def generate_model(db: AsyncSession, user, *, description: str, name: str = "",
+                         make_default: bool = False) -> DramaAsset:
+    """按一句话描述生成一位原创模特（收一张生图费），存进模特库并加入模特库；可同时设为默认。"""
+    from app.config import get_settings
+    from app.services import storage
+    from app.services.ark import get_ark
+    from app.services.billing import run_billed_ephemeral
+    from app.services.drama.billing_util import record_seedream_image_usage
+
+    desc = " ".join((description or "").split())[:200]
+    if len(desc) < 4:
+        raise ValueError("请用一句话描述模特，例如：25 岁中国女生，鹅蛋脸，黑色低盘发，气质温柔")
+    project = await _model_library_project(db, user.id)
+
+    async def _exec() -> str:
+        result = await get_ark().gen_image(MODEL_GEN_PROMPT.format(desc=desc), "文字，水印，logo，畸形，多余手指",
+                                           None, project_id=0, shot_no=user.id, size="1728x2304", purpose="tools",
+                                           ratio_hint="3:4")
+        await record_seedream_image_usage(db, user_id=user.id, model=get_settings().model_image, domain="studio",
+                                          image_result=result, extra_raw={"tool_id": "model_gen"})
+        url = result.local_url or result.remote_url or ""
+        if not url:
+            raise RuntimeError("生图未返回图片")
+        return storage.republish_url(url, sync=True) or url
+
+    _, url = await run_billed_ephemeral(
+        db, user, domain="studio", task_type="tool_image", executor=_exec,
+        payload={"aspect_ratio": "3:4", "resolution": "2K", "tool_id": "model_gen"}, commit=False,
+    )
+    asset = DramaAsset(project_id=project.id, type="image", asset_type="image",
+                       name=(name or f"模特 · {desc[:20]}")[:200], url=url, cover=url,
+                       params={"role": "model", "prompt": desc, "model_role": MODEL_ROLE, "model_default": False})
+    db.add(asset)
+    await db.flush()
+    await update_model(db, user.id, asset.id, is_model_flag=True, is_default=make_default)
+    await db.commit()
+    return asset

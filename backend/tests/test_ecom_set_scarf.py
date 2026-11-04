@@ -85,7 +85,7 @@ async def test_scarf_plan_and_start(db_session, monkeypatch, tmp_path):
     await db_session.flush()
     data = _scarf_png(tmp_path / "upload.png").read_bytes()
 
-    with pytest.raises(ValueError, match="默认模特"):
+    with pytest.raises(ValueError, match="选择模特"):
         await svc.create_plan(db_session, user, data=data, filename="s.png", name="牡丹亭", platform="taobao",
                               style="minimal", count=6, notes="", category="scarf", scarf_size="88")
     await tool_models.update_model(db_session, user.id, model.id, is_model_flag=True, is_default=True)

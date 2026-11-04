@@ -150,6 +150,54 @@ SCARF_SLOTS: dict[str, Slot] = {
 }
 SLOTS.update(SCARF_SLOTS)
 
+
+def _m(key: str, label: str, prompt: str, layout: str = "label_bar", blank: str = "bottom", main: bool = False) -> Slot:
+    """模特上身槽位。"""
+    return Slot(key, label, prompt, layout, "3:4", blank, is_main=main, ref="model")
+
+
+def _p(key: str, label: str, prompt: str, layout: str = "title_bullets", blank: str = "top") -> Slot:
+    """只用商品图的槽位。"""
+    return Slot(key, label, prompt, layout, "3:4", blank, ref="product")
+
+
+def _f(key: str, label: str) -> Slot:
+    """不调模型、直接用商品图排版的槽位。"""
+    return Slot(key, label, "商品原图", "flat", "3:4", "none", ref="flat")
+
+
+# 服饰 / 首饰 / 包袋槽位
+GENERIC_SLOTS: dict[str, Slot] = {s.key: s for s in (
+    _m("apparel_cover", "封面·模特", "模特半身照，脸部清晰占画面较大，穿着这件服饰，姿态松弛自然；人物偏右，画面左上留出竖排文字的干净空间",
+       "vertical_title", "none", True),
+    _m("apparel_front", "正面上身", "模特正面全身或七分身，完整展示这件服饰的正面版型与长度", main=True),
+    _m("apparel_side", "侧面上身", "模特侧身站立，展示这件服饰的侧面版型与垂坠"),
+    _m("apparel_back", "背面上身", "模特背对镜头、侧脸回望，展示这件服饰的背面设计"),
+    _p("apparel_fabric", "面料特写", "服饰面料的微距特写，看清织纹、光泽与垂坠，柔和侧光，浅景深，上部留出浅色留白"),
+    _p("apparel_craft", "做工细节", "服饰领口、袖口、纽扣或缝线等做工细节特写，浅景深，上部留出浅色留白"),
+    _m("apparel_street", "街拍场景", "街拍半身，模特穿着这件服饰走在午后阳光的街道上，背景虚化，生活感强"),
+    _f("apparel_flat", "平铺原图"),
+    _m("jewelry_cover", "封面·佩戴", "模特近景胸像，脸部清晰，佩戴这件首饰，首饰清晰醒目；人物偏右，画面左上留出竖排文字的干净空间",
+       "vertical_title", "none", True),
+    _m("jewelry_wear", "佩戴效果", "模特近景，从头顶到锁骨，佩戴这件首饰，首饰位置自然、比例真实", main=True),
+    _m("jewelry_closeup", "近景特写", "首饰佩戴部位的近景特写（颈部/耳垂/手部），首饰占画面主体，皮肤质感真实，浅景深", "none", "none"),
+    _m("jewelry_hand", "手部佩戴", "模特手部特写，自然摆放，佩戴这件首饰，手部线条优美"),
+    _p("jewelry_hero", "商品主图", "首饰单品摆放在浅色丝绒或石材展台上，居中构图，柔和影棚光，干净背景", "title_corner", "top"),
+    _p("jewelry_macro", "细节微距", "首饰的微距特写，展示镶嵌、雕刻、抛光等工艺细节，浅景深"),
+    _m("jewelry_lifestyle", "生活场景", "模特在咖啡馆窗边或花园里，佩戴这件首饰，生活感强，自然光"),
+    _f("jewelry_flat", "商品原图"),
+    _m("bag_cover", "封面·模特", "模特半身，背着这只包，包清晰醒目；人物偏右，画面左上留出竖排文字的干净空间",
+       "vertical_title", "none", True),
+    _m("bag_shoulder", "肩背效果", "模特七分身，把这只包挎在肩上，展示包的大小比例与上身效果", main=True),
+    _m("bag_hand", "手提效果", "模特手提这只包，半身构图，展示提手与包型"),
+    _p("bag_hero", "商品主图", "这只包正面摆放在浅色台面上，居中构图，柔和影棚光，干净背景", "title_corner", "top"),
+    _p("bag_side", "侧面与容量", "这只包的侧面或打开的内部结构展示，柔和光，浅色背景"),
+    _p("bag_detail", "五金与做工", "包的五金、拉链、走线或皮面纹理的微距特写，浅景深"),
+    _m("bag_street", "街拍场景", "街拍半身，模特背着这只包走在城市街道上，午后阳光，背景虚化"),
+    _f("bag_flat", "商品原图"),
+)}
+SLOTS.update(GENERIC_SLOTS)
+
 SCARF_COMPOSITION: dict[int, tuple[str, ...]] = {
     6: ("scarf_cover", "scarf_hold", "scarf_texture", "scarf_knot", "scarf_size", "scarf_back"),
     8: ("scarf_cover", "scarf_hold", "scarf_texture", "scarf_knot", "scarf_size", "scarf_closeup", "scarf_long",
@@ -157,7 +205,7 @@ SCARF_COMPOSITION: dict[int, tuple[str, ...]] = {
     10: ("scarf_cover", "scarf_hold", "scarf_texture", "scarf_knot", "scarf_size", "scarf_crop", "scarf_long",
          "scarf_back", "scarf_street", "scarf_flat"),
 }
-CATEGORIES = {"general": "通用商品", "scarf": "丝巾详情页"}
+CATEGORIES = {"general": "通用商品", "scarf": "丝巾详情页", "apparel": "服饰上身", "jewelry": "首饰佩戴", "bag": "包袋上身"}
 
 
 # 规整品类，未知回落通用
@@ -166,13 +214,20 @@ def normalize_category(value: str | None) -> str:
     return key if key in CATEGORIES else "general"
 
 
-# 按品类与张数返回槽位列表
-def slots_for(category: str, count: int | str | None) -> list[Slot]:
-    if normalize_category(category) == "scarf":
-        from app.services.ecom_set.scarf import normalize_count as scarf_count
+# 按品类与张数（或用户勾选的槽位）返回槽位列表
+def slots_for(category: str, count: int | str | None, picked: list[str] | None = None) -> list[Slot]:
+    category = normalize_category(category)
+    if category == "general":
+        return slots_for_count(normalize_count(count))
+    from app.services.ecom_set import categories
 
-        return [SLOTS[k] for k in SCARF_COMPOSITION[scarf_count(count)]]
-    return slots_for_count(normalize_count(count))
+    if picked:
+        allowed = set(categories.slot_keys(category))
+        keys = list(dict.fromkeys(k for k in picked if k in allowed))
+        if not keys:
+            raise ValueError("请至少选择一张要生成的图")
+        return [SLOTS[k] for k in keys]
+    return [SLOTS[k] for k in categories.composition(category, count)]
 
 
 # 各张数对应的槽位顺序
@@ -211,10 +266,10 @@ def slots_for_count(count: int) -> list[Slot]:
 
 # 按平台与槽位得到最终输出像素 (宽, 高)
 def output_size(platform: str, slot_key: str) -> tuple[int, int]:
-    if slot_key.startswith("scarf_"):
-        from app.services.ecom_set.scarf import OUTPUT_SIZE
+    if slot_key.split("_", 1)[0] in {"scarf", "apparel", "jewelry", "bag"}:
+        from app.services.ecom_set.categories import frame_size
 
-        return OUTPUT_SIZE
+        return frame_size(platform)
     _, main, detail = PLATFORMS[normalize_platform(platform)]
     slot = SLOTS.get(slot_key)
     return main if slot and slot.is_main else detail

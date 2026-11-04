@@ -108,6 +108,29 @@ async def update_tool_model(asset_id: int, body: ToolModelUpdate, db: AsyncSessi
     return {"items": [_model_out(a) for a in await tool_models.list_models(db, user.id)]}
 
 
+class ToolModelGenerate(BaseModel):
+    description: str = Field(..., min_length=4, max_length=200, description="一句话描述模特：年龄、长相、发型、气质")
+    name: str = Field("", max_length=60, description="模特名称（可选）")
+    make_default: bool = Field(False, description="生成后设为默认模特")
+
+
+@router.post(
+    "/models/generate",
+    summary="一句话生成新模特",
+    description="需要登录，按描述生成一张原创模特定妆照（收一张生图费），存进「模特库」并加入模特库，返回更新后的模特库。",
+    response_description="模特列表",
+)
+async def generate_tool_model(body: ToolModelGenerate, db: AsyncSession = Depends(get_db),
+                              user: User = Depends(get_current_user)) -> dict:
+    try:
+        await tool_models.generate_model(db, user, description=body.description, name=body.name,
+                                         make_default=body.make_default)
+    except ValueError as exc:
+        await db.rollback()
+        raise http_exception_for_value_error(exc) from exc
+    return {"items": [_model_out(a) for a in await tool_models.list_models(db, user.id)]}
+
+
 @router.post(
     "/estimate",
     summary="估算独立视频生成费用",

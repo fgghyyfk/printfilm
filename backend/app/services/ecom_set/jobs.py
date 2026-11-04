@@ -98,12 +98,16 @@ async def generate_base(db: AsyncSession, ecom: EcomSet, item: EcomSetItem) -> P
     slot = SLOTS[item.slot]
     scarf = scarf_info(ecom)
     if scarf is not None:
-        from app.services.ecom_set import scarf as scarf_mod
+        from app.services.ecom_set import categories
 
-        prompt = scarf_mod.build_prompt(slot_prompt=slot.prompt, scene=item.scene, ref=slot.ref, size=scarf.get("size"),
-                                        material=scarf.get("material"))
+        fabric = scarf.get("fabric_url") or ""
+        prompt = categories.build_prompt(scarf.get("category") or "scarf", slot_prompt=slot.prompt, scene=item.scene,
+                                         ref=slot.ref, size=scarf.get("size"), material=scarf.get("material"),
+                                         has_fabric=bool(fabric))
         refs = [scarf["model_url"], ecom.product_image_url] if slot.ref == "model" and scarf.get("model_url") \
             else [ecom.product_image_url]
+        if fabric:
+            refs.append(fabric)
     else:
         prompt = build_scene_prompt(slot=slot, scene=item.scene, style=ecom.style, blank=item.blank)
         refs = [ecom.product_image_url]
@@ -132,9 +136,10 @@ async def generate_base(db: AsyncSession, ecom: EcomSet, item: EcomSetItem) -> P
     return path
 
 
-# 丝巾详情页的附加信息（尺寸、模特）；通用商品返回 None
+# 「模特上身」套图的附加信息（品类、尺寸、材质、模特、面料）；旧丝巾套图存在 plan.scarf；通用商品返回 None
 def scarf_info(ecom: EcomSet) -> dict | None:
-    info = (ecom.plan or {}).get("scarf")
+    plan = ecom.plan or {}
+    info = plan.get("styled") or plan.get("scarf")
     return info if isinstance(info, dict) else None
 
 
@@ -158,11 +163,12 @@ def render_flat_item(ecom: EcomSet, item: EcomSetItem) -> Path:
     out = set_dir(ecom.user_id, ecom.id) / f"final_{item.idx:02d}_{uuid.uuid4().hex[:6]}.jpg"
     product = Path(ecom.product_image_path)
     copy = item.copy_json or {}
+    size = output_size(ecom.platform, item.slot)
     if item.slot == "scarf_size":
-        return scarf_mod.render_size_spec(product, out, size_id=(scarf_info(ecom) or {}).get("size"), copy=copy)
+        return scarf_mod.render_size_spec(product, out, size_id=(scarf_info(ecom) or {}).get("size"), copy=copy, size=size)
     if item.slot == "scarf_crop":
-        return scarf_mod.render_crop(product, out, copy=copy)
-    return scarf_mod.render_flat(product, out, copy=copy)
+        return scarf_mod.render_crop(product, out, copy=copy, size=size)
+    return scarf_mod.render_flat(product, out, copy=copy, size=size)
 
 
 # 把底图排版成成图，返回 (本地路径, 对外 URL)

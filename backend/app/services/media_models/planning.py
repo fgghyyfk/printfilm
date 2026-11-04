@@ -164,7 +164,7 @@ async def plan_items(db, task) -> list[dict]:
                               "reference_images": _kepu_video_refs(shot, previous, pending_video_ids)},
                     model=project.video_model, target=shot.id, shot_no=shot.shot_no)
         return items
-    if kind in {"asset_image", "tool_image"}:
+    if kind in {"asset_image", "tool_image", "ecom_set_image"}:
         model = p.get("model_id") or p.get("model") or generation.get("model")
         params = {"aspect_ratio": p.get("aspect_ratio") or p.get("ratio") or generation.get("aspect_ratio") or "1:1",
                   "resolution": p.get("resolution") or p.get("size") or generation.get("resolution") or "2K",
