@@ -86,6 +86,8 @@ export function resolveToolMediaUrl(url?: string | null): string {
 export type ToolRunPayload = {
   /** 图生图自动校色的色板参考序号（资产在前、上传在后） */
   colorRef?: number
+  /** 固定模特的资产 id（须同时是 references 第 1 项） */
+  modelAssetId?: number
   modelId?: string
   resolution?: string
   toolId: string
@@ -144,6 +146,21 @@ export function listToolReferenceAssets({ kind, q = '', page = 1, pageSize = 24 
   return requestToolJson(`/api/tools/reference-assets?${qs}`, '加载资产库失败', { signal })
 }
 
+/** 模特库条目：个人图片资产 + 是否默认模特 */
+export type ToolModel = ToolReferenceAsset & { is_default: boolean }
+
+/** 读取本人模特库（默认模特排第一）。 */
+export function listToolModels(signal?: AbortSignal): Promise<{ items: ToolModel[] }> {
+  return requestToolJson('/api/tools/models', '加载模特库失败', { signal })
+}
+
+/** 加入/移出模特库，或设为默认；返回更新后的模特库。 */
+export function updateToolModel(assetId: number, body: { is_model: boolean; is_default?: boolean }): Promise<{ items: ToolModel[] }> {
+  return requestToolJson(`/api/tools/models/${assetId}`, '保存模特失败', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  })
+}
+
 // 提交工具生成（multipart）
 export async function runStudioTool(payload: ToolRunPayload): Promise<ToolRunResult> {
   const body = new FormData()
@@ -163,6 +180,7 @@ export async function runStudioTool(payload: ToolRunPayload): Promise<ToolRunRes
   if (payload.references) body.append('references', JSON.stringify(payload.references))
   if (payload.priceVersion !== undefined) body.append('price_version', String(payload.priceVersion))
   if (payload.colorRef !== undefined) body.append('color_ref', String(payload.colorRef))
+  if (payload.modelAssetId) body.append('model_asset_id', String(payload.modelAssetId))
   for (const file of payload.files || []) {
     body.append('files', file)
   }

@@ -135,7 +135,8 @@ async def execute_generation(task: TaskRun) -> dict:
                               estimated=True, domain="studio", raw={"characters": len(row.prompt)})
             data = {"kind": "audio", "urls": [ensure_public_url(url) or url], "status": "succeeded"}
         else:
-            data = await run_image_tool(db, user, tool_id=row.tool_id, prompt=row.prompt,
+            from app.services.tool_models import model_prompt
+            data = await run_image_tool(db, user, tool_id=row.tool_id, prompt=model_prompt(row.prompt, params),
                 negative=str(params.get("negative") or ""), ratio=params.get("ratio"),
                 strength=params.get("strength"), mode=params.get("mode"), pack=params.get("pack"),
                 files=files, output_no=row.id, color_ref=_color_ref_file(params, files),

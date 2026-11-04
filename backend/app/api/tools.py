@@ -5,6 +5,7 @@ from datetime import datetime
 from io import BytesIO
 from typing import Literal
 
+from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from PIL import Image
 from sqlalchemy import String, case, cast, func, or_, select
@@ -20,6 +21,7 @@ from app.services.billing import settle_deferred_video_poll
 from app.services.billing.http import http_exception_for_value_error
 from app.services.studio_generation import enqueue_generation, sync_generation_record, validate_generation
 from app.services.studio_tools import get_tool_run, poll_image_tool_task, poll_video_task, save_upload, update_tool_run_task
+from app.services import tool_models
 from app.services.studio_references import (
     IMAGE_ASSET_TOOLS, MAX_UPLOAD_BYTES, ROLE_KIND, asset_kind_expression, materialize_image_assets,
     parse_image_asset_references, parse_references, personal_asset_filters, reference_params,
@@ -66,6 +68,44 @@ async def list_reference_assets(
                             .offset((page - 1) * page_size).limit(page_size))).all()
     return {"items": [ToolReferenceAssetOut.model_validate({**asset.__dict__, "media_kind": media}) for asset, media in rows],
             "total": total or 0, "page": page, "page_size": page_size}
+
+
+def _model_out(asset: DramaAsset) -> dict:
+    """模特库条目：资产字段 + 是否默认。"""
+    return {**ToolReferenceAssetOut.model_validate({**asset.__dict__, "media_kind": "image"}).model_dump(),
+            "is_default": tool_models.is_default_model(asset)}
+
+
+@router.get(
+    "/models",
+    summary="获取模特库",
+    description="需要登录，返回本人加入模特库的图片资产，默认模特排第一（is_default=true）。图片生成时可选其一作为固定模特。",
+    response_description="模特列表",
+)
+async def list_tool_models(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)) -> dict:
+    return {"items": [_model_out(a) for a in await tool_models.list_models(db, user.id)]}
+
+
+class ToolModelUpdate(BaseModel):
+    is_model: bool = Field(True, description="true 加入模特库，false 移出")
+    is_default: bool = Field(False, description="设为默认模特（会取消其他默认）")
+
+
+@router.put(
+    "/models/{asset_id}",
+    summary="加入/移出模特库或设为默认",
+    description="需要登录，只能操作本人个人空间的图片资产。is_default=true 时该模特成为图片生成页的默认模特。",
+    response_description="更新后的模特库",
+)
+async def update_tool_model(asset_id: int, body: ToolModelUpdate, db: AsyncSession = Depends(get_db),
+                            user: User = Depends(get_current_user)) -> dict:
+    try:
+        await tool_models.update_model(db, user.id, asset_id, is_model_flag=body.is_model,
+                                       is_default=body.is_model and body.is_default)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await db.commit()
+    return {"items": [_model_out(a) for a in await tool_models.list_models(db, user.id)]}
 
 
 @router.post(
@@ -120,6 +160,7 @@ async def run_tool(
     model_id: str = Form("", max_length=128, description="生成模型标识；留空时使用工具默认模型"), resolution: str = Form("", max_length=16, description="输出分辨率，按所选模型支持的值填写"),
     video_mode: str = Form("", max_length=32, description="视频模式：text_to_video 文生视频、first_last_frame 首尾帧、omni_reference 全能参考；留空兼容旧流程"), references: str = Form("[]", max_length=8000, description="最多 12 项的 JSON 数组；每项包含 role，并且仅提供 file_index 上传文件索引或 asset_id 个人资产编号之一"),
     price_version: int | None = Form(default=None, ge=0, description="客户端确认的价格版本；传入有效版本时用于价格一致性校验"),
+    model_asset_id: int | None = Form(default=None, ge=1, description="固定模特的资产编号（须已加入模特库，且是 references 里第 1 张）；会在提示词前加身份一致约束"),
     color_ref: int | None = Form(default=None, ge=0, le=8, description="图生图自动校色的色板参考图序号（资产库所选在前、上传文件在后，从 0 开始）；留空不校色"),
     files: list[UploadFile] | None = File(default=None, description="参考图片、视频或音频文件；单个文件最大 40 MB，格式由工具及素材角色决定"),
     db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user),
@@ -141,10 +182,16 @@ async def run_tool(
                 raise ValueError("references: 请先选择视频生成模式")
             # 图生图 / 图生产品：资产库里的图片作为参考，先复制成本次参考文件
             asset_ids = parse_image_asset_references(references)
+            if model_asset_id:
+                await tool_models.get_model(db, user.id, model_asset_id)
+                tool_models.check_model_first(asset_ids, model_asset_id)
+                params["model_asset_id"] = model_asset_id
             if len(asset_ids) + len(files or []) > 9:
                 raise ValueError("references: 参考图合计最多 9 张")
             saved.extend(await materialize_image_assets(db, user, asset_ids))
             params["reference_asset_ids"] = asset_ids
+        if model_asset_id and "model_asset_id" not in params:
+            raise ValueError("model_asset_id: 选择模特后需从资产库带上模特图")
         if price_version:
             params["price_version"] = price_version
         if color_ref is not None:
