@@ -107,6 +107,7 @@ class ShotOut(BaseModel):
     image_url: str | None
     video_url: str | None
     audio_url: str | None
+    tts_metadata: dict | None = None
     highlights: str = ""
     status: str
     version: int
@@ -278,11 +279,15 @@ class ContentExpandOut(BaseModel):
 
 class VoicePreviewRequest(BaseModel):
     voice_id: str = Field(min_length=1, max_length=128)
+    scene: Literal["kepu", "daihuo", "drama"] = "kepu"
 
 
 class VoicePreviewOut(BaseModel):
     url: str
     voice_id: str
+    provider: str | None = None
+    model: str | None = None
+    is_fallback: bool = False
 
 
 class WorkOut(BaseModel):

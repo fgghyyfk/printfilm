@@ -285,34 +285,65 @@ def infer_speaker_from_voice_prompt(voice_prompt: str, *, character_name: str = 
     return infer_drama_speaker_from_prompt(voice_prompt, character_name=character_name, asset_id=asset_id)
 
 
-PREVIEW_TEXT = "大家好，这是当前音色的试听效果，适合科普短视频旁白讲解。"
-# 试听缓存文件名后缀：TTS 路由/edge 性别修复后递增，避免继续播放旧错误样例
-PREVIEW_CACHE_TAG = "v3"
+PREVIEW_TEXTS = {
+    "kepu": "大家好，这是当前音色的试听效果，适合知识讲解与日常分享。",
+    "daihuo": "来看看这款商品的细节与使用场景，用自然的声音介绍它的特点。",
+    "drama": "故事从这里开始。那天的相遇，让我们的命运有了新的转折。",
+}
+PREVIEW_CACHE_TAG = "v4"
 
 
-async def ensure_voice_preview(voice_id: str) -> str:
-    """Generate (or reuse cached) short TTS sample; return public URL."""
-    import hashlib
-    from pathlib import Path
+def _preview_primary_route(ark, speaker: str) -> tuple[str, str]:
+    """只描述当前首选路由，用于查找有明确来源的试听缓存。"""
+    from app.services import avatar_ai, volc_tts
+    from app.services.ark import openai_voice, tokenfree_tts_chat_model, resolve_tokenfree_tts_model
+
+    if ark.settings.ark_mock:
+        return "mock", "mock"
+    oa_voice = openai_voice(speaker)
+    if oa_voice and avatar_ai.is_configured():
+        return "avatar_ai", f"tts-1-hd/{oa_voice}"
+    if volc_tts.is_configured() and volc_tts.is_volc_speaker(speaker):
+        return "volc", f"volc/{speaker}"
+    try:
+        model = ark._resolved_audio_model()
+    except RuntimeError:
+        return "edge", ""
+    return "tokenfree", tokenfree_tts_chat_model(resolve_tokenfree_tts_model(model))
+
+
+async def ensure_voice_preview(voice_id: str, *, scene: str = "kepu"):
+    """返回实际来源；回退只供本次试听，不写持久缓存。"""
+    import uuid
+    from dataclasses import replace
 
     from app.services import storage
     from app.services.ark import get_ark
+    from app.services.tts_billing import TTSResult
 
+    if scene not in PREVIEW_TEXTS:
+        raise ValueError("不支持的试听场景")
+    text = PREVIEW_TEXTS[scene]
     speaker = resolve_speaker(voice_id)
-    safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in speaker)[:80]
-    cache_dir = Path(__file__).resolve().parents[2] / "static" / "voice_previews"
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    dest = cache_dir / f"{safe}_{PREVIEW_CACHE_TAG}.mp3"
-    if dest.exists() and dest.stat().st_size > 2000:
-        return storage.publish_local(dest)
-
     ark = get_ark()
-    shot_no = int(hashlib.md5(speaker.encode()).hexdigest()[:4], 16) % 800 + 100
-    url = await ark.tts(PREVIEW_TEXT, speaker, project_id=0, shot_no=shot_no)
-    src = storage.local_path_from_url(url)
-    if src and src.exists():
-        dest.write_bytes(src.read_bytes())
-        return storage.publish_local(dest)
-    if dest.exists() and dest.stat().st_size > 2000:
-        return storage.publish_local(dest)
-    return url
+    preferred = _preview_primary_route(ark, speaker)
+    digest = hashlib.sha256(f"{PREVIEW_CACHE_TAG}\0{preferred[0]}\0{preferred[1]}\0{speaker}\0{scene}\0{text}".encode()).hexdigest()
+    cache_dir = storage.STATIC_ROOT / "voice_previews"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    dest = cache_dir / f"{digest}.mp3"
+    # Edge 是备用方案，未配置主链时也不把它永久缓存为首选音色。
+    if preferred[0] != "edge" and dest.is_file() and dest.stat().st_size > 2000:
+        return TTSResult(storage.publish_local(dest), *preferred)
+
+    result = await ark.tts_with_result(text, speaker, project_id=0, shot_no=0)
+    fallback = result.is_fallback or result.provider == "edge" or (result.provider, result.model) != preferred
+    if fallback:
+        return replace(result, is_fallback=True)
+    src = storage.local_path_from_url(result.url)
+    if src and src.is_file():
+        # 同场景并发只原子发布完整文件，不暴露半写入缓存。
+        temporary = cache_dir / f"{digest}.{uuid.uuid4().hex}.part"
+        temporary.write_bytes(src.read_bytes())
+        temporary.replace(dest)
+        return replace(result, url=storage.publish_local(dest))
+    return result

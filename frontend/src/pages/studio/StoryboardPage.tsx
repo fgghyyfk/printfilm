@@ -1135,6 +1135,8 @@ title="用当前镜头重新拼接"
                               <span className="line">
                                 {narration ? `“${narration}”` : '—'}
                               </span>
+                              {shot.tts_metadata?.audio_url === shot.audio_url && shot.tts_metadata.is_fallback ?
+                                <span className="pf-muted">本段使用备用音色</span> : null}
                               {isAvatar && shot.highlights ? (
                                 <span className="pf-muted" style={{ display: 'block', fontSize: '0.75rem' }}>
                                   重点：{shot.highlights.split('|').join(' · ')}

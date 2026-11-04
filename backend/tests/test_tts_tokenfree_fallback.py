@@ -37,8 +37,8 @@ async def test_tts_tokenfree_falls_back_to_edge(tmp_path: Path, monkeypatch: pyt
     monkeypatch.setattr(gw, "_write_silence_mp3", silence)
 
     url = await gw.tts("你好。", "narrator_calm", project_id=1, shot_no=0)
-    assert url.endswith("shot_000_tts.mp3")
-    assert (tmp_path / "shot_000_tts.mp3").stat().st_size == 4000
+    assert url.endswith("_shot_000.mp3")
+    assert (tmp_path / url.rsplit("/", 1)[-1]).stat().st_size == 4000
     silence.assert_not_called()
 
 
@@ -76,7 +76,7 @@ async def test_tts_tokenfree_qwen_skips_speech_endpoint(tmp_path: Path, monkeypa
     monkeypatch.setattr("app.services.ark.httpx.AsyncClient", BoomClient)
 
     url = await gw.tts("你好。", "narrator_calm", project_id=1, shot_no=2)
-    assert url.endswith("shot_002_tts.mp3")
+    assert url.endswith("_shot_002.mp3")
     chat.assert_called()
     assert captured.get("model") == "qwen3-omni-flash"
 
@@ -107,7 +107,7 @@ async def test_tts_tokenfree_tried_before_edge_for_doubao_speaker(tmp_path: Path
         project_id=1,
         shot_no=3,
     )
-    assert url.endswith("shot_003_tts.mp3")
+    assert url.endswith("_shot_003.mp3")
     speech.assert_called()
     edge.assert_not_called()
 

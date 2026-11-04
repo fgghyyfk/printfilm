@@ -68,5 +68,8 @@ async def ensure_privacy_audio(project_id: int, shot_id: int) -> None:
         if (project.status == ProjectStatus.CANCELLED or not shot or shot.narration != narration or _project_voice(project) != voice
                 or shot.video_skip_reason != VIDEO_SKIP_REASON_PRIVACY or shot.video_url):
             raise RuntimeError("镜头内容已更新，备用配音未写回，请刷新后继续")
+        from app.services.tts_metadata import audio_metadata
+
         shot.audio_url = storage.publish_local(dest)
+        shot.tts_metadata = audio_metadata(result, text=narration, voice=voice, audio_url=shot.audio_url)
         await db.commit()

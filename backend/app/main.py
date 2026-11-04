@@ -161,6 +161,7 @@ async def _apply_schema_patches() -> None:
     async with engine.begin() as conn:
         await conn.execute(text("ALTER TABLE drama_episodes ADD COLUMN IF NOT EXISTS revision INTEGER NOT NULL DEFAULT 0"))
         await conn.execute(text("ALTER TABLE drama_assets ADD COLUMN IF NOT EXISTS image_revision VARCHAR(32)"))
+        await conn.execute(text("ALTER TABLE shots ADD COLUMN IF NOT EXISTS tts_metadata JSON"))
         scols = await _pg_columns(conn, "shots")
         await conn.execute(text("ALTER TABLE shots ADD COLUMN IF NOT EXISTS compliance_changes JSON DEFAULT '{}'"))
         await conn.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS compliance_changes JSON DEFAULT '{}'"))

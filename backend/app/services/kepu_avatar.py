@@ -106,8 +106,9 @@ async def prepare_assets(project_id: int) -> None:
         await publish_progress(project_id, {"event": "progress", "stage": "AVATAR_TTS",
                                             "percent": 33 + int(15 * i / max(1, len(todo))),
                                             "message": f"配音第 {shot_no} 段（{i}/{len(todo)}）"})
-        url = await ark.tts(text, voice, project_id=project_id, shot_no=shot_no,
+        result = await ark.tts_with_result(text, voice, project_id=project_id, shot_no=shot_no,
                             duration_hint=max(3.0, len(text) / 4.5), billing_shot_id=shot_id)
+        url = result.url
         path = storage.local_path_from_url(url)
         if not path or not path.exists() or is_near_silent_audio(path):
             raise RuntimeError(f"第 {shot_no} 段配音失败（无声音），请稍后重试")
@@ -115,7 +116,10 @@ async def prepare_assets(project_id: int) -> None:
         async with AsyncSessionLocal() as db:
             row = await db.get(Shot, shot_id)
             if row:
+                from app.services.tts_metadata import audio_metadata
+
                 row.audio_url = url
+                row.tts_metadata = audio_metadata(result, text=text, voice=voice)
                 row.duration = round(float(seconds), 2) if seconds > 0 else row.duration
                 # 配音变了，旧的对口型视频作废
                 row.video_url = None
@@ -264,6 +268,7 @@ async def regen_segment_audio(project_id: int, shot_id: int) -> None:
         if not (shot.narration or "").strip():
             raise ValueError("该段口播为空，无法配音")
         shot.audio_url = None
+        shot.tts_metadata = None
         await db.commit()
     await prepare_assets(project_id)
     await _after_regen(project_id)

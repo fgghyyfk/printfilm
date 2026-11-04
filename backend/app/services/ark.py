@@ -2101,7 +2101,8 @@ class ArkGateway:
             return TTSResult(f"/static/mock/audio_{digest}.mp3", "mock", "mock")
 
         dest_dir = storage.project_dir(project_id or 0)
-        dest = dest_dir / f"shot_{(shot_no or 0):03d}_tts.mp3"
+        # Project 与 DramaProject 可同号；每次产物唯一，重配也不覆盖已引用音轨。
+        dest = dest_dir / f"tts_{uuid.uuid4().hex}_shot_{(shot_no or 0):03d}.mp3"
 
         # 每个调用和每次尝试各自持有记录状态，避免同 gateway 并发串 provider / TaskRun。
         attempted = False

@@ -346,7 +346,7 @@ async def _synthesize_continuous_audio(
     regenerated = force or not all(getattr(s, "audio_url", None) for s in shot_rows) or not _continuous_audio_ok(project_id)
     if regenerated:
         hint = sum(max(float(getattr(s, "duration", 4) or 4), 2.0) for s in shot_rows)
-        audio_url = await ark.tts(
+        result = await ark.tts_with_result(
             full_text,
             voice,
             project_id=project_id,
@@ -354,6 +354,7 @@ async def _synthesize_continuous_audio(
             duration_hint=hint,
             billing_tokens=get_settings().billing_est_tts_tokens * max(len(shot_rows), 1),
         )
+        audio_url = result.url
         src = storage.local_path_from_url(audio_url or "")
         if not src or not src.exists():
             raise RuntimeError("整片配音生成失败")
@@ -376,7 +377,11 @@ async def _synthesize_continuous_audio(
                     continue
                 row.duration = float(new_dur)
                 # Point every shot at the same continuous file (compose prefers full_narration)
-                row.audio_url = storage.publish_local(dest)
+                if regenerated:
+                    from app.services.tts_metadata import audio_metadata
+
+                    row.audio_url = audio_url
+                    row.tts_metadata = audio_metadata(result, text=full_text, voice=voice)
                 if row.status == ShotStatus.PENDING:
                     row.status = ShotStatus.AUDIO_READY
             await db.commit()

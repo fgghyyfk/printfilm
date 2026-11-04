@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 from app.config import get_settings
+from app.services.tts_billing import TTSResult
 from app.services import kepu_privacy_audio as fallback
 from app.services import pipeline, storage
 from tests.test_kepu_task_recovery import seed_project
@@ -17,7 +18,7 @@ async def test_privacy_fallback_keeps_actual_tts_once_and_changes_cache_with_tex
     await db_session.commit()
     source = tmp_path / "tts.mp3"
     source.write_bytes(b"controlled audible audio")
-    ark = SimpleNamespace(tts_with_result=AsyncMock(return_value=SimpleNamespace(url=str(source))))
+    ark = SimpleNamespace(tts_with_result=AsyncMock(return_value=TTSResult(str(source), 'edge', 'controlled-edge', True)))
     monkeypatch.setattr(get_settings(), "kepu_seedance_native_audio", True)
     monkeypatch.setattr(fallback, "AsyncSessionLocal", lambda: _same_session(db_session))
     monkeypatch.setattr(pipeline, "_ensure_not_cancelled", AsyncMock())
@@ -30,6 +31,9 @@ async def test_privacy_fallback_keeps_actual_tts_once_and_changes_cache_with_tex
     await fallback.ensure_privacy_audio(project.id, shot.id)
     first = shot.audio_url
     assert first != "/static/shared/full_narration.mp3"
+    assert shot.tts_metadata['provider'] == 'edge'
+    assert shot.tts_metadata['is_fallback'] is True
+    assert shot.tts_metadata['audio_url'] == first
     await fallback.ensure_privacy_audio(project.id, shot.id)
     assert ark.tts_with_result.await_count == 1
     shot.narration = "改过的本镜旁白"

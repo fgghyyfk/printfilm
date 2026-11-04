@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from app.services.tts_billing import TTSResult
 from app.services import pipeline
 
 
@@ -18,7 +19,7 @@ async def test_synthesize_rejects_near_silent_tts(tmp_path, monkeypatch) -> None
         "app.services.storage.local_path_from_url", lambda url: src
     )
     monkeypatch.setattr("app.services.storage.project_dir", lambda _pid: tmp_path)
-    ark = SimpleNamespace(tts=AsyncMock(return_value="/static/p1/tts_raw.mp3"))
+    ark = SimpleNamespace(tts_with_result=AsyncMock(return_value=TTSResult("/static/p1/tts_raw.mp3", 'volc', 'controlled-volc')))
     with (
         patch.object(pipeline, "get_ark", return_value=ark),
         patch.object(pipeline, "_record_usage_est", AsyncMock()),
@@ -32,4 +33,4 @@ async def test_synthesize_rejects_near_silent_tts(tmp_path, monkeypatch) -> None
                 shot_rows=[SimpleNamespace(id=1, duration=4.0, narration="你好")],
                 force=True,
             )
-    ark.tts.assert_awaited_once()
+    ark.tts_with_result.assert_awaited_once()

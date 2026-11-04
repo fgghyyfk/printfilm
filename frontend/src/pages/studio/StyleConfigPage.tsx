@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
+import { useVoicePreview } from '../../hooks/useVoicePreview'
+import { useEffect, useMemo, useState, type MouseEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { api, defaultsFromTemplate, resolveVoiceId } from '../../api'
 import type {
@@ -74,10 +75,8 @@ export default function StyleConfigPage() {
   const [videoModel, setVideoModel] = useState('')
   const [mediaCatalog, setMediaCatalog] = useState<MediaModelsCatalog | null>(null)
   const [busy, setBusy] = useState(false)
-  const [previewBusy, setPreviewBusy] = useState<string | null>(null)
-  const [playingId, setPlayingId] = useState<string | null>(null)
   const [error, setError] = useState('')
-  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const { previewBusy, playingId, isFallback, previewVoice: playPreview, stopPreview } = useVoicePreview(setError)
 
   useEffect(() => {
     if (!localStorage.getItem('token')) {
@@ -113,12 +112,7 @@ export default function StyleConfigPage() {
       .catch((err) => setError(err instanceof Error ? err.message : '加载失败'))
   }, [nav, projectId])
 
-  useEffect(() => {
-    return () => {
-      audioRef.current?.pause()
-      audioRef.current = null
-    }
-  }, [])
+
 
   useEffect(() => {
     if (!voices.length) return
@@ -154,12 +148,6 @@ export default function StyleConfigPage() {
     setRatio(r.id)
   }
 
-  function stopPreview() {
-    audioRef.current?.pause()
-    audioRef.current = null
-    setPlayingId(null)
-  }
-
   function selectVoice(v: VoicePreset) {
     const vid = voiceKey(v)
     if (vid !== voiceId) stopPreview()
@@ -171,32 +159,7 @@ export default function StyleConfigPage() {
     const vid = voiceKey(v)
     selectVoice(v)
     setError('')
-
-    if (playingId === vid && audioRef.current && !audioRef.current.paused) {
-      stopPreview()
-      return
-    }
-
-    stopPreview()
-    setPreviewBusy(vid)
-    try {
-      const res = await api.previewVoice(vid)
-      const url = api.assetUrl(res.url)
-      const audio = new Audio(url)
-      audioRef.current = audio
-      audio.onended = () => setPlayingId(null)
-      audio.onerror = () => {
-        setPlayingId(null)
-        setError('试听播放失败')
-      }
-      setPlayingId(vid)
-      await audio.play()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '试听失败')
-      setPlayingId(null)
-    } finally {
-      setPreviewBusy(null)
-    }
+    await playPreview(vid, 'kepu')
   }
 
   /** 切换成片方式；数字人口播默认竖屏 */
@@ -375,6 +338,7 @@ export default function StyleConfigPage() {
                 更多音色 <ComingSoon />
               </button>
             </h3>
+            {isFallback ? <p role="status">本次试听使用备用音色</p> : null}
             <div className="pf-voice-row">
               {voices.map((v) => {
                 const vid = voiceKey(v)

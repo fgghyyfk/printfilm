@@ -101,11 +101,12 @@ async def preview_voice(
     """Generate a short cached TTS sample for audition."""
     _ = user
     try:
-        url = await ensure_voice_preview(body.voice_id)
+        result = await ensure_voice_preview(body.voice_id, scene=body.scene)
     except Exception as exc:  # noqa: BLE001
         logging.getLogger(__name__).exception("voice preview failed")
         raise public_http_exception(exc, fallback_status=502) from exc
-    return VoicePreviewOut(url=url, voice_id=body.voice_id)
+    return VoicePreviewOut(url=result.url, voice_id=body.voice_id, provider=result.provider,
+                           model=result.model, is_fallback=result.is_fallback)
 
 
 @router.post("/content/expand", response_model=ContentExpandOut)
@@ -897,6 +898,7 @@ async def update_shot(
         # 数字人：口播变了重做该段配音与对口型；场景描述变了重画该段场景图（回到定妆照占位）再对口型
         if audio_dirty:
             shot.audio_url = None
+            shot.tts_metadata = None
         if scene_dirty:
             shot.image_url = project.avatar_image_url
         if audio_dirty or scene_dirty:
@@ -919,6 +921,7 @@ async def update_shot(
         full_narration.unlink(missing_ok=True)
         for sibling in project.shots:
             sibling.audio_url = None
+            sibling.tts_metadata = None
     # 统一按素材进度把终态打回对应阶段并作废成片（本端点此前漏调，状态会卡在 DONE）
     _demote_after_edit(project)
     shot.version += 1

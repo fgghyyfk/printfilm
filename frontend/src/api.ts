@@ -88,6 +88,7 @@ export function defaultsFromTemplate(t: Template): {
 }
 
 export type Shot = {
+  tts_metadata?: { audio_url: string; provider: string; model: string; is_fallback: boolean; fingerprint: string } | null
   compliance_changes?: ComplianceAudit
   id: number
   shot_no: number
@@ -480,10 +481,10 @@ export const api = {
   voices() {
     return request<VoicePreset[]>('/api/voices')
   },
-  previewVoice(voiceId: string) {
-    return request<{ url: string; voice_id: string }>('/api/voices/preview', {
+  previewVoice(voiceId: string, scene: 'kepu' | 'daihuo' | 'drama' = 'kepu') {
+    return request<{ url: string; voice_id: string; provider?: string; model?: string; is_fallback?: boolean }>('/api/voices/preview', {
       method: 'POST',
-      body: JSON.stringify({ voice_id: voiceId }),
+      body: JSON.stringify({ voice_id: voiceId, scene }),
     })
   },
   listProjects(params?: {
