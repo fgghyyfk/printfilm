@@ -262,7 +262,7 @@ async def generate_asset_video(
     )
     from app.services.video_recovery import note_video_submission_started
 
-    await note_video_submission_started()
+    await note_video_submission_started(body)
     local_video, local_last_frame, task_result = await ark.gen_and_wait_seedance_body(
         body,
         project_id=project.id,

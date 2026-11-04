@@ -20,6 +20,7 @@ const PAGE_SIZE_DEFAULT = 8
 const STATUS_CN: Record<string, string> = {
   queued: '生成中',
   running: '生成中',
+  awaiting_review: '结果与费用待核对',
   succeeded: '已完成',
   failed: '失败',
 }

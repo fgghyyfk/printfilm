@@ -375,7 +375,7 @@ async def settle_deferred_video_poll(
         await settle_task(db, task_id)
         if probe.domain == "studio" and probe.task_type == "tool_video":
             await update_tool_run_task(db, user.id, provider_task_id, {
-                "status": "running", "error": "视频结果和费用待核对，请勿重新生成",
+                "status": "awaiting_review", "error": "视频结果和费用待核对，请勿重新生成",
             }, billing_task_id=task_id)
         return None
     payload = probe.payload if isinstance(probe.payload, dict) else {}

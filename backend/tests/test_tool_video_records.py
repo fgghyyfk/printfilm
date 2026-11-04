@@ -92,7 +92,7 @@ async def test_background_failure_and_timeout_update_record(db_session, expired)
     upstream = AsyncMock(return_value={'status': 'failed', 'error': 'upstream error with secret'})
     with patch.object(poller, 'AsyncSessionLocal', session), patch('app.services.studio_tools.poll_video_task', upstream):
         await poller._poll_one_ephemeral_task(task.id, now=datetime.now(UTC), timeout_sec=900)
-    assert row.status == task.status == 'failed'
+    assert row.status == task.status == 'awaiting_review'
     assert row.error and 'secret' not in row.error
     assert upstream.await_count == (0 if expired else 1)
 

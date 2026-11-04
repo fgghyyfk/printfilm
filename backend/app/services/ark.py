@@ -51,7 +51,7 @@ from app.services.tokenfree_image import (
     tokenfree_image_user_error,
 )
 from app.services.voices import edge_tts_voice_for_speaker, openai_voice
-from app.services.video_recovery import VideoBillingPending, VideoGenerationFailed
+from app.services.video_recovery import VideoBillingPending, VideoGenerationFailed, VideoSubmissionRejected
 from app.services.tts_billing import AudioResponseHook, TTSBillingPending, TTSResult, record_tts_response, tts_response_usage
 from app.services.tokenfree_video import (
     extract_video_result_url,
@@ -1420,7 +1420,7 @@ class ArkGateway:
                 if resp.status_code == 400:
                     raw_err = resp.text or ""
                     if self._is_seedance_input_privacy_error(raw_err):
-                        raise RuntimeError(_format_seedance_create_error(resp.status_code, raw_err))
+                        raise VideoSubmissionRejected(_format_seedance_create_error(resp.status_code, raw_err))
                     if self._is_seedance_text_policy_error(raw_err):
                         cg_content = self._seedance_content_with_cg_style(body.get("content"))
                         if cg_content is not None:
@@ -1432,8 +1432,8 @@ class ArkGateway:
                                 json=self._video_json(body, route),
                             )
                         if resp.status_code >= 400:
-                            raise RuntimeError(
-                                _format_seedance_create_error(resp.status_code, resp.text)
+                            raise (VideoSubmissionRejected if resp.status_code == 400 else VideoBillingPending)(
+                                _format_seedance_create_error(resp.status_code, resp.text) if resp.status_code == 400 else "submit_http_unknown"
                             )
                 if resp.status_code >= 400:
                     err_text = resp.text or ""
@@ -1462,7 +1462,9 @@ class ArkGateway:
                 if resp.status_code >= 500 or resp.status_code == 429:
                     raise VideoBillingPending("submit_http_unknown")
                 if resp.status_code >= 400:
-                    raise RuntimeError(_format_seedance_create_error(resp.status_code, resp.text))
+                    raise (VideoSubmissionRejected if resp.status_code == 400 else VideoBillingPending)(
+                        _format_seedance_create_error(resp.status_code, resp.text) if resp.status_code == 400 else "submit_http_unknown"
+                    )
                 data = resp.json()
         except (httpx.HTTPError, ValueError) as exc:
             raise VideoBillingPending("submit_transport_unknown") from exc
@@ -1563,7 +1565,7 @@ class ArkGateway:
                     raw_err = resp.text or ""
                     # 参考图真人：改文案无效
                     if self._is_seedance_input_privacy_error(raw_err):
-                        raise RuntimeError(
+                        raise (VideoSubmissionRejected if resp.status_code == 400 else VideoBillingPending)(
                             _format_seedance_create_error(
                                 resp.status_code,
                                 raw_err,
@@ -1587,7 +1589,7 @@ class ArkGateway:
                     if resp.status_code >= 500 or resp.status_code == 429:
                         raise VideoBillingPending("submit_http_unknown")
                     if resp.status_code >= 400:
-                        raise RuntimeError(
+                        raise (VideoSubmissionRejected if resp.status_code == 400 else VideoBillingPending)(
                             _format_seedance_create_error(
                                 resp.status_code,
                                 resp.text,
@@ -1671,6 +1673,8 @@ class ArkGateway:
             return True
 
         for _attempt in range(max_attempts):
+            route = self._resolve_ark_route("video", str(fallback_body.get("model") or ""))
+            submitted_model = route.upstream_model if route else str(fallback_body.get("model") or self.settings.model_video)
             # 提交阶段失败：除参考音频错误外立即上抛，绝不盲目重新建单
             try:
                 task_id = await self.gen_video_seedance_body(
@@ -1713,7 +1717,11 @@ class ArkGateway:
                     raise
                 if is_retryable_download_error(exc):
                     raise RetryableMediaDownloadError(str(exc), provider_task_id=task_id) from exc
-                if isinstance(exc, (VideoBillingPending, VideoGenerationFailed)):
+                if isinstance(exc, VideoGenerationFailed):
+                    exc.generate_audio = bool(fallback_body.get("generate_audio", False))
+                    exc.model = submitted_model
+                    raise
+                if isinstance(exc, VideoBillingPending):
                     raise
                 raise VideoBillingPending("accepted_result_processing_unknown", provider_task_id=task_id) from exc
         raise RuntimeError(str(last_err) if last_err else "Seedance multimodal failed")
@@ -1922,6 +1930,8 @@ class ArkGateway:
         on_task_created: Any | None = None,
     ) -> tuple[str, TaskResult]:
         """创建一次并持久化原任务号，轮询/下载失败不再提交另一付费任务。"""
+        route = self._resolve_ark_route("video", self.settings.model_video)
+        submitted_model = route.upstream_model if route else self.settings.model_video
         if provider_task_id:
             task_id = provider_task_id
         else:
@@ -1935,7 +1945,12 @@ class ArkGateway:
                     await on_task_created(task_id)
                 except Exception as exc:
                     raise VideoBillingPending("persist_task_id_failed", provider_task_id=task_id) from exc
-        return await self.wait_video(task_id, project_id=project_id, shot_no=shot_no)
+        try:
+            return await self.wait_video(task_id, project_id=project_id, shot_no=shot_no)
+        except VideoGenerationFailed as exc:
+            exc.generate_audio = bool(generate_audio)
+            exc.model = submitted_model
+            raise
 
     def _resolved_audio_model(self) -> str:
         from app.services.provider_profiles import is_byteplus

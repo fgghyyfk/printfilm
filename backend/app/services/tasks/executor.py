@@ -217,22 +217,34 @@ async def _fail_task(db, task, exc: Exception) -> None:
     from app.services.video_recovery import mark_video_billing_pending
 
     mark_video_billing_pending(task, exc)
-    from app.services.video_recovery import VideoGenerationFailed
+    from app.services.video_recovery import VideoGenerationFailed, VideoSubmissionRejected
 
-    if isinstance(exc, VideoGenerationFailed):
-        from app.services.drama.billing_util import record_seedance_video_usage, seedance_billing_key
-        from app.config import get_settings
-
-        payload = task.payload if isinstance(task.payload, dict) else {}
-        await record_seedance_video_usage(
-            db, user_id=task.requested_by, billing_key=seedance_billing_key(generate_audio=bool(payload.get("generate_audio", True))),
-            model=str(payload.get("model_id") or get_settings().model_video), domain=task.domain,
-            task_result=exc.result, provider_task_id=exc.result.provider_task_id or task.provider_task_id,
-            project_id=task.project_id, drama_project_id=task.drama_project_id, shot_id=getattr(exc, "shot_id", None) or task.shot_id,
-        )
+    if isinstance(exc, VideoSubmissionRejected):
         task.result_payload = {k: v for k, v in (task.result_payload or {}).items()
                                if k not in {"video_submission_pending", "video_billing_pending"}}
         task.result_payload = {**task.result_payload, "video_terminal_confirmed": True}
+    if isinstance(exc, VideoGenerationFailed):
+        from app.services.drama.billing_util import record_seedance_video_usage, seedance_billing_key
+
+        request = (task.result_payload or {}).get("video_request") or {}
+        generate_audio = exc.generate_audio if exc.generate_audio is not None else request.get("generate_audio")
+        model = exc.model or request.get("model")
+        if generate_audio is None or not model:
+            from app.services.video_recovery import VideoBillingPending
+
+            mark_video_billing_pending(task, VideoBillingPending("failed_request_inputs_unknown", provider_task_id=exc.result.provider_task_id))
+        else:
+            async with billing_scope(task.id):
+                await record_seedance_video_usage(
+                    db, user_id=task.requested_by, billing_key=seedance_billing_key(generate_audio=bool(generate_audio)),
+                    model=str(model), domain=task.domain, task_result=exc.result,
+                    provider_task_id=exc.result.provider_task_id or task.provider_task_id,
+                    project_id=task.project_id, drama_project_id=task.drama_project_id,
+                    shot_id=getattr(exc, "shot_id", None) or task.shot_id,
+                )
+            task.result_payload = {k: v for k, v in (task.result_payload or {}).items()
+                                   if k not in {"video_submission_pending", "video_billing_pending"}}
+            task.result_payload = {**task.result_payload, "video_terminal_confirmed": True}
     now = datetime.now(UTC)
     step = task.steps[0] if task.steps else None
     set_task_step_state(task, step, status="failed", now=now)

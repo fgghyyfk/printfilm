@@ -11,10 +11,16 @@ class VideoBillingPending(RuntimeError):
         self.provider_task_id = provider_task_id
 
 
+class VideoSubmissionRejected(RuntimeError):
+    """上游明确400拒绝，未创建任务；与提交结果未知严格区分。"""
+
+
 class VideoGenerationFailed(RuntimeError):
-    def __init__(self, result):
+    def __init__(self, result, *, generate_audio=None, model=None):
         super().__init__(result.error or "视频生成失败")
         self.result = result
+        self.generate_audio = generate_audio
+        self.model = model
 
 
 def mark_video_billing_pending(task, exc: BaseException) -> bool:
@@ -54,7 +60,7 @@ def video_deadline_exceeded(started_at, *, now=None) -> bool:
     return ((now or datetime.now(UTC)) - started_at).total_seconds() >= max(1, get_settings().video_task_total_timeout)
 
 
-async def note_video_submission_started() -> None:
+async def note_video_submission_started(body: dict) -> None:
     """已预扣的资产视频外调前留下可恢复标记。"""
     from sqlalchemy import select
     from app.database import AsyncSessionLocal
@@ -69,7 +75,9 @@ async def note_video_submission_started() -> None:
         result = dict(task.result_payload or {})
         if result.get("video_submission_pending") and not task.provider_task_id:
             raise VideoBillingPending("interrupted_submission_unknown")
-        task.result_payload = {**result, "video_submission_pending": True}
+        task.result_payload = {**result, "video_submission_pending": True, "video_request": {
+            "generate_audio": bool(body.get("generate_audio", False)), "model": str(body.get("model") or ""),
+        }}
         await db.commit()
 
 

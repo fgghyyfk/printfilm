@@ -4,7 +4,7 @@
 - fetch_task_once / poll_task 遇到 429、5xx 或单次网络故障时，
   任务状态未知，必须按 running 退避，不能单次误判 failed；
 - 400/404 等确定 4xx 仍是终态 failed；
-- gen_and_wait_seedance_body 只允许在"参考音频下载失败"时去掉参考音频重提一次，
+- gen_and_wait_seedance_body 只允许未接受的参考音频结构拒绝修正一次，
   隐私拦截/任务失败/超时等异常必须立即上抛，禁止用同 body 重新建单重复计费。
 """
 from __future__ import annotations
@@ -16,6 +16,7 @@ import httpx
 import pytest
 
 from app.services import ark as ark_module
+from app.services.video_recovery import VideoBillingPending
 from app.services.ark import (
     ArkGateway,
     TaskResult,
@@ -67,6 +68,7 @@ def ark_client(monkeypatch) -> ArkGateway:
     """非 mock、零轮询间隔的客户端（mock 属性会因无渠道 Key 为 True，需显式关掉）。"""
     settings = SimpleNamespace(
         ark_video_poll_timeout=30.0,
+        video_task_total_timeout=900.0,
         ark_video_poll_interval=0.0,
         ark_base_url="https://www.tokenfree.com/v1",
         ark_api_key="test-key",
@@ -164,9 +166,9 @@ async def test_poll_persistent_429_ends_in_poll_timeout(ark_client, monkeypatch)
     # 0.05s 总超时 + interval=0：持续 429 必须被 deadline 收敛，而不是首轮判 failed
     ark_client.settings.ark_video_poll_timeout = 0.05
     calls = _install_fake_http(monkeypatch, lambda: _FakeResponse(429, text="rate limited"))
-    result = await ark_client.poll_task("task-abc")
-    assert result.status == "failed"
-    assert result.error == "poll timeout"
+    with pytest.raises(VideoBillingPending) as exc:
+        await ark_client.poll_task("task-abc")
+    assert exc.value.provider_task_id == "task-abc"
     assert len(calls) >= 2
 
 
@@ -195,17 +197,20 @@ _OK_RESULT = ("/static/x.mp4", None, TaskResult(status="succeeded", url="https:/
 
 @pytest.fixture
 def seedance_client() -> ArkGateway:
-    return ArkGateway(SimpleNamespace())
+    client = ArkGateway(SimpleNamespace(model_video="seedance-2.5"))
+    client._resolve_ark_route = lambda *args: None
+    return client
 
 
 async def test_seedance_wait_failure_does_not_recreate_task(seedance_client) -> None:
     """等待阶段的非音频错误（如隐私拦截）必须立即上抛，只建过一次单。"""
     seedance_client.gen_video_seedance_body = AsyncMock(return_value="t1")
     seedance_client.wait_video_assets = AsyncMock(side_effect=RuntimeError("privacy blocked"))
-    with pytest.raises(RuntimeError, match="privacy blocked"):
+    with pytest.raises(VideoBillingPending) as exc:
         await seedance_client.gen_and_wait_seedance_body(
             _audio_body(), project_id=1, shot_no=2
         )
+    assert exc.value.provider_task_id == "t1"
     seedance_client.gen_video_seedance_body.assert_awaited_once()
 
 
@@ -223,25 +228,16 @@ async def test_seedance_submit_failure_does_not_recreate_task(seedance_client) -
     seedance_client.wait_video_assets.assert_not_awaited()
 
 
-async def test_seedance_wait_audio_error_retries_once_without_audio(seedance_client) -> None:
-    """等待阶段报参考音频下载失败：剥离 reference_audio 重提一次并成功。"""
-    gen_mock = AsyncMock(side_effect=["t1", "t2"])
+async def test_seedance_wait_audio_error_preserves_accepted_task(seedance_client) -> None:
+    """已接受任务的参考音频失败也不能另建付费任务。"""
+    gen_mock = AsyncMock(return_value="t1")
     seedance_client.gen_video_seedance_body = gen_mock
-    seedance_client.wait_video_assets = AsyncMock(
-        side_effect=[RuntimeError(_AUDIO_ERR), _OK_RESULT]
-    )
-    video_url, _last, result = await seedance_client.gen_and_wait_seedance_body(
-        _audio_body(), project_id=1, shot_no=2
-    )
-    assert video_url == "/static/x.mp4"
-    assert result.status == "succeeded"
-    assert gen_mock.await_count == 2
-    second_body = gen_mock.await_args_list[1].args[0]
-    assert not any(
-        item.get("type") == "audio_url" and item.get("role") == "reference_audio"
-        for item in second_body["content"]
-        if isinstance(item, dict)
-    )
+    seedance_client.wait_video_assets = AsyncMock(side_effect=RuntimeError(_AUDIO_ERR))
+    with pytest.raises(VideoBillingPending) as exc:
+        await seedance_client.gen_and_wait_seedance_body(_audio_body(), project_id=1, shot_no=2)
+    assert exc.value.provider_task_id == "t1"
+    assert gen_mock.await_count == 1
+    assert seedance_client.wait_video_assets.await_count == 1
 
 
 async def test_seedance_submit_audio_error_retries_once(seedance_client) -> None:

@@ -1343,7 +1343,9 @@ async def submit_fragment_video_task(task: TaskRun) -> dict[str, Any]:
         frag.params = params
         task_row.progress_percent = max(int(task_row.progress_percent or 0), 30)
         task_row.current_step_status = "submitting"
-        task_row.result_payload = {**(task_row.result_payload or {}), "video_submission_pending": True}
+        task_row.result_payload = {**(task_row.result_payload or {}), "video_submission_pending": True, "video_request": {
+            "generate_audio": bool(prepared.generate_audio), "model": str(prepared.model_id or get_settings().model_video),
+        }}
         await db.commit()
 
         provider_task_id = await submit_prepared_fragment_video(prepared, project_id=project.id)
@@ -1592,14 +1594,15 @@ async def poll_fragment_video_task(task_id: int) -> None:
                 await db.commit()
                 return
             if result.status != "succeeded":
-                if not (result.total_tokens or result.upstream_cost_fen):
+                request = (task.result_payload or {}).get("video_request") or {}
+                if not (result.total_tokens or result.upstream_cost_fen) or "generate_audio" not in request or not request.get("model"):
                     await _fail_task(db, task, VideoBillingPending("upstream_terminal_cost_unknown", provider_task_id=task.provider_task_id))
                     return
                 from app.services.drama.billing_util import record_seedance_video_usage, seedance_billing_key
 
                 await record_seedance_video_usage(
-                    db, user_id=user_id, billing_key=seedance_billing_key(generate_audio=bool(payload.get("generate_audio", True))),
-                    model=str(payload.get("model_id") or get_settings().model_video), domain="drama", task_result=result,
+                    db, user_id=user_id, billing_key=seedance_billing_key(generate_audio=bool(request["generate_audio"])),
+                    model=str(request["model"]), domain="drama", task_result=result,
                     provider_task_id=task.provider_task_id, drama_project_id=task.drama_project_id,
                 )
                 task.result_payload = {"video_terminal_confirmed": True}
@@ -2015,7 +2018,7 @@ async def run_asset_video_job(
             )
             return {"ok": True, "asset_id": asset.id}
         except Exception as exc:  # noqa: BLE001
-            from app.services.video_recovery import VideoGenerationFailed
+            from app.services.video_recovery import VideoGenerationFailed, VideoSubmissionRejected
 
             if isinstance(exc, (VideoBillingPending, VideoGenerationFailed)):
                 raise
@@ -2061,7 +2064,10 @@ async def run_asset_video_job(
             row = await db.get(TaskRun, scope_id) if scope_id else None
             if row and row.provider_task_id:
                 raise VideoBillingPending("accepted_result_processing_unknown", provider_task_id=row.provider_task_id) from exc
-            await finish_current_video_task()
+            if row and (row.result_payload or {}).get("video_submission_pending") and not isinstance(exc, VideoSubmissionRejected):
+                raise VideoBillingPending("submission_result_unknown") from exc
+            if isinstance(exc, VideoSubmissionRejected):
+                await finish_current_video_task()
             err_text = format_exception_message(exc, fallback="生视频失败", limit=500)
             asset = await db.get(DramaAsset, asset_id)
             if asset:

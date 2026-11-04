@@ -267,8 +267,8 @@ async def test_settle_deferred_video_poll_idempotent_on_success(db_session: Asyn
 
 
 @pytest.mark.asyncio
-async def test_settle_deferred_video_poll_failed_refunds_freeze(db_session: AsyncSession) -> None:
-    """轻量视频轮询失败：不记 seedance 用量，预扣全额退回。"""
+async def test_settle_deferred_video_poll_failed_unknown_cost_keeps_freeze(db_session: AsyncSession) -> None:
+    """已接受视频无费用证据的失败：保留任务和冻结，不虚记或全退。"""
     user = await make_user(db_session, balance_fen=50_000)
     task = await make_task(
         db_session,
@@ -297,12 +297,12 @@ async def test_settle_deferred_video_poll_failed_refunds_freeze(db_session: Asyn
     )
     await db_session.commit()
 
-    assert task.status == "failed"
-    assert task.billing_status == "settled"
-    assert user.frozen_fen == 0
-    assert user.balance_fen == balance_after_freeze + task.billing_refunded_fen
+    assert task.status == "awaiting_review"
+    assert task.billing_status == "frozen"
+    assert user.frozen_fen == frozen_after_freeze
+    assert user.balance_fen == balance_after_freeze
     assert task.billing_charged_fen == 0
-    assert task.billing_refunded_fen == frozen_after_freeze
+    assert task.billing_refunded_fen == 0
 
     usage_count = (
         await db_session.execute(select(UsageEvent).where(UsageEvent.task_run_id == task.id))

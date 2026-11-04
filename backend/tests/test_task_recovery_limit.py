@@ -135,10 +135,10 @@ async def test_locally_alive_work_is_never_counted(recovery_session, monkeypatch
 @pytest.mark.parametrize("domain,task_type,expected", [("drama", "fragment_video", "awaiting_poll"),
                                                        ("drama", "asset_video", "pending"),
                                                        ("drama", "voice_synthesis", "failed"),
-                                                       ("api", "v1_video", "failed"),
+                                                       ("api", "v1_video", "awaiting_review"),
                                                        ("studio", "video", "failed")])
 async def test_provider_id_recovery_uses_only_supported_consumer(recovery_session, entry, domain, task_type, expected):
-    """payload 中已有上游号也必须保留；不支持恢复的类型失败而非挂在无人轮询状态。"""
+    """保留原上游号；已有消费者安全恢复，未知费用待核对而非盲目退款。"""
     db = recovery_session
     user = await make_user(db)
     task = await make_task(db, user, domain=domain, task_type=task_type, status="running")
@@ -155,6 +155,9 @@ async def test_provider_id_recovery_uses_only_supported_consumer(recovery_sessio
     assert getattr(task, "recovery_count", 0) == 1
     if expected == "failed":
         assert "上游" in task.error_message
+    elif expected == "awaiting_review":
+        assert "待核对" in task.error_message
+        assert task.next_action_at is None
     else:
         assert task.next_action_at is not None
 
