@@ -487,6 +487,7 @@ export const api = {
     })
   },
   listProjects(params?: {
+    signal?: AbortSignal
     page?: number
     page_size?: number
     status?: 'all' | 'draft' | 'running' | 'done' | 'published' | string
@@ -519,7 +520,7 @@ export const api = {
       }>
       meta: { page: number; page_size: number; total: number }
       stats: { total: number; generating: number; done: number; published: number }
-    }>(`/api/projects${qs ? `?${qs}` : ''}`)
+    }>(`/api/projects${qs ? `?${qs}` : ''}`, { signal: params?.signal })
   },
   /** 打包下载选中项目的视频，保留服务端文件名。 */
   async downloadZip(ids: number[]) {

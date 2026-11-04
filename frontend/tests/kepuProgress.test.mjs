@@ -227,3 +227,58 @@ test('事件连接失败时按1.5秒回读，延迟重连后恢复健康流', as
   stop()
   assert.equal(source.cancelled, true)
 })
+
+test('隐藏取消长流与查询，恢复只重启一条监听且不回填旧响应', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const visibility = Object.assign(new EventTarget(), { hidden: false })
+  const sources = [], projects = []
+  let calls = 0, finishOld
+  const stop = monitorKepuProgress({
+    taskIds: [91], visibility,
+    connect: async () => { const source = eventStream(); sources.push(source); return new Response(source.stream) },
+    load: async () => { calls += 1; if (calls === 1) return new Promise(resolve => { finishOld = resolve }); return activeProject },
+    onProgress() {}, onProject: project => projects.push(project),
+  })
+  await settle()
+  t.mock.timers.tick(5000)
+  await settle()
+  visibility.hidden = true
+  visibility.dispatchEvent(new Event('visibilitychange'))
+  await settle()
+  assert.equal(sources[0].cancelled, true)
+  t.mock.timers.tick(30000)
+  assert.equal(calls, 1)
+  visibility.hidden = false
+  visibility.dispatchEvent(new Event('visibilitychange'))
+  await settle()
+  finishOld({ ...activeProject, title: 'stale' })
+  await settle()
+  assert.equal(calls, 2)
+  assert.equal(sources.length, 2)
+  assert.deepEqual(projects, [activeProject])
+  stop()
+})
+
+test('真实查询失败提示并退避，成功清除提示；长流不受查询超时影响', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const source = eventStream(), errors = []
+  let calls = 0
+  const stop = monitorKepuProgress({
+    taskIds: [91], connect: async () => new Response(source.stream),
+    load: async () => { if (++calls === 1) throw new TypeError('offline'); return activeProject },
+    onProject() {}, onProgress() {}, onConnectionError: error => errors.push(error),
+  })
+  await settle()
+  t.mock.timers.tick(5000)
+  await settle()
+  assert.deepEqual(errors, ['连接中断，重试中'])
+  t.mock.timers.tick(5000)
+  await settle()
+  assert.equal(calls, 1)
+  t.mock.timers.tick(5000)
+  await settle()
+  assert.equal(calls, 2)
+  assert.equal(errors.at(-1), null)
+  assert.equal(source.cancelled, false)
+  stop()
+})

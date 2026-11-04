@@ -59,92 +59,120 @@ export async function readProjectEvents(
   }
 }
 
-/** 同一运行周期只维护一个串行回读与一条事件流，停止后丢弃所有迟到响应。 */
+/** 同一运行周期只维护一个串行回读与一条事件流；短查询单独超时，长流不套短限时。 */
 export function monitorKepuProgress(options: {
   taskIds: number[]
   connect: (signal: AbortSignal) => Promise<Response>
   load: (signal: AbortSignal) => Promise<Project>
   onProject: (project: Project) => void
   onProgress: (event: ProjectProgress) => void
+  onConnectionError?: (message: string | null) => void
+  visibility?: Pick<Document, 'hidden' | 'addEventListener' | 'removeEventListener'>
 }): () => void {
-  const controller = new AbortController()
+  const visibility = options.visibility ?? (typeof document === 'undefined' ? undefined : document)
+  let controller = new AbortController()
   const taskIds = new Set(options.taskIds)
   let stopped = false
+  let generation = 0
   let healthy = false
   let loading = false
+  let failures = 0
+  let reconnectFailures = 0
   let pollTimer: ReturnType<typeof setTimeout> | undefined
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined
   let lastProgress = ''
+  const visible = () => !stopped && !visibility?.hidden
 
-  // 清理同时阻止旧流和旧回读在切项目、到达检查点后回填。
-  function stop() {
-    stopped = true
+  function pause() {
+    generation += 1
     controller.abort()
     clearTimeout(pollTimer)
     clearTimeout(reconnectTimer)
+    healthy = false
+    loading = false
   }
-
-  // 连接健康时低频校验；断流仍按原 1.5 秒节奏回读，避免依赖不完整的 SSE 终态覆盖。
+  function stop() {
+    stopped = true
+    pause()
+    visibility?.removeEventListener('visibilitychange', changeVisibility)
+  }
   function schedulePoll() {
     clearTimeout(pollTimer)
-    if (!stopped) pollTimer = setTimeout(() => { void refresh() }, healthy ? 5000 : 1500)
+    if (visible()) pollTimer = setTimeout(() => { void refresh() }, Math.min(30000, (healthy ? 5000 : 1500) * 2 ** failures))
   }
 
-  // 终态事件与计时器共用此入口，慢请求期间不启动第二个回读。
   async function refresh() {
-    if (stopped || loading) return
+    if (!visible() || loading) return
+    const current = generation
+    const parent = controller.signal
+    const query = new AbortController()
+    const abort = () => query.abort()
+    parent.addEventListener('abort', abort, { once: true })
+    let timedOut = false
+    const timeout = setTimeout(() => { timedOut = true; query.abort() }, 15000)
     clearTimeout(pollTimer)
     loading = true
     try {
-      const project = await options.load(controller.signal)
-      if (!stopped) {
+      const project = await options.load(query.signal)
+      if (visible() && generation === current) {
+        failures = 0
+        options.onConnectionError?.(null)
         options.onProject(project)
         if (!isProjectBusy(project)) stop()
       }
-    } catch { /* 事件流失效或请求短暂失败后继续 canonical 轮询。 */ }
-    finally {
-      loading = false
-      schedulePoll()
+    } catch {
+      if (visible() && generation === current && (!query.signal.aborted || timedOut)) {
+        failures += 1
+        options.onConnectionError?.('连接中断，重试中')
+      }
+    } finally {
+      clearTimeout(timeout)
+      parent.removeEventListener('abort', abort)
+      if (generation === current) { loading = false; schedulePoll() }
     }
   }
 
-  // 有来源的当前任务进度才可显示；旧或无来源终态仅要求重新读取项目。
   function receive(event: ProjectProgress) {
-    if (stopped) return
-    if (event.event !== 'progress') {
-      void refresh()
-    } else if (typeof event.task_id === 'number' && taskIds.has(event.task_id)) {
+    if (!visible()) return
+    if (event.event !== 'progress') void refresh()
+    else if (typeof event.task_id === 'number' && taskIds.has(event.task_id)) {
       const signature = JSON.stringify(event)
-      if (signature !== lastProgress) {
-        lastProgress = signature
-        options.onProgress(event)
-      }
+      if (signature !== lastProgress) { lastProgress = signature; options.onProgress(event) }
     }
   }
 
-  // 旧终态可能被服务端重放并立即 EOF，延迟重连防止请求热循环。
   async function connect() {
+    if (!visible()) return
+    const current = generation
+    const signal = controller.signal
     try {
-      const response = await options.connect(controller.signal)
-      if (stopped) {
-        await response.body?.cancel()
-        return
-      }
+      const response = await options.connect(signal)
+      if (!visible() || generation !== current) { await response.body?.cancel(); return }
       if (!response.body) throw new Error('进度连接没有响应流')
       healthy = true
+      reconnectFailures = 0
       schedulePoll()
-      await readProjectEvents(response.body, receive, controller.signal)
-    } catch { /* 无法建立事件流时由下方轮询兜底。 */ }
+      await readProjectEvents(response.body, (event) => { if (generation === current) receive(event) }, signal)
+    } catch { if (generation === current) reconnectFailures += 1 }
     finally {
-      healthy = false
-      if (!stopped) {
-        schedulePoll()
-        reconnectTimer = setTimeout(() => { void connect() }, 3000)
+      if (generation === current) {
+        healthy = false
+        if (visible()) {
+          schedulePoll()
+          reconnectTimer = setTimeout(() => { void connect() }, Math.min(30000, 3000 * 2 ** Math.max(0, reconnectFailures - 1)))
+        }
       }
     }
   }
-
-  schedulePoll()
-  void connect()
+  function changeVisibility() {
+    pause()
+    if (visible()) {
+      controller = new AbortController()
+      void refresh()
+      void connect()
+    }
+  }
+  visibility?.addEventListener('visibilitychange', changeVisibility)
+  if (visible()) { schedulePoll(); void connect() }
   return stop
 }

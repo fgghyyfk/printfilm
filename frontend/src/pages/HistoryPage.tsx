@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import type { Project } from '../api'
@@ -109,42 +109,15 @@ export default function HistoryPage() {
     projectId: number
   } | null>(null)
 
-  const hasRunning = useMemo(
-    () =>
-      items.some((p) => (isRunning(p.status) && p.progress < 100) || hasActiveTasks(p)) ||
-      stats.generating > 0,
-    [items, stats.generating],
-  )
+  const refreshRef = useRef<() => Promise<void>>(async () => undefined)
+  const [connectionError, setConnectionError] = useState('')
+  const load = () => refreshRef.current()
 
   // 搜索防抖
   useEffect(() => {
     const t = window.setTimeout(() => setDebouncedQ(q.trim()), 300)
     return () => window.clearTimeout(t)
   }, [q])
-
-  async function load() {
-    try {
-      const res = await api.listProjects({
-        page,
-        page_size: pageSize,
-        status: TAB_STATUS[tab] || 'all',
-        q: debouncedQ,
-        pipeline_mode: typeMode,
-      })
-      setItems(res.items as HistoryItem[])
-      setTotal(res.meta.total)
-      setStats(res.stats)
-      setError('')
-      setSelected((prev) => {
-        const ids = new Set(res.items.map((x) => x.id))
-        return new Set([...prev].filter((id) => ids.has(id)))
-      })
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t('common.loadFailed'))
-    } finally {
-      setLoading(false)
-    }
-  }
 
   useEffect(() => {
     if (!localStorage.getItem('token')) {
@@ -158,20 +131,75 @@ export default function HistoryPage() {
     })
   }, [nav])
 
+  // 同一筛选只运行一条串行短查询；切页、隐藏和卸载取消旧响应。
   useEffect(() => {
+    let stopped = false
+    let generation = 0
+    let failures = 0
+    let shouldPoll = false
+    let queued = false
+    let pending: Promise<void> | null = null
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let controller: AbortController | undefined
+    const token = localStorage.getItem('token')
+    const valid = () => !stopped && !document.hidden && Boolean(token) && localStorage.getItem('token') === token
     setLoading(true)
-    load().catch(() => undefined)
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional reload keys
+    setItems([])
+    setConnectionError('')
+    function refresh(force = false): Promise<void> {
+      if (!valid()) return Promise.resolve()
+      if (pending) { queued ||= force; return pending }
+      clearTimeout(timer)
+      const request = (async () => {
+        do {
+          queued = false
+          const current = generation
+          const query = new AbortController()
+          controller = query
+          let timedOut = false
+          const timeout = setTimeout(() => { timedOut = true; query.abort() }, 15000)
+          try {
+            const res = await api.listProjects({ page, page_size: pageSize, status: TAB_STATUS[tab] || 'all',
+              q: debouncedQ, pipeline_mode: typeMode, signal: query.signal })
+            if (!valid() || current !== generation) continue
+            failures = 0
+            shouldPoll = res.stats.generating > 0 || res.items.some((item) => hasActiveTasks(item) || isRunning(item.status))
+            setItems(res.items as HistoryItem[])
+            setTotal(res.meta.total)
+            setStats(res.stats)
+            setConnectionError('')
+            setSelected((prev) => {
+              const ids = new Set(res.items.map((item) => item.id))
+              return new Set([...prev].filter((id) => ids.has(id)))
+            })
+          } catch {
+            if (valid() && current === generation && (!query.signal.aborted || timedOut)) {
+              failures += 1
+              setConnectionError('连接中断，重试中')
+            }
+          } finally {
+            clearTimeout(timeout)
+            if (valid() && current === generation) setLoading(false)
+          }
+        } while (queued && valid())
+      })().finally(() => {
+        pending = null
+        if (valid() && (shouldPoll || failures)) timer = setTimeout(() => { void refresh() }, Math.min(30000, 2000 * 2 ** failures))
+      })
+      pending = request
+      return request
+    }
+    refreshRef.current = () => refresh(true)
+    const visibility = () => {
+      generation += 1
+      clearTimeout(timer)
+      controller?.abort()
+      if (!document.hidden) void refresh(true)
+    }
+    document.addEventListener('visibilitychange', visibility)
+    void refresh()
+    return () => { stopped = true; generation += 1; controller?.abort(); clearTimeout(timer); document.removeEventListener('visibilitychange', visibility) }
   }, [page, pageSize, tab, typeMode, debouncedQ])
-
-  useEffect(() => {
-    if (!hasRunning) return
-    const timer = setInterval(() => {
-      load().catch(() => undefined)
-    }, 2000)
-    return () => clearInterval(timer)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasRunning, page, pageSize, tab, typeMode, debouncedQ])
 
   useEffect(() => {
     setPage(1)
@@ -377,6 +405,7 @@ export default function HistoryPage() {
           </div>
 
           {error ? <BillingErrorNotice message={error} /> : null}
+          {connectionError ? <p role="status">{connectionError}</p> : null}
           {loading ? <p className="pf-muted">{t('common.loading')}</p> : null}
           {!loading && total === 0 ? (
             <div className="pf-history-empty">{t('history.empty')}</div>

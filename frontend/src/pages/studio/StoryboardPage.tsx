@@ -1302,6 +1302,7 @@ title="用当前镜头重新拼接"
 
         <aside className="pf-create-col pf-board-settings">
           <h3>生成进度</h3>
+          {liveProgress?.connectionError ? <p className="pf-live-progress" role="status">{liveProgress.connectionError}</p> : null}
           {liveProgress?.message ? <p className="pf-live-progress" role="status">{liveProgress.message}</p> : null}
           <ul className="pf-progress-list">
             {progressItems.map((item) => (
