@@ -7,8 +7,10 @@ import AppShell from '../components/layout/AppShell'
 import PillTabs from '../components/ui/PillTabs'
 import Pagination from '../components/ui/Pagination'
 import StatCard from '../components/ui/StatCard'
+import Modal from '../components/ui/Modal'
 import {
   IconClapper,
+  IconCopy,
   IconClock,
   IconDownload,
   IconEdit,
@@ -97,6 +99,8 @@ export default function HistoryPage() {
   const [packing, setPacking] = useState(false)
   const [packProgress, setPackProgress] = useState('')
   const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [copyNotice, setCopyNotice] = useState('')
+  const [copyFallback, setCopyFallback] = useState<{ url: string; title: string } | null>(null)
   const [tab, setTab] = useState<HistoryTab>('all')
   const [typeMode, setTypeMode] = useState<'' | 'full' | 'image_text' | 'avatar'>('')
   const [q, setQ] = useState('')
@@ -245,6 +249,20 @@ export default function HistoryPage() {
       setError(err instanceof Error ? err.message : t('history.deleteFailed'))
     } finally {
       setBusyId(null)
+    }
+  }
+
+  // 当前列表已有成片 URL，同步构造后直接请求剪贴板，保留移动端用户手势。
+  async function copyFinalVideoLink(project: HistoryItem) {
+    if (!canDownload(project) || !project.final_video_url) return
+    setCopyNotice('')
+    const url = new URL(api.assetUrl(project.final_video_url), window.location.origin).href
+    if (!navigator.clipboard?.writeText) { setCopyFallback({ url, title: project.title }); return }
+    try {
+      await navigator.clipboard.writeText(url)
+      setCopyNotice('成片链接已复制')
+    } catch {
+      setCopyFallback({ url, title: project.title })
     }
   }
 
@@ -406,6 +424,7 @@ export default function HistoryPage() {
 
           {error ? <BillingErrorNotice message={error} /> : null}
           {connectionError ? <p role="status">{connectionError}</p> : null}
+          {copyNotice ? <p role="status">{copyNotice}</p> : null}
           {loading ? <p className="pf-muted">{t('common.loading')}</p> : null}
           {!loading && total === 0 ? (
             <div className="pf-history-empty">{t('history.empty')}</div>
@@ -495,6 +514,9 @@ export default function HistoryPage() {
                       <IconDownload size={14} />
                       {busyId === p.id ? t('common.downloading') : t('common.download')}
                     </button>
+                    <button type="button" className="pf-btn-text" disabled={!canDownload(p)} onClick={() => void copyFinalVideoLink(p)}>
+                      <IconCopy size={14} />复制成片链接
+                    </button>
                     <button
                       type="button"
                       className="pf-icon-btn danger"
@@ -526,6 +548,13 @@ export default function HistoryPage() {
           ) : null}
         </section>
       </div>
+
+      <Modal open={Boolean(copyFallback)} onClose={() => setCopyFallback(null)} title="手动复制成片链接">
+        <p>{copyFallback?.title}</p>
+        <p>当前浏览器无法自动复制，请选中下面的链接手动复制。</p>
+        <input aria-label="成片链接" readOnly value={copyFallback?.url || ''} onFocus={(event) => event.currentTarget.select()}
+          style={{ width: '100%' }} />
+      </Modal>
 
       {preview ? (
         <div className="modal-backdrop" onClick={() => setPreview(null)}>
