@@ -30,11 +30,13 @@
 - 审查补正：模型目录旧逻辑会把北京地址改发 TokenFree 并携带北京 Key。新增回归先观察到 **9 failed、2 passed**；现对 Ark 目录中文拒绝、未知地址拒绝，覆盖保存地址时禁止复用原 Key，显式新地址及新 Key 才可查询 TokenFree。覆盖 `ark` / `auto`、真实保存 `channel_id`、地址/密钥 override 与恶意相似域名，均使用合成密钥与受控 HTTP。
 - 验证：`backend/.venv/bin/python .tmp/optimization-20261104/run_tests.py -q tests/test_upstream_model_catalog.py tests/test_tokenfree_image.py tests/test_tokenfree_video.py tests/test_provider_profiles.py tests/test_provider_profiles_volc.py` → **79 passed**（含独立 PostgreSQL 测试库，5 条已有依赖弃用警告）；`cd admin && npx tsc -b --noEmit` 通过。未部署、未调用真实付费上游。
 
-### [ ] 1. 科普：保存任意分镜编辑都会清空该镜画面和视频（已抽查）
+### [x] 1. 科普：保存任意分镜编辑都会清空该镜画面和视频（已抽查）
 - 位置：`backend/app/api/projects.py` 约 892 行 `elif "img_prompt" in data:`；前端 `frontend/src/pages/studio/StoryboardPage.tsx` 约 626/633 行每次保存都带 `img_prompt`。
 - 问题：上方已算好 `scene_dirty`（比较新旧值），但非数字人分支用的是「字段是否存在」。
 - 改法：该分支改为 `elif scene_dirty:`；保留后续 `video_prompt / segment_script` 分支逻辑不变（同样建议改为比较值是否真的变化）。
 - 验收：只改字幕/旁白保存后 `image_url / video_url / last_frame_url` 不变；改画面描述后才清空。补单测。
+- 完成（2026-11-04）：按真实画面变化及流水线实际使用的脚本比较；同值、叠字和旁白保存保留画面/视频/尾帧，真实改图同时清除 `image_ark_url`。历史空脚本、独立首帧与视频动作的前端同步路径有回归，保留数字人与阶段语义。
+- 验证：`backend/.venv/bin/python .tmp/optimization-20261104/run_tests.py -q tests/test_kepu_shot_edits.py tests/test_kepu_shot_edit_demote.py tests/test_kepu_phase_billing.py tests/test_kepu_native_audio.py tests/test_seedance_segments.py` → **86 passed**（5 条已有依赖弃用警告）；规格与质量复审通过，`git diff --check` 通过。未部署、未调用真实付费上游。
 
 ### [ ] 2. 科普：单镜重绘/重配音失败后项目卡死在「生成中」
 - 位置：`backend/app/api/projects.py` 约 932/960/985 行（先把项目 status 提交成 IMAGING/VIDEOING/AUDIOING 再建任务）；`backend/app/services/pipeline.py` 约 1606/1668/1769 行 `regen_shot_*` 无 except；executor 预扣失败也不回写项目状态。
