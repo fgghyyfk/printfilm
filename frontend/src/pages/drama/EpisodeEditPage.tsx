@@ -317,12 +317,12 @@ function EpisodeEditInner() {
   // selectedGateBlocking / selectedGateIssues 当前镜脚本/资产门禁
   const selectedGateBlocking = useMemo(
     () => collectDramaGenerateGateIssues(selected, assets).blocking,
-    [selected, assets],
+    [selected, assets, translateUi],
   )
   const selectedGateIssues = useMemo(() => {
     const { blocking, warnings } = collectDramaGenerateGateIssues(selected, assets)
     return [...blocking, ...warnings]
-  }, [selected, assets])
+  }, [selected, assets, translateUi])
 
   // prevLastFrameUrl 上一镜已落盘尾帧（衔接触发条件；兼容 generation / 历史版本字段）
   const prevLastFrameUrl = useMemo(() => {
@@ -361,14 +361,14 @@ function EpisodeEditInner() {
       return translateUi("workflow.generateThePreviousShotAndWaitForItsLast")
     }
     return ''
-  }, [linkLastFrame, selectedIndex, fragments, generatingIds, prevLastFrameUrl])
+  }, [linkLastFrame, selectedIndex, fragments, generatingIds, prevLastFrameUrl, translateUi])
 
   const continuityQueueHint = useMemo(() => {
     if (!linkLastFrame || selectedIndex <= 0) return ''
     const prev = fragments[selectedIndex - 1]
     if (!prev?.id || !generatingIds.has(prev.id)) return ''
     return translateUi("workflow.thePreviousShotIsGeneratingThisShotWillWait")
-  }, [linkLastFrame, selectedIndex, fragments, generatingIds])
+  }, [linkLastFrame, selectedIndex, fragments, generatingIds, translateUi])
 
   // selectedGenerateLocked 锁当前镜「生成」：忙/生成中/衔接/缺参考图等硬门禁
   const selectedGenerateLocked =

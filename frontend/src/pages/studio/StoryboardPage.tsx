@@ -294,7 +294,7 @@ export default function StoryboardPage() {
       pct: stage === 'COMPOSING' ? project.progress : undefined,
     })
     return items
-  }, [project])
+  }, [project, translateUi])
 
   function openFinalPreview() {
     if (!project?.final_video_url) return
@@ -314,7 +314,7 @@ export default function StoryboardPage() {
       setProject(await api.generate(project.id))
     } catch (err) {
       const msg = err instanceof Error ? err.message : translateUi("workflow.couldNotContinueGeneration")
-      if (msg.includes(translateUi("workflow.composeFinalVideo"))) {
+      if (msg.includes('合成成片')) {
         try {
           setError('')
           setProject(await api.compose(project.id))

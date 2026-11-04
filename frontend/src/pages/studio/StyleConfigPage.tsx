@@ -205,7 +205,7 @@ export default function StyleConfigPage() {
       nav(`/studio/${started.id}`)
     } catch (err) {
       const msg = err instanceof Error ? err.message : translateUi("ecomSet.result.failed")
-      if (msg.includes(translateUi("workflow.composeFinalVideo"))) {
+      if (msg.includes('合成成片')) {
         try {
           const composed = await api.compose(project.id)
           nav(`/studio/${composed.id}`)
