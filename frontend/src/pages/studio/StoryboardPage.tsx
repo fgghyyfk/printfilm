@@ -1,3 +1,4 @@
+import { applyComplianceSuggestion } from '../../lib/complianceChanges'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { api, defaultsFromTemplate } from '../../api'
@@ -22,7 +23,7 @@ import { handleBillingError } from '../../lib/billingError'
 import BillingErrorNotice from '../../components/billing/BillingErrorNotice'
 import ComplianceNotice from '../../components/compliance/ComplianceNotice'
 import EcomSetSourceLink from '../../components/daihuo/EcomSetSourceLink'
-import { getProjectCompliance, undoProjectReplacement } from '../../api/compliance'
+import { getProjectCompliance, undoProjectReplacement, applyProjectSuggestion } from '../../api/compliance'
 import { kepuComplianceLabel, projectComplianceKey, scrollToShotRow, shotRowDomId } from '../../lib/compliance'
 import { useI18n } from '../../i18n'
 import { useKepuProgress } from '../../hooks/useKepuProgress'
@@ -1043,6 +1044,16 @@ title="用当前镜头重新拼接"
               <ComplianceNotice
                 fetchReport={() => getProjectCompliance(project.id)}
                 refreshKey={complianceKey}
+                applyDisabled={busy || running || Boolean(editing)}
+                onApply={async (item, hit) => {
+                  if (editing) throw new Error('请先保存正在编辑的文案')
+                  const owner = item.scope === 'project' ? project : project.shots.find((shot) => shot.id === item.shot_id)
+                  const current = owner ? String((owner as unknown as Record<string, unknown>)[item.field] || '') : ''
+                  applyComplianceSuggestion(current, item.text, hit)
+                  await applyProjectSuggestion(project.id, item, hit)
+                  const updated = await api.getProject(project.id)
+                  setProject((previous) => previous?.id === updated.id ? updated : previous)
+                }}
                 undoDisabled={busy || running}
                 onUndoReplacement={async (row, change) => {
                   await undoProjectReplacement(project.id, row, change)

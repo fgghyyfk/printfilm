@@ -439,13 +439,15 @@ async def update_project(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> Project:
-    project = await _get_owned_project(db, project_id, user, for_undo=body.compliance_undo is not None, lock=True)
+    project = await _get_owned_project(db, project_id, user, for_undo=body.compliance_undo is not None or body.compliance_apply is not None, lock=True)
     _ensure_project_idle(project, detail="生成进行中，无法修改")
 
     data = body.model_dump(exclude_unset=True)
     from app.services.compliance.changes import prepare_undo
+    from app.services.compliance.suggestions import prepare_suggestion
 
     try:
+        data, _ = prepare_suggestion(project, data, allowed={"title", "avatar_title2"})
         data, is_undo = prepare_undo(project, data, allowed={"title", "avatar_title2"})
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -818,7 +820,7 @@ async def update_shot(
     from app.models import Template
     from app.services.pipeline import clamp_shot_duration
 
-    project = await _get_owned_project(db, project_id, user, for_undo=body.compliance_undo is not None, shot_id=shot_id, lock=True)
+    project = await _get_owned_project(db, project_id, user, for_undo=body.compliance_undo is not None or body.compliance_apply is not None, shot_id=shot_id, lock=True)
     _ensure_side_task_allowed(project)
     shot = next((s for s in project.shots if s.id == shot_id), None)
     if not shot:
@@ -826,17 +828,21 @@ async def update_shot(
     data = body.model_dump(exclude_unset=True)
     # 用户手改只报告；撤销仅依据服务端原稿重建，沿用下方素材失效规则。
     from app.services.compliance.changes import prepare_undo
+    from app.services.compliance.suggestions import prepare_suggestion
 
-    if data.get("compliance_undo"):
-        _ensure_project_idle(project, detail="生成进行中，无法撤销替换")
+    if data.get("compliance_undo") or data.get("compliance_apply"):
+        _ensure_project_idle(project, detail="生成进行中，无法替换文案" if data.get("compliance_apply") else "生成进行中，无法撤销替换")
     try:
+        data, is_suggestion = prepare_suggestion(shot, data, allowed={
+            "narration", "overlay_title", "overlay_subtitle", "segment_script", "video_prompt", "highlights",
+        })
         data, is_undo = prepare_undo(shot, data, allowed={
             "narration", "overlay_title", "overlay_subtitle", "segment_script", "video_prompt", "highlights",
         })
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     # 同值全字段保存无需重新规范化；历史空脚本只改旁白时也不凭空生成制作脚本。
-    if not is_undo and "segment_script" in data and data["segment_script"] is not None and (
+    if not is_undo and not is_suggestion and "segment_script" in data and data["segment_script"] is not None and (
         data["segment_script"] != shot.segment_script
         or (
             bool(data["segment_script"].strip())

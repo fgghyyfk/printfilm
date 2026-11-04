@@ -1,5 +1,5 @@
 /** 生成替换明细的码点高亮与窄撤销请求。 */
-import type { ComplianceChange, ComplianceReplacementItem } from '../api/compliance'
+import type { ComplianceChange, ComplianceHit, ComplianceReplacementItem } from '../api/compliance'
 
 /** 按服务端Unicode码点区间切分，避免JS UTF16截断emoji。 */
 export function replacementPreview(row: ComplianceReplacementItem, change: ComplianceChange) {
@@ -28,4 +28,15 @@ export async function undoReplacement(
     ? `/api/projects/${projectId}`
     : `/api/projects/${projectId}/shots/${row.shot_id}`
   await patch(path, { compliance_undo: { field: row.field, change_id: change.id } })
+}
+
+
+/** 用户显式应用当前命中；先验证完整原稿和码点片段，绝不猜重复词的位置。 */
+export function applyComplianceSuggestion(current: string, scanned: string, hit: ComplianceHit): string {
+  const chars = Array.from(current)
+  if (hit.suggestion == null || current !== scanned || !Number.isInteger(hit.start) || !Number.isInteger(hit.end)
+      || hit.start < 0 || hit.end <= hit.start || chars.slice(hit.start, hit.end).join('') !== hit.word) {
+    throw new Error('文案已变化，请重新检查后再替换')
+  }
+  return chars.slice(0, hit.start).join('') + hit.suggestion + chars.slice(hit.end).join('')
 }

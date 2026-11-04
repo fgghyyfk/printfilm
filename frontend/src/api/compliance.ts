@@ -12,6 +12,10 @@ export type ComplianceHit = {
   word: string
   category: string
   level: ComplianceLevel
+  start: number
+  end: number
+  /** null 无安全自动建议；空字符串表示明确删除。 */
+  suggestion: string | null
 }
 
 /** 科普项目命中位置字段 */
@@ -23,6 +27,8 @@ export type KepuComplianceItem = {
   shot_id: number | null
   index: number | null
   field: KepuComplianceField
+  text: string
+  text_hash: string
   hits: ComplianceHit[]
 }
 
@@ -63,6 +69,8 @@ export type ComplianceReplacementItem = {
 export type DramaComplianceItem = {
   fragment_id: number
   index: number
+  text: string
+  text_hash: string
   hits: ComplianceHit[]
 }
 
@@ -96,4 +104,13 @@ export function getEpisodeCompliance(episodeId: number): Promise<DramaCompliance
 /** 撤销一条真实生成替换，客户端不提交审计原稿。 */
 export function undoProjectReplacement(projectId: number, row: ComplianceReplacementItem, change: ComplianceChange): Promise<void> {
   return undoReplacement(projectId, row, change, (path, body) => request(path, { method: 'PATCH', body: JSON.stringify(body) }))
+}
+
+
+/** 仅提交已扫描的字段/位置/原稿哈希；服务端锁内重新检查，不接收替换后整篇文案。 */
+export async function applyProjectSuggestion(projectId: number, row: KepuComplianceItem, hit: ComplianceHit): Promise<void> {
+  const path = row.scope === 'project' ? `/api/projects/${projectId}` : `/api/projects/${projectId}/shots/${row.shot_id}`
+  await request(path, { method: 'PATCH', body: JSON.stringify({ compliance_apply: {
+    field: row.field, text_hash: row.text_hash, start: hit.start, end: hit.end, word: hit.word, suggestion: hit.suggestion,
+  } }) })
 }

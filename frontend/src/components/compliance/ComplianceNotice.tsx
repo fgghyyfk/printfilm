@@ -17,6 +17,8 @@ type Props<T extends { hits: ComplianceHit[] }> = {
   refreshKey: string
   /** 把一条命中描述成位置文案与定位动作 */
   describe: (item: T) => ComplianceEntryView
+  applyDisabled?: boolean
+  onApply?: (item: T, hit: ComplianceHit) => Promise<void>
   undoDisabled?: boolean
   onUndoReplacement?: (row: ComplianceReplacementItem, change: ComplianceChange) => Promise<void>
 }
@@ -29,6 +31,8 @@ export default function ComplianceNotice<T extends { hits: ComplianceHit[] }>({
   fetchReport,
   refreshKey,
   describe,
+  applyDisabled,
+  onApply,
   undoDisabled,
   onUndoReplacement,
 }: Props<T>) {
@@ -41,6 +45,8 @@ export default function ComplianceNotice<T extends { hits: ComplianceHit[] }>({
   const [report, setReport] = useState<ComplianceReport<T> | null>(null)
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [applying, setApplying] = useState(false)
+  const [applyError, setApplyError] = useState('')
   const fetchRef = useRef(fetchReport)
   const seqRef = useRef(0)
 
@@ -51,6 +57,7 @@ export default function ComplianceNotice<T extends { hits: ComplianceHit[] }>({
   // 发起一次检查；只采纳最新一次请求的结果，失败静默
   async function runCheck() {
     const seq = ++seqRef.current
+    setApplyError('')
     setLoading(true)
     try {
       const next = await fetchRef.current()
@@ -60,6 +67,15 @@ export default function ComplianceNotice<T extends { hits: ComplianceHit[] }>({
     } finally {
       if (seq === seqRef.current) setLoading(false)
     }
+  }
+
+  async function apply(item: T, hit: ComplianceHit) {
+    if (!onApply) return
+    setApplying(true)
+    setApplyError('')
+    try { await onApply(item, hit); await runCheck() }
+    catch (err) { setApplyError(err instanceof Error ? err.message : '替换失败，请重新检查') }
+    finally { setApplying(false) }
   }
 
   useEffect(() => {
@@ -103,6 +119,7 @@ export default function ComplianceNotice<T extends { hits: ComplianceHit[] }>({
       </div>
       {open ? (
         <div className="pf-compliance-body">
+          {applyError ? <p role="alert">{applyError}</p> : null}
           <ul className="pf-compliance-list">
             {report.items.map((item, i) => {
               const view = describe(item)
@@ -123,12 +140,16 @@ export default function ComplianceNotice<T extends { hits: ComplianceHit[] }>({
                   <span className="pf-compliance-hits">
                     {item.hits.map((hit) => (
                       <span
-                        key={`${hit.word}-${hit.level}`}
+                        key={`${hit.start}-${hit.end}-${hit.word}-${hit.level}`}
                         className={`pf-compliance-tag is-${hit.level === 'block' ? 'block' : 'warn'}`}
                         title={hit.level === 'block' ? t('compliance.levelBlock') : t('compliance.levelWarn')}
                       >
                         {hit.word}
                         <small>{hit.category}</small>
+                        {hit.suggestion != null ? <span className="pf-compliance-suggestion">建议{hit.suggestion ? `改为「${hit.suggestion}」` : '删除该用语'}
+                          {onApply ? <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm" disabled={applyDisabled || applying || loading}
+                            onClick={() => void apply(item, hit)}>替换这一处</button> : null}
+                        </span> : null}
                       </span>
                     ))}
                   </span>

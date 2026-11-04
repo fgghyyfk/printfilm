@@ -27,6 +27,9 @@ class Hit:
     word: str
     category: str
     level: str
+    start: int | None = None
+    end: int | None = None
+    suggestion: str | None = None
 
 
 # 分类 → [(词, 替换词)]；替换词为空串表示删除。同一类内长词在前
@@ -253,3 +256,42 @@ def summarize(hits: list[Hit], *, mode: str = "replace") -> list[str]:
     if warned:
         msgs.append(f"以下用语需有检测报告或资质证明，请人工确认：{'、'.join(warned)}")
     return msgs
+
+
+def report_hits(text: str) -> list[Hit]:
+    """只读扫描的原稿码点区间；复用生成清洗的白名单来源跟踪和词库。"""
+    from app.services.compliance._tracked import TrackedText
+
+    hits: list[Hit] = []
+    offset = 0
+    for line in (text or "").splitlines(keepends=True):
+        trace = TrackedText(line)
+        protected, _ = _protect(line, trace)
+        candidates: list[Hit] = []
+        def add(start: int, end: int, category: str, level: str, suggestion: str | None, *, original: bool = False):
+            if not original:
+                chars = trace.chars[start:end]
+                if not chars:
+                    return
+                start, end = min(a for _, a, _ in chars), max(b for _, _, b in chars)
+            candidates.append(Hit(line[start:end], category, level, start + offset, end + offset, suggestion))
+        for word, replacement, category in _block_entries():
+            for match in re.finditer(re.escape(word), protected):
+                add(match.start(), match.end(), category, BLOCK, replacement)
+        for pattern, replacement, category in REGEX_RULES:
+            for match in pattern.finditer(protected):
+                add(match.start(), match.end(), category, BLOCK, match.expand(replacement))
+        for match in MOST_RE.finditer(protected):
+            add(match.start(), match.end(), "最高级", BLOCK, "")
+        for category, words in WARN_WORDS.items():
+            for word in words:
+                for match in re.finditer(re.escape(word), line):
+                    add(match.start(), match.end(), category, WARN, None, original=True)
+        selected: list[Hit] = []
+        # 最好用 / 最好 / 最是同一处，优先完整长词；不同位置的重复词仍独立保留。
+        for hit in sorted(candidates, key=lambda h: (-(h.end - h.start), h.level != BLOCK, h.start)):
+            if not any(prior.start <= hit.start and prior.end >= hit.end for prior in selected):
+                selected.append(hit)
+        hits.extend(sorted(selected, key=lambda h: (h.start, h.end)))
+        offset += len(line)
+    return hits

@@ -174,3 +174,5 @@
   background: #ffe396;
   color: inherit;
 }
+
+.pf-compliance-suggestion{display:inline-flex;align-items:center;gap:6px;margin-left:6px}.pf-compliance-suggestion .pf-btn{padding:2px 6px;min-height:24px}

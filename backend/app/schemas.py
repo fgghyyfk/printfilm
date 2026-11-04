@@ -128,7 +128,17 @@ class ComplianceUndo(BaseModel):
     change_id: str
 
 
+class ComplianceApply(BaseModel):
+    field: str = Field(max_length=64)
+    text_hash: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]+$")
+    start: int = Field(ge=0)
+    end: int = Field(ge=1)
+    word: str = Field(min_length=1, max_length=512)
+    suggestion: str = Field(max_length=512)
+
+
 class ShotUpdate(BaseModel):
+    compliance_apply: ComplianceApply | None = None
     compliance_undo: ComplianceUndo | None = None
     narration: str | None = None
     overlay_title: str | None = None
@@ -166,6 +176,7 @@ class ProjectCreate(BaseModel):
 
 
 class ProjectUpdate(BaseModel):
+    compliance_apply: ComplianceApply | None = None
     compliance_undo: ComplianceUndo | None = None
     title: str | None = Field(default=None, max_length=200)
     source_type: str | None = Field(default=None, pattern="^(theme|script)$")

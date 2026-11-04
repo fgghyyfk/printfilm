@@ -1,3 +1,4 @@
+import { applyComplianceSuggestion } from '../../lib/complianceChanges'
 /** 分集编辑：复刻原项目四栏布局（资产 / 脚本 / 预览 / 故事板） */
 import { MyTasksButton } from '../../components/MyTasks'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -1790,6 +1791,14 @@ function EpisodeEditInner() {
         <ComplianceNotice
           fetchReport={() => getEpisodeCompliance(eid)}
           refreshKey={complianceKey}
+          applyDisabled={busy || saveState.conflict}
+          onApply={async (item, hit) => {
+            const current = autosave.rows().find((row) => row.id === item.fragment_id)
+            if (!current) throw new Error('文案已变化，请重新检查后再替换')
+            const content = applyComplianceSuggestion(current.content, item.text, hit)
+            editFragments((rows) => rows.map((row) => row.clientKey === current.clientKey ? { ...row, content } : row))
+            await save()
+          }}
           describe={(item) => {
             const pos = fragments.findIndex((f) => f.id === item.fragment_id)
             return {
