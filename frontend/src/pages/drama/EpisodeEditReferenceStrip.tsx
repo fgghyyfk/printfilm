@@ -5,10 +5,13 @@ import { DRAMA_VOICE_BINDING_ENABLED } from '../../lib/dramaVoiceBinding'
 type Props = {
   items: FragmentRefStripItem[]
   onSelect?: (assetId: number) => void
+  onMoveCharacter?: (assetId: number, direction: -1 | 1) => void
+  disabled?: boolean
 }
 
 // 渲染当前分镜关联资产条
-export function EpisodeEditReferenceStrip({ items, onSelect }: Props) {
+export function EpisodeEditReferenceStrip({ items, onSelect, onMoveCharacter, disabled }: Props) {
+  const characters = items.filter((item) => item.type.trim().toLowerCase() === 'character')
   if (items.length === 0) {
     return (
       <div className="drama-ep-ref-strip is-empty">
@@ -20,8 +23,8 @@ export function EpisodeEditReferenceStrip({ items, onSelect }: Props) {
   return (
     <div className="drama-ep-ref-strip" aria-label="本镜关联资产">
       {items.map((item) => (
+        <span key={item.assetId} className="drama-ep-ref-item">
         <button
-          key={item.assetId}
           type="button"
           className={`drama-ep-ref-chip${item.isCharacter ? ' is-character' : ''}${
             item.voiceUrl ? ' has-voice' : item.isCharacter ? ' no-voice' : ''
@@ -47,6 +50,17 @@ export function EpisodeEditReferenceStrip({ items, onSelect }: Props) {
           ) : null}
           <em>{item.name}</em>
         </button>
+          {item.type.trim().toLowerCase() === 'character' && onMoveCharacter && characters.length > 1 ? (
+            <span className="drama-ep-ref-priority" aria-label={`${item.name}的角色优先级`}>
+              <button type="button" disabled={disabled || characters[0]?.assetId === item.assetId}
+                title="提高角色优先级" aria-label={`提高${item.name}的优先级`}
+                onClick={() => onMoveCharacter(item.assetId, -1)}>↑</button>
+              <button type="button" disabled={disabled || characters.at(-1)?.assetId === item.assetId}
+                title="降低角色优先级" aria-label={`降低${item.name}的优先级`}
+                onClick={() => onMoveCharacter(item.assetId, 1)}>↓</button>
+            </span>
+          ) : null}
+        </span>
       ))}
     </div>
   )

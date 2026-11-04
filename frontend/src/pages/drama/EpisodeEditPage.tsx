@@ -13,6 +13,7 @@ import {
   mergeFragmentRuntime, saveFragmentsAfterSetting, type FragmentEditSnapshot,
 } from '../../lib/dramaFragmentEditing'
 import { type ImageStyleId } from '../../lib/dramaImageStyles'
+import { selectedFragmentAssetIds } from '../../lib/dramaFragmentReferences'
 import {
   RATIO_OPTIONS,
   buildFragmentRefStripItems,
@@ -831,6 +832,22 @@ function EpisodeEditInner() {
     )
   }
 
+  // 仅交换角色之间的优先级，保留正文与所有关联资产，不靠重写剧情排序。
+  function moveCharacterReference(assetId: number, direction: -1 | 1) {
+    if (!selected || busy) return
+    const ids = collectFragmentAssetIds(selected)
+    const characterIds = ids.filter((id) => assets.some((asset) => asset.id === id && asset.type.trim().toLowerCase() === 'character'))
+    const index = characterIds.indexOf(assetId)
+    const other = characterIds[index + direction]
+    if (index < 0 || other == null) return
+    const left = ids.indexOf(assetId)
+    const right = ids.indexOf(other)
+    ;[ids[left], ids[right]] = [ids[right], ids[left]]
+    updateSelected({ asset_ids: ids, params: { ...selected.params, reference_asset_order: ids } })
+    setEditing(true)
+    setStatus('已调整角色优先级，请保存')
+  }
+
   // 插入空白分镜
   function insertFrag(at: number) {
     setFragments((prev) => {
@@ -938,8 +955,8 @@ function EpisodeEditInner() {
     const sameDuration =
       resolveFragmentDurationSec(prev.content || '', prev.duration_sec) ===
       resolveFragmentDurationSec(frag.content || '', frag.duration_sec)
-    const prevAssetIds = [...(prev.asset_ids || [])].sort((a, b) => a - b)
-    const nextAssetIds = [...(frag.asset_ids || [])].sort((a, b) => a - b)
+    const prevAssetIds = selectedFragmentAssetIds(prev, assets)
+    const nextAssetIds = selectedFragmentAssetIds(frag, assets)
     const sameAssets =
       prevAssetIds.length === nextAssetIds.length &&
       prevAssetIds.every((id, index) => id === nextAssetIds[index])
@@ -1614,7 +1631,8 @@ function EpisodeEditInner() {
             </label>
           </div>
 
-          <EpisodeEditReferenceStrip items={selectedRefItems} onSelect={focusLinkedAsset} />
+          <EpisodeEditReferenceStrip items={selectedRefItems} onSelect={focusLinkedAsset}
+            onMoveCharacter={moveCharacterReference} disabled={busy} />
 
           <div className={`drama-ep-editor-box ${editing ? 'editing' : ''}`}>
             <EpisodeEditPromptEditor

@@ -13,6 +13,16 @@ FRAGMENT_MAX_PROPS = 2
 _ASSET_MENTION_RE = re.compile(r"@asset:(\d+)")
 
 
+def order_fragment_asset_ids(asset_ids: list[int], params: dict | None) -> list[int]:
+    """显式优先级只重排已有引用，其余沿用旧引用顺序，不增加外部资产。"""
+    available = list(dict.fromkeys(asset_ids))
+    raw_order = (params or {}).get("reference_asset_order")
+    if not isinstance(raw_order, list):
+        return available
+    ordered = [aid for aid in raw_order if isinstance(aid, int) and not isinstance(aid, bool) and aid in available]
+    return list(dict.fromkeys([*ordered, *available]))
+
+
 def cap_asset_id_list(asset_ids: list[int] | None, *, limit: int = FRAGMENT_MAX_VISUAL_ASSETS) -> list[int]:
     """保序去重截断（合并分镜后不再区分类型时用）。"""
     out: list[int] = []

@@ -35,7 +35,7 @@ from app.services.drama.build_seedance_generate_body import (
     resolve_episode_burn_subtitles,
     resolve_episode_character_intro,
 )
-from app.services.drama.fragment_asset_limit import cap_fragment_asset_ids
+from app.services.drama.fragment_asset_limit import cap_fragment_asset_ids, order_fragment_asset_ids
 from app.services.drama.build_fragments import prepare_fragment_content
 from app.services.drama.generation_prompt import append_style_prompt, build_generation_prompt
 from app.services.drama.image_styles import resolve_image_style_board_url
@@ -899,7 +899,8 @@ async def ensure_fragment_reference_images(
     assets_by_id: dict[int, DramaAsset] = {}
     if ref_assets:
         for asset in ref_assets:
-            assets_by_id[asset.id] = asset
+            if asset.project_id == project.id:
+                assets_by_id[asset.id] = asset
 
     for asset_id in collected_ids:
         if asset_id in assets_by_id:
@@ -909,7 +910,7 @@ async def ensure_fragment_reference_images(
             assets_by_id[asset_id] = asset
 
     collected_ids = cap_fragment_asset_ids(
-        collected_ids,
+        order_fragment_asset_ids([aid for aid in collected_ids if aid in assets_by_id], fragment.params),
         [assets_by_id[i] for i in collected_ids if i in assets_by_id],
     )
     ordered = [assets_by_id[i] for i in collected_ids if i in assets_by_id]

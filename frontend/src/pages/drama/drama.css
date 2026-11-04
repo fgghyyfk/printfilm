@@ -4648,6 +4648,11 @@
   align-items: center;
 }
 
+.drama-ep-ref-item { display: inline-flex; flex-direction: column; flex: 0 0 auto; }
+.drama-ep-ref-priority { display: flex; justify-content: center; gap: 4px; padding-top: 3px; }
+.drama-ep-ref-priority button { border: 1px solid var(--drama-border, #ddd); border-radius: 4px; background: transparent; cursor: pointer; }
+.drama-ep-ref-priority button:disabled { opacity: .35; cursor: default; }
+
 .drama-ep-ref-strip-hint {
   font-size: 12px;
   color: var(--drama-muted, #888);

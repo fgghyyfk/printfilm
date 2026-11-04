@@ -6,6 +6,7 @@ from app.services.drama.fragment_asset_limit import (
     FRAGMENT_MAX_CHARACTERS,
     FRAGMENT_MAX_VISUAL_ASSETS,
     cap_fragment_asset_ids,
+    order_fragment_asset_ids,
     strip_unlisted_asset_mentions,
 )
 from app.services.media_ref_limits import MAX_REFERENCE_IMAGES, cap_url_list, subject_image_budget
@@ -40,6 +41,17 @@ def test_cap_fragment_asset_ids_keeps_scene_three_chars_and_props():
     assert len(props) == 2
     assert 23 not in picked
     assert len(picked) <= FRAGMENT_MAX_VISUAL_ASSETS
+
+
+def test_reference_priority_changes_actual_selected_characters_without_losing_members():
+    """混合引用按显式优先级真正换入第四角色，默认旧顺序不变、外部ID不生效。"""
+    assets = [_asset(1, "scene", "场景"), *[_asset(i, "character", str(i)) for i in range(11, 15)],
+              _asset(21, "prop", "道具一"), _asset(22, "prop", "道具二")]
+    ids = [1, 11, 12, 13, 14, 21, 22]
+    assert cap_fragment_asset_ids(order_fragment_asset_ids(ids, {}), assets) == [1, 11, 12, 13, 21, 22]
+    ordered = order_fragment_asset_ids(ids, {"reference_asset_order": [999, 1, 14, 12, 13, 11, 21, 22, 14]})
+    assert set(ordered) == set(ids)
+    assert cap_fragment_asset_ids(ordered, assets) == [1, 14, 12, 13, 21, 22]
 
 
 def test_cap_url_list_and_subject_budget():

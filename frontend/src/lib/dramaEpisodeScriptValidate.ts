@@ -4,6 +4,7 @@
  */
 import type { DramaAsset, DramaFragment } from '../api/drama'
 import { dramaAssetHasReferenceImage } from './dramaAssetImage'
+import { fragmentCharacterLimitWarning, orderedFragmentAssetIds, selectedFragmentAssetIds } from './dramaFragmentReferences'
 import {
   DRAMA_SEGMENT_DURATION_HARD_MAX,
   DRAMA_SEGMENT_DURATION_MAX,
@@ -70,22 +71,7 @@ function assetHasVoiceBinding(asset: DramaAsset): boolean {
 
 // 合并正文 @asset 与 asset_ids
 function listFragmentAssetIds(frag: DramaFragment): number[] {
-  const seen = new Set<number>()
-  const out: number[] = []
-  const re = /@asset:(\d+)/g
-  let m: RegExpExecArray | null
-  while ((m = re.exec(frag.content || ''))) {
-    const id = Number(m[1])
-    if (!id || seen.has(id)) continue
-    seen.add(id)
-    out.push(id)
-  }
-  for (const id of frag.asset_ids || []) {
-    if (!id || seen.has(id)) continue
-    seen.add(id)
-    out.push(id)
-  }
-  return out
+  return orderedFragmentAssetIds(frag)
 }
 
 // 判断正文是否为纯画面 / 空镜描写
@@ -188,11 +174,16 @@ export function validateDramaFragmentAssets(
   if (!frag) return issues
 
   const byId = new Map(assets.map((a) => [a.id, a]))
-  const ids = listFragmentAssetIds(frag)
+  const allIds = listFragmentAssetIds(frag)
+  const selectedIds = new Set(selectedFragmentAssetIds(frag, assets))
+  const ids = allIds.filter((id) => !byId.has(id) || selectedIds.has(id))
   const needsVoice = scriptLikelyNeedsVoice(frag.content || '')
 
   const missingImage: string[] = []
   const missingVoice: string[] = []
+
+  const characterWarning = fragmentCharacterLimitWarning(frag, assets)
+  if (characterWarning) issues.push({ level: 'warn', message: characterWarning })
 
   for (const id of ids) {
     const asset = byId.get(id)

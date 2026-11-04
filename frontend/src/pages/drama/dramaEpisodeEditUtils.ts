@@ -1,5 +1,6 @@
 /** 分集编辑页辅助：资产分类、引用解析、标签文案 */
 import type { DramaAsset, DramaFragment } from '../../api/drama'
+import { orderedFragmentAssetIds } from '../../lib/dramaFragmentReferences'
 import {
   DRAMA_RATIO_OPTIONS,
   DRAMA_RES_OPTIONS,
@@ -35,15 +36,7 @@ export function extractAssetIds(content: string): number[] {
 
 // 合并正文 @asset 与 asset_ids，去重保序
 export function collectFragmentAssetIds(frag: DramaFragment | null | undefined): number[] {
-  if (!frag) return []
-  const seen = new Set<number>()
-  const out: number[] = []
-  for (const id of [...extractAssetIds(frag.content || ''), ...(frag.asset_ids || [])]) {
-    if (!id || seen.has(id)) continue
-    seen.add(id)
-    out.push(id)
-  }
-  return out
+  return orderedFragmentAssetIds(frag)
 }
 
 export type FragmentRefStripItem = {

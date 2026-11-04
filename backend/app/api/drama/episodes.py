@@ -91,7 +91,11 @@ logger = logging.getLogger("app.drama.episodes")
 
 
 def _fragment_out(frag: DramaEpisodeFragment) -> DramaFragmentOut:
-    asset_ids = [r.asset_id for r in (frag.asset_references or [])]
+    from app.services.drama.fragment_asset_limit import order_fragment_asset_ids
+
+    asset_ids = order_fragment_asset_ids(
+        [r.asset_id for r in sorted(frag.asset_references or [], key=lambda ref: ref.id or 0)], frag.params,
+    )
     content = prepare_fragment_content(
         frag.content or "",
         duration_sec=int(frag.duration_sec or 0) or None,
@@ -621,6 +625,10 @@ async def save_fragments(
             frag.duration_sec = item.duration_sec
             frag.params = {**(frag.params or {}), **editable_fragment_params(item.params)}
             asset_ids = await filter_valid_project_asset_ids(db, ep.project_id, list(item.asset_ids or []))
+            if "reference_asset_order" in (frag.params or {}):
+                from app.services.drama.fragment_asset_limit import order_fragment_asset_ids
+
+                frag.params = {**frag.params, "reference_asset_order": order_fragment_asset_ids(asset_ids, frag.params)}
             await replace_fragment_asset_refs(db, frag, asset_ids)
 
         if stale_ids:
