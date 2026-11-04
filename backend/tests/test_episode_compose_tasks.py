@@ -110,6 +110,9 @@ async def test_compose_rejects_empty_or_foreign_selection(db_session, monkeypatc
     with pytest.raises(HTTPException) as error:
         await compose_episode(episode.id, DramaComposeEpisodeRequest(fragment_ids=ids), db=db_session, user=user)
     assert error.value.status_code == 400
+    assert error.value.headers["X-Error-Code"] == "invalid_input"
+    if selection == "foreign":
+        assert "重新选择" in error.value.detail
     assert await db_session.scalar(select(func.count(TaskRun.id)).where(TaskRun.task_type == "episode_compose")) == 0
 
 

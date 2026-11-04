@@ -106,7 +106,7 @@ def episode_compose_snapshot(
         if not allow:
             raise ValueError("本集还没有可拼接的分镜视频")
         if not allow.issubset({f.id for f in frags}):
-            raise ValueError("所选分镜已变更或不属于本集，请刷新后重试")
+            raise ValueError("所选分镜不属于本集或已移除，请刷新后重新选择")
         frags = [f for f in frags if f.id in allow]
         if any(not (f.video or "").strip() for f in frags):
             raise ValueError("所选分镜尚无视频，请刷新后重试")

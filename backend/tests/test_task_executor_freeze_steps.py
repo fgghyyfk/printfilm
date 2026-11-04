@@ -13,6 +13,7 @@ from app.models_tasks import TaskStep
 from app.services.billing.settlement import freeze_for_task
 from app.services.tasks.executor import execute_task_run
 from app.services.tasks.service import get_task_for_runtime, set_task_step_state
+from app.services.public_errors import InsufficientBalanceError
 
 from tests.conftest import make_task, make_user
 
@@ -153,7 +154,9 @@ async def test_execute_task_run_marks_failed_when_handler_returns_ok_false(
     done = await get_task_for_runtime(db_session, task_id)
     assert done is not None
     assert done.status == "failed"
-    assert "seedream_policy" in (done.error_message or "")
+    assert done.error_message == "任务执行失败"
+    assert "seedream_policy" not in done.error_message
+    assert done.error_code == "RuntimeError"
     assert done.steps and done.steps[0].status == "failed"
 
 
@@ -194,7 +197,8 @@ async def test_execute_task_run_fails_task_when_freeze_raises_non_valueerror(
     assert done is not None
     assert done.status == "failed"
     assert done.error_code == "RuntimeError"
-    assert "connection reset" in (done.error_message or "")
+    assert done.error_message == "预扣失败"
+    assert "connection reset" not in done.error_message
     assert done.finished_at is not None
     assert done.billing_status == "none"
     assert done.steps and done.steps[0].status == "failed"
@@ -204,14 +208,14 @@ async def test_execute_task_run_fails_task_when_freeze_raises_non_valueerror(
 async def test_execute_task_run_insufficient_balance_keeps_special_error_code(
     db_session: AsyncSession,
 ) -> None:
-    """余额不足 ValueError 仍收敛为专用错误码（供前端引导充值），未预扣保持 none。"""
+    """本站钱包专用异常收敛为充值错误码，未预扣保持 none。"""
     task_id, same_session = await _lease_task_with_step(db_session)
 
     with (
         patch("app.services.tasks.executor.AsyncSessionLocal", same_session),
         patch(
             "app.services.tasks.executor.freeze_for_task",
-            new=AsyncMock(side_effect=ValueError("余额不足：需要 ¥1.00，当前 ¥0.00")),
+            new=AsyncMock(side_effect=InsufficientBalanceError("余额不足：需要 ¥1.00，当前 ¥0.00")),
         ),
     ):
         await execute_task_run(task_id)

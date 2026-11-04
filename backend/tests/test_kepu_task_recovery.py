@@ -12,6 +12,7 @@ from app.models import Project, ProjectStatus, Shot, Template
 from app.models_tasks import TaskRun
 from app.schemas import ProjectUpdate
 from app.services.tasks import executor
+from app.services.public_errors import InsufficientBalanceError
 from tests.conftest import make_task, make_user
 
 
@@ -144,8 +145,11 @@ async def test_cancel_uses_active_task_not_persisted_status(db_session):
     assert result.active_tasks[0].cancel_requested
 
 
-@pytest.mark.parametrize("failure", [ValueError("余额不足"), RuntimeError("连接中断")])
-async def test_freeze_failure_recovers_kepu_project(db_session, failure):
+@pytest.mark.parametrize("failure,public_reason,error_code", [
+    (InsufficientBalanceError("余额不足"), "余额不足", "insufficient_balance"),
+    (RuntimeError("连接中断"), "预扣失败", "RuntimeError"),
+])
+async def test_freeze_failure_recovers_kepu_project(db_session, failure, public_reason, error_code):
     """真实执行器预扣失败必须同步恢复项目可编辑，并保留中文原因。"""
     user, project, shot = await seed_project(db_session, status=ProjectStatus.IMAGING)
     task = await make_task(db_session, user, domain="kepu", task_type="shot_regen_image", status="leased")
@@ -162,8 +166,10 @@ async def test_freeze_failure_recovers_kepu_project(db_session, failure):
         await executor.execute_task_run(task.id)
     row = (await db_session.execute(select(Project.status, Project.error_msg).where(Project.id == project.id))).one()
     assert row.status == ProjectStatus.FAILED
-    assert str(failure) in row.error_msg
+    assert public_reason in row.error_msg
+    assert "连接中断" not in row.error_msg
     assert task.status == "failed"
+    assert task.error_code == error_code
     result = await projects.update_project(project.id, ProjectUpdate(title="恢复编辑"), db_session, user)
     assert result.title == "恢复编辑"
 
@@ -187,7 +193,9 @@ async def test_regen_handler_exception_already_recovers_project(db_session):
     assert task.status == "failed"
     row = (await db_session.execute(select(Project.status, Project.error_msg).where(Project.id == project.id))).one()
     assert row.status == ProjectStatus.FAILED
-    assert "图片生成失败" in row.error_msg
+    assert "任务执行失败" in row.error_msg
+    assert "图片生成失败" not in row.error_msg
+    assert task.error_code == "RuntimeError"
     result = await projects.update_project(project.id, ProjectUpdate(title="失败后仍可编辑"), db_session, user)
     assert result.title == "失败后仍可编辑"
     with patch("app.services.billing.settlement.ensure_balance_for_task", AsyncMock(return_value=0)):
@@ -242,13 +250,17 @@ async def test_parallel_regen_success_then_failure_preserves_stable_status_and_r
         assert task_b.status == "running"
         assert project.status == ProjectStatus.IMAGE_READY
         if failure_stage == "freeze":
-            freeze.side_effect = ValueError("第二镜余额不足")
+            freeze.side_effect = InsufficientBalanceError("余额不足")
         await executor.execute_task_run(task_b.id)
 
     row = (await db_session.execute(select(Project.status, Project.error_msg).where(Project.id == project.id))).one()
     assert row.status == ProjectStatus.IMAGE_READY
     assert task_b.status == "failed"
-    assert row.error_msg and "生成失败" in row.error_msg and "第二镜" in row.error_msg
+    assert row.error_msg and "生成失败" in row.error_msg
+    assert "第二镜图片生成失败" not in row.error_msg
+    assert ("余额不足" if failure_stage == "freeze" else "任务执行失败") in row.error_msg
+    assert task_b.shot_id == second_shot.id
+    assert task_b.error_code == ("insufficient_balance" if failure_stage == "freeze" else "RuntimeError")
     assert shot.image_url == "/static/new.png"
     result = await projects.update_project(project.id, ProjectUpdate(title="部分失败后可编辑"), db_session, user)
     assert result.title == "部分失败后可编辑"
@@ -269,7 +281,7 @@ async def test_freeze_failure_reports_stable_project_without_overwriting_complet
         yield db_session
 
     with (patch.object(executor, "AsyncSessionLocal", same_session),
-          patch.object(executor, "freeze_for_task", AsyncMock(side_effect=ValueError("余额不足")))):
+          patch.object(executor, "freeze_for_task", AsyncMock(side_effect=InsufficientBalanceError("余额不足")))):
         await executor.execute_task_run(task.id)
     row = (await db_session.execute(select(Project.status, Project.error_msg).where(Project.id == project.id))).one()
     assert row.status == status

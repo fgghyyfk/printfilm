@@ -144,8 +144,10 @@ async def test_voice_reservation_is_durable_before_paid_http(db_session, monkeyp
             release.set()
             if mode in {"poisoned", "prior_paid"}:
                 from fastapi import HTTPException
-                with pytest.raises(HTTPException, match="计费"):
+                with pytest.raises(HTTPException, match="费用待核对") as pending:
                     await job
+                assert pending.value.headers["X-Error-Code"] == "billing_review_pending"
+                assert "请勿重复生成" in pending.value.detail
             else:
                 await job
             async with sessions() as observer:
@@ -153,6 +155,7 @@ async def test_voice_reservation_is_durable_before_paid_http(db_session, monkeyp
                 wallet = await observer.get(User, uid)
                 if mode in {"poisoned", "prior_paid"}:
                     assert task.status == "awaiting_review" and task.billing_status == "frozen"
+                    assert task.billing_refunded_fen == 0
                     assert task.result_payload["tts_billing_pending"]["cost_fen"] == (8 if mode == "prior_paid" else 1)
                     assert wallet.frozen_fen == task.billing_estimate_fen > 0
                     if mode == "prior_paid":
