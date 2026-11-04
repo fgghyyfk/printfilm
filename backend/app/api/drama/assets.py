@@ -163,6 +163,9 @@ async def update_asset(
     asset = result.scalar_one_or_none()
     if not asset:
         raise HTTPException(status_code=404, detail="资产不存在")
+    from app.services.drama.asset_image_revision import asset_image_identity, bump_asset_image_revision
+
+    previous_image = asset_image_identity(asset)["media"]
     for field in ("type", "asset_type", "name", "cover", "url", "params"):
         val = getattr(body, field)
         if val is None:
@@ -174,6 +177,8 @@ async def update_asset(
             )
         else:
             setattr(asset, field, val)
+    if asset_image_identity(asset)["media"] != previous_image:
+        bump_asset_image_revision(asset)
     await db.commit()
     await db.refresh(asset)
     return DramaAssetOut.model_validate(asset)
@@ -300,6 +305,9 @@ async def upload_asset_media(
             asset.type = "audio"
     else:
         asset.cover = url
+        from app.services.drama.asset_image_revision import bump_asset_image_revision
+
+        bump_asset_image_revision(asset)
         if not asset.asset_type or asset.asset_type == "none":
             asset.asset_type = "image"
     params = dict(asset.params or {})

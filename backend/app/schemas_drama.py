@@ -48,6 +48,7 @@ class DramaAssetOut(BaseModel):
     name: str | None = None
     cover: str | None = None
     url: str | None = None
+    image_revision: str | None = None
     params: PublicDramaParams | None = None
     derive_id: str | None = None
     project_id: int

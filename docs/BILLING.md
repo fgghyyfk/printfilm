@@ -270,3 +270,5 @@ EPAY_RETURN_URL=https://your-site.example.com/pricing?paid=1
 5. Seedance 视频成功后 `usage_events.estimated=false` 且 `total_tokens` 与官方任务查询一致。
 6. 配置 TokenFree API Key 后，管理端可刷新并查看近 30 日官方/本地成本对照。
 7. 单次调用若带 New API `quota` / `quota_consumed`，按额度折人民币后按官方成本 1:1 扣费；管理端可查询 TokenFree 余额。
+
+漫剧分镜批量生成默认跳过输入未改且已有成片的镜头；资产换图仅提示形象更新，须显式勾选「含形象更新镜头」才加入重做。保存后按最终未在途分镜集合、各镜实际时长、模型及清晰度逐项估价并确认，入队沿用同一规格计算，每条 TaskRun 仍各自预扣及按实际用量结算；原费率不变。资产改名或画布布局不构成媒体更新，来源版本未知的历史视频不被默认强制重做。

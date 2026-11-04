@@ -319,8 +319,12 @@ async def _publish_asset_video(
     if local_last_frame and not cover_url:
         cover_url = storage_svc.republish_url(local_last_frame, sync=True) or local_last_frame
 
+    from app.services.drama.asset_image_revision import bump_asset_image_revision
+
     asset.url = video_url
     asset.cover = cover_url or asset.cover or ""
+    if cover_url:
+        bump_asset_image_revision(asset)
     asset.asset_type = "video"
     params = dict(asset.params or {})
     params["visualPrompt"] = content

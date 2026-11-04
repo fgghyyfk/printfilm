@@ -13,7 +13,7 @@ import {
   mergeFragmentRuntime, saveFragmentsAfterSetting, type FragmentEditSnapshot,
 } from '../../lib/dramaFragmentEditing'
 import { type ImageStyleId } from '../../lib/dramaImageStyles'
-import { selectedFragmentAssetIds } from '../../lib/dramaFragmentReferences'
+import { selectedFragmentAssetIds, fragmentReferenceFreshness, fragmentReferenceStatusLabel } from '../../lib/dramaFragmentReferences'
 import {
   RATIO_OPTIONS,
   buildFragmentRefStripItems,
@@ -166,6 +166,7 @@ function EpisodeEditInner() {
   const [editing, setEditing] = useState(false)
   const [videoStyleId, setVideoStyleId] = useState<ImageStyleId | ''>('')
   const [modelId, setModelId] = useState('')
+  const [includeUpdatedImages, setIncludeUpdatedImages] = useState(false)
   const mediaCatalog = useMediaModelsCatalog()
   const [aspectRatio, setAspectRatio] = useState<(typeof RATIO_OPTIONS)[number]>('9:16')
   // subtitleMode 本集字幕方式：模型自出 / 后期拼接（默认后期）
@@ -948,6 +949,8 @@ function EpisodeEditInner() {
   // 判断「批量生成」时是否可安全跳过：仅跳过未改动且已有成片的旧分镜
   function shouldSkipGenerateAllFragment(frag: DramaFragment): boolean {
     if (!frag.video || !frag.id) return false
+    const freshness = fragmentReferenceFreshness(frag, assets)
+    if (freshness === 'inputs_changed' || (includeUpdatedImages && freshness === 'image_updated')) return false
     const prev = (episode?.fragments || []).find((item) => item.id === frag.id)
     if (!prev?.video) return false
     const sameContent = (prev.content || '') === (frag.content || '')
@@ -1089,6 +1092,7 @@ function EpisodeEditInner() {
                 params: {
                   ...(f.params || {}),
                   video_versions: result.video_versions,
+                  reference_snapshot: result.reference_snapshot || undefined,
                   lastFrameUrl: result.lastFrameUrl || undefined,
                   generation: {
                     status: 'done',
@@ -1126,7 +1130,8 @@ function EpisodeEditInner() {
     let missingReference = false
     const doneIndices: number[] = []
     for (let i = 0; i < fragments.length; i++) {
-      if (!opts?.forceRegen && shouldSkipGenerateAllFragment(fragments[i])) {
+      if ((fragments[i].id && generatingIds.has(fragments[i].id!)) ||
+          (!opts?.forceRegen && shouldSkipGenerateAllFragment(fragments[i]))) {
         doneIndices.push(i)
         continue
       }
@@ -1156,26 +1161,10 @@ function EpisodeEditInner() {
       return
     }
 
-    if (!opts?.skipConfirm) {
-      const ok = await dialog.confirm({
-        title: opts?.forceRegen ? '按新规格重新生成' : '批量生成分镜视频',
-        message: formatDramaGateMessage(
-          [],
-          allWarnings.slice(0, 8).map((message) => ({ level: 'warn' as const, message })),
-          opts?.forceRegen
-            ? `将按当前画幅/清晰度重新生成 ${pendingCount} 镜。当前成片会保留为历史版本。`
-            : linkLastFrame
-              ? `将按镜序排队生成剩余 ${pendingCount} 镜（已生成的 ${doneIndices.length} 镜会跳过）。入队后可继续编辑；后一镜会等待上一镜尾帧写好再开始。`
-              : `将并发生成剩余 ${pendingCount} 镜（已生成的 ${doneIndices.length} 镜会跳过）。入队后可继续编辑；各镜互不等待。`,
-        ),
-        confirmText: allWarnings.length > 0 ? '仍要批量生成' : opts?.forceRegen ? '全部重新生成' : '批量生成',
-        tone: 'danger',
-      })
-      if (!ok) return
-    }
     setBusy(true)
     setError('')
-    setStatus(`保存并排队生成剩余 ${pendingCount} 条…`)
+    setStatus(`保存并估算 ${pendingCount} 条分镜…`)
+    const selectedModelId = modelId
     try {
       const ep = await save()
       setBusy(true)
@@ -1188,7 +1177,24 @@ function EpisodeEditInner() {
         setBusy(false)
         return
       }
-      const genResult = await dramaApi.generateEpisode(eid, ids, modelId)
+      const quote = await dramaApi.quoteEpisodeVideos(eid, ids, selectedModelId)
+      if (!quote.count) {
+        setStatus('所选分镜已在生成中，无需重复入队')
+        setBusy(false)
+        return
+      }
+      if (!opts?.skipConfirm || includeUpdatedImages) {
+        const updatedCount = (ep.fragments || []).filter((f) => quote.fragment_ids.includes(f.id!) &&
+          fragmentReferenceFreshness(f, assets) === 'image_updated').length
+        const ok = await dialog.confirm({
+          title: opts?.forceRegen ? '按新规格重新生成' : '批量生成分镜视频',
+          message: formatDramaGateMessage([], allWarnings.slice(0, 8).map((message) => ({ level: 'warn' as const, message })),
+            `将排队生成 ${quote.count} 镜${updatedCount ? `，其中 ${updatedCount} 镜为形象更新重做` : ''}。预估 ¥${(quote.estimate_fen / 100).toFixed(2)}，按实际用量结算。已有成片保留为历史版本。${linkLastFrame ? '按镜序等待上一镜尾帧。' : ''}`),
+          confirmText: '确认排队生成', tone: 'danger',
+        })
+        if (!ok) { setBusy(false); setStatus('已保存，未提交生成'); return }
+      }
+      const genResult = await dramaApi.generateEpisode(eid, quote.fragment_ids, selectedModelId)
       const queuedIds =
         Array.isArray(genResult.fragment_ids) && genResult.fragment_ids.length > 0
           ? genResult.fragment_ids
@@ -1553,6 +1559,9 @@ function EpisodeEditInner() {
           </button>
           {/* MiniMax-H3 支持一次入队本集剩余分镜；其它视频模型仍只走单镜生成 */}
           {isMinimaxH3Model(modelId) ? (
+            <>
+            <label><input type="checkbox" checked={includeUpdatedImages} disabled={busy}
+              onChange={(event) => setIncludeUpdatedImages(event.target.checked)} />含形象更新镜头</label>
             <button
               type="button"
               className="drama-ep-btn-dark drama-ep-header-gen-all"
@@ -1561,6 +1570,7 @@ function EpisodeEditInner() {
             >
               {busy ? '入队中…' : '批量生成'}
             </button>
+            </>
           ) : null}
         </div>
       </header>
@@ -1633,6 +1643,8 @@ function EpisodeEditInner() {
 
           <EpisodeEditReferenceStrip items={selectedRefItems} onSelect={focusLinkedAsset}
             onMoveCharacter={moveCharacterReference} disabled={busy} />
+          {selected && fragmentReferenceStatusLabel(selected, assets) ?
+            <p role="status">{fragmentReferenceStatusLabel(selected, assets)}</p> : null}
 
           <div className={`drama-ep-editor-box ${editing ? 'editing' : ''}`}>
             <EpisodeEditPromptEditor
@@ -1930,6 +1942,7 @@ function EpisodeEditInner() {
                     </span>
                   )}
                   {badge ? <span className="drama-ep-clip-badge">{badge}</span> : null}
+                  {!badge && fragmentReferenceStatusLabel(frag, assets) ? <span className="drama-ep-clip-badge">{fragmentReferenceStatusLabel(frag, assets)}</span> : null}
                   <em>
                     {formatFragLabel(index, frag.duration_sec)}
                     <DramaFragmentClipSpec

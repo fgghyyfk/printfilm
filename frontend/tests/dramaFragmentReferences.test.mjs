@@ -13,3 +13,20 @@ test('角色优先级持久化后改变实际入选三人，重复正文不虚�
   assert.match(fragmentCharacterLimitWarning(saved, assets), /4 个角色.*角色11/)
   assert.equal(saved.content, fragment.content)
 })
+
+test('成片仅按实际引用版本判旧，改名/未入选角色不触发重做', async () => {
+  const { fragmentReferenceFreshness } = await import('../src/lib/dramaFragmentReferences.ts')
+  const assets = [11, 12, 13, 14].map(id => ({ id, type: 'character', asset_type: 'image', cover: `/static/generated/p1/${id}.jpg`, image_revision: `v${id}` }))
+  const fragment = { video: 'video.mp4', asset_ids: [11, 12, 13, 14], params: {
+    reference_snapshot: assets.slice(0, 3).map(a => ({ asset_id: a.id, revision: a.image_revision, media: a.cover })),
+  } }
+  assert.equal(fragmentReferenceFreshness(fragment, assets), 'fresh')
+  assets[3].image_revision = 'new-ignored'
+  assets[0].name = 'new name'
+  assert.equal(fragmentReferenceFreshness(fragment, assets), 'fresh')
+  assets[0].image_revision = 'new-image'
+  assert.equal(fragmentReferenceFreshness(fragment, assets), 'image_updated')
+  fragment.params.reference_asset_order = [14, 12, 13, 11]
+  assert.equal(fragmentReferenceFreshness(fragment, assets), 'inputs_changed')
+  assert.equal(fragmentReferenceFreshness({ ...fragment, params: {} }, assets), 'unknown')
+})

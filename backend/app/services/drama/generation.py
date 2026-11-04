@@ -36,6 +36,7 @@ from app.services.drama.build_seedance_generate_body import (
     resolve_episode_character_intro,
 )
 from app.services.drama.fragment_asset_limit import cap_fragment_asset_ids, order_fragment_asset_ids
+from app.services.drama.asset_image_revision import bump_asset_image_revision, fragment_reference_snapshot
 from app.services.drama.build_fragments import prepare_fragment_content
 from app.services.drama.generation_prompt import append_style_prompt, build_generation_prompt
 from app.services.drama.image_styles import resolve_image_style_board_url
@@ -444,6 +445,7 @@ def archive_fragment_video_version(fragment: DramaEpisodeFragment) -> dict[str, 
         "lastFrameUrl": archived_last or last_frame or None,
         "createdAt": datetime.now(timezone.utc).isoformat(),
         "source": "generate",
+        "reference_snapshot": params.get("reference_snapshot"),
     }
     versions = params.get("video_versions")
     if not isinstance(versions, list):
@@ -460,13 +462,16 @@ async def _lock_and_archive_fragment_video(db: AsyncSession, fragment: DramaEpis
     """锁外准备媒体快照，锁内校验媒体未变并合并当前历史，避免长时间阻塞编辑。"""
     while True:
         await db.refresh(fragment, attribute_names=["video", "cover", "params"])
-        media = (fragment.video or "", fragment.cover or "", read_fragment_last_frame_url(fragment))
+        media = (fragment.video or "", fragment.cover or "", read_fragment_last_frame_url(fragment),
+                 (fragment.params or {}).get("reference_snapshot"))
         snapshot = DramaEpisodeFragment(
-            id=fragment.id, video=media[0], cover=media[1], params={"lastFrameUrl": media[2]},
+            id=fragment.id, video=media[0], cover=media[1],
+            params={"lastFrameUrl": media[2], "reference_snapshot": media[3]},
         )
         entry = archive_fragment_video_version(snapshot)
         await lock_fragment_for_update(db, fragment)
-        current_media = (fragment.video or "", fragment.cover or "", read_fragment_last_frame_url(fragment))
+        current_media = (fragment.video or "", fragment.cover or "", read_fragment_last_frame_url(fragment),
+                         (fragment.params or {}).get("reference_snapshot"))
         if media == current_media:
             if entry is not None:
                 params = dict(fragment.params or {})
@@ -529,6 +534,7 @@ def activate_fragment_video_version(
                 ),
                 "createdAt": datetime.now(timezone.utc).isoformat(),
                 "source": "replaced",
+                "reference_snapshot": params.get("reference_snapshot"),
             },
         )
 
@@ -540,6 +546,10 @@ def activate_fragment_video_version(
 
     params = dict(fragment.params or {})
     params["video_versions"] = remaining[:FRAGMENT_VIDEO_VERSION_LIMIT]
+    if isinstance(target.get("reference_snapshot"), list):
+        params["reference_snapshot"] = target["reference_snapshot"]
+    else:
+        params.pop("reference_snapshot", None)
     fragment.params = params
     ratio = str(target.get("aspect_ratio") or params.get("aspect_ratio") or "9:16")
     resolution = str(target.get("resolution") or params.get("resolution") or "480p")
@@ -568,6 +578,7 @@ def activate_fragment_video_version(
         "cover": fragment.cover,
         "lastFrameUrl": last_frame,
         "video_versions": params["video_versions"],
+        "reference_snapshot": params.get("reference_snapshot"),
     }
 
 
@@ -685,6 +696,8 @@ def activate_asset_image_version(
     if hist_prompt and not str(params.get("visualPrompt") or "").strip():
         params["visualPrompt"] = hist_prompt
     asset.params = params
+    if current != target_url:
+        bump_asset_image_revision(asset)
     return {
         "asset_id": asset.id,
         "url": asset.url,
@@ -1375,6 +1388,7 @@ async def generate_asset_image(
                 params["visualImage"] = stored_prompt
         asset.params = params
 
+    bump_asset_image_revision(asset)
     await db.commit()
     await db.refresh(asset)
     return asset
@@ -1459,6 +1473,7 @@ class FragmentVideoPrepared:
     generate_audio: bool = True
     content_labels: list[str] | None = None
     model_id: str | None = None
+    reference_snapshot: list[dict] | None = None
 
 
 # Worker 准备阶段：参考图 / 衔接帧 / 请求体（可耗时，但不等待上游成片）。
@@ -1469,6 +1484,7 @@ async def prepare_fragment_video_for_submit(
     fragment: DramaEpisodeFragment,
     *,
     model_id: str | None = None,
+    output_settings: dict | None = None,
 ) -> FragmentVideoPrepared:
     prompt = prepare_fragment_content(
         fragment.content or "",
@@ -1478,11 +1494,12 @@ async def prepare_fragment_video_for_submit(
     duration = int(fragment.duration_sec or 8)
     episode = await db.get(DramaEpisode, fragment.episode_id)
     if episode is not None:
-        await db.refresh(episode, attribute_names=["params"], with_for_update=True)
-    ratio, resolution = resolve_episode_video_output(
-        episode.params if episode else None,
-        project.params,
-    )
+        await db.refresh(episode, attribute_names=["params"], with_for_update=output_settings is None)
+    ratio, resolution = resolve_episode_video_output(episode.params if episode else None, project.params)
+    if output_settings is not None:
+        ratio = str(output_settings["aspect_ratio"])
+        resolution = str(output_settings["resolution"])
+        duration = int(output_settings.get("duration_sec") or duration)
     mid = (model_id or "").strip() or None
     from app.services.seedance_resolutions import clamp_video_duration, clamp_video_resolution
 
@@ -1490,7 +1507,7 @@ async def prepare_fragment_video_for_submit(
     duration = clamp_video_duration(mid, duration)
     resolution = clamp_video_resolution(mid, resolution)
     # 分集未落库画幅时写入解析结果，避免 UI 默认 9:16 与 params 长期不一致
-    if episode is not None:
+    if episode is not None and output_settings is None:
         ep_params = dict(episode.params or {})
         changed = False
         if str(ep_params.get("aspect_ratio") or "").strip() not in {"9:16", "16:9", "1:1"}:
@@ -1546,6 +1563,7 @@ async def prepare_fragment_video_for_submit(
     ref_payloads = build_fragment_ref_payloads(project, ref_assets)
     style_id = str((project.params or {}).get("image_style_id") or "").strip() or None
     catalog = build_seedance_reference_catalog(ref_payloads)
+    reference_snapshot = fragment_reference_snapshot(ref_assets, [image.asset_id for image in catalog.images])
     # board 始终可用于静帧；视频参考图只在已有角色/场景图时挂上，避免封面被当成主体
     board_url = resolve_image_style_board_url(style_id)
     video_board_url = board_url if catalog.images else ""
@@ -1608,6 +1626,7 @@ async def prepare_fragment_video_for_submit(
             resolution=resolution,
             content_labels=content_labels,
             model_id=mid,
+            reference_snapshot=reference_snapshot,
         )
 
     ark = get_ark()
@@ -1636,6 +1655,7 @@ async def prepare_fragment_video_for_submit(
         resolution=resolution,
         generate_audio=True,
         model_id=mid,
+        reference_snapshot=reference_snapshot,
     )
 
 
@@ -1680,6 +1700,7 @@ def serialize_fragment_video_prepared(prepared: FragmentVideoPrepared) -> dict[s
         "generate_audio": prepared.generate_audio,
         "content_labels": prepared.content_labels,
         "model_id": prepared.model_id,
+        "reference_snapshot": prepared.reference_snapshot,
     }
 
 
@@ -1711,6 +1732,7 @@ def deserialize_fragment_video_prepared(raw: dict[str, Any]) -> FragmentVideoPre
         generate_audio=bool(raw.get("generate_audio", True)),
         content_labels=labels,
         model_id=str(raw.get("model_id") or "") or None,
+        reference_snapshot=raw.get("reference_snapshot") if isinstance(raw.get("reference_snapshot"), list) else None,
     )
 
 
@@ -1728,6 +1750,8 @@ async def apply_fragment_video_assets(
     task_result: "TaskResult | None" = None,
     provider_task_id: str | None = None,
     model_id: str | None = None,
+    reference_snapshot: list[dict] | None = None,
+    output_settings: dict | None = None,
 ) -> DramaEpisodeFragment:
     from app.services import storage as storage_svc
     from app.services.ffmpeg_compose import extract_video_last_frame, extract_video_poster_frame
@@ -1767,6 +1791,9 @@ async def apply_fragment_video_assets(
         episode.params if episode else None,
         project.params,
     )
+    if output_settings is not None:
+        ratio = str(output_settings["aspect_ratio"])
+        resolution = str(output_settings["resolution"])
     # 在短锁前探测像素，锁内只把计算好的元数据合并到当前分镜。
     output = DramaEpisodeFragment(params={})
     write_fragment_video_output_meta(output, aspect_ratio=ratio, resolution=resolution, video_path=video_path)
@@ -1791,7 +1818,7 @@ async def apply_fragment_video_assets(
         model=billing_model,
         domain="drama",
         task_result=task_result,
-        fallback_duration_sec=fragment.duration_sec,
+        fallback_duration_sec=(output_settings or {}).get("duration_sec") or fragment.duration_sec,
         resolution=resolution,
         provider_task_id=provider_task_id,
         drama_project_id=project.id,
@@ -1801,6 +1828,10 @@ async def apply_fragment_video_assets(
     fragment.cover = cover_url or ""
     write_fragment_last_frame_url(fragment, last_frame_url)
     params = dict(fragment.params or {})
+    if reference_snapshot is not None:
+        params["reference_snapshot"] = reference_snapshot
+    else:
+        params.pop("reference_snapshot", None)
     params.pop("generation_attempts", None)
     gen = dict(params.get("generation") or {}) if isinstance(params.get("generation"), dict) else {}
     params.update({key: value for key, value in output.params.items() if key != "generation"})
@@ -1824,7 +1855,7 @@ async def apply_fragment_video_assets(
         model=billing_model,
         domain="drama",
         task_result=task_result,
-        fallback_duration_sec=fragment.duration_sec,
+        fallback_duration_sec=(output_settings or {}).get("duration_sec") or fragment.duration_sec,
         resolution=resolution,
         provider_task_id=provider_task_id,
         drama_project_id=project.id,

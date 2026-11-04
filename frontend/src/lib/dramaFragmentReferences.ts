@@ -31,3 +31,45 @@ export function fragmentCharacterLimitWarning(fragment: DramaFragment | null | u
   const ignored = characters.slice(3).map((id) => byId.get(id)?.name || `#${id}`)
   return `本镜引用 ${characters.length} 个角色，仅前 3 个生效；忽略：${ignored.join('、')}。可调整角色优先级。`
 }
+
+function referenceImageUrl(asset: DramaAsset): string {
+  const type = (asset.type || '').toLowerCase()
+  const assetType = (asset.asset_type || '').toLowerCase()
+  if (['audio', 'voice'].includes(assetType) || ['audio', 'voice', 'narration'].includes(type)) return ''
+  const url = assetType === 'image' || ['character', 'scene', 'prop', 'material', 'image'].includes(type)
+    ? asset.cover || asset.url || '' : asset.cover || ''
+  return /\.(mp3|wav|m4a|aac|ogg|flac)(?:[?#]|$)/i.test(url) ? '' : url
+}
+
+function canonicalImageMedia(url: string): string {
+  // 与后端旧媒体标识一致；静态目录上传到 OSS 仅改变地址前缀。
+  const generated = url.match(/(?:^|\/)generated\/[^?#]*/)
+  return generated ? `/static/${generated[0].replace(/^\//, '')}` : url.trim()
+}
+
+/** 视频的真实提交输入，不用资产更新时间推测形象变化。 */
+export function fragmentReferenceFreshness(fragment: DramaFragment, assets: DramaAsset[]): 'unknown' | 'fresh' | 'inputs_changed' | 'image_updated' {
+  const snapshot = fragment.params?.reference_snapshot
+  if (!Array.isArray(snapshot)) return 'unknown'
+  const byId = new Map(assets.map((asset) => [asset.id, asset]))
+  const current = selectedFragmentAssetIds(fragment, assets)
+    .map((id) => byId.get(id)!)
+    .filter((asset) => Boolean(referenceImageUrl(asset)))
+  if (snapshot.length !== current.length || snapshot.some((row, index) => row?.asset_id !== current[index]?.id)) {
+    return 'inputs_changed'
+  }
+  return snapshot.some((row, index) => row.revision || current[index].image_revision
+    ? row.revision !== (current[index].image_revision || '')
+    : canonicalImageMedia(String(row.media || '')) !== canonicalImageMedia(referenceImageUrl(current[index])))
+    ? 'image_updated' : 'fresh'
+}
+
+export function fragmentReferenceStatusLabel(fragment: DramaFragment, assets: DramaAsset[]): string {
+  if (!fragment.video) return ''
+  switch (fragmentReferenceFreshness(fragment, assets)) {
+    case 'inputs_changed': return '参考顺序已变，建议重生成'
+    case 'image_updated': return '形象已更新，建议重生成'
+    case 'unknown': return '来源版本未知'
+    default: return ''
+  }
+}

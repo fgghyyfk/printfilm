@@ -61,7 +61,7 @@ from app.services.drama.fragment_editing import (
     claim_episode_revision, editable_fragment_params, patch_fragment_params, EDIT_CONFLICT,
 )
 from app.services.drama.build_fragments import prepare_fragment_content
-from app.services.drama.fragment_content_duration import resolve_seedance_duration_from_content
+from app.services.drama.fragment_video_quote import fragment_video_task_inputs, quote_fragment_videos
 from app.services.drama.billing_util import record_seed_assets_llm_usage
 from app.services.drama.jobs import (
     cancel_all_episode_video_jobs,
@@ -684,6 +684,29 @@ async def activate_video_version(
     return {"ok": True, **payload}
 
 
+@router.post("/episodes/{episode_id}/generate_quote")
+async def generate_episode_quote(
+    episode_id: int,
+    body: DramaGenerateRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    ep = await get_owned_episode(db, episode_id, user)
+    project = await get_owned_drama_project(db, ep.project_id, user)
+    all_frags = await load_episode_fragments(db, episode_id)
+    requested = body.fragment_ids
+    valid_ids = {f.id for f in all_frags}
+    if not requested or any(fid not in valid_ids for fid in requested):
+        raise HTTPException(status_code=400, detail="请选择本集有效分镜")
+    active_ids = collect_active_fragment_ids_from_tasks(
+        await list_active_tasks_for_owner(db, user.id, drama_project_id=ep.project_id)
+    )
+    frags = [f for f in all_frags if f.id in requested and f.id not in active_ids
+             and fragment_generation_status(f).get("status") not in {"queued", "running", "generating"}]
+    frags.sort(key=lambda f: int(f.sort_order or 0))
+    return await quote_fragment_videos(db, user, ep, project, frags, body.model_id)
+
+
 @router.post("/episodes/{episode_id}/generate")
 async def generate_episode(
     episode_id: int,
@@ -709,10 +732,11 @@ async def generate_episode(
         )
 
     # 已在排队/生成的分镜跳过；其余按镜序入队（衔接时后一镜等上一镜尾帧）
+    active_ids = collect_active_fragment_ids_from_tasks(await list_active_tasks_for_owner(db, user.id, drama_project_id=ep.project_id))
     idle_frags = [
         f
         for f in frags
-        if fragment_generation_status(f).get("status") not in {"queued", "running", "generating"}
+        if f.id not in active_ids and fragment_generation_status(f).get("status") not in {"queued", "running", "generating"}
     ]
     idle_frags.sort(key=lambda f: int(f.sort_order or 0))
     if not idle_frags:
@@ -770,10 +794,7 @@ async def generate_episode(
         if defer_activation:
             deferred_count += 1
         has_video = bool((f.video or "").strip())
-        duration_sec = resolve_seedance_duration_from_content(
-            f.content or "",
-            fallback=int(f.duration_sec or 8),
-        )
+        inputs = fragment_video_task_inputs(ep, project, f, body.model_id)
         try:
             task = await create_task(
                 db,
@@ -785,15 +806,11 @@ async def generate_episode(
                     batch_key=batch_key,
                     defer_activation=defer_activation,
                     payload={
-                        "project_id": ep.project_id,
-                        "episode_id": episode_id,
-                        "fragment_ids": [f.id],
+                        **inputs,
                         "sequential": sequential,
                         "batch_key": batch_key,
                         "batch_index": index,
                         "replace_existing_video": has_video,
-                        "duration_sec": duration_sec,
-                        "model_id": (body.model_id or "").strip() or None,
                     },
                     drama_project_id=ep.project_id,
                     episode_id=episode_id,

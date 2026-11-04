@@ -68,6 +68,8 @@ class DramaAsset(Base):
     name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     cover: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    # 仅形象媒体替换推进，独立列避免布局等整列 params 回写覆盖版本。
+    image_revision: Mapped[str | None] = mapped_column(String(32), nullable=True)
     params: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     derive_id: Mapped[str | None] = mapped_column(String(10), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -6,7 +6,7 @@ export type FragmentEditSnapshot = { revision: number; deletedIds: number[] }
 // 与后端保持相同的服务端成片/任务字段边界，普通创作设置可提交。
 const serverKeys = new Set([
   'video_versions', 'lastFrameUrl', 'last_frame_url', 'generation', 'generation_attempts',
-  'aspect_ratio', 'resolution', 'video_width', 'video_height',
+  'aspect_ratio', 'resolution', 'video_width', 'video_height', 'reference_snapshot',
 ])
 
 /** 完整采用服务端分镜时建立新的编辑快照。 */

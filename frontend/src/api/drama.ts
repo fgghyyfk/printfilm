@@ -133,6 +133,7 @@ export type DramaAsset = {
   name?: string | null
   cover?: string | null
   url?: string | null
+  image_revision?: string | null
   params?: Record<string, unknown> | null
   project_id: number
   updated_at?: string | null
@@ -400,6 +401,11 @@ export const dramaApi = {
       method: 'POST',
       body: JSON.stringify(fragmentSaveBody(snapshot, fragments)),
     }),
+  quoteEpisodeVideos: (episodeId: number, fragment_ids: number[], model_id?: string) =>
+    request<{ fragment_ids: number[]; count: number; estimate_fen: number }>(
+      `/api/drama/episodes/${episodeId}/generate_quote`,
+      { method: 'POST', body: JSON.stringify({ fragment_ids, model_id }) },
+    ),
   generateEpisode: (episodeId: number, fragment_ids?: number[], model_id?: string) =>
     request<{
       ok: boolean
@@ -446,6 +452,7 @@ export const dramaApi = {
       video: string
       cover: string
       lastFrameUrl?: string | null
+      reference_snapshot?: Array<Record<string, unknown>> | null
       video_versions: Array<Record<string, unknown>>
     }>(`/api/drama/fragments/${fragmentId}/activate_video_version`, {
       method: 'POST',
