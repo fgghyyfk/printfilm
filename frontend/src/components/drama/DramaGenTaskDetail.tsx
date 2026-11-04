@@ -66,7 +66,6 @@ export function DramaGenTaskDetail({ job, onClose }: Props) {
   const isActive = job.status === 'queued' || job.status === 'running'
   const [loading, setLoading] = useState(isFailed)
   const [rawError, setRawError] = useState(job.error || '')
-  const [showRaw, setShowRaw] = useState(false)
 
   useEffect(() => {
     // 非失败任务不挖历史错误，避免把旧的「跳过重复任务」当成当前失败
@@ -181,16 +180,6 @@ export function DramaGenTaskDetail({ job, onClose }: Props) {
             ) : errView.upstreamAccountBlocked ? (
               <p className="drama-gen-detail-tip">需管理员充值 TokenFree Seedream 账户，用户端充值无法解决。</p>
             ) : null}
-            {rawError ? (
-              <button
-                type="button"
-                className="drama-gen-detail-raw-toggle"
-                onClick={() => setShowRaw((v) => !v)}
-              >
-                {showRaw ? '收起原始错误' : '查看原始错误'}
-              </button>
-            ) : null}
-            {showRaw && rawError ? <pre className="drama-gen-detail-raw">{rawError}</pre> : null}
           </section>
         ) : (
           <section className={`drama-gen-detail-card${isActive ? '' : ' is-done'}`}>

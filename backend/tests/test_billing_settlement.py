@@ -9,6 +9,7 @@ import pytest
 from app.models import User
 from app.models_tasks import TaskRun
 from app.services.billing.http import http_exception_for_value_error
+from app.services.public_errors import InsufficientBalanceError
 from app.services.billing.settlement import billing_active, freeze_for_task, settle_task
 
 
@@ -24,7 +25,7 @@ def test_billing_active_follows_global_switch(monkeypatch) -> None:
 
 
 def test_http_exception_maps_insufficient_balance_to_402() -> None:
-    exc = http_exception_for_value_error(ValueError("余额不足：需要 ¥1.00，当前 ¥0.00，请先充值"))
+    exc = http_exception_for_value_error(InsufficientBalanceError("余额不足：需要 ¥1.00，当前 ¥0.00，请先充值"))
     assert exc.status_code == 402
     assert "余额不足" in exc.detail
 

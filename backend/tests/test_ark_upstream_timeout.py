@@ -33,7 +33,7 @@ def test_reraise_read_timeout_says_waiting_not_unreachable():
     assert "无法连接" not in text
     assert "1200" in text
     wrapped = format_exception_message(ei.value)
-    assert "等待上游超时" in wrapped
+    assert "响应超时" in wrapped
 
 
 def test_reraise_write_timeout_says_send_not_wait():

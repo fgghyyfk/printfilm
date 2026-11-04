@@ -8,6 +8,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from app.schemas_tasks import TaskRunBriefOut
+from app.schemas_common import PublicDramaParams, PublicErrorText
 
 
 class DramaProjectCreate(BaseModel):
@@ -34,7 +35,7 @@ class DramaScriptOut(BaseModel):
     source: str | None = None
     summary: dict | None = None
     episode_content: dict | list | None = None
-    params: dict | None = None
+    params: PublicDramaParams | None = None
     project_id: int
 
     model_config = {"from_attributes": True}
@@ -47,7 +48,7 @@ class DramaAssetOut(BaseModel):
     name: str | None = None
     cover: str | None = None
     url: str | None = None
-    params: dict | None = None
+    params: PublicDramaParams | None = None
     derive_id: str | None = None
     project_id: int
     updated_at: datetime | None = None
@@ -75,7 +76,7 @@ class SeedAssetsFromScriptOut(BaseModel):
     created_count: int = 0
     prompts_refreshed: int = 0
     props_updated: int = 0
-    llm_errors: list[str] = Field(default_factory=list)
+    llm_errors: list[PublicErrorText] = Field(default_factory=list)
     status: str = "done"
     message: str | None = None
 
@@ -88,7 +89,7 @@ class DramaFragmentOut(BaseModel):
     cover: str = ""
     video: str = ""
     duration_sec: int | None = None
-    params: dict | None = None
+    params: PublicDramaParams | None = None
     asset_ids: list[int] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
@@ -98,7 +99,7 @@ class DramaEpisodeOut(BaseModel):
     id: int
     revision: int
     name: str
-    params: dict | None = None
+    params: PublicDramaParams | None = None
     project_id: int
     fragments: list[DramaFragmentOut] = Field(default_factory=list)
     active_tasks: list[TaskRunBriefOut] = Field(default_factory=list)
@@ -117,7 +118,7 @@ class DramaProjectOut(BaseModel):
     title: str
     description: str | None = None
     content: dict | list | None = None
-    params: dict | None = None
+    params: PublicDramaParams | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
     script: DramaScriptOut | None = None

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.services.public_errors import public_message
+
 import hashlib
 import logging
 import shutil
@@ -15,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.models import ToolRun, User
 from app.models_tasks import TaskRun
+from app.services.public_errors import InsufficientBalanceError
 from app.services.ark import get_ark
 from app.services.billing import run_billed_ephemeral
 from app.services.drama.billing_util import record_seedream_image_usage
@@ -227,7 +230,7 @@ async def _ensure_image_tool_balance(db: AsyncSession, user: User, tool_id: str)
     need = await estimate_task_fen(db, synthetic)
     available = int(user.balance_fen or 0)
     if available < need:
-        raise ValueError(f"余额不足：需要 ¥{need/100:.2f}，当前 ¥{available/100:.2f}，请先充值")
+        raise InsufficientBalanceError(f"余额不足：需要 ¥{need/100:.2f}，当前 ¥{available/100:.2f}，请先充值")
 
 
 # 提交生图任务：立即返回 task_id，实际生成在后台执行
@@ -332,7 +335,7 @@ async def execute_image_tool_run(run_id: int) -> dict:
             return {"ok": True, "run_id": run_id, "urls": urls, "billing_task_id": billing_task.id}
         except Exception as exc:  # noqa: BLE001
             row.status = "failed"
-            row.error = str(exc)[:512]
+            row.error = public_message(exc)
             await db.commit()
             logger.exception("execute_image_tool_run failed run_id=%s", run_id)
             return {"ok": False, "run_id": run_id, "error": row.error}
@@ -520,7 +523,7 @@ async def update_tool_run_task(db: AsyncSession, user_id: int, task_id: str, dat
         elif row.preview_url:
             row.preview_url = ensure_public_url(row.preview_url)
     if data.get("error"):
-        row.error = str(data["error"])[:512]
+        row.error = public_message(data["error"])
     await db.flush()
 
 

@@ -18,7 +18,7 @@ export type DramaGenErrorView = {
 
 /** 是否为上游 Seedream 账户欠费 */
 export function isUpstreamAccountError(message: string): boolean {
-  return /AccountOverdueError|上游 Seedream 账户欠费|上游.*账户欠费/i.test(message)
+  return /AccountOverdueError|上游 Seedream 账户欠费|上游.*账户欠费|平台模型账户暂不可用|Credits insufficient|积分不足|余额不足.*[Kk]ie|Kie.*积分/i.test(message)
 }
 
 // 从 Seedance JSON 文案里取出 content[n]
@@ -36,13 +36,6 @@ function looksLikeRootCause(text: string): boolean {
   )
 }
 
-// 从错误里尽量抽出已标注的槽位名（后端 content_labels）
-function extractNamedSlot(text: string): string | null {
-  const named = text.match(/(角色|场景|道具|旁白|参考图|音色)「([^」]+)」/)
-  if (named) return `${named[1]}「${named[2]}」`
-  return null
-}
-
 /**
  * 从多条候选错误里挑出最具体的根因（例如隐私图审核），
  * 避免只展示「重试超过上限」这类包装文案。
@@ -58,10 +51,25 @@ export function pickRootDramaGenError(
 
 /**
  * 将任务 error / error_message 转为前端展示文案。
- * 已是中文短句时尽量保留，仅补建议。
+ * 只重建已知类别，不回显历史队列或上游原始诊断。
  */
-export function formatDramaGenError(raw: string | null | undefined): DramaGenErrorView {
+export function formatDramaGenError(raw: string | null | undefined, code?: string): DramaGenErrorView {
   const text = String(raw || '').trim()
+  if (code === 'billing_review_pending' || /费用.*待核对/.test(text)) {
+    return {
+      title: '费用待核对',
+      message: '本次调用的结果和费用待核对，请勿重复生成。',
+      suggestion: '请保留任务记录并联系客服核对。',
+    }
+  }
+  if (code === 'recovery_limit' || /任务执行中断已达 \d+ 次/.test(text)) {
+    const count = text.match(/已达 (\d{1,6}) 次/)
+    return {
+      title: '任务已停止自动恢复',
+      message: count ? `任务执行中断已达 ${Number(count[1])} 次，已停止自动恢复。` : '任务多次执行中断，已停止自动恢复。',
+      suggestion: '请查看任务记录并联系管理员排查。',
+    }
+  }
   if (!text) {
     return {
       title: '生成失败',
@@ -70,19 +78,19 @@ export function formatDramaGenError(raw: string | null | undefined): DramaGenErr
     }
   }
 
-  if (/ReadTimeout|WriteTimeout|等待上游超时|响应超时/i.test(text)) {
+  if (code === 'upstream_timeout' || code === 'upstream_submit_unknown' || /ReadTimeout|WriteTimeout|等待上游超时|响应超时/i.test(text)) {
     return {
       title: '上游响应超时',
-      message: text.length > 200 ? `${text.slice(0, 200)}…` : text,
+      message: '上游响应超时，结果尚未确认，请先查看原任务状态。',
       suggestion:
-        '已经连上 TokenFree，但出图/出视频等待超过上限。请稍后重试；若文本能生成、只有图/视频超时，多半是上游排队较慢，不是代理断网。',
+        '请等待或查看任务记录，避免重复提交；持续无法确认时请联系客服。',
     }
   }
 
-  if (/网络错误|ConnectError|ConnectTimeout|无法连接上游|tokenfree\.com/i.test(text)) {
+  if (code === 'upstream_unavailable' || /网络错误|ConnectError|ConnectTimeout|无法连接上游|无法连接生成服务|tokenfree\.com/i.test(text)) {
     return {
       title: '无法连接图片/视频服务',
-      message: text.length > 200 ? `${text.slice(0, 200)}…` : text,
+      message: '暂时无法连接生成服务。',
       suggestion:
         '本机当前连不上上游（常见于代理未放行或网络中断）。请检查网络/代理后重试，并确认后台 TokenFree 渠道密钥有效。',
     }
@@ -97,7 +105,7 @@ export function formatDramaGenError(raw: string | null | undefined): DramaGenErr
     }
   }
 
-  if (isUpstreamAccountError(text) || (/Seedream error 403/i.test(text) && /AccountOverdue/i.test(text))) {
+  if (code === 'upstream_account_unavailable' || isUpstreamAccountError(text) || (/Seedream error 403/i.test(text) && /AccountOverdue/i.test(text))) {
     return {
       title: '平台上游账户欠费',
       message:
@@ -107,29 +115,29 @@ export function formatDramaGenError(raw: string | null | undefined): DramaGenErr
     }
   }
 
+  if (code === 'upstream_auth_unavailable') {
+    return {
+      title: '模型服务认证不可用',
+      message: '模型服务认证暂不可用。',
+      suggestion: '请联系管理员检查模型渠道配置。',
+    }
+  }
+
   if (isBillingError(text)) {
     return {
       title: '余额不足',
-      message: /余额不足|请先充值/.test(text) ? text : '当前余额不足，无法继续生成。',
+      message: '当前钱包余额不足，无法继续生成。',
       suggestion: '请先充值后再重试该任务。',
       billingBlocked: true,
     }
   }
 
   if (
-    /参考图疑似真人|PrivacyInformation|InputImageSensitive|SensitiveContentDetected|may contain real person/i.test(
+    code === 'reference_image_privacy' || /参考图疑似真人|PrivacyInformation|InputImageSensitive|SensitiveContentDetected|may contain real person/i.test(
       text,
     )
   ) {
     const idx = extractContentIndex(text)
-    const named = text.match(/(角色|场景|道具|参考图)「([^」]+)」/)
-    if (named) {
-      return {
-        title: '参考图疑似真人',
-        message: `视频服务审核未通过：${named[1]}「${named[2]}」的参考图可能含真人肖像，已拒绝生成。`,
-        suggestion: `请在左侧资产中打开「${named[2]}」，重新生成或上传偏动漫/插画的形象后再生成该分镜。`,
-      }
-    }
     const where =
       idx != null
         ? `（提交内容第 ${idx + 1} 项 / content[${idx}]，多为角色或场景参考图）`
@@ -145,7 +153,7 @@ export function formatDramaGenError(raw: string | null | undefined): DramaGenErr
   if (/重试超过上限|超过重试上限|内部自动重试超过上限/.test(text)) {
     return {
       title: '多次生成仍失败',
-      message: text,
+      message: '本次任务的自动重试已耗尽，请检查参考素材和文案。',
       suggestion:
         '这是同一次任务内的自动重试耗尽，不是禁止你再点生成。请根据真实原因（常见是参考图真人审核）改素材或文案后，再重新点生成。',
     }
@@ -159,7 +167,7 @@ export function formatDramaGenError(raw: string | null | undefined): DramaGenErr
     }
   }
 
-  if (/分镜已变更|分镜上下文丢失|分镜不存在/.test(text)) {
+  if (code === 'fragment_changed' || /分镜已变更|分镜已更新|分镜上下文丢失|分镜不存在/.test(text)) {
     return {
       title: '分镜已更新',
       message: '分镜在生成过程中被保存或重切，旧任务已失效。',
@@ -167,7 +175,7 @@ export function formatDramaGenError(raw: string | null | undefined): DramaGenErr
     }
   }
 
-  if (/InputTextSensitive|text.*sensitive|敏感/i.test(text) && /Seedance|create error/i.test(text)) {
+  if (code === 'text_moderation' || /分镜文案未通过内容审核/.test(text) || (/InputTextSensitive|text.*sensitive|敏感/i.test(text) && /Seedance|create error/i.test(text))) {
     return {
       title: '文案未通过审核',
       message: '分镜脚本或提示词触发了内容安全审核。',
@@ -183,29 +191,18 @@ export function formatDramaGenError(raw: string | null | undefined): DramaGenErr
     }
   }
 
-  if (/无法读取参考音频时长|参考音频地址为空/i.test(text)) {
-    const named = extractNamedSlot(text)
+  if (code === 'reference_audio_unavailable' || /无法读取参考音频时长|参考音频地址为空|参考音频无法读取/i.test(text)) {
     return {
       title: '参考音频无法校验',
-      message: named
-        ? `无法读取 ${named} 的参考音频时长或地址无效。`
-        : text.length > 160
-          ? `${text.slice(0, 160)}…`
-          : text,
+      message: '无法读取参考音频或地址无效。',
       suggestion: '请检查角色/旁白试听文件是否可访问，重新上传或生成后再生成该分镜。',
     }
   }
 
   if (/参考音频过长/i.test(text)) {
-    const named = extractNamedSlot(text)
-    const dur = text.match(/当前约\s*([\d.]+)\s*秒/)
     return {
       title: '参考音频过长',
-      message: named
-        ? `${named} 参考音频过长${dur ? `（约 ${dur[1]} 秒）` : ''}，须 ≤ 30 秒。`
-        : text.length > 160
-          ? `${text.slice(0, 160)}…`
-          : text,
+      message: '参考音频过长，须截短至 30 秒以内。',
       suggestion: '请截短对应角色/旁白试听音频后再生成该分镜。这不是参考图问题。',
     }
   }
@@ -216,16 +213,11 @@ export function formatDramaGenError(raw: string | null | undefined): DramaGenErr
     (/audio duration|1\.8/i.test(text) && /audio|音色|reference_audio|content\[/i.test(text))
   ) {
     const idx = extractContentIndex(text)
-    const named = extractNamedSlot(text)
-    const dur = text.match(/当前约\s*([\d.]+)\s*秒/)
     const where =
-      named ||
       (idx != null ? `提交内容第 ${idx + 1} 项 / content[${idx}]（参考音频，不是图片）` : '某条角色/旁白音色')
     return {
       title: '参考音频过短',
-      message: dur
-        ? `${where} 参考音频约 ${dur[1]} 秒，须 ≥ 1.8 秒。`
-        : `视频服务要求参考音频时长 ≥ 1.8 秒，当前过短：${where}。`,
+      message: `视频服务要求参考音频时长 ≥ 1.8 秒，当前过短：${where}。`,
       suggestion:
         '打开左侧对应角色或旁白资产，重新生成/上传更长的试听音频（建议 ≥ 2 秒）后再生成该分镜。这不是参考图问题。',
     }
@@ -239,19 +231,10 @@ export function formatDramaGenError(raw: string | null | undefined): DramaGenErr
     }
   }
 
-  if (/Credits insufficient|积分不足|余额不足.*[Kk]ie|Kie.*积分/i.test(text)) {
-    return {
-      title: '视频渠道积分不足',
-      message: '上游账户积分不足，无法创建视频生成任务（不是参考图或音频时长问题）。',
-      suggestion: '请联系管理员在 TokenFree 控制台充值后再重试；充值后重新生成该分镜即可。',
-      upstreamAccountBlocked: true,
-    }
-  }
-
   if (/未开通|无可用渠道|distributor/i.test(text)) {
     return {
       title: '图像模型未开通',
-      message: text.length > 180 ? `${text.slice(0, 180)}…` : text,
+      message: '当前模型渠道未开通。',
       suggestion: '请管理员在 TokenFree 控制台为 default 分组开通该模型（如 GPT Image 2.5）后再生成。',
     }
   }
@@ -259,10 +242,7 @@ export function formatDramaGenError(raw: string | null | undefined): DramaGenErr
   if (/File type not supported|参考图格式不支持|不支持 SVG/i.test(text)) {
     return {
       title: '参考图格式不支持',
-      message:
-        text.includes('参考图格式不支持')
-          ? text
-          : '上游拒绝了参考图：File type not supported（常见原因是 SVG 占位图或非位图）。',
+      message: '参考图格式不支持，请使用 PNG、JPG 或 WEBP 图片。',
       suggestion:
         '检查本镜引用的角色/场景/道具封面是否为 PNG/JPG/WEBP。若仍是 SVG 占位图，请对该资产重新生图或上传位图后再生成视频。',
     }
@@ -271,9 +251,7 @@ export function formatDramaGenError(raw: string | null | undefined): DramaGenErr
   // 参考图槽位收到非图片（常见：音色 mp3 误进 image_url）
   if (/invalid image format|参考图格式无效/i.test(text)) {
     const idx = extractContentIndex(text)
-    const named = extractNamedSlot(text)
     const where =
-      named ||
       (idx != null ? `提交内容第 ${idx + 1} 项 / content[${idx}]` : '某张参考图')
     return {
       title: '参考图格式无效',
@@ -285,9 +263,7 @@ export function formatDramaGenError(raw: string | null | undefined): DramaGenErr
 
   if (/Seedance create error\s*400|Kie createTask error/i.test(text)) {
     const idx = extractContentIndex(text)
-    const named = extractNamedSlot(text)
     const where =
-      named ||
       (idx != null ? `（提交内容第 ${idx + 1} 项 / content[${idx}]）` : '')
     return {
       title: '视频服务拒绝请求',
@@ -300,7 +276,7 @@ export function formatDramaGenError(raw: string | null | undefined): DramaGenErr
   if (/Seedance|上游生成失败/i.test(text)) {
     return {
       title: '视频生成失败',
-      message: text.length > 160 ? `${text.slice(0, 160)}…` : text,
+      message: '视频生成未能完成，请检查参考素材与文案。',
       suggestion: '可稍后重试该分镜；连续失败时请更换参考图或简化脚本。',
     }
   }
@@ -317,13 +293,13 @@ export function formatDramaGenError(raw: string | null | undefined): DramaGenErr
   if (/已取消|任务已中断/.test(text)) {
     return {
       title: text.includes('取消') ? '已取消' : '任务已中断',
-      message: text,
+      message: text.includes('取消') ? '任务已取消。' : '任务已中断。',
       suggestion: '需要成片时请重新入队生成。',
     }
   }
 
   // 成片下载被对端掐断（TokenFree content / CDN），不是参考图或脚本问题
-  if (/RemoteProtocolError|peer closed|complete message body|incomplete download/i.test(text)) {
+  if (code === 'media_download_failed' || /RemoteProtocolError|peer closed|complete message body|incomplete download|成片下载中断/i.test(text)) {
     return {
       title: '成片下载中断',
       message: '视频已在上游生成，但下载到服务器时连接被中断。',
@@ -340,18 +316,9 @@ export function formatDramaGenError(raw: string | null | undefined): DramaGenErr
     }
   }
 
-  // 已是较短中文：原样展示，补通用建议
-  if (!/[{\\[\]"]/.test(text) && text.length <= 120 && /[\u4e00-\u9fff]/.test(text)) {
-    return {
-      title: '生成失败',
-      message: text,
-      suggestion: '请按提示处理后重新生成该分镜。',
-    }
-  }
-
   return {
     title: '生成失败',
-    message: text.length > 200 ? `${text.slice(0, 200)}…` : text,
+    message: '生成未能完成，请查看任务记录或联系客服。',
     suggestion: '请检查本镜参考图与脚本后重试。',
   }
 }
@@ -359,7 +326,8 @@ export function formatDramaGenError(raw: string | null | undefined): DramaGenErr
 /** 弹窗展示生成失败（含上游欠费 / 用户余额不足等） */
 export async function alertDramaGenError(raw: unknown): Promise<void> {
   const text = raw instanceof Error ? raw.message : String(raw || '')
-  const view = formatDramaGenError(text)
+  const code = raw && typeof raw === 'object' && 'code' in raw && typeof raw.code === 'string' ? raw.code : undefined
+  const view = formatDramaGenError(text, code)
   const body = [view.message, view.suggestion].filter(Boolean).join('\n\n')
   await dialog.alert({
     title: view.title,

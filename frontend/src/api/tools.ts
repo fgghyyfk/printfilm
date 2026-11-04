@@ -13,7 +13,7 @@ function requestToolJson<T>(
 ): Promise<T> {
   return createJsonRequester((response, detail) => {
     if (response.status === 401) throw new Error('未登录')
-    if (notifyBilling) throwApiError(response.status, detail, fallback)
+    if (notifyBilling) throwApiError(response.status, detail, fallback, response.headers.get('X-Error-Code'))
     throw new Error(apiErrorMessage(detail, fallback))
   })<T>(path, init)
 }

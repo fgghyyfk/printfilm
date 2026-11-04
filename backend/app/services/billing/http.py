@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from fastapi import HTTPException
 
+from app.services.public_errors import public_http_exception
+
 
 def http_exception_for_value_error(exc: ValueError) -> HTTPException:
-    """余额不足 → 402；异常自带 status_code（如限频 429）时用它；其余 ValueError → 400。"""
-    detail = str(exc)
-    status = getattr(exc, "status_code", None) or (402 if detail.startswith("余额不足") else 400)
-    return HTTPException(status_code=status, detail=detail)
+    """仅本站钱包异常返回402；上游与参数错误使用安全中文及稳定错误码。"""
+    return public_http_exception(exc)

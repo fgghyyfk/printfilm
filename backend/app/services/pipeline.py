@@ -635,11 +635,14 @@ async def run_pipeline(project_id: int, *, phase: str | None = None) -> None:
             )
             return
         logger.exception("pipeline failed project=%s", project_id)
-        fail_msg = (
+        from app.services.public_errors import public_error
+
+        failure = public_error(
             "FFmpeg 被系统中断（signal 15），请点击重新拼接"
             if is_ffmpeg_interrupted_error(exc)
-            else str(exc)[:2000]
+            else exc
         )
+        fail_msg = failure.message
         async with AsyncSessionLocal() as db:
             project = await db.get(Project, project_id)
             if project:
@@ -653,7 +656,7 @@ async def run_pipeline(project_id: int, *, phase: str | None = None) -> None:
                 "stage": "PIPELINE",
                 "message": fail_msg,
                 "retryable": True,
-                "code": "PIPELINE_ERROR",
+                "code": failure.code,
             },
         )
         raise
@@ -1898,12 +1901,11 @@ async def regen_project_audio_and_compose(project_id: int) -> None:
 
 # 拼接失败时把项目落成 FAILED，避免长期卡在 COMPOSING 无法点「重新拼接」
 async def _fail_project_compose(project_id: int, exc: Exception) -> None:
-    raw = str(exc)
-    if is_ffmpeg_interrupted_error(exc):
-        msg = "FFmpeg 被系统中断（signal 15），请点击重新拼接"
-    else:
-        msg = raw[:2000]
-    logger.error("compose failed project=%s: %s", project_id, msg[:500])
+    from app.services.public_errors import public_error
+
+    failure = public_error("FFmpeg 被系统中断（signal 15）" if is_ffmpeg_interrupted_error(exc) else exc)
+    msg = failure.message
+    logger.error("compose failed project=%s: %s", project_id, exc)
     async with AsyncSessionLocal() as db:
         project = await db.get(Project, project_id)
         if project and project.status != ProjectStatus.DONE:
@@ -1917,7 +1919,7 @@ async def _fail_project_compose(project_id: int, exc: Exception) -> None:
             "stage": "COMPOSING",
             "message": msg,
             "retryable": True,
-            "code": "COMPOSE_ERROR",
+            "code": failure.code,
         },
     )
 

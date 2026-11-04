@@ -12,6 +12,7 @@ from app.config import get_settings
 from app.database import get_db
 from app.deps import get_current_user
 from app.models import User
+from app.services.public_errors import public_http_exception
 from app.schemas_drama import (
     DramaAddEpisodeRequest,
     DramaChatRequest,
@@ -465,7 +466,7 @@ async def ai_chat(
                 body.message,
             )
         except DramaLlmUnavailableError as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
+            raise public_http_exception(exc, fallback_status=503) from exc
         await record_line(
             db,
             user_id=user.id,
@@ -489,5 +490,5 @@ async def ai_chat(
             commit=True,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=402, detail=str(exc)) from exc
+        raise public_http_exception(exc) from exc
     return {"reply": reply, "task_id": task.id}

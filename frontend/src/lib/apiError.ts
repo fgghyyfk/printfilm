@@ -2,8 +2,8 @@ import { notifyBillingErrorIfNeeded } from './billingError'
 import { apiErrorMessage } from '../api/http'
 
 /** 解析 FastAPI detail 并抛出；402 / 余额不足时弹出充值引导 */
-export function throwApiError(status: number, detail: unknown, fallback = '请求失败'): never {
+export function throwApiError(status: number, detail: unknown, fallback = '请求失败', code?: string | null): never {
   const finalMessage = apiErrorMessage(detail, fallback)
   notifyBillingErrorIfNeeded(status, finalMessage)
-  throw new Error(finalMessage)
+  throw Object.assign(new Error(finalMessage), { status, code: code || undefined })
 }

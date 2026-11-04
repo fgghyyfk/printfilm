@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.deps import get_current_user
 from app.models import User
+from app.services.public_errors import public_http_exception, public_message
 from app.models_drama import DramaAsset
 from app.models_tasks import TaskRun
 from app.schemas_drama import (
@@ -327,17 +328,17 @@ async def generate_voice(
         )
     except ValueError as exc:
         params = dict(asset.params or {})
-        params["generation"] = {"status": "failed", "error": str(exc)[:500]}
+        params["generation"] = {"status": "failed", "error": public_message(exc)}
         asset.params = params
         await db.commit()
         raise http_exception_for_value_error(exc) from exc
     except Exception as exc:  # noqa: BLE001
         params = dict(asset.params or {})
-        params["generation"] = {"status": "failed", "error": str(exc)[:500]}
+        params["generation"] = {"status": "failed", "error": public_message(exc)}
         asset.params = params
         await db.commit()
         logger.exception("音色合成失败 project_id=%s asset_id=%s", project.id, asset.id)
-        raise HTTPException(status_code=500, detail=str(exc)[:500]) from exc
+        raise public_http_exception(exc) from exc
 
     logger.info(
         "音色合成完成 project_id=%s asset_id=%s url=%s",

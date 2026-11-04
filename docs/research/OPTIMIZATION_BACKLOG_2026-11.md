@@ -9,8 +9,9 @@
 - 先读根目录 `CLAUDE.md` 与 `docs/STANDARDS.md`；用户可见文案、报错 `detail`、提交信息一律简体中文，不回传堆栈。
 - 新增 DB 列：写进 `backend/app/main.py` 的 `_apply_schema_patches()`（只允许 additive DDL），并同步 `backend/tests/conftest.py` 的测试 schema。
 - 改了计费逻辑要同步 `docs/BILLING.md`。
-- **每条一个独立提交**，提交信息格式 `fix(域): 中文描述`；每条都补对应单测（纯单测优先，不依赖 PG）。
-- 校验：`cd backend && .venv/bin/python -m pytest -q`（需 PG 的集成测试可在无库时跳过）；`cd frontend && npm run lint && npx tsc -b --noEmit`。
+- **每条一个独立提交**，提交信息格式 `fix(域): 中文描述`；共享代码始终只有一个实现者修改。
+- 用户最新节奏（2026-11-04）：停止逐项全量测试和审查者重复跑测，连续实施后按组只读规格 / 质量审查与集中回归。当前分组为 10–13、14–20、21–29、30–32；计费、数据覆盖等关键改动仅保留必要的最小定向检查，已有绿灯不重复，小项不为凑覆盖新增测试。
+- 集中校验使用工程内隔离且阻断外网的 runner：`backend/.venv/bin/python .tmp/optimization-20261104/run_tests.py -q`；前端在组末执行 `npm test`、`npm run lint`、`npx tsc -b --noEmit`。审查者复用同一次集中回归证据，不各自重复运行；最后统一交互验收。
 - 不要顺手重构无关代码；`services/pipeline.py` 新增逻辑优先拆新文件。
 
 ---
@@ -129,6 +130,8 @@
   - `backend/app/services/ecom_set/jobs.py` 约 179 行上游原文显示在套图卡片（`frontend/.../EcomSetResults.tsx` 约 100 行）
   - `backend/app/services/drama/episode_compose.py` / `episodes.py` 约 896 行 500 回传异常原文
 - 改法：做一个公共的「异常 → 中文短句 + 错误码」映射（可参考前端 `dramaGenError.ts` 的思路），原文只进日志；402 只用于余额不足，参数错误用 400/422。
+- 实施进度（2026-11-04）：已实施，**待 10–13 项集中验证**。公共固定中文与错误码已接入用户 AI 错误出口；本地余额不足使用明确类型，上游账户与认证错误不冒充本站充值或登录失效。用户历史诊断、任务失败事件及 SSE 使用安全返回副本，保留管理员审计、数据库原文和业务正文；用户侧原始错误展开入口已移除。
+- 验证状态：仅完成现有关键失败回归的最小绿灯，未逐项运行全量、关联、lint / 类型检查或重复审查；统一留到本组末补验。
 
 ### [ ] 11. 前端登录态：统一处理 401，别因断网登出
 - 位置：`frontend/src/api/http.ts` 约 45-60 行无统一 401；`frontend/src/components/SiteNav.tsx` 约 56 行 `api.me()` 任意失败都删 token；`api/tools.ts` 约 15 行、`api/ecomSet.ts` 约 90 行各自写死「未登录」。

@@ -5,7 +5,7 @@ import { apiErrorMessage } from './http'
 
 /** 漫剧 API 沿用原有错误提示，并共用登录态与 JSON 解析。 */
 const request = createJsonRequester((response, detail) =>
-  throwApiError(response.status, detail, '请求失败'),
+  throwApiError(response.status, detail, '请求失败', response.headers.get('X-Error-Code')),
 )
 
 /** 导出 API 根地址，供静态资源 URL 拼接 */

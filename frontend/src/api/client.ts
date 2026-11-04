@@ -12,7 +12,7 @@ export const API_BASE = resolveApiBase(
 const transport = createHttpTransport({
   baseUrl: API_BASE,
   getToken: () => localStorage.getItem('token'),
-  onError: (response, detail) => throwApiError(response.status, detail, response.statusText),
+  onError: (response, detail) => throwApiError(response.status, detail, '请求未完成，请稍后再试', response.headers.get('X-Error-Code')),
 })
 
 /** 共用鉴权与错误解析，返回原始响应以支持文件下载。 */

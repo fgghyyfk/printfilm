@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any, TypeVar
@@ -11,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import User
 from app.models_tasks import TaskRun
+from app.services.public_errors import public_error, public_message
 from app.schemas_tasks import TaskCreateRequest, TaskEventCreate
 from sqlalchemy import select
 
@@ -20,6 +22,8 @@ from app.services.billing.settlement import freeze_for_task, settle_task
 from app.services.tasks.handlers import get_task_handler
 from app.services.tasks.service import append_task_event, build_task_event, build_task_step
 from app.services.tasks.upstream import upstream_event_session
+
+logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
@@ -129,10 +133,10 @@ async def run_billed_ephemeral(
     )
     try:
         await freeze_for_task(db, task)
-    except ValueError:
+    except ValueError as exc:
         task.status = "failed"
-        task.error_code = "insufficient_balance"
-        task.error_message = "余额不足"
+        task.error_code = public_error(exc).code
+        task.error_message = public_message(exc)
         # 未预扣成功，保持 none，勿标 skipped（skipped 表示全局关闭计费）
         task.billing_status = "none"
         await db.flush()
@@ -179,19 +183,20 @@ async def run_billed_ephemeral(
             message="轻量任务完成",
         )
     except Exception as exc:
+        logger.exception("ephemeral task failed task_id=%s", task.id)
         from app.services.tts_billing import mark_tts_billing_pending
 
         billing_pending = mark_tts_billing_pending(task, exc)
         task.status = "failed"
         task.error_code = "TTSBillingPending" if billing_pending else "ephemeral_failed"
-        task.error_message = str(exc)[:500]
+        task.error_message = public_message(exc)
         task.finished_at = datetime.now(UTC)
         await append_task_event(
             db,
             task.id,
             event_type="task.failed",
             status=task.status,
-            message=str(exc)[:200],
+            message=public_message(exc),
         )
         await settle_task(db, task.id)
         if commit:
@@ -250,10 +255,10 @@ async def run_billed_ephemeral_deferred(
     )
     try:
         await freeze_for_task(db, task)
-    except ValueError:
+    except ValueError as exc:
         task.status = "failed"
-        task.error_code = "insufficient_balance"
-        task.error_message = "余额不足"
+        task.error_code = public_error(exc).code
+        task.error_message = public_message(exc)
         task.billing_status = "none"
         await db.flush()
         raise
@@ -291,16 +296,17 @@ async def run_billed_ephemeral_deferred(
             payload={"provider_task_id": provider_id},
         )
     except Exception as exc:
+        logger.exception("ephemeral task failed task_id=%s", task.id)
         task.status = "failed"
         task.error_code = "ephemeral_failed"
-        task.error_message = str(exc)[:500]
+        task.error_message = public_message(exc)
         task.finished_at = datetime.now(UTC)
         await append_task_event(
             db,
             task.id,
             event_type="task.failed",
             status=task.status,
-            message=str(exc)[:200],
+            message=public_message(exc),
         )
         await settle_task(db, task.id)
         if commit:
@@ -419,7 +425,7 @@ async def settle_deferred_video_poll(
     else:
         task.status = "failed"
         task.error_code = "upstream_failed"
-        task.error_message = (error or "生成失败")[:500]
+        task.error_message = public_message(error or "生成失败")
         task.finished_at = now
         await append_task_event(
             db,

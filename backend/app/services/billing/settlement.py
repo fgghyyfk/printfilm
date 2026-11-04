@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import Settings, get_settings
 from app.models import UsageEvent, User, WalletLedger
 from app.models_tasks import TaskRun
+from app.services.public_errors import InsufficientBalanceError
 from app.services.billing.estimates import estimate_task_fen
 
 logger = logging.getLogger(__name__)
@@ -163,11 +164,11 @@ async def ensure_balance_for_task(
     required = pending + need
     if available < required:
         if pending > 0:
-            raise ValueError(
+            raise InsufficientBalanceError(
                 f"余额不足：本次需要 ¥{need/100:.2f}（含排队中 ¥{pending/100:.2f}），"
                 f"当前 ¥{available/100:.2f}，请先充值"
             )
-        raise ValueError(f"余额不足：需要 ¥{need/100:.2f}，当前 ¥{available/100:.2f}，请先充值")
+        raise InsufficientBalanceError(f"余额不足：需要 ¥{need/100:.2f}，当前 ¥{available/100:.2f}，请先充值")
     return need
 
 
@@ -192,7 +193,7 @@ async def ensure_balance_for_task_batch(
     required = pending + additional
     available = int(locked.balance_fen or 0)
     if available < required:
-        raise ValueError(
+        raise InsufficientBalanceError(
             f"余额不足：批量生成 {qty} 项需 ¥{additional/100:.2f}"
             f"（含排队中 ¥{pending/100:.2f}），当前 ¥{available/100:.2f}，请先充值"
         )
@@ -226,7 +227,7 @@ async def freeze_for_task(db: AsyncSession, task: TaskRun) -> int:
     need = await estimate_task_fen(db, task)
     available = int(user.balance_fen or 0)
     if available < need:
-        raise ValueError(f"余额不足：需要 ¥{need/100:.2f}，当前 ¥{available/100:.2f}，请先充值")
+        raise InsufficientBalanceError(f"余额不足：需要 ¥{need/100:.2f}，当前 ¥{available/100:.2f}，请先充值")
     # 仅通过 _ledger 扣余额，避免双重扣款
     user.frozen_fen = int(user.frozen_fen or 0) + need
     task.billing_estimate_fen = need
@@ -550,7 +551,7 @@ async def settle_usage_charge(
     target = locked or user
     available = int(target.balance_fen or 0)
     if available < need:
-        raise ValueError(f"余额不足：需要 ¥{need / 100:.2f}，当前 ¥{available / 100:.2f}，请先充值")
+        raise InsufficientBalanceError(f"余额不足：需要 ¥{need / 100:.2f}，当前 ¥{available / 100:.2f}，请先充值")
     await _ledger(
         db,
         target,

@@ -1,6 +1,7 @@
 import asyncio
 import io
 import json
+import logging
 import re
 import zipfile
 from datetime import datetime
@@ -17,6 +18,7 @@ from sse_starlette.sse import EventSourceResponse
 from app.database import get_db
 from app.deps import get_current_user
 from app.models import Project, ProjectStatus, Shot, ShotStatus, UsageEvent, User, Work
+from app.services.public_errors import public_http_exception
 from app.models_tasks import TaskRun
 from app.schemas import (
     ContentExpandOut,
@@ -100,7 +102,8 @@ async def preview_voice(
     try:
         url = await ensure_voice_preview(body.voice_id)
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=f"试听生成失败：{exc}") from exc
+        logging.getLogger(__name__).exception("voice preview failed")
+        raise public_http_exception(exc, fallback_status=502) from exc
     return VoicePreviewOut(url=url, voice_id=body.voice_id)
 
 
@@ -119,7 +122,8 @@ async def expand_content(
         try:
             result = await get_ark().expand_content(topic, body.mode)
         except Exception as exc:  # noqa: BLE001
-            raise HTTPException(status_code=502, detail=f"AI 生成失败：{exc}") from exc
+            logging.getLogger(__name__).exception("content expansion failed")
+            raise public_http_exception(exc, fallback_status=502) from exc
         await record_llm_chat_line(
             db,
             user_id=user.id,
@@ -678,6 +682,12 @@ async def project_events(
             while True:
                 try:
                     payload = await asyncio.wait_for(queue.get(), timeout=15.0)
+                    if payload.get("event") == "failed":
+                        from app.services.public_errors import public_error
+
+                        # 旧Redis/latest缓存可能仍有原始诊断；只处理公开副本。
+                        mapped = public_error(payload.get("message"), code=payload.get("code"))
+                        payload = {**payload, "message": mapped.message, "code": mapped.code}
                     yield {"event": "message", "data": json.dumps(payload, ensure_ascii=False)}
                     if payload.get("event") in {"done", "failed"}:
                         break

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.services.public_errors import public_message
+
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -256,12 +258,12 @@ async def run_script_summary_job(project_id: int) -> dict[str, Any]:
         except Exception as exc:  # noqa: BLE001
             params = dict(script.params or {})
             params["summary_status"] = "failed"
-            params["summary_error"] = str(exc)[:500]
+            params["summary_error"] = public_message(exc)
             params.pop("summary_generating_at", None)
             script.params = params
             await db.commit()
             logger.exception("剧本摘要失败 project_id=%s err=%s", project_id, exc)
-            return {"ok": False, "error": str(exc)[:500]}
+            return {"ok": False, "error": public_message(exc)}
 
         script.summary = summary
         params = dict(script.params or {})
@@ -658,11 +660,11 @@ async def run_episode_scripts_job(
         except Exception as exc:  # noqa: BLE001
             params = dict(script.params or {})
             params["episode_content_status"] = "failed"
-            params["episode_content_error"] = str(exc)[:500]
+            params["episode_content_error"] = public_message(exc)
             script.params = params
             await db.commit()
             logger.exception("分集剧本失败 project_id=%s err=%s", project_id, exc)
-            return {"ok": False, "error": str(exc)[:500]}
+            return {"ok": False, "error": public_message(exc)}
 
 
 async def _run_single_episode_script_job(
@@ -912,7 +914,7 @@ async def _run_single_episode_script_job(
             params["episode_optimize_status"] = "failed"
             params["episode_optimize_number"] = int(episode_number)
             params["episode_optimize_mode"] = mode
-            params["episode_optimize_error"] = str(exc)[:500]
+            params["episode_optimize_error"] = public_message(exc)
             params["episode_optimize_assets_created"] = 0
             params["episode_optimize_assets_reused"] = 0
             script.params = params
@@ -924,7 +926,7 @@ async def _run_single_episode_script_job(
                 mode,
                 exc,
             )
-            return {"ok": False, "error": str(exc)[:500]}
+            return {"ok": False, "error": public_message(exc)}
 
 
 # ---------- episode fragment plan (LLM) ----------
@@ -1089,10 +1091,10 @@ async def run_episode_fragment_plan_job(
             if not fallback_rules:
                 params = dict(episode.params or {})
                 params["fragment_plan_status"] = "failed"
-                params["fragment_plan_error"] = str(exc)[:500]
+                params["fragment_plan_error"] = public_message(exc)
                 episode.params = params
                 await db.commit()
-                return {"ok": False, "error": str(exc)[:500]}
+                return {"ok": False, "error": public_message(exc)}
             drafts = build_fragments_from_episode_body(
                 body,
                 assets,
@@ -2014,7 +2016,7 @@ async def run_asset_video_job(
                     "retry_download": True,
                     "provider_task_id": exc.provider_task_id,
                     "counts_attempt": bool(exc.counts_attempt),
-                    "error": str(exc)[:400],
+                    "error": public_message(exc),
                 }
 
             err_text = format_exception_message(exc, fallback="生视频失败", limit=500)
@@ -2179,12 +2181,12 @@ async def seed_assets_for_project(project_id: int) -> dict[str, Any]:
             if project:
                 params = dict(project.params or {}) if isinstance(project.params, dict) else {}
                 params["assets_seed_status"] = "failed"
-                params["assets_seed_error"] = str(exc)[:500]
+                params["assets_seed_error"] = public_message(exc)
                 params.pop("assets_seed_generating_at", None)
                 project.params = params
                 await db.commit()
             logger.exception("自动抽资产失败 project_id=%s", project_id)
-            return {"ok": False, "error": str(exc)[:500]}
+            return {"ok": False, "error": public_message(exc)}
 
 
 def _episode_body_by_number(script: Any) -> dict[int, str]:
@@ -2472,12 +2474,12 @@ async def run_seed_assets_job(
             }
         except Exception as exc:  # noqa: BLE001
             params["assets_seed_status"] = "failed"
-            params["assets_seed_error"] = str(exc)[:500]
+            params["assets_seed_error"] = public_message(exc)
             params.pop("assets_seed_generating_at", None)
             project.params = params
             await db.commit()
             logger.exception("抽取漫剧资产失败 project_id=%s", project_id)
-            return {"ok": False, "error": str(exc)[:500]}
+            return {"ok": False, "error": public_message(exc)}
 
 
 async def dispatch_seed_assets_job(

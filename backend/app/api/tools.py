@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
@@ -13,6 +14,7 @@ from app.deps import get_current_user
 from app.models import ToolRun, User
 from app.schemas_tools import ToolRunListOut, ToolRunOut, ToolRunRecordOut, ToolTaskOut
 from app.services.billing import run_billed_ephemeral_deferred, settle_deferred_video_poll
+from app.services.public_errors import public_http_exception
 from app.services.studio_tools import (
     enqueue_image_tool,
     get_tool_run,
@@ -26,6 +28,7 @@ from app.services.studio_tools import (
 )
 
 router = APIRouter(prefix="/tools", tags=["tools"])
+logger = logging.getLogger(__name__)
 
 IMAGE_TOOLS = {"t2i", "i2i", "i2p", "ecom"}
 VIDEO_TOOLS = {"t2v", "v2v"}
@@ -82,7 +85,7 @@ async def run_tool(
                     params=tool_params,
                 )
             except ValueError as exc:
-                raise HTTPException(status_code=402, detail=str(exc)) from exc
+                raise public_http_exception(exc) from exc
         elif tid in VIDEO_TOOLS:
             async def _exec_video() -> dict:
                 return await start_video_tool(
@@ -107,7 +110,7 @@ async def run_tool(
                     commit=False,
                 )
             except ValueError as exc:
-                raise HTTPException(status_code=402, detail=str(exc)) from exc
+                raise public_http_exception(exc) from exc
             data = {**data, "billing_task_id": billing_task.id}
             await persist_tool_run(
                 db,
@@ -120,10 +123,13 @@ async def run_tool(
         else:
             raise ValueError("未知工具")
         await db.commit()
+    except HTTPException:
+        raise
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise public_http_exception(exc) from exc
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=500, detail=str(exc)[:400]) from exc
+        logger.exception("tool request failed tool=%s", tid)
+        raise public_http_exception(exc) from exc
     return ToolRunOut.model_validate(data)
 
 

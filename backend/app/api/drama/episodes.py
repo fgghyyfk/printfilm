@@ -14,6 +14,7 @@ from sqlalchemy.orm import attributes, selectinload
 from app.database import get_db
 from app.deps import get_current_user
 from app.models import User
+from app.services.public_errors import public_http_exception, public_message
 from app.models_drama import (
     DramaEpisode,
     DramaEpisodeFragment,
@@ -157,7 +158,7 @@ def _expand_episode_task_items(active_tasks: list) -> list[dict]:
                         "progress_percent": task.progress_percent,
                         "cancel_requested": task.cancel_requested,
                         "provider_task_id": task.provider_task_id,
-                        "error_message": task.error_message,
+                        "error_message": public_message(task.error_message, code=task.error_code),
                         "project_id": task.project_id,
                         "drama_project_id": task.drama_project_id,
                         "episode_id": task.episode_id,
@@ -180,7 +181,7 @@ def _expand_episode_task_items(active_tasks: list) -> list[dict]:
                 "progress_percent": task.progress_percent,
                 "cancel_requested": task.cancel_requested,
                 "provider_task_id": task.provider_task_id,
-                "error_message": task.error_message,
+                "error_message": public_message(task.error_message, code=task.error_code),
                 "project_id": task.project_id,
                 "drama_project_id": task.drama_project_id,
                 "episode_id": task.episode_id,
@@ -378,7 +379,7 @@ async def confirm_episode_from_script(
         project = await get_owned_drama_project(db, body.project_id, user, with_script=True)
         params = dict(project.params or {}) if isinstance(project.params, dict) else {}
         params["assets_seed_status"] = "failed"
-        params["assets_seed_error"] = str(exc)[:500]
+        params["assets_seed_error"] = public_message(exc)
         params.pop("assets_seed_generating_at", None)
         project.params = params
         await db.commit()
@@ -957,10 +958,10 @@ async def compose_episode(
             fragment_ids=req.fragment_ids,
         )
     except RuntimeError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise public_http_exception(exc) from exc
     except Exception as exc:  # noqa: BLE001
         logger.exception("episode compose failed episode_id=%s", episode_id)
-        raise HTTPException(status_code=500, detail=f"全片合成失败：{exc}") from exc
+        raise public_http_exception(exc) from exc
     return {"ok": True, "video_url": url, "episode_id": episode_id}
 
 

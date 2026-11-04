@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.services.public_errors import public_message
+
 import asyncio
 import logging
 import uuid
@@ -176,7 +178,7 @@ async def run_item_job(task: TaskRun) -> dict[str, Any]:
             item = await db.get(EcomSetItem, item.id)
             if item is not None:
                 item.status = "failed"
-                item.error = str(exc)[:500] or "生成失败"
+                item.error = public_message(exc) or "生成失败"
             await refresh_set_status(db, set_id)
             await db.commit()
             logger.exception("ecom set item failed set=%s idx=%s", set_id, idx)

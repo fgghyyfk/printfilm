@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from app.services.public_errors import InsufficientBalanceError
 import logging
 from datetime import UTC, datetime, timedelta
 
@@ -49,7 +50,7 @@ async def execute_task_run(task_id: int) -> None:
 
         try:
             await freeze_for_task(db, task)
-        except ValueError as exc:
+        except InsufficientBalanceError as exc:
             # 余额不足：可预期失败，专用错误码便于前端引导充值
             await _fail_task_before_start(
                 db, task, step, error_code="insufficient_balance", message=str(exc)
@@ -122,6 +123,7 @@ async def execute_task_run(task_id: int) -> None:
                 await _requeue_interrupted_task(db, task)
         raise
     except Exception as exc:  # noqa: BLE001
+        logger.exception("task execution failed task_id=%s", task_id)
         async with AsyncSessionLocal() as db:
             task = await get_task_for_runtime(db, task_id)
             if task:

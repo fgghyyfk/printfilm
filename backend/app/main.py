@@ -47,7 +47,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
     # 跨域下载（如套图 zip）时前端需要读文件名
-    expose_headers=["Content-Disposition"],
+    expose_headers=["Content-Disposition", "X-Error-Code"],
 )
 
 

@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.deps import get_current_user
 from app.models import User
+from app.services.public_errors import public_http_exception
 from app.schemas_ecom import (
     EcomCopyIn,
     EcomPlanUpdateIn,
@@ -34,10 +35,10 @@ async def _guard(db: AsyncSession, coro):
         return await coro
     except LookupError as exc:
         await db.rollback()
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise public_http_exception(exc) from exc
     except ValueError as exc:
         await db.rollback()
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise public_http_exception(exc) from exc
     except HTTPException:
         raise
     except Exception as exc:  # noqa: BLE001

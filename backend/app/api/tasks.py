@@ -12,6 +12,7 @@ from app.deps import get_current_user
 from app.models import User
 from app.schemas_tasks import MockDelayTaskRequest, TaskCreateRequest, TaskListOut, TaskRunOut
 from app.services.billing.http import http_exception_for_value_error
+from app.services.public_errors import public_task_output
 from app.services.tasks.service import (
     cancel_task_for_user,
     count_active_tasks_for_user,
@@ -22,6 +23,11 @@ from app.services.tasks.service import (
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 _mock_delay_create_lock = asyncio.Lock()
+
+
+def _public_task_out(task) -> TaskRunOut:
+    """用户输出定向处理诊断副本，不影响管理员共享模型或数据库。"""
+    return TaskRunOut.model_validate(public_task_output(TaskRunOut.model_validate(task).model_dump()))
 
 
 # 创建一个延时完成的模拟任务，便于联调任务平台。
@@ -61,7 +67,7 @@ async def create_mock_delay_task(
             )
     except ValueError as exc:
         raise http_exception_for_value_error(exc) from exc
-    return TaskRunOut.model_validate(task)
+    return _public_task_out(task)
 
 
 # 查询单个任务详情（含 steps/targets/events）
@@ -75,7 +81,7 @@ async def get_task_run(
         task = await get_task_for_user(db, user, task_id)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail="任务不存在") from exc
-    return TaskRunOut.model_validate(task)
+    return _public_task_out(task)
 
 
 # 当前用户的统一任务列表，支持 domain/target/project 维度筛选
@@ -107,7 +113,7 @@ async def list_task_runs(
         drama_project_id=drama_project_id,
     )
     return TaskListOut(
-        items=[TaskRunOut.model_validate(item) for item in rows],
+        items=[_public_task_out(item) for item in rows],
         total=total,
         page=page,
         page_size=page_size,
@@ -127,7 +133,7 @@ async def cancel_task_run(
         raise HTTPException(status_code=404, detail="任务不存在") from exc
     except ValueError as exc:
         raise http_exception_for_value_error(exc) from exc
-    return TaskRunOut.model_validate(task)
+    return _public_task_out(task)
 
 
 

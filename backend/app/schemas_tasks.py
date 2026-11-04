@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_serializer, field_validator
 
 from app.schemas_common import PageMeta
 
@@ -147,6 +147,7 @@ class TaskRunBriefOut(BaseModel):
     progress_percent: int = 0
     cancel_requested: bool = False
     provider_task_id: str | None = None
+    error_code: str | None = None
     error_message: str | None = None
     project_id: int | None = None
     drama_project_id: int | None = None
@@ -158,6 +159,13 @@ class TaskRunBriefOut(BaseModel):
     updated_at: datetime | None = None
 
     model_config = {"from_attributes": True}
+
+    @field_serializer("error_message")
+    def public_error_message(self, value):
+        """嵌入业务响应的任务摘要同样不回传上游原文。"""
+        from app.services.public_errors import public_message
+
+        return public_message(value, code=self.error_code)
 
     @field_validator("recovery_count", mode="before")
     @classmethod

@@ -6,6 +6,7 @@ import pytest
 
 from app.services import kepu_avatar_billing as kb
 from app.services.billing.http import http_exception_for_value_error
+from app.services.public_errors import InsufficientBalanceError
 
 
 def _settings(**kw):
@@ -102,7 +103,7 @@ async def test_image_quota_hourly_limit():
 
 def test_balance_error_still_402():
     """余额不足仍是 402。"""
-    assert http_exception_for_value_error(ValueError("余额不足：需要 ¥1.00")).status_code == 402
+    assert http_exception_for_value_error(InsufficientBalanceError("余额不足：需要 ¥1.00")).status_code == 402
 
 
 @pytest.mark.asyncio

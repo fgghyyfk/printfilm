@@ -3,7 +3,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
-from app.schemas_common import PageMeta
+from app.schemas_common import PageMeta, PublicErrorText
 from app.schemas_tasks import TaskRunBriefOut
 
 
@@ -206,7 +206,7 @@ class ProjectOut(BaseModel):
     source_text: str
     status: str
     progress: int
-    error_msg: str | None
+    error_msg: PublicErrorText | None
     cover_url: str | None
     final_video_url: str | None
     resolution_mode: str
@@ -250,7 +250,7 @@ class ProjectListItem(BaseModel):
     progress: int
     cover_url: str | None
     final_video_url: str | None = None
-    error_msg: str | None = None
+    error_msg: PublicErrorText | None = None
     pipeline_mode: str = "full"
     output_ratio: str = ""
     published: bool = False

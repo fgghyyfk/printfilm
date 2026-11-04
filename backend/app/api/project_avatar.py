@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import logging
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
@@ -11,6 +12,7 @@ from app.api.projects import _get_owned_project
 from app.database import get_db
 from app.deps import get_current_user
 from app.models import Project, ProjectStatus, User
+from app.services.public_errors import public_http_exception
 from app.schemas import ProjectOut
 from app.services import avatar_ai, avatar_video, storage
 from app.services.billing.http import http_exception_for_value_error
@@ -74,9 +76,10 @@ class LookIn(BaseModel):
 
 def _ai_error(exc: Exception) -> HTTPException:
     """改图失败转成 502 中文短句；未配置转 400。"""
+    logging.getLogger(__name__).warning("avatar AI request failed: %s", exc)
     if isinstance(exc, avatar_ai.AvatarAINotConfigured):
-        return HTTPException(status_code=400, detail=str(exc))
-    return HTTPException(status_code=502, detail=str(exc)[:300] or "生成失败，请稍后重试")
+        return HTTPException(status_code=400, detail="形象服务尚未配置，请联系管理员", headers={"X-Error-Code": "model_unavailable"})
+    return public_http_exception(exc, fallback_status=502)
 
 
 @router.post("/projects/{project_id}/avatar-look", response_model=ProjectOut)

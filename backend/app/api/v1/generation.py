@@ -10,6 +10,7 @@ from app.config import get_settings
 from app.database import get_db
 from app.deps import get_api_user
 from app.models import User
+from app.services.public_errors import public_http_exception
 from app.models_tasks import TaskRun
 from app.schemas_api import (
     V1GenerationOut,
@@ -69,7 +70,7 @@ async def generate_image(
                 size=size,
             )
         except Exception as exc:  # noqa: BLE001
-            raise HTTPException(status_code=502, detail=str(exc)[:400]) from exc
+            raise public_http_exception(exc, fallback_status=502) from exc
 
         await record_seedream_image_usage(
             db,
@@ -95,7 +96,7 @@ async def generate_image(
             commit=True,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=402, detail=str(exc)) from exc
+        raise public_http_exception(exc) from exc
 
     return V1GenerationOut(
         status="succeeded",
@@ -124,7 +125,7 @@ async def generate_video(
                 generate_audio=body.generate_audio,
             )
         except Exception as exc:  # noqa: BLE001
-            raise HTTPException(status_code=502, detail=str(exc)[:400]) from exc
+            raise public_http_exception(exc, fallback_status=502) from exc
 
         return upstream_id
 
@@ -139,7 +140,7 @@ async def generate_video(
             commit=True,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=402, detail=str(exc)) from exc
+        raise public_http_exception(exc) from exc
 
     return V1GenerationOut(
         status="queued",
@@ -178,7 +179,7 @@ async def forward_seedance(
         try:
             upstream_id = await ark.gen_video_seedance_body(payload, project_id=0)
         except Exception as exc:  # noqa: BLE001
-            raise HTTPException(status_code=502, detail=str(exc)[:400]) from exc
+            raise public_http_exception(exc, fallback_status=502) from exc
 
         return upstream_id
 
@@ -193,7 +194,7 @@ async def forward_seedance(
             commit=True,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=402, detail=str(exc)) from exc
+        raise public_http_exception(exc) from exc
 
     return V1GenerationOut(status="queued", kind="video", task_id=upstream_id, urls=[])
 

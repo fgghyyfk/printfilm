@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from app.schemas_common import PublicErrorText
+
 
 class ToolRunOut(BaseModel):
     kind: str = Field(description="image | video | images")
@@ -18,7 +20,7 @@ class ToolTaskOut(BaseModel):
     status: str
     kind: str = "video"
     urls: list[str] = Field(default_factory=list)
-    error: str | None = None
+    error: PublicErrorText | None = None
 
 
 class ToolRunRecordOut(BaseModel):
@@ -33,7 +35,7 @@ class ToolRunRecordOut(BaseModel):
     urls: list[str] = Field(default_factory=list)
     task_id: str | None = None
     params: dict | None = None
-    error: str | None = None
+    error: PublicErrorText | None = None
     created_at: str
 
 

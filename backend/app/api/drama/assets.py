@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.deps import get_current_user
 from app.models import User
+from app.services.public_errors import public_http_exception, public_message
 from app.models_drama import DramaAsset, DramaProject
 from app.schemas_drama import (
     DramaActivateImageVersionRequest,
@@ -261,7 +262,7 @@ async def upload_asset_media(
         size = upload_fp.tell()
         upload_fp.seek(0)
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=400, detail=f"无法读取上传文件：{exc}") from exc
+        raise HTTPException(status_code=400, detail="无法读取上传文件，请检查文件后重试", headers={"X-Error-Code": "invalid_upload"}) from exc
     if size <= 0:
         raise HTTPException(status_code=400, detail="空文件")
     max_bytes = 30 * 1024 * 1024 if is_audio else 20 * 1024 * 1024
@@ -284,7 +285,7 @@ async def upload_asset_media(
             content_type=content_type or "application/octet-stream",
         )
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=f"OSS 上传失败：{exc}") from exc
+        raise HTTPException(status_code=502, detail="媒体上传暂时不可用，请稍后重试", headers={"X-Error-Code": "upload_failed"}) from exc
 
     from app.services.drama.generation import archive_asset_image_version
 
@@ -463,7 +464,7 @@ async def seed_assets(
         project = await get_owned_drama_project(db, project_id, user, with_script=True)
         params = dict(project.params or {}) if isinstance(project.params, dict) else {}
         params["assets_seed_status"] = "failed"
-        params["assets_seed_error"] = str(exc)[:500]
+        params["assets_seed_error"] = public_message(exc)
         params.pop("assets_seed_generating_at", None)
         project.params = params
         await db.commit()
@@ -474,11 +475,11 @@ async def seed_assets(
         project = await get_owned_drama_project(db, project_id, user, with_script=True)
         params = dict(project.params or {}) if isinstance(project.params, dict) else {}
         params["assets_seed_status"] = "failed"
-        params["assets_seed_error"] = str(exc)[:500]
+        params["assets_seed_error"] = public_message(exc)
         params.pop("assets_seed_generating_at", None)
         project.params = params
         await db.commit()
-        raise HTTPException(status_code=502, detail=str(exc)[:500]) from exc
+        raise public_http_exception(exc, fallback_status=502) from exc
     except Exception:
         project = await get_owned_drama_project(db, project_id, user, with_script=True)
         params = dict(project.params or {}) if isinstance(project.params, dict) else {}

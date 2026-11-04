@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from app.schemas_common import PublicErrorText
+
 
 class EcomSetItemOut(BaseModel):
     """套图中的一张。"""
@@ -20,7 +22,7 @@ class EcomSetItemOut(BaseModel):
     base_url: str | None = None
     final_url: str | None = None
     status: str
-    error: str | None = None
+    error: PublicErrorText | None = None
 
 
 class EcomProductOut(BaseModel):
