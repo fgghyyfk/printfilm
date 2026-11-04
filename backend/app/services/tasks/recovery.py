@@ -79,7 +79,8 @@ async def recover_interrupted_task(db, task_id: int, *, stale_clause=None, job_a
     if task.recovery_count >= limit:
         await _fail_recovered_task(db, task, f"任务执行中断已达 {limit} 次，已停止重试，按实际用量结算并退回剩余冻结金额")
         return True
-    if provider_id and (task.domain != "drama" or task.task_type not in {"fragment_video", "asset_video"}):
+    if provider_id and not ((task.domain == "drama" and task.task_type in {"fragment_video", "asset_video"})
+                            or (task.domain == "kepu" and task.task_type == "shot_regen_video" and result.get("video_tasks"))):
         await _fail_recovered_task(db, task, "任务执行中断，已有上游任务暂不支持安全恢复，已保留上游任务号，请联系客服核对")
         return True
     now = datetime.now(UTC)

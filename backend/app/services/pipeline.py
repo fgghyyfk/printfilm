@@ -1682,7 +1682,6 @@ async def regen_shot_image(project_id: int, shot_id: int) -> None:
         model=s.model_image,
         shot_id=shot_id,
     )
-    await finish_shot_video(shot_id)
     if cancelled:
         raise PipelineCancelled(f"project {project_id} cancelled during regen image")
 
@@ -1782,6 +1781,7 @@ async def regen_shot_video(project_id: int, shot_id: int) -> None:
         fallback_duration_sec=max(float(dur), 2.0),
         shot_id=shot_id,
     )
+    await finish_shot_video(shot_id)
     if cancelled:
         raise PipelineCancelled(f"project {project_id} cancelled during regen video")
 
