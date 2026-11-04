@@ -104,6 +104,35 @@ async def test_new_reference_before_apply_and_incomplete_audit_both_keep_file(db
     assert candidate.exists() and "synthetic-secret-value" not in json.dumps(query_failed)
 
 
+async def test_prose_punctuation_and_encoded_filename_references_keep_original_files(db_session, tmp_path):
+    root = tmp_path / "generated"
+    root.mkdir()
+    now = time.time() + 45 * 86400
+    retained = [file_at(root, f"p990030/{name}") for name in [
+        "old.mp4", "a,b.mp4", "image?v1.png", "image#v1.png", "image%3Fv1.png",
+        "local?#%.mp4", "plain.mp4",
+    ]]
+    orphan = file_at(root, "p990030/orphan.mp4")
+    user, _, _ = await seed_project(db_session)
+    task = await make_task(db_session, user, status="succeeded")
+    task.result_payload = {"notes": [
+        "备用地址 /static/generated/p990030/old.mp4, 后续说明",
+        "备用地址 /static/generated/p990030/a,b.mp4, 后续说明",
+        "/static/generated/p990030/image%3Fv1.png?signature=synthetic-secret#real-fragment",
+        "https://cdn.test/generated/p990030/image%23v1.png?signature=synthetic-secret#real-fragment",
+        json.dumps({"url": "/static/generated/p990030/image%253Fv1.png"}),
+        str(root / "p990030/local?#%.mp4"),
+        "https://cdn.test/generated/p990030/plain.mp4?signature=synthetic-secret#real-fragment",
+    ]}
+    await db_session.commit()
+    preview = await gc.audit_generated_orphans(db_session, root=root, now=now)
+    assert preview["ok"] and preview["candidates"] == [str(orphan)]
+    result = await gc.audit_generated_orphans(db_session, root=root, now=now, apply=True)
+    assert result["ok"] and result["deleted"] == [str(orphan)]
+    assert all(path.exists() for path in retained)
+    assert "synthetic-secret" not in json.dumps(result)
+
+
 @pytest.mark.parametrize("database_rollback", [False, True])
 async def test_project_delete_never_removes_shared_directory_before_commit(db_session, tmp_path, monkeypatch, database_rollback):
     """真实DELETE成功/历史分镜FK导致回滚都不触碰同号漫剧/旧媒体。"""

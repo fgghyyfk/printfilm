@@ -26,17 +26,18 @@ class ReferenceAudit:
 def _canonical(value: str, root: Path) -> Path | None:
     """只返回注入root内路径；公网/OSS旧别名亦保守映射，不输出查询签名。"""
     try:
-        text = unquote(value.strip())
-        parsed = urlsplit(text)
-        path = parsed.path if parsed.scheme in {"http", "https"} else text
-        if path.startswith(str(root) + os.sep) or path == str(root):
-            candidate = Path(path)
+        text = value.strip()
+        if text.startswith(str(root) + os.sep) or text == str(root):
+            # 本地绝对路径的?、#和百分号是文件名本身，不按URL解释。
+            candidate = Path(text)
         else:
+            # 先分离真正的query/hash，再解码路径内合法的%3F/%23。
+            path = unquote(urlsplit(text).path)
             marker = "/generated/"
             index = path.find(marker)
             if index < 0:
                 return None
-            candidate = root / path[index + len(marker):].split("?", 1)[0].split("#", 1)[0]
+            candidate = root / path[index + len(marker):]
         resolved = candidate.resolve()
         return resolved if resolved.is_relative_to(root) else None
     except (OSError, ValueError, RuntimeError):
@@ -64,9 +65,12 @@ def _reference_values(value, owner: str, root: Path, audit: ReferenceAudit) -> N
         # 整字段先处理（保留带空格文件名），再识别脚本/正文里的媒体引用。
         tokens = [value, *re.findall(r"(?:https?://|/static/generated/|" + re.escape(str(root)) + r"/)[^\s<>\"'`，。；、)\]}]+", value)]
         for token in tokens:
-            path = _canonical(token, root)
-            if path is not None:
-                audit.references.setdefault(path, set()).add(owner)
+            # 保留完整带标点文件名，同时保守保护正文边界前缀，宁可多留。
+            candidates = [token, token.rstrip(".,;:!?"), *[token[:match.start()] for match in re.finditer(r"[,;!?]", token)]]
+            for candidate in candidates:
+                path = _canonical(candidate, root)
+                if path is not None:
+                    audit.references.setdefault(path, set()).add(owner)
 
 
 async def collect_reference_audit(db, root: Path) -> ReferenceAudit:
