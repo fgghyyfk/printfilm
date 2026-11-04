@@ -166,6 +166,7 @@
 ### [ ] 16. 漫剧：画布 Backspace 直接删后端资产
 - 位置：`frontend/src/pages/drama/canvas/CanvasStore.tsx` 约 307 行，无确认，失败静默。
 - 改法：删除前二次确认；失败 toast 提示；撤销能恢复则恢复，否则改软删除。
+- 实施进度（2026-11-04）：已实施，**待 14–20 项集中验证**。自由画布通过删除前钩子统一确认多选节点和连线，只移除布局，不删除后端资产、分镜引用或任务；节点与边压入同一历史快照，undo/redo 保持原 assetId。连续按键只弹一次确认，沿用 React Flow 输入框键盘保护。删除立即保存及后台自动保存失败均由既有 toast / error 状态反馈，保留 dirty 可重试，并接住后台 Promise 避免未处理异常。普通项目画布和资产库真实删除入口保持原语义。
 
 ### [ ] 17. 漫剧分镜编辑无自动保存 / 离开提示
 - 位置：`frontend/src/pages/drama/EpisodeEditPage.tsx`。

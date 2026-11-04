@@ -86,7 +86,7 @@ export function useCanvasAutoSave({
         savingRef.current = false
         if (queuedRef.current) {
           queuedRef.current = false
-          void flush()
+          void flush().catch(() => undefined)
         }
       }
     },
@@ -101,7 +101,7 @@ export function useCanvasAutoSave({
 
     if (timerRef.current) clearTimeout(timerRef.current)
     timerRef.current = setTimeout(() => {
-      void flush()
+      void flush().catch(() => undefined)
     }, CANVAS_AUTO_SAVE_MS)
 
     return () => {

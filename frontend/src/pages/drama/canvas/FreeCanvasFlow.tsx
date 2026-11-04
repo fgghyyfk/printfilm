@@ -32,6 +32,7 @@ export function FreeCanvasFlow({ projectId }: FreeCanvasFlowProps) {
     edges,
     snapToGrid,
     showMinimap,
+    onBeforeDelete,
     onNodesChange,
     onEdgesChange,
     onConnect,
@@ -160,6 +161,7 @@ export function FreeCanvasFlow({ projectId }: FreeCanvasFlowProps) {
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
+        onBeforeDelete={onBeforeDelete}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
