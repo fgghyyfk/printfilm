@@ -156,6 +156,7 @@ async def to_project(
 
     project = await _guard(db, create_project_from_set(
         db, user, set_id, output_ratio=body.output_ratio, voice_id=body.voice_id,
+        create_new=body.create_new, request_id=body.request_id,
     ))
     return EcomToProjectOut(project_id=project.id)
 

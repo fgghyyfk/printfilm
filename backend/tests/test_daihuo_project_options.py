@@ -46,3 +46,20 @@ async def test_quote_uses_only_real_usable_images_without_creating_project_or_ta
     assert quote['output_ratio'] == '16:9' and quote['voice_id'] == 'voice-b'
     assert before == after and ecom.project_id is None
     assert all(count == 2 and all(Path(path).exists() for path in paths) for _, count, paths in observed)
+
+
+async def test_explicit_second_video_keeps_original_and_retries_same_request(db_session, tmp_path):
+    user, ecom = await seed_set(db_session, tmp_path)
+    first = await service.create_project_from_set(db_session, user, ecom.id, output_ratio='9:16', voice_id='voice-a')
+    # 实际旧入口忽略换画幅/音色，始终返回旧项目；新建必须由明确动作授权。
+    legacy = await service.create_project_from_set(db_session, user, ecom.id, output_ratio='16:9', voice_id='voice-b')
+    assert legacy.id == first.id and legacy.voice_id == 'voice-a' and legacy.output_ratio == '9:16'
+    second = await service.create_project_from_set(db_session, user, ecom.id, output_ratio='16:9', voice_id='voice-b',
+                                                  create_new=True, request_id='controlled-second-video')
+    retry = await service.create_project_from_set(db_session, user, ecom.id, output_ratio='16:9', voice_id='voice-b',
+                                                 create_new=True, request_id='controlled-second-video')
+    assert second.id != first.id and retry.id == second.id
+    assert first.voice_id == 'voice-a' and first.output_ratio == '9:16'
+    assert second.voice_id == 'voice-b' and second.output_ratio == '16:9'
+    assert ecom.project_id == second.id
+    assert (await db_session.scalar(select(func.count(Project.id)).where(Project.ecom_set_id == ecom.id))) == 2

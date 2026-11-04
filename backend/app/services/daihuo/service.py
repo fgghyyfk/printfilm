@@ -26,19 +26,34 @@ ALLOWED_RATIOS = {"9:16", "16:9", "1:1", "4:3"}
 
 async def create_project_from_set(
     db: AsyncSession, user: User, set_id: int, *, output_ratio: str = "9:16", voice_id: str = "",
+    create_new: bool = False, request_id: str | None = None,
 ) -> Project:
     """用一套已生成的套图建「商品带货」静图口播项目（status=DRAFT，前端随后调 generate 写稿）。"""
     ecom = (
-        await db.execute(select(EcomSet).where(EcomSet.id == set_id, EcomSet.user_id == user.id))
+        await db.execute(select(EcomSet).where(EcomSet.id == set_id, EcomSet.user_id == user.id)
+                             .with_for_update().execution_options(populate_existing=True))
     ).scalar_one_or_none()
     if ecom is None:
         raise LookupError("套图不存在")
-    if not any(it.status == "succeeded" and it.base_path for it in ecom.items):
-        raise ValueError("套图还没有生成好的图片")
-    if ecom.project_id:
+    ratio = output_ratio if output_ratio in ALLOWED_RATIOS else "9:16"
+    voice = (voice_id or "").strip()
+    if create_new:
+        if not request_id:
+            raise ValueError("请重新选择生成选项后再试")
+        requested = (await db.execute(select(Project).where(
+            Project.user_id == user.id, Project.ecom_set_id == ecom.id,
+            Project.daihuo_request_id == request_id,
+        ))).scalar_one_or_none()
+        if requested is not None:
+            if requested.output_ratio != ratio or requested.voice_id != voice:
+                raise ValueError("请重新选择生成选项后再试")
+            return requested
+    elif ecom.project_id:
         existing = await db.get(Project, ecom.project_id)
         if existing is not None and existing.user_id == user.id:
             return existing
+    if not usable_items(ecom):
+        raise ValueError("套图还没有生成好的图片")
     product = (ecom.plan or {}).get("product") or {}
     points = "；".join(product.get("selling_points") or [])
     source = "\n".join(x for x in [f"商品：{ecom.name}", points and f"卖点：{points}", ecom.notes] if x)
@@ -46,11 +61,12 @@ async def create_project_from_set(
         user_id=user.id, template_id=DAIHUO_TEMPLATE_ID, title=ecom.name[:60] or "商品带货",
         source_type="script", source_text=source or ecom.name, resolution_mode="preview",
         pipeline_mode="image_text",
-        output_ratio=output_ratio if output_ratio in ALLOWED_RATIOS else "9:16",
-        voice_id=(voice_id or "").strip(), ecom_set_id=ecom.id, status=ProjectStatus.DRAFT,
+        output_ratio=ratio, voice_id=voice, ecom_set_id=ecom.id,
+        daihuo_request_id=request_id if create_new else None, status=ProjectStatus.DRAFT,
     )
     db.add(project)
     await db.flush()
+    # 兼容单指针入口：指向最近创建的视频，旧项目与作品仍各自保留。
     ecom.project_id = project.id
     await db.commit()
     return project

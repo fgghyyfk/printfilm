@@ -29,7 +29,7 @@ class EcomSet(Base):
     # 规划得到的商品信息与提示：{"product": {...}, "warnings": [...], "vision": bool}
     plan: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     plan_task_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # 商品带货：由本套图生成的科普项目（projects.id）
+    # 商品带货：最近创建的视频项目（projects.id），历史项目各自保留。
     project_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
     updated_at: Mapped[datetime] = mapped_column(

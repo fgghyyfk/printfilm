@@ -117,6 +117,8 @@ class Project(Base):
     pipeline_mode: Mapped[str] = mapped_column(String(32), default="full")
     # 商品带货：关联的电商套图（ecom_sets.id）；有值时写稿阶段按套图建分镜
     ecom_set_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    # 显式新建另一条带货视频的幂等键，不由普通项目编辑接口写入。
+    daihuo_request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # 数字人口播：半身照（/static 或 OSS URL）与引擎（infinitetalk | longcat，空则用后台默认）
     avatar_image_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     avatar_engine: Mapped[str] = mapped_column(String(32), default="")

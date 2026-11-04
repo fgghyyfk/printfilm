@@ -115,6 +115,8 @@ class EcomToProjectIn(BaseModel):
 
     output_ratio: str = Field(default="9:16", pattern=r"^(9:16|16:9|1:1|4:3)$")
     voice_id: str = Field(default="", max_length=128)
+    create_new: bool = False
+    request_id: str | None = Field(default=None, min_length=16, max_length=64, pattern=r"^[a-zA-Z0-9_-]+$")
 
 
 class EcomToProjectOut(BaseModel):

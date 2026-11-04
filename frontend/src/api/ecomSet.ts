@@ -79,7 +79,7 @@ export type EcomSetPlanItemPatch = Pick<EcomSetItem, 'idx' | 'scene' | 'title' |
 export type DaihuoRatio = '9:16' | '16:9' | '1:1' | '4:3'
 
 /** 生成带货视频项目参数 */
-export type DaihuoProjectPayload = { output_ratio: DaihuoRatio; voice_id?: string }
+export type DaihuoProjectPayload = { output_ratio: DaihuoRatio; voice_id?: string; create_new?: boolean; request_id?: string }
 
 /** 文案编辑：单张排版文字 */
 export type EcomSetCopyPatch = Pick<EcomSetItem, 'title' | 'subtitle' | 'bullets'>
@@ -162,7 +162,7 @@ export async function downloadEcomSetZip(id: number, fallbackName: string): Prom
   triggerBlobDownload(blob, filename)
 }
 
-// 用套图建带货视频项目（同一套图重复调用返回同一项目）
+// 默认继续最近项目；明确 create_new 时由请求键幂等创建另一条视频。
 export function createDaihuoProject(id: number, payload: DaihuoProjectPayload): Promise<{ project_id: number }> {
   return requestEcom(`/${id}/project`, '创建带货视频失败', { method: 'POST', body: JSON.stringify(payload) }, true)
 }
