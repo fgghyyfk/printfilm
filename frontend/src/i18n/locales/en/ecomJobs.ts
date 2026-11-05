@@ -1,6 +1,34 @@
 /** 英文：电商批量任务与图片精修。 */
 export const enEcomJobs = {
   ecomJobs: {
+    translate: {
+      title: 'Image translation',
+      lead: 'Upload 1–20 images to translate their text while keeping the products, layout and colors.',
+      images: 'Images to translate',
+      language: 'Target language',
+      languages: { zh: 'Chinese', en: 'English', ja: 'Japanese' },
+      glossary: 'Brands / glossary (optional, up to 2000 characters)',
+      glossaryHint: 'For example: keep KaiKou unchanged; translate 随行杯 as travel tumbler',
+      hint: 'Keep the original aspect ratio and use 2K generation. Images without text are skipped with no image generation or charge. Only images with text are charged.',
+      start: 'Translate images',
+      confirmTitle: 'Confirm image translation',
+      confirm: 'Read text in {count} images. Estimated image charge if all contain text: {price}. Images without text are skipped for free. Continue?',
+      estimate: 'Estimated image charge if all contain text: {price}',
+      results: 'Original / translated comparison',
+      original: 'Original',
+      translated: 'Translated',
+      generating: 'Translating and generating',
+      skipped: 'No text to translate',
+      skippedHint: 'Skipped with no image generation or charge',
+      skippedCount: '{count} images without text skipped for free',
+      mock: 'Local mock preview: no real text recognition or translation is performed. This does not represent actual translation quality.',
+      newJob: 'New image translation job',
+      history: 'My image translation jobs',
+      noHistory: 'No translation jobs yet. Upload images to get started.',
+      required: 'Please upload images to translate',
+      unavailable: 'Please configure a vision model first',
+      setLink: 'Have an image set made here? Translate it on the image set page for text charges only',
+    },
     sku: {
       title: 'SKU replacement',
       lead: 'Upload one original scene and 1–20 product images to create one replacement image for each SKU.',
@@ -107,7 +135,7 @@ export const enEcomJobs = {
     status: { queued: 'Queued', running: 'Generating', done: 'Completed', partial: 'Partially completed', failed: 'Failed' },
     itemStatus: { queued: 'Queued', running: 'Retouching', succeeded: 'Completed', failed: 'Generation failed' },
     errors: { required: 'Please upload product images', count: 'Upload no more than {max} images', type: 'Only PNG / JPG / WebP images are supported', size: 'Each image must be 10MB or smaller' },
-    serverErrors: { cancelled: 'The task was cancelled.', invalid: 'Check the image count and selected options.', notFound: 'The requested job or image does not exist.', type: 'Only PNG / JPG / WebP images are supported.', required: 'Please upload product images.', size: 'Each image must be 10MB or smaller.', image: 'This image could not be read. Please choose another.', busy: 'This image is still being processed. Check back shortly.', empty: 'No completed images are available yet.', retryFailed: 'Only failed images can be retried.', unavailable: 'The generation service is unavailable. Check the job status later.', generation: 'Generation failed. Check the task record or contact support.', timeout: 'The upstream result is unconfirmed. Check the job status before resubmitting.', account: 'The model service is unavailable. Please contact an administrator.', billingReview: 'The result and charge need review. Do not generate again; please contact support.' },
+    serverErrors: { translationFormat: 'The translation response was invalid. Please try again.', setIncomplete: 'Finish generating the image set first.', ocrTimeout: 'Text recognition timed out. Try again with fewer images.', vision: 'Please configure a vision model first.', cancelled: 'The task was cancelled.', invalid: 'Check the image count and selected options.', notFound: 'The requested job or image does not exist.', type: 'Only PNG / JPG / WebP images are supported.', required: 'Please upload product images.', size: 'Each image must be 10MB or smaller.', image: 'This image could not be read. Please choose another.', busy: 'This image is still being processed. Check back shortly.', empty: 'No completed images are available yet.', retryFailed: 'Only failed images can be retried.', unavailable: 'The generation service is unavailable. Check the job status later.', generation: 'Generation failed. Check the task record or contact support.', timeout: 'The upstream result is unconfirmed. Check the job status before resubmitting.', account: 'The model service is unavailable. Please contact an administrator.', billingReview: 'The result and charge need review. Do not generate again; please contact support.' },
     catalog: { title: 'Product retouching', desc: 'Batch-retouch product images with white or transparent backgrounds', panelHint: 'Upload products, choose a background and resolution, then start retouching.', cta: 'Start retouching' },
   },
 }

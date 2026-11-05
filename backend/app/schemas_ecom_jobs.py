@@ -48,6 +48,16 @@ class SkuParams(BaseModel):
     sku_names: list[Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]] = Field(default_factory=list, max_length=20)
 
 
+class TranslateParams(BaseModel):
+    """图片翻译的目标语言及品牌术语保留表，保持原比例输出。"""
+
+    model_config = {"extra": "forbid"}
+    language: Literal["en", "ja", "zh"]
+    glossary: str = Field(default="", max_length=2000)
+    ratio: Literal["原比例"] = "原比例"
+    clarity: Literal["2k"] = "2k"
+
+
 class EcomVariantsParams(BaseModel):
     """从一张已完成结果派生的输出数量。"""
 

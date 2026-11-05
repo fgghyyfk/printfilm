@@ -28,3 +28,10 @@
 
 /* SKU 名称允许长文件名换行，避免窄屏表单与结果卡片溢出。 */
 .pf-job-params label, .pf-job-card > strong { min-width: 0; overflow-wrap: anywhere; }
+
+/* 翻译结果将原图与译图并排，窄屏保持对比顺序并允许换行。 */
+.pf-job-translate-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); }
+.pf-job-compare { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem; }
+.pf-job-compare > div { min-width: 0; }
+.pf-job-compare p { margin: 0 0 .4rem; }
+@media (max-width: 420px) { .pf-job-compare { grid-template-columns: 1fr; } }

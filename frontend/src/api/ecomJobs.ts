@@ -14,7 +14,7 @@ export type EcomJobItem = {
   ratio: string
   size: string
   result_url: string | null
-  status: 'queued' | 'running' | 'succeeded' | 'failed'
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'skipped'
   error: string | null
   task_run_id: number | null
 }
@@ -44,6 +44,10 @@ export type SkuParams = {
   notes: string
   sku_names: string[]
 }
+export type TranslateParams = {
+  language: 'en' | 'ja' | 'zh'
+  glossary: string
+}
 export type EcomJob = {
   id: number
   kind: string
@@ -71,7 +75,7 @@ export function getEcomJobOptions(): Promise<EcomJobOptions> {
 }
 
 /** 上传整批商品图并创建指定功能的任务。 */
-export function createEcomJob(kind: string, files: File[], params: RefineParams | StyleParams | BuyerShowParams | SkuParams, styleFiles: File[] = [], references: { model?: File[]; scene?: File[] } = {}): Promise<EcomJob> {
+export function createEcomJob(kind: string, files: File[], params: RefineParams | StyleParams | BuyerShowParams | SkuParams | TranslateParams, styleFiles: File[] = [], references: { model?: File[]; scene?: File[] } = {}): Promise<EcomJob> {
   const body = new FormData()
   files.forEach((file) => body.append('files', file))
   styleFiles.forEach((file) => body.append('style_files', file))

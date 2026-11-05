@@ -1,6 +1,34 @@
 /** 中文：电商批量任务与图片精修。 */
 export const zhEcomJobs = {
   ecomJobs: {
+    translate: {
+      title: '图片翻译',
+      lead: '上传 1–20 张图片，识别并翻译图中文字，保持商品、版式和配色。',
+      images: '待翻译图片',
+      language: '目标语言',
+      languages: { zh: '中文', en: '英文', ja: '日文' },
+      glossary: '品牌 / 术语保留（选填，最多 2000 字）',
+      glossaryHint: '例如：保留 KaiKou；将「随行杯」译为 travel tumbler',
+      hint: '保持原图比例，按 2K 档出图。识别不到文字时跳过，不生图、不计费；只对有文字的图片收费。',
+      start: '开始翻译',
+      confirmTitle: '确认图片翻译',
+      confirm: '将识别 {count} 张图片，全部有文字时预估生图费 {price}。无文字项免费跳过，确认开始？',
+      estimate: '全部有文字时预估生图费 {price}',
+      results: '原图 / 译图对比',
+      original: '原图',
+      translated: '译图',
+      generating: '翻译生成中',
+      skipped: '无可翻译文字',
+      skippedHint: '已跳过，不生图、不计费',
+      skippedCount: '{count} 张无文字，已免费跳过',
+      mock: '本地 Mock 示意结果：不执行真实识字和翻译，不代表实际翻译效果。',
+      newJob: '新建图片翻译任务',
+      history: '我的图片翻译任务',
+      noHistory: '还没有翻译任务，上传图片开始吧',
+      required: '请上传待翻译图片',
+      unavailable: '请先配置视觉模型',
+      setLink: '已有自家套图？前往套图页翻译，只需文本费用',
+    },
     sku: {
       title: 'SKU 替换',
       lead: '上传一张场景原图和 1–20 张产品图，每个 SKU 各生成一张商品替换图。',
@@ -107,7 +135,7 @@ export const zhEcomJobs = {
     status: { queued: '排队中', running: '生成中', done: '已完成', partial: '部分完成', failed: '失败' },
     itemStatus: { queued: '排队中', running: '精修中', succeeded: '已完成', failed: '生成失败' },
     errors: { required: '请上传产品图', count: '最多上传 {max} 张图片', type: '仅支持 PNG / JPG / WebP 图片', size: '单张图片不能超过 10MB' },
-    serverErrors: { cancelled: '任务已取消', invalid: '参数错误，请检查图片数量和选项', notFound: '请求的内容不存在', type: '仅支持 PNG / JPG / WebP 图片', required: '请上传产品图', size: '单张图片不能超过 10MB', image: '图片无法识别，请换一张', busy: '这张图仍在处理中，请稍后查看', empty: '还没有生成好的图片', retryFailed: '只能重试失败的图片', unavailable: '生成服务暂时不可用，请稍后查看任务状态', generation: '生成失败，请查看任务记录或联系客服', timeout: '上游响应尚未确认，请先查看任务状态，避免重复提交', account: '模型服务暂不可用，请联系管理员', billingReview: '本次调用的结果和费用待核对，请勿重复生成，请联系客服' },
+    serverErrors: { translationFormat: '翻译结果格式错误，请重试', setIncomplete: '请先完成套图生成', ocrTimeout: '图片识字超时，请减少图片后重试', vision: '请先配置视觉模型', cancelled: '任务已取消', invalid: '参数错误，请检查图片数量和选项', notFound: '请求的内容不存在', type: '仅支持 PNG / JPG / WebP 图片', required: '请上传产品图', size: '单张图片不能超过 10MB', image: '图片无法识别，请换一张', busy: '这张图仍在处理中，请稍后查看', empty: '还没有生成好的图片', retryFailed: '只能重试失败的图片', unavailable: '生成服务暂时不可用，请稍后查看任务状态', generation: '生成失败，请查看任务记录或联系客服', timeout: '上游响应尚未确认，请先查看任务状态，避免重复提交', account: '模型服务暂不可用，请联系管理员', billingReview: '本次调用的结果和费用待核对，请勿重复生成，请联系客服' },
     catalog: { title: '图片精修', desc: '批量精修商品图，支持白底与透明底', panelHint: '上传产品图，选择背景与清晰度后开始精修。', cta: '开始精修' },
   },
 }

@@ -2,6 +2,21 @@
 
 export const enEcomSet = {
   ecomSet: {
+    translate: {
+      mock: 'Local mock translation: no model was called.',
+      title: 'Translate into another language',
+      hint: 'Reuse the backgrounds and re-layout translated copy as a new image set.',
+      language: 'Target language',
+      start: 'Translate image set',
+      working: 'Translating and laying out…',
+      price: 'Text translation only: {price}, no image generation charge',
+      confirmTitle: 'Confirm image set translation',
+      confirm: 'Translate the copy into {language} and create a new image set. Text charge: {price}, with no image generation charge. Continue?',
+      failed: 'Image set translation failed. Please try again.',
+      source: 'Translated from image set #{id}',
+      sourceLink: 'View original image set',
+      loading: 'Loading translation pricing…',
+    },
     enhanced: {
       custom: 'Custom slots',
       slotsHint: 'Choose 3–10 slots including at least one hero image. Images follow selection order.',

@@ -181,6 +181,8 @@ sequenceDiagram
 | 漫剧资产 seed（轻量同步） | `run_billed_ephemeral(domain=drama, seed_assets)` |
 | 工作室工具 | `run_billed_ephemeral(domain=studio, tool_image/tool_video)` |
 | 一图出套图·规划 | `run_billed_ephemeral(domain=studio, ecom_set_plan)`：**固定价**，写一条 `billing_key=ecom_set_plan`、`charge_fen=ECOM_SET_PLAN_FEN`（默认 10 分）的用量行，不按 token 计；规划失败不扣 |
+| 一图出套图·翻译 | `run_billed_ephemeral(domain=studio, ecom_set_translate)`；翻译全部文案后复用底图 PIL 重排，生成独立套图并记录 `source_set_id` / `language`；仅一次固定文本费用 `ECOM_SET_PLAN_FEN`（默认 10 分），写 `billing_key=ecom_set_translate` 的 llm 用量行，无新生图费用；翻译或排版失败整笔回滚 |
+| 外部图片翻译 | `kind=translate`，1–20 张；先视觉识字并翻译，识字不另收费。明确无字项为 `skipped`（无可翻译文字），无 TaskRun、无冻结及扣费；仅有文字的图片进入 `ecom_job_image`，按 2K 图像目录整批校验余额、逐张预扣，记录 `tool_id=ecom_translate` 用量后结算，生图失败不扣。识字整批总限时 480 秒，超时或 JSON 无效则回滚本批、不进入生图队列；可减少图片重试；缺视觉模型时拒绝建任务，mock 全程本地且标记为示意结果 |
 | 一图出套图·生图 | `create_task(domain=studio, ecom_set_image)`，按 `clarity=2k/4k` 匹配生图目录估价（沿用模型能力钳制），每张独立预扣与结算；预设 4/6/8 或自定义 3–10 槽位按实际张数计价；语言及广告版式不另收费；复用精修结果仅收新套图的规划和生图费用；本地 mock 不联网。一张一个 TaskRun，executor 自动 freeze/settle，handler 内 `record_seedream_image_usage`；入队前 `ensure_balance_for_task_batch` 一次校验 N 张；单张失败不扣；改文案（重新排版）不调模型、免费 |
 | 电商买家秀 / 种草图 | 复用 `create_task(domain=studio, ecom_job_image)`；`kind=buyer_show` 按 `count=1–8` 张计价，产品 / 模特 / 场景参考不另计费；整批校验余额后逐张预扣，按 `clarity=2k/4k` 目录估价，记录 `tool_id=ecom_buyer_show` 并结算；失败重抛不扣费，本地 mock 不联网。通用裂变接口为已完成结果创建独立同类 job，按新输出张数重新预扣与结算，保留原任务和结果 |
 | 电商 SKU 替换 | 复用 `create_task(domain=studio, ecom_job_image)`；`kind=sku` 每张产品图对应 1 张输出（1–20 张），场景参考不另计费；整批校验余额，逐张预扣并按 `clarity=2k/4k` 目录估价，记录 `tool_id=ecom_sku` 后结算；失败重抛不扣费，本地 mock 不联网 |

@@ -2,6 +2,21 @@
 
 export const zhEcomSet = {
   ecomSet: {
+    translate: {
+      mock: '本地示意翻译，未调用模型',
+      title: '翻译成其他语言',
+      hint: '复用底图，只翻译文案后重新排版，生成一份新套图。',
+      language: '目标语言',
+      start: '翻译套图',
+      working: '翻译排版中…',
+      price: '仅文本翻译费 {price}，无生图费',
+      confirmTitle: '确认翻译套图',
+      confirm: '将文案翻译为{language}并生成新套图，只收文本费 {price}，无生图费。确认开始？',
+      failed: '套图翻译失败，请重试',
+      source: '翻译自套图 #{id}',
+      sourceLink: '查看原套图',
+      loading: '正在加载翻译价格…',
+    },
     enhanced: {
       custom: '自定义模块',
       slotsHint: '选择 3–10 个模块，至少包含一个主图；按勾选顺序出图。',

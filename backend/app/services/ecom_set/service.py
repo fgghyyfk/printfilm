@@ -89,6 +89,7 @@ async def get_options(db: AsyncSession) -> dict:
         "languages": list(LANGUAGES), "clarities": list(CLARITIES),
         "prices": {clarity: await image_unit_fen(db, clarity) for clarity in CLARITIES},
         "plan_fen": int(s.ecom_set_plan_fen),
+        "translate_fen": int(s.ecom_set_plan_fen),
         "image_fen": await image_unit_fen(db),
         "billing_enabled": billing_active(),
     }
@@ -338,4 +339,5 @@ def to_out(ecom: EcomSet, *, image_fen: int) -> dict:
         "total_fen": image_fen * len(items), "items": items,
         "created_at": ecom.created_at.isoformat() if ecom.created_at else "",
         "project_id": ecom.project_id,
+        "source_set_id": ecom.source_set_id,
     }

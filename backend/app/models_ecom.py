@@ -25,6 +25,8 @@ class EcomSet(Base):
     count: Mapped[int] = mapped_column(Integer, default=6)
     # 目标文案语言与生成清晰度，旧套图默认为中文 2K。
     language: Mapped[str] = mapped_column(String(8), default="zh", server_default="zh")
+    # 翻译来源套图只作溯源，不复制视频项目或生图任务。
+    source_set_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     clarity: Mapped[str] = mapped_column(String(8), default="2k", server_default="2k")
     notes: Mapped[str] = mapped_column(Text, default="")
     product_image_path: Mapped[str] = mapped_column(String(1024), default="")

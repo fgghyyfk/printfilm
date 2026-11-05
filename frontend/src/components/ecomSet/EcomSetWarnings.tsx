@@ -9,7 +9,7 @@ export default function EcomSetWarnings({ warnings }: { warnings: string[] }) {
       <strong>{t('ecomSet.plan.warnings')}</strong>
       <ul>
         {warnings.map((text, i) => (
-          <li key={i}>{text}</li>
+          <li key={i}>{text === '本地示意翻译，未调用模型' ? t('ecomSet.translate.mock') : text}</li>
         ))}
       </ul>
     </div>

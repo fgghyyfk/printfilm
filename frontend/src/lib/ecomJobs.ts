@@ -14,6 +14,10 @@ export function ecomJobNeedsPolling(job: { status: string } | null): boolean {
 
 /* 公共诊断短句与界面翻译键的对应关系，保留未知诊断便于排障。 */
 const ERROR_KEYS: Record<string, string> = {
+  '翻译结果格式错误，请重试': 'translationFormat',
+  '请先完成套图生成': 'setIncomplete',
+  '图片识字超时，请减少图片后重试': 'ocrTimeout',
+  '请先配置视觉模型': 'vision',
   '参数错误，请检查图片数量和选项': 'invalid',
   '输入参数有误，请检查后重试': 'invalid',
   '参数错误': 'invalid',

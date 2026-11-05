@@ -188,6 +188,7 @@ async def _apply_schema_patches() -> None:
         await conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_projects_daihuo_request ON projects (user_id, ecom_set_id, daihuo_request_id)"))
         ecols = await _pg_columns(conn, "ecom_sets")
         if ecols:
+            await conn.execute(text("ALTER TABLE ecom_sets ADD COLUMN IF NOT EXISTS source_set_id INTEGER"))
             await conn.execute(text("ALTER TABLE ecom_sets ADD COLUMN IF NOT EXISTS language VARCHAR(8) NOT NULL DEFAULT 'zh'"))
             await conn.execute(text("ALTER TABLE ecom_sets ADD COLUMN IF NOT EXISTS clarity VARCHAR(8) NOT NULL DEFAULT '2k'"))
         if ecols and "project_id" not in ecols:

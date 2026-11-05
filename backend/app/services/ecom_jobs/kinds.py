@@ -6,8 +6,8 @@ from math import gcd, sqrt
 from typing import Callable
 
 from app.services.compliance.ad_words import check_text
-from app.schemas_ecom_jobs import BuyerShowParams, SkuParams, StyleParams
-from app.services.ecom_jobs import buyer_show, sku
+from app.schemas_ecom_jobs import BuyerShowParams, SkuParams, StyleParams, TranslateParams
+from app.services.ecom_jobs import buyer_show, sku, translate
 from app.services.ecom_jobs.refine import build_prompt
 from app.services.ecom_jobs.style import build_prompt as build_style_prompt
 
@@ -24,6 +24,7 @@ class Kind:
 
 STYLE_MODE_LIMITS = {"single": 6, "batch": 20}
 KINDS = {
+    "translate": Kind(20, ("原比例",), ("2k",), translate.build_prompt),
     "sku": Kind(20, sku.RATIOS, ("2k", "4k"), sku.build_prompt),
     "refine": Kind(20, ("1:1", "3:4", "原比例"), ("2k", "4k"), build_prompt),
     "style": Kind(20, ("1:1", "3:4", "9:16", "16:9"), ("2k", "4k"), build_style_prompt),
@@ -36,6 +37,10 @@ def validate(kind: str, count: int, params: dict) -> dict:
     spec = KINDS.get(kind)
     if spec is None:
         raise ValueError("未知工具")
+    if kind == "translate":
+        if not isinstance(params, dict) or not 1 <= count <= spec.max_images:
+            raise ValueError("参数错误")
+        return TranslateParams.model_validate(params).model_dump()
     if kind == "sku":
         if not isinstance(params, dict) or not 1 <= count <= spec.max_images:
             raise ValueError("参数错误")
@@ -76,6 +81,8 @@ def validate(kind: str, count: int, params: dict) -> dict:
 
 # 在共同底座保留输入顺序和角色，并给裂变图片添加机位变化。
 def build_item_prompt(kind: str, params: dict, inputs: list[dict], idx: int) -> str:
+    if kind == "translate":
+        return translate.build_prompt(params)
     prompt = (buyer_show.build_item_prompt(params, inputs, idx) if kind == "buyer_show"
               else KINDS[kind].prompt_builder(params))
     descriptions = {

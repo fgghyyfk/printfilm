@@ -49,6 +49,8 @@ export interface EcomSet {
   items: EcomSetItem[]
   /** 由这套图生成的带货视频项目（未生成为 null） */
   project_id: number | null
+  /** 翻译来源套图，原始套图为 null */
+  source_set_id: number | null
   created_at: string
 }
 
@@ -60,6 +62,7 @@ export interface EcomSetOptions {
   languages: EcomLanguage[]
   clarities: EcomClarity[]
   prices: Record<EcomClarity, number>
+  translate_fen: number
   plan_fen: number
   image_fen: number
   billing_enabled: boolean
@@ -200,4 +203,11 @@ export type DaihuoVideoQuote = {
 
 export function quoteDaihuoProject(id: number, payload: DaihuoProjectPayload, signal?: AbortSignal): Promise<DaihuoVideoQuote> {
   return requestEcom(`/${id}/project/quote`, translateUi("workflow.couldNotEstimateTheProductVideo"), { method: 'POST', body: JSON.stringify(payload), signal })
+}
+
+// 翻译整套文案并复用原底图排版，仅收文本费用。
+export function translateEcomSet(id: number, language: Exclude<EcomLanguage, 'none'>): Promise<EcomSet> {
+  return requestEcom(`/${id}/translate`, translateUi('ecomSet.translate.failed'), {
+    method: 'POST', body: JSON.stringify({ language }),
+  }, true)
 }

@@ -55,6 +55,7 @@ class EcomSetOut(BaseModel):
     items: list[EcomSetItemOut]
     created_at: str
     project_id: int | None = None
+    source_set_id: int | None = None
 
 
 class EcomSetListOut(BaseModel):
@@ -93,6 +94,7 @@ class EcomSetOptionsOut(BaseModel):
     clarities: list[str]
     prices: dict[str, int]
     plan_fen: int
+    translate_fen: int
     image_fen: int
     billing_enabled: bool
 
@@ -140,3 +142,10 @@ class EcomToProjectOut(BaseModel):
     """带货项目 id（前端随后调 /projects/{id}/generate 写稿）。"""
 
     project_id: int
+
+
+class EcomTranslateIn(BaseModel):
+    """从已完成套图创建指定语言的独立排版副本。"""
+
+    model_config = {"extra": "forbid"}
+    language: Literal["en", "ja", "zh"]

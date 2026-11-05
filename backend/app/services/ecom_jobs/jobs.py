@@ -15,6 +15,7 @@ from app.config import get_settings
 from app.models_ecom import EcomJob, EcomJobItem
 from app.models_tasks import TaskRun
 from app.services import storage
+from app.services.ecom_jobs import translate
 from app.services.ecom_jobs.buyer_show import generate_mock as generate_buyer_mock
 from app.services.ecom_jobs.mock import generate_mock
 from app.services.ecom_jobs.sku import generate_mock as generate_sku_mock
@@ -50,9 +51,9 @@ async def refresh_job_status(db: AsyncSession, job_id: int) -> str:
         job.status = "running"
     elif any(status == "queued" for status in statuses):
         job.status = "queued"
-    elif statuses and all(status == "succeeded" for status in statuses):
+    elif statuses and all(status in {"succeeded", "skipped"} for status in statuses):
         job.status = "done"
-    elif "succeeded" in statuses:
+    elif any(status in {"succeeded", "skipped"} for status in statuses):
         job.status = "partial"
     else:
         job.status = "failed"
@@ -95,7 +96,10 @@ async def generate_image(db: AsyncSession, job: EcomJob, item: EcomJobItem) -> t
     directory = job_dir(job.user_id, job.id)
     source = directory / f"base_{item.idx}_{uuid.uuid4().hex[:8]}.png"
     if get_settings().ark_mock:
-        if job.kind == "sku":
+        if job.kind == "translate":
+            await asyncio.to_thread(translate.generate_mock, Path(item.inputs[0]["path"]), source,
+                                    size=item.size, language=params["language"])
+        elif job.kind == "sku":
             scene = next(Path(ref["path"]) for ref in item.inputs if ref["role"] == "scene")
             product = next(Path(ref["path"]) for ref in item.inputs if ref["role"] == "product")
             await asyncio.to_thread(generate_sku_mock, scene, product, source, size=item.size)
@@ -116,7 +120,7 @@ async def generate_image(db: AsyncSession, job: EcomJob, item: EcomJobItem) -> t
     refs = [storage.to_public_url(ref["url"]) for ref in item.inputs if explicit_roles or ref["role"] == "product"]
     style_refs = [] if explicit_roles else [storage.to_public_url(ref["url"]) for ref in item.inputs if ref["role"] == "style"]
     result = await get_ark().gen_image(
-        item.prompt, NEGATIVE_PROMPT, refs, project_id=0, shot_no=job.user_id,
+        item.prompt, translate.NEGATIVE_PROMPT if job.kind == "translate" else NEGATIVE_PROMPT, refs, project_id=0, shot_no=job.user_id,
         size=item.size, aspect_ratio=item.ratio, structured_refs=True,
         **({"style_ref_urls": style_refs} if style_refs else {}),
         **({"reference_roles": [ref["role"] for ref in item.inputs]} if explicit_roles else {}),

@@ -21,6 +21,7 @@ import EcomSetHistory from '../components/ecomSet/EcomSetHistory'
 import { EcomSetCopyModal, EcomSetPreviewModal, EcomSetRegenModal } from '../components/ecomSet/EcomSetModals'
 import EcomSetPlan, { type EcomPlanBusy } from '../components/ecomSet/EcomSetPlan'
 import EcomSetResults from '../components/ecomSet/EcomSetResults'
+import EcomSetTranslate from '../components/ecomSet/EcomSetTranslate'
 import DaihuoVideoPanel from '../components/daihuo/DaihuoVideoPanel'
 import '../components/ecomSet/ecomSet.css'
 import AppShell from '../components/layout/AppShell'
@@ -384,6 +385,7 @@ function EcomSetWorkspace() {
             onDownload={onDownload}
             onNew={() => backToForm()}
           />
+          {set.status === 'done' ? <EcomSetTranslate key={set.id} set={set} options={options} optionsError={optionsError} onReloadOptions={() => setOptionsKey((value) => value + 1)} onTranslated={(next) => { commitSet(next); setHistoryKey((value) => value + 1) }} /> : null}
           {canMakeDaihuoVideo(set) ? <DaihuoVideoPanel key={set.id} set={set} /> : null}
         </>
       )

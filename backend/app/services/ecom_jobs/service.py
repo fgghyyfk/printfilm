@@ -19,7 +19,7 @@ from app.schemas_tasks import TaskCreateRequest
 from app.services import storage
 from app.services.billing.estimates import estimate_task_fen
 from app.services.billing.settlement import billing_active, ensure_balance_for_task_batch
-from app.services.ecom_jobs import kinds, sku
+from app.services.ecom_jobs import kinds, sku, translate
 from app.services.ecom_jobs.jobs import ACTIVE_ITEMS, job_dir, public_url, reconcile_items, refresh_job_status
 
 MAX_UPLOAD = 10 * 1024 * 1024
@@ -101,6 +101,8 @@ async def create_job(
     scene_uploads: list[tuple[bytes, str]] | None = None,
 ) -> EcomJob:
     clean = kinds.validate(kind, len(uploads), params)
+    if kind == "translate":
+        translate.ensure_available()
     references = style_uploads or []
     if (kind == "style" and len(references) != 1) or (kind != "style" and references):
         raise ValueError("参数错误")
@@ -110,7 +112,7 @@ async def create_job(
         raise ValueError("参数错误")
     if kind == "sku" and len(scene_uploads or []) != 1:
         raise ValueError("参数错误")
-    role_uploads = [("product", data, name) for data, name in uploads]
+    role_uploads = [("source" if kind == "translate" else "product", data, name) for data, name in uploads]
     for role, batch in (("style", references), ("model", model_uploads), ("scene", scene_uploads)):
         role_uploads.extend((role, data, name) for data, name in batch or [])
     combined = kind == "buyer_show" or (kind == "style" and clean["mode"] == "single")
@@ -135,9 +137,14 @@ async def create_prepared_job(
         if not params.get("sku_names"):
             params["sku_names"] = [(Path(name.replace("\\", "/")).stem.strip() or f"SKU {idx + 1}")[:100]
                                    for idx, (role, _, name) in enumerate(uploads) if role == "product"]
-    await ensure_balance_for_task_batch(db, user, TaskRun(
-        domain="studio", task_type="ecom_job_image", requested_by=user.id, payload={"clarity": params["clarity"]},
-    ), count)
+    if kind != "translate":
+        await ensure_balance_for_task_batch(db, user, TaskRun(
+            domain="studio", task_type="ecom_job_image", requested_by=user.id, payload={"clarity": params["clarity"]},
+        ), count)
+    else:
+        from app.config import get_settings
+        translate.ensure_available()
+        params = {**params, "mock": get_settings().ark_mock}
     job = EcomJob(user_id=user.id, kind=kind, title=title.strip(), params=params, status="queued")
     db.add(job)
     await db.flush()
@@ -151,19 +158,28 @@ async def create_prepared_job(
             inputs.append({"role": role, "path": str(dest), "url": url})
         products = [ref for ref in inputs if ref["role"] == "product"]
         references = [ref for ref in inputs if ref["role"] != "product"]
+        recognized = await translate.recognize_batch(inputs, params) if kind == "translate" else []
         items = []
         for idx in range(count):
-            item_inputs = inputs if combined else [products[idx]] + references
+            item_inputs = [inputs[idx]] if kind == "translate" else (inputs if combined else [products[idx]] + references)
             ratio, size = kinds.image_geometry(params["ratio"], params["clarity"], sizes[0 if combined else idx])
+            item_params = params
+            if kind == "translate":
+                item_params = {**params, "translations": recognized[idx]}
+            skipped = kind == "translate" and not item_params["translations"]
             item = EcomJobItem(job_id=job.id, idx=idx, inputs=item_inputs,
-                               prompt=kinds.build_item_prompt(kind, params, item_inputs, idx),
-                               ratio=ratio, size=size, status="queued")
+                               prompt=kinds.build_item_prompt(kind, item_params, item_inputs, idx),
+                               ratio=ratio, size=size, status="skipped" if skipped else "queued",
+                               error="无可翻译文字" if skipped else None)
             db.add(item)
             items.append(item)
         await db.flush()
-        await enqueue_items(db, user, job, items)
+        pending = [item for item in items if item.status != "skipped"]
+        if pending:
+            await enqueue_items(db, user, job, pending)
+        await refresh_job_status(db, job.id)
         await db.commit()
-    except Exception:
+    except (Exception, asyncio.CancelledError):
         await db.rollback()
         await asyncio.to_thread(shutil.rmtree, directory, True)
         raise

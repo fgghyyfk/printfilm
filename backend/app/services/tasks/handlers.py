@@ -336,6 +336,7 @@ TASK_HANDLERS: dict[tuple[str, str], TaskHandler] = {
     ("api", "v1_seedance"): TaskHandler("api", "v1_seedance", _noop_ephemeral),
     ("studio", "tool_image"): TaskHandler("studio", "tool_image", _noop_ephemeral),
     ("studio", "tool_video"): TaskHandler("studio", "tool_video", _noop_ephemeral),
+    ("studio", "ecom_set_translate"): TaskHandler("studio", "ecom_set_translate", _noop_ephemeral),
     ("studio", "ecom_set_plan"): TaskHandler("studio", "ecom_set_plan", _noop_ephemeral),
     ("studio", "ecom_job_image"): TaskHandler("studio", "ecom_job_image", _run_studio_ecom_job_image),
     ("studio", "ecom_set_image"): TaskHandler("studio", "ecom_set_image", _run_studio_ecom_set_image),

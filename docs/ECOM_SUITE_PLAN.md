@@ -85,5 +85,5 @@
 | E2 套图增强 | Codex CLI | 已完成 | |
 | E3 买家秀/种草图 | Codex CLI | 已完成 | |
 | E4 SKU 替换 | Codex CLI | 已完成 | |
-| E5 图片翻译 | Codex CLI | 待执行 | |
+| E5 图片翻译 | Codex CLI | 已完成 | |
 | E6 工作台入口/文档 | Codex CLI | 待执行 | |

@@ -10,12 +10,14 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.ecom_jobs import EcomJobRoute
 from app.database import get_db
 from app.deps import get_current_user
 from app.models import User
 from app.services.public_errors import public_http_exception
 from app.schemas_ecom import (
     EcomCopyIn,
+    EcomTranslateIn,
     EcomPlanUpdateIn,
     EcomRegenerateIn,
     EcomSetListOut,
@@ -183,3 +185,20 @@ async def quote_project(
     from app.services.daihuo.service import quote_project_from_set
 
     return await _guard(db, quote_project_from_set(db, user, set_id, output_ratio=body.output_ratio, voice_id=body.voice_id))
+
+
+translate_router = APIRouter(route_class=EcomJobRoute)
+
+
+# 已完成套图翻译文案并复用底图重排，仅收文本翻译费用。
+@translate_router.post("/{set_id}/translate", response_model=EcomSetOut)
+async def translate(
+    set_id: int, body: EcomTranslateIn,
+    db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user),
+):
+    from app.services.ecom_set.translate import translate_set
+
+    return await _out(db, await _guard(db, translate_set(db, user, set_id, body.language)))
+
+
+router.include_router(translate_router)

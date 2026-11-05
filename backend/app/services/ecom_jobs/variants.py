@@ -42,6 +42,8 @@ async def create_variants(db, user, job_id: int, idx: int, *, count: int):
         raise LookupError("图片不存在")
     if item.status != "succeeded" or not item.result_url:
         raise ValueError("还没有生成好的图片")
+    if job.kind == "translate":
+        raise ValueError("翻译结果不支持裂变")
     inputs = [ref for ref in item.inputs if ref["role"] != "source"]
     product_count = sum(ref["role"] == "product" for ref in inputs)
     source_params = dict(job.params)
