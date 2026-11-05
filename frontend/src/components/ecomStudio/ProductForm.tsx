@@ -80,7 +80,7 @@ export default function ProductForm({ categories, onSaved, onCancel }: Props) {
     <div className="pf-tool-field"><span>{text('材质', 'Material')}</span>
       <div className="pf-tool-chips">{cat?.materials.map((m) => <button key={m.id} type="button" disabled={busy} className={material === m.id ? 'active' : ''} onClick={() => setMaterial(m.id)}>{m.name}</button>)}</div>
     </div>
-    <div className="pf-tool-field"><span>{text('颜色款（每个颜色一张平铺图/正面图）', 'Colorways (one image per color)')}</span>
+    <div className="pf-tool-field"><span>{text('① 设计图（每个颜色一张：平铺设计稿或平铺实拍）', '① Design image per colorway')}</span>
       <div className="pf-es-colors">
         {colors.map((c, i) => <div className="pf-es-color" key={c.preview}>
           <img src={c.preview} alt="" />
@@ -88,13 +88,13 @@ export default function ProductForm({ categories, onSaved, onCancel }: Props) {
             onChange={(e) => setColors((prev) => prev.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} />
           <button type="button" className="pf-es-x" aria-label={text('移除', 'Remove')} disabled={busy} onClick={() => setColors((prev) => prev.filter((_, j) => j !== i))}><X size={12} /></button>
         </div>)}
-        <label className="pf-es-add"><Plus size={18} /><span>{text('添加颜色款', 'Add colorway')}</span>
+        <label className="pf-es-add"><Plus size={18} /><span>{text('添加设计图', 'Add design')}</span>
           <input type="file" hidden multiple accept={ECOM_UPLOAD_ACCEPT} disabled={busy} onChange={(e) => { addColorFiles(e.target.files); e.target.value = '' }} />
         </label>
       </div>
       <span className="pf-muted">{text('平铺图越清晰、越正，生成后的图案和颜色越准。', 'Flat, sharp images give the most accurate results.')}</span>
     </div>
-    <div className="pf-tool-field"><span>{text('面料实拍（选填，强烈推荐）', 'Fabric close-up (optional)')}</span>
+    <div className="pf-tool-field"><span>{text('② 材质实拍（强烈推荐）', '② Fabric close-up (recommended)')}</span>
       <div className="pf-es-colors">
         {fabric ? <div className="pf-es-color"><img src={fabric.preview} alt="" /><button type="button" className="pf-es-x" onClick={() => setFabric(null)}><X size={12} /></button></div>
           : <label className="pf-es-add"><ImagePlus size={18} /><span>{text('上传面料近拍', 'Upload fabric photo')}</span>
@@ -103,8 +103,8 @@ export default function ProductForm({ categories, onSaved, onCancel }: Props) {
       </div>
       <span className="pf-muted">{text('手机贴近面料拍一张（能看清织纹与光泽），AI 会按它还原质感，比如人字纹、斜纹、缎面。', 'A close-up helps AI match weave and sheen.')}</span>
     </div>
-    <label className="pf-tool-field"><span>{text('成分与卖点（选填）', 'Composition & selling points')}</span>
-      <textarea rows={3} maxLength={500} value={notes} disabled={busy} placeholder={text('如：30%真丝+70%羊毛；纯手工卷边；36套色双面印花。只写真实信息，会用于图上文案。', 'Only true facts — used for copy.')} onChange={(e) => setNotes(e.target.value)} />
+    <label className="pf-tool-field"><span>{text('③ 成分与卖点（每行一条）', '③ Composition & selling points')}</span>
+      <textarea rows={4} maxLength={500} value={notes} disabled={busy} placeholder={text('如：\n面料 30%真丝 + 70%羊毛\n纯手工卷边\n36 套色双面印花\n只写真实信息，会用于图上文案和面料描述', 'Only true facts — used for copy.')} onChange={(e) => setNotes(e.target.value)} />
     </label>
     {error ? <p className="pf-tool-error" role="alert">{error}</p> : null}
     <div className="pf-es-actions">

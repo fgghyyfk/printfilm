@@ -168,6 +168,14 @@ export function generateToolModel(body: { description: string; name?: string; ma
   }, true)
 }
 
+/** 上传模特照片（免费），返回更新后的模特库 */
+export function uploadToolModel(file: File, makeDefault: boolean): Promise<{ items: ToolModel[] }> {
+  const body = new FormData()
+  body.append('file', file)
+  body.append('make_default', makeDefault ? 'true' : 'false')
+  return requestToolJson('/api/tools/models/upload', '上传模特失败', { method: 'POST', body })
+}
+
 // 提交工具生成（multipart）
 export async function runStudioTool(payload: ToolRunPayload): Promise<ToolRunResult> {
   const body = new FormData()

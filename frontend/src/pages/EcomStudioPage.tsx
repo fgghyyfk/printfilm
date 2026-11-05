@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowLeft, ArrowRight, Loader2, Wand2 } from 'lucide-react'
+import { ArrowLeft, ArrowRight, CheckCircle2, CircleAlert, Loader2, Wand2 } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import Stepper from '../components/ui/Stepper'
 import Button from '../components/ui/Button'
@@ -113,6 +113,18 @@ export default function EcomStudioPage() {
                     <dt>{text('张数', 'Images')}</dt><dd>{text(`${slots.length} 张（${slots.length - billable} 张免费）`, `${slots.length}`)}</dd>
                     <dt>{text('模特', 'Model')}</dt><dd>{needsModel ? text('已选', 'Selected') : text('不需要', 'Not needed')}</dd>
                   </dl>
+                </div>
+                <div className="pf-es-checklist">
+                  <strong>{text('素材检查', 'Inputs')}</strong>
+                  {[
+                    { ok: Boolean(product.colors[colorIndex]?.image_url), label: text('设计图', 'Design image'), tip: text('出图的图案和颜色以它为准', 'Pattern & color source') },
+                    { ok: Boolean(product.fabric_image_url), label: text('材质实拍', 'Fabric photo'), tip: text('没有时质感靠文字描述，容易偏；建议到「我的商品」补一张近拍', 'Add a close-up in My products for accurate texture') },
+                    { ok: !needsModel || Boolean(modelId), label: text('模特图', 'Model'), tip: text('所有上身图都以这位模特为原型', 'Every on-model shot uses this model') },
+                    { ok: Boolean(product.notes.trim() || notes.trim()), label: text('成分与卖点', 'Selling points'), tip: text('没有时文案会比较泛，建议写成分、工艺', 'Add composition & craft for better copy') },
+                  ].map((row) => <div key={row.label} className={`pf-es-check-row${row.ok ? ' ok' : ''}`}>
+                    {row.ok ? <CheckCircle2 size={16} /> : <CircleAlert size={16} />}<span>{row.label}</span><small className="pf-muted">{row.ok ? text('已就绪', 'Ready') : row.tip}</small>
+                  </div>)}
+                  {!product.fabric_image_url ? <button type="button" className="pf-es-link" onClick={() => setTab('products')}>{text('去「我的商品」补材质实拍 →', 'Add fabric photo →')}</button> : null}
                 </div>
                 <label className="pf-tool-field"><span>{text('这次想强调的卖点（选填）', 'Extra notes (optional)')}</span>
                   <textarea rows={2} maxLength={300} value={notes} placeholder={text('留空则用商品资料里的成分与卖点', 'Defaults to product notes')} onChange={(e) => setNotes(e.target.value)} />

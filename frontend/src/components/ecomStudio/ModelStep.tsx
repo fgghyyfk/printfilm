@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { FolderOpen, Loader2, Sparkles, Star } from 'lucide-react'
-import { generateToolModel, listToolModels, resolveToolMediaUrl, updateToolModel, type ToolModel } from '../../api/tools'
-import { formatFen } from '../../lib/ecomSet'
+import { FolderOpen, Loader2, Sparkles, Star, Upload } from 'lucide-react'
+import { generateToolModel, listToolModels, resolveToolMediaUrl, updateToolModel, uploadToolModel, type ToolModel } from '../../api/tools'
+import { ECOM_UPLOAD_ACCEPT, formatFen, validateProductFile } from '../../lib/ecomSet'
 import { useGenerationText } from '../../lib/generationMedia'
 import ToolReferenceAssetPicker from '../tools/ToolReferenceAssetPicker'
 import BillingErrorNotice from '../billing/BillingErrorNotice'
@@ -56,6 +56,16 @@ export default function ModelStep({ modelId, onPick, imageFen, billing }: Props)
     finally { setBusy('') }
   }
 
+  // 直接上传模特照片（免费）
+  async function upload(file: File | undefined) {
+    if (!file) return
+    if (validateProductFile(file)) return setError(text('图片仅支持 PNG / JPG / WebP，且不超过 10MB', 'PNG / JPG / WebP up to 10MB'))
+    setBusy('upload'); setError('')
+    try { const r = await uploadToolModel(file, !(models || []).some((m) => m.is_default)); setModels(r.items); onPick(r.items[0]?.id ?? null) }
+    catch (err) { setError(err instanceof Error ? err.message : text('上传失败', 'Upload failed')) }
+    finally { setBusy('') }
+  }
+
   // 设为默认 / 从资产库加入
   async function save(id: number, isDefault: boolean) {
     setBusy(`m${id}`); setError('')
@@ -74,6 +84,12 @@ export default function ModelStep({ modelId, onPick, imageFen, billing }: Props)
         {m.is_default ? <span className="pf-es-tag"><Star size={12} />{text('默认', 'Default')}</span>
           : <button type="button" className="pf-es-link" disabled={!!busy} onClick={(e) => { e.stopPropagation(); void save(m.id, true) }}>{text('设为默认', 'Set default')}</button>}
       </div>)}
+      <label className="pf-es-card pf-es-card-new">
+        {busy === 'upload' ? <Loader2 size={24} className="pf-tool-spin" /> : <Upload size={24} />}
+        <strong>{text('上传模特照片', 'Upload model photo')}</strong>
+        <span className="pf-muted">{text('正面清晰的半身照效果最好，免费', 'A clear half-body photo works best')}</span>
+        <input type="file" hidden accept={ECOM_UPLOAD_ACCEPT} disabled={!!busy} onChange={(e) => { void upload(e.target.files?.[0]); e.target.value = '' }} />
+      </label>
       <button type="button" className="pf-es-card pf-es-card-new" onClick={() => setPickerOpen(true)}>
         <FolderOpen size={24} /><strong>{text('从资产库加入', 'From library')}</strong><span className="pf-muted">{text('用你已有的模特照片', 'Use an existing photo')}</span>
       </button>

@@ -132,6 +132,23 @@ async def generate_tool_model(body: ToolModelGenerate, db: AsyncSession = Depend
 
 
 @router.post(
+    "/models/upload",
+    summary="上传模特照片",
+    description="需要登录，上传一张模特照片（PNG/JPG/WebP，≤10MB），存进「模特库」并加入模特库，可设为默认；不收费。",
+    response_description="模特列表",
+)
+async def upload_tool_model(file: UploadFile = File(...), name: str = Form(""), make_default: bool = Form(False),
+                            db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)) -> dict:
+    try:
+        await tool_models.upload_model(db, user, data=await file.read(), filename=file.filename or "model.jpg",
+                                       name=name, make_default=make_default)
+    except ValueError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"items": [_model_out(a) for a in await tool_models.list_models(db, user.id)]}
+
+
+@router.post(
     "/estimate",
     summary="估算独立视频生成费用",
     description="需要登录，校验视频生成参数和参考素材，按当前计费配置返回估算费用、计费模式及价格版本；不会提交生成任务。金额提供分和元两种单位。",

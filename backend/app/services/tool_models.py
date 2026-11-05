@@ -145,3 +145,24 @@ async def generate_model(db: AsyncSession, user, *, description: str, name: str 
     await update_model(db, user.id, asset.id, is_model_flag=True, is_default=make_default)
     await db.commit()
     return asset
+
+
+async def upload_model(db: AsyncSession, user, *, data: bytes, filename: str, name: str = "",
+                       make_default: bool = False) -> DramaAsset:
+    """上传一张模特照片（免费）：存进「模特库」项目并加入模特库，可同时设为默认。"""
+    import asyncio
+
+    from app.services.ecom_set.jobs import public_url
+    from app.services.ecom_set.service import save_product_image
+
+    path = save_product_image(user.id, data, filename)
+    url = await asyncio.to_thread(public_url, path)
+    project = await _model_library_project(db, user.id)
+    asset = DramaAsset(project_id=project.id, type="image", asset_type="image",
+                       name=(name or "模特 · 上传照片")[:200], url=url, cover=url,
+                       params={"role": "model", "model_role": MODEL_ROLE, "model_default": False})
+    db.add(asset)
+    await db.flush()
+    await update_model(db, user.id, asset.id, is_model_flag=True, is_default=make_default)
+    await db.commit()
+    return asset

@@ -148,3 +148,16 @@ def test_schemas_keep_styled_fields():
                              styled=categories.options(), frames=[{"id": "main_11", "name": "主图"}])
     assert opts.styled and opts.frames[0].id == "main_11"
     assert EcomScarfOut(product_id=3, color_name="米白", frame="main_11").product_id == 3
+
+
+# 上传模特照片：存进模特库并可设为默认
+async def test_upload_model(db_session, monkeypatch, tmp_path):
+    from app.services import tool_models
+
+    user, old = await _setup(db_session, monkeypatch, tmp_path)
+    asset = await tool_models.upload_model(db_session, user, data=_png(tmp_path / "m.png").read_bytes(),
+                                           filename="m.png", make_default=True)
+    rows = await tool_models.list_models(db_session, user.id)
+    assert rows[0].id == asset.id and tool_models.is_default_model(rows[0]) and len(rows) == 2
+    with pytest.raises(ValueError):
+        await tool_models.upload_model(db_session, user, data=b"x", filename="m.txt")
