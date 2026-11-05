@@ -216,7 +216,9 @@ async def estimate_task_fen(db: AsyncSession, task: TaskRun, settings: Settings 
     if is_free_local_task(task):
         return 0
     s = settings or get_settings()
-    await ensure_official_rates(s)
+    # 电商本地 mock 仅使用本地价格目录，保持无 Key、离线可运行。
+    if not (s.ark_mock and (task.domain, task.task_type) == ("studio", "ecom_job_image")):
+        await ensure_official_rates(s)
     domain = (task.domain or "").strip()
     task_type = (task.task_type or "").strip()
     payload = task.payload if isinstance(task.payload, dict) else {}
@@ -343,6 +345,9 @@ async def estimate_task_fen(db: AsyncSession, task: TaskRun, settings: Settings 
     if domain in {"api", "studio"}:
         if task_type in {"v1_image", "tool_image"}:
             return _catalog_image_fen(s, payload=payload)
+        if task_type == "ecom_job_image":
+            # 电商批量图按用户选择的清晰度估价。
+            return _catalog_image_fen(s, size=str(payload.get("clarity") or "2k"), payload=payload)
         if task_type == "ecom_set_image":
             # 套图底图按 2K 生成（1920² / 1728×2304），按张官价预扣
             return _catalog_image_fen(s, size="2k")

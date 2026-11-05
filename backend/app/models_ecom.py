@@ -73,3 +73,44 @@ class EcomSetItem(Base):
     )
 
     ecom_set: Mapped[EcomSet] = relationship(back_populates="items")
+
+
+class EcomJob(Base):
+    """一次电商批量出图任务；不同 kind 共用任务和计费底座。"""
+
+    __tablename__ = "ecom_jobs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(24), index=True)
+    status: Mapped[str] = mapped_column(String(16), default="queued", index=True)
+    title: Mapped[str] = mapped_column(String(128), default="")
+    params: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    items: Mapped[list[EcomJobItem]] = relationship(
+        back_populates="job", cascade="all, delete-orphan", order_by="EcomJobItem.idx", lazy="selectin"
+    )
+
+
+class EcomJobItem(Base):
+    """批量任务的一张图，输入按产品、风格、模特或场景角色存储。"""
+
+    __tablename__ = "ecom_job_items"
+    __table_args__ = (UniqueConstraint("job_id", "idx", name="uq_ecom_job_items_job_idx"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("ecom_jobs.id", ondelete="CASCADE"), index=True)
+    idx: Mapped[int] = mapped_column(Integer)
+    # 每个输入含 role、path、url；API 不暴露服务器本地路径。
+    inputs: Mapped[list] = mapped_column(JSON, default=list)
+    prompt: Mapped[str] = mapped_column(Text, default="")
+    ratio: Mapped[str] = mapped_column(String(24), default="1:1")
+    size: Mapped[str] = mapped_column(String(24), default="2048x2048")
+    result_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="queued", index=True)
+    error: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    task_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    job: Mapped[EcomJob] = relationship(back_populates="items")

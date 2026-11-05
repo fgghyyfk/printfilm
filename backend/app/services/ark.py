@@ -902,6 +902,7 @@ class ArkGateway:
         model: str | None = None,
         aspect_ratio: str | None = None,
         style_ref_urls: list[str] | None = None,
+        structured_refs: bool = False,
     ) -> ImageResult:
         """调用 TokenFree 生图（Seedream 家族在网关侧重映射）。
 
@@ -961,6 +962,7 @@ class ArkGateway:
                     model=ark_model,
                     aspect_ratio=aspect_ratio,
                     style_ref_urls=style_ref_urls,
+                    structured_refs=structured_refs,
                 )
             except Exception as exc:  # noqa: BLE001
                 last_err = exc
@@ -999,6 +1001,7 @@ class ArkGateway:
         model: str | None = None,
         aspect_ratio: str | None = None,
         style_ref_urls: list[str] | None = None,
+        structured_refs: bool = False,
     ) -> ImageResult:
         """单次 Seedream 请求并落盘（文件名含 uuid，避免重生成覆盖）。"""
         route = self._resolve_ark_route("image", model)
@@ -1018,7 +1021,12 @@ class ArkGateway:
                 resolved_size = clamp_seedream_pixel_size(str(resolved_size))
         from app.services.style_lock import split_seedream_subject_style_refs
 
-        subject_refs, style_refs = split_seedream_subject_style_refs(ref_urls, style_ref_urls)
+        if structured_refs:
+            from app.services.tokenfree_image import split_tokenfree_structured_refs
+
+            subject_refs, style_refs = split_tokenfree_structured_refs(ref_urls, style_ref_urls)
+        else:
+            subject_refs, style_refs = split_seedream_subject_style_refs(ref_urls, style_ref_urls)
         # TokenFree 按逻辑路由解析出的上游模型原样发送，不硬改模型名
         chosen = (upstream_model or "").strip()
         if "gpt-image" in chosen.lower():
@@ -1042,6 +1050,7 @@ class ArkGateway:
         from app.services.tokenfree_image import (
             build_tokenfree_openai_image_body,
             is_gpt_image_25,
+            prepare_tokenfree_structured_refs,
         )
 
         from app.services.provider_profiles import is_byteplus
@@ -1073,9 +1082,13 @@ class ArkGateway:
                 aspect_ratio=str(aspect_ratio or ""),
                 ref_urls=subject_refs,
                 style_ref_urls=style_refs,
+                structured_refs=structured_refs,
             )
         else:
             path = "/responses"
+            if structured_refs:
+                subject_refs = await prepare_tokenfree_structured_refs(subject_refs)
+                style_refs = await prepare_tokenfree_structured_refs(style_refs)
             body = build_tokenfree_image_body(
                 model=chosen,
                 prompt=full_prompt,
@@ -1083,6 +1096,7 @@ class ArkGateway:
                 aspect_ratio=str(aspect_ratio or ""),
                 ref_urls=subject_refs,
                 style_ref_urls=style_refs,
+                structured_refs=structured_refs,
             )
 
         try:

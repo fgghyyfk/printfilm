@@ -74,8 +74,11 @@ def build_tokenfree_openai_image_body(
     aspect_ratio: str = "",
     ref_urls: list[str] | None = None,
     style_ref_urls: list[str] | None = None,
+    structured_refs: bool = False,
 ) -> dict[str, Any]:
     """GPT Image 2.5：POST /images/generations（openai 渠道），并带上 resolution 供计费。"""
+    if structured_refs and (ref_urls or style_ref_urls):
+        logger.info("GPT Image generations 暂不支持结构化参考图，保留文本参考方式 model=%s", model)
     narrative = build_tokenfree_image_body(
         model=model,
         prompt=prompt,
@@ -95,6 +98,30 @@ def build_tokenfree_openai_image_body(
         "resolution": gpt_image_resolution_tier(size),
         "response_format": "url",
     }
+
+
+# 显式结构化模式允许 data URI 和本站图片地址，保留主体优先、风格一张的上限。
+def split_tokenfree_structured_refs(
+    ref_urls: list[str] | None, style_ref_urls: list[str] | None,
+) -> tuple[list[str], list[str]]:
+    # 规范化并按原顺序去重；新模式不沿用旧通路的公网地址过滤。
+    def clean(urls: list[str] | None) -> list[str]:
+        return list(dict.fromkeys(url.strip() for url in (urls or []) if url and url.strip()))
+
+    styles = clean(style_ref_urls)[:1]
+    return clean(ref_urls)[:6 - len(styles)], styles
+
+
+# 结构化通路优先编码已有本地参考图，远程图保持 URL，文本降级不调用此函数。
+async def prepare_tokenfree_structured_refs(urls: list[str]) -> list[str]:
+    from app.services import storage
+
+    prepared = []
+    for url in urls:
+        local = storage.local_path_from_url(url)
+        prepared.append(await asyncio.to_thread(storage.file_to_data_uri, local)
+                        if local and local.is_file() else url)
+    return prepared
 
 
 def tokenfree_working_image_model(model: str) -> str:
@@ -137,6 +164,7 @@ def build_tokenfree_image_body(
     aspect_ratio: str = "",
     ref_urls: list[str] | None = None,
     style_ref_urls: list[str] | None = None,
+    structured_refs: bool = False,
 ) -> dict[str, Any]:
     """线上成功体只要 model + 自然语言 input，不要 size: 这种协议字段。
 
@@ -161,6 +189,19 @@ def build_tokenfree_image_body(
             text = f"{text}。输出清晰度{size_s}"
     refs = [u.strip() for u in (ref_urls or []) if (u or "").strip()]
     style_refs = [u.strip() for u in (style_ref_urls or []) if (u or "").strip()]
+    if structured_refs and (refs or style_refs):
+        content: list[dict[str, Any]] = [{"type": "input_text", "text": text}]
+        for idx, url in enumerate(refs, 1):
+            content.extend([
+                {"type": "input_text", "text": f"图{idx} 为产品主体，必须保持外形、颜色与 logo。"},
+                {"type": "input_image", "image_url": url},
+            ])
+        for idx, url in enumerate(style_refs, len(refs) + 1):
+            content.extend([
+                {"type": "input_text", "text": f"图{idx} 仅参考风格、色调与光影，不复制主体。"},
+                {"type": "input_image", "image_url": url},
+            ])
+        return {"model": tokenfree_working_image_model(model), "input": [{"role": "user", "content": content}]}
     if style_refs:
         text = f"{text}。画风参考图（只借色调、笔触、光影，禁止抄主体与构图）：{' '.join(style_refs)}"
     if refs:

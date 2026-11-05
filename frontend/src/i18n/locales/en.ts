@@ -1,3 +1,4 @@
+import { enEcomJobs } from './en/ecomJobs'
 import { enWorkflow } from './en/workflow'
 import { enPages } from './en/pages'
 import { enShell } from './en/shell'
@@ -12,4 +13,5 @@ export const en = {
   ...enEcomSet,
   ...enCompliance,
   ...enDaihuo,
+  ...enEcomJobs,
 }

@@ -10,7 +10,7 @@ from sqlalchemy import select, text
 from app.api import auth, billing, projects, tasks, templates, tools
 from app.api import api_keys as user_api_keys
 from app.api import project_avatar
-from app.api import ecom_set
+from app.api import ecom_jobs, ecom_set
 from app.api.v1 import router as v1_router
 from app.api.admin import router as admin_router
 from app.api.drama import router as drama_router
@@ -94,6 +94,7 @@ app.include_router(project_avatar.router, prefix="/api")
 app.include_router(tasks.router, prefix="/api")
 app.include_router(billing.router, prefix="/api")
 app.include_router(ecom_set.router, prefix="/api")
+app.include_router(ecom_jobs.router, prefix="/api")
 app.include_router(tools.router, prefix="/api")
 app.include_router(user_api_keys.router, prefix="/api")
 app.include_router(v1_router, prefix="/api")
@@ -163,7 +164,6 @@ async def _apply_schema_patches() -> None:
         await conn.execute(text("ALTER TABLE drama_assets ADD COLUMN IF NOT EXISTS image_revision VARCHAR(32)"))
         await conn.execute(text("ALTER TABLE shots ADD COLUMN IF NOT EXISTS tts_metadata JSON"))
         await conn.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS daihuo_request_id VARCHAR(64)"))
-        await conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_projects_daihuo_request ON projects (user_id, ecom_set_id, daihuo_request_id)"))
         await conn.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS auto_advance BOOLEAN NOT NULL DEFAULT false"))
         await conn.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS auto_chain_id VARCHAR(32)"))
         await conn.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS image_reference_mode VARCHAR(16) NOT NULL DEFAULT 'chain'"))
@@ -185,6 +185,7 @@ async def _apply_schema_patches() -> None:
         if "ecom_set_id" not in pcols:
             await conn.execute(text("ALTER TABLE projects ADD COLUMN ecom_set_id INTEGER"))
             await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_projects_ecom_set_id ON projects (ecom_set_id)"))
+        await conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_projects_daihuo_request ON projects (user_id, ecom_set_id, daihuo_request_id)"))
         ecols = await _pg_columns(conn, "ecom_sets")
         if ecols and "project_id" not in ecols:
             await conn.execute(text("ALTER TABLE ecom_sets ADD COLUMN project_id INTEGER"))

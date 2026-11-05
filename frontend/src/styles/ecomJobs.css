@@ -1,0 +1,27 @@
+/* 电商批量任务使用现有 pf 变量、按钮与工具页布局。 */
+.pf-job-page { max-width: 1180px; }
+.pf-job-section { padding: 1.2rem; margin: 1rem 0; border: 1px solid var(--pf-line); border-radius: 16px; background: var(--pf-bg); }
+.pf-job-section h2 { margin-top: 0; font-size: 1.15rem; }
+.pf-job-head, .pf-job-actions { display: flex; gap: .75rem; align-items: center; flex-wrap: wrap; }
+.pf-job-head { justify-content: space-between; margin-bottom: 1rem; }
+.pf-job-head h2, .pf-job-head p { margin: 0 0 .3rem; }
+.pf-job-upload-label { display: flex; flex-direction: column; gap: .6rem; border: 1px dashed var(--pf-line); border-radius: 12px; padding: 1rem; }
+.pf-job-upload-label input { max-width: 100%; }
+.pf-job-upload-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(135px, 1fr)); gap: .75rem; margin: 1rem 0; }
+.pf-job-upload-item { border: 1px solid var(--pf-line); border-radius: 10px; padding: .4rem; overflow: hidden; }
+.pf-job-upload-item img { display: block; width: 100%; height: 110px; object-fit: contain; }
+.pf-job-upload-item small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pf-job-params { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; margin: 1rem 0; }
+.pf-job-params label { display: flex; flex-direction: column; gap: .4rem; }
+.pf-job-params select, .pf-job-params textarea { width: 100%; box-sizing: border-box; padding: .65rem; border: 1px solid var(--pf-line); border-radius: 10px; background: var(--pf-bg); color: var(--pf-ink); font: inherit; }
+.pf-job-notes { grid-column: 1 / -1; margin: 0; }
+.pf-job-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem; }
+.pf-job-card { display: flex; flex-direction: column; gap: .6rem; border: 1px solid var(--pf-line); border-radius: 12px; padding: .7rem; }
+.pf-job-image { aspect-ratio: 1; overflow: hidden; border-radius: 8px; background: repeating-conic-gradient(#f1f1f1 0% 25%, #fff 0% 50%) 0 / 18px 18px; }
+.pf-job-image a, .pf-job-image img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.pf-job-state { display: flex; height: 100%; padding: 1rem; box-sizing: border-box; flex-direction: column; justify-content: center; align-items: center; text-align: center; gap: .6rem; overflow-wrap: anywhere; }
+.pf-job-history-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(175px, 1fr)); gap: .75rem; }
+.pf-job-history-card { display: flex; flex-direction: column; gap: .4rem; border: 1px solid var(--pf-line); border-radius: 12px; padding: .7rem; color: var(--pf-ink); background: var(--pf-bg); font: inherit; text-align: left; cursor: pointer; }
+.pf-job-history-card.is-current { border-color: var(--pf-ink); }
+.pf-job-history-card img { width: 100%; aspect-ratio: 1; object-fit: contain; border-radius: 8px; }
+@media (max-width: 600px) { .pf-job-params { grid-template-columns: 1fr; } .pf-job-section { padding: .8rem; } }

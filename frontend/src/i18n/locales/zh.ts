@@ -1,3 +1,4 @@
+import { zhEcomJobs } from './zh/ecomJobs'
 import { zhWorkflow } from './zh/workflow'
 import { zhPages } from './zh/pages'
 import { zhShell } from './zh/shell'
@@ -12,4 +13,5 @@ export const zh = {
   ...zhEcomSet,
   ...zhCompliance,
   ...zhDaihuo,
+  ...zhEcomJobs,
 }
