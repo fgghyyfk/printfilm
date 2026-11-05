@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.deps import get_current_user
 from app.models import User
-from app.schemas_ecom_jobs import EcomJobListOut, EcomJobOptionsOut, EcomJobOut, RefineParams
+from app.schemas_ecom_jobs import EcomJobListOut, EcomJobOptionsOut, EcomJobOut, EcomVariantsParams, RefineParams
 from app.services.ecom_jobs import service as svc
 from app.services.public_errors import public_http_exception
 
@@ -66,6 +66,7 @@ async def options(db: AsyncSession = Depends(get_db), user: User = Depends(get_c
 async def create(
     kind: str, files: list[UploadFile] = File(...), params: str = Form("{}"), title: str = Form(""),
     style_files: list[UploadFile] | None = File(None),
+    model_files: list[UploadFile] | None = File(None), scene_files: list[UploadFile] | None = File(None),
     db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user),
 ):
     from app.services.ecom_jobs.kinds import validate
@@ -73,6 +74,8 @@ async def create(
     try:
         if (kind == "style" and len(style_files or []) != 1) or (kind != "style" and style_files):
             raise ValueError("参考设计图数量错误")
+        if len(model_files or []) > 1 or len(scene_files or []) > 1 or (kind != "buyer_show" and (model_files or scene_files)):
+            raise ValueError("参考图数量错误")
         raw = json.loads(params)
         clean = validate(kind, len(files), raw)
         if kind == "refine":
@@ -85,7 +88,10 @@ async def create(
         data = await file.read(svc.MAX_UPLOAD + 1)
         uploads.append((data, file.filename or ""))
     style_uploads = [(await file.read(svc.MAX_UPLOAD + 1), file.filename or "") for file in style_files or []]
-    job = await _guard(db, svc.create_job(db, user, kind=kind, uploads=uploads, params=clean, title=title, style_uploads=style_uploads))
+    model_uploads = [(await file.read(svc.MAX_UPLOAD + 1), file.filename or "") for file in model_files or []]
+    scene_uploads = [(await file.read(svc.MAX_UPLOAD + 1), file.filename or "") for file in scene_files or []]
+    job = await _guard(db, svc.create_job(db, user, kind=kind, uploads=uploads, params=clean, title=title,
+                                        style_uploads=style_uploads, model_uploads=model_uploads, scene_uploads=scene_uploads))
     return svc.to_out(job)
 
 
@@ -109,6 +115,17 @@ async def detail(job_id: int, db: AsyncSession = Depends(get_db), user: User = D
 @router.post("/{job_id}/items/{idx}/retry", response_model=EcomJobOut)
 async def retry(job_id: int, idx: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     return svc.to_out(await _guard(db, svc.retry_item(db, user, job_id, idx)))
+
+
+# 以成功结果为参考创建独立同 kind 任务，逐张计价并保留原任务。
+@router.post("/{job_id}/items/{idx}/variants", response_model=EcomJobOut)
+async def variants(
+    job_id: int, idx: int, params: EcomVariantsParams,
+    db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user),
+):
+    from app.services.ecom_jobs.variants import create_variants
+
+    return svc.to_out(await _guard(db, create_variants(db, user, job_id, idx, count=params.count)))
 
 
 # 下载本任务已完成图片组成的 ZIP。

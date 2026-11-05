@@ -15,7 +15,7 @@ type Props = { kind: string; currentId: number | null; refreshKey: number; onOpe
 export default function JobHistory({ kind, currentId, refreshKey, onOpen }: Props) {
   const { t } = useI18n()
   // 按任务类型选择标题，分页和数据请求保持共用。
-  const copy = kind === 'style' ? 'ecomJobs.style' : 'ecomJobs'
+  const copy = kind === 'style' ? 'ecomJobs.style' : kind === 'buyer_show' ? 'ecomJobs.buyerShow' : 'ecomJobs'
   /* 当前页、当前页数据及总数；独立维护加载、错误与重试状态。 */
   const [page, setPage] = useState(1)
   const [items, setItems] = useState<EcomJob[]>([])

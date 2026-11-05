@@ -2,7 +2,7 @@ import { Clapperboard, Image, Images, Play, ShoppingBag, Sparkles, Video } from 
 import type { LucideIcon } from 'lucide-react'
 import type { Messages } from '../i18n'
 
-export type ToolId = 't2i' | 'i2i' | 'i2p' | 't2v' | 'v2v' | 'ecom' | 'refine' | 'style'
+export type ToolId = 't2i' | 'i2i' | 'i2p' | 't2v' | 'v2v' | 'ecom' | 'refine' | 'style' | 'buyer_show'
 
 export type ToolField = {
   key: string
@@ -29,6 +29,17 @@ export type ToolDef = {
 }
 
 export const TOOL_DEFS: ToolDef[] = [
+  {
+    id: 'buyer_show',
+    title: '买家秀 / 种草图',
+    desc: '商品图变生活晒图，支持模特、场景参考与裂变',
+    soon: false,
+    icon: ShoppingBag,
+    panelHint: '上传 1–9 张产品图，可选模特和场景参考。',
+    fields: [],
+    cta: '生成买家秀',
+    href: '/ecom/buyer-show',
+  },
   {
     id: 'style',
     title: '风格复刻',
@@ -165,6 +176,7 @@ export function defaultToolChips(tool: ToolDef): Record<string, string> {
 
 // 用当前语言覆盖工具标题、说明与字段文案（options 值保持中文给 API）
 export function localizeToolDef(tool: ToolDef, m: Messages): ToolDef {
+  if (tool.id === 'buyer_show') return { ...tool, ...m.ecomJobs.buyerShow.catalog }
   if (tool.id === 'style') return { ...tool, ...m.ecomJobs.style.catalog }
   if (tool.id === 'refine') return { ...tool, ...m.ecomJobs.catalog }
   const pack = m.tools.items[tool.id]

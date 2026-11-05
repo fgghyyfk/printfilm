@@ -6,7 +6,8 @@ from math import gcd, sqrt
 from typing import Callable
 
 from app.services.compliance.ad_words import check_text
-from app.schemas_ecom_jobs import StyleParams
+from app.schemas_ecom_jobs import BuyerShowParams, StyleParams
+from app.services.ecom_jobs import buyer_show
 from app.services.ecom_jobs.refine import build_prompt
 from app.services.ecom_jobs.style import build_prompt as build_style_prompt
 
@@ -25,6 +26,7 @@ STYLE_MODE_LIMITS = {"single": 6, "batch": 20}
 KINDS = {
     "refine": Kind(20, ("1:1", "3:4", "原比例"), ("2k", "4k"), build_prompt),
     "style": Kind(20, ("1:1", "3:4", "9:16", "16:9"), ("2k", "4k"), build_style_prompt),
+    "buyer_show": Kind(9, ("1:1", "3:4", "9:16", "16:9"), ("2k", "4k"), buyer_show.build_prompt),
 }
 
 
@@ -33,6 +35,12 @@ def validate(kind: str, count: int, params: dict) -> dict:
     spec = KINDS.get(kind)
     if spec is None:
         raise ValueError("未知工具")
+    if kind == "buyer_show":
+        if not isinstance(params, dict) or not 1 <= count <= spec.max_images:
+            raise ValueError("参数错误")
+        clean = BuyerShowParams.model_validate(params).model_dump()
+        clean["notes"], _ = check_text(clean["notes"].strip())
+        return clean
     if kind == "style":
         if not isinstance(params, dict):
             raise ValueError("参数错误")
@@ -55,6 +63,23 @@ def validate(kind: str, count: int, params: dict) -> dict:
         raise ValueError("备注不能超过 500 字")
     clean, _ = check_text(notes.strip())
     return {"background": background, "ratio": ratio, "clarity": clarity, "notes": clean}
+
+
+# 在共同底座保留输入顺序和角色，并给裂变图片添加机位变化。
+def build_item_prompt(kind: str, params: dict, inputs: list[dict], idx: int) -> str:
+    prompt = (buyer_show.build_item_prompt(params, inputs, idx) if kind == "buyer_show"
+              else KINDS[kind].prompt_builder(params))
+    descriptions = {
+        "product": "产品主体，必须保持外形、颜色、logo与文字",
+        "style": "设计风格参考，只借构图、光影与配色",
+        "model": "模特外形参考，不复制真人身份或面部，不指定名人",
+        "scene": "场景参考，借用生活环境与光线",
+        "source": "已完成的成图参考，保留商品特征，变化拍摄角度和取景，不复制人物身份",
+    }
+    prompt += "。" + "；".join(f"图{i + 1} 为{descriptions[ref['role']]}" for i, ref in enumerate(inputs))
+    if any(ref["role"] == "source" for ref in inputs):
+        prompt += f"。裂变拍摄变化：{buyer_show.SHOT_VARIATIONS[idx % len(buyer_show.SHOT_VARIATIONS)]}"
+    return prompt
 
 
 # 将原图或所选比例转换为清晰度对应尺寸；保持原比例并对齐生图尺寸到 8 像素。

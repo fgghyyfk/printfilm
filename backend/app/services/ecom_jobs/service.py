@@ -71,6 +71,8 @@ async def get_options(db: AsyncSession, user: User) -> dict:
                         "clarities": list(kind.clarities), "prices": prices}
         if key == "style":
             options[key].update(mode_limits=kinds.STYLE_MODE_LIMITS, max_count=4)
+        elif key == "buyer_show":
+            options[key].update(max_count=8)
     return {"kinds": options, "billing_enabled": billing_active(user)}
 
 
@@ -91,42 +93,61 @@ async def enqueue_items(db: AsyncSession, user: User, job: EcomJob, items: list[
         item.task_run_id, item.status, item.error = task.id, "queued", None
 
 
-# 校验整批图片后保存上传，创建 job/items 并原子入队；失败清理本次目录。
+# 校验各角色数量后交给底座落盘；可选模特与场景仅限买家秀使用。
 async def create_job(
     db: AsyncSession, user: User, *, kind: str, uploads: list[tuple[bytes, str]], params: dict, title: str = "",
     style_uploads: list[tuple[bytes, str]] | None = None,
+    model_uploads: list[tuple[bytes, str]] | None = None,
+    scene_uploads: list[tuple[bytes, str]] | None = None,
 ) -> EcomJob:
     clean = kinds.validate(kind, len(uploads), params)
     references = style_uploads or []
     if (kind == "style" and len(references) != 1) or (kind != "style" and references):
-        raise ValueError("请上传一张参考设计图")
-    output_count = clean["count"] if kind == "style" and clean["mode"] == "single" else len(uploads)
+        raise ValueError("参数错误")
+    if len(model_uploads or []) > 1 or len(scene_uploads or []) > 1:
+        raise ValueError("参数错误")
+    if kind != "buyer_show" and (model_uploads or scene_uploads):
+        raise ValueError("参数错误")
+    role_uploads = [("product", data, name) for data, name in uploads]
+    for role, batch in (("style", references), ("model", model_uploads), ("scene", scene_uploads)):
+        role_uploads.extend((role, data, name) for data, name in batch or [])
+    combined = kind == "buyer_show" or (kind == "style" and clean["mode"] == "single")
+    count = clean["count"] if combined else len(uploads)
+    return await create_prepared_job(db, user, kind=kind, params=clean, title=title,
+                                     uploads=role_uploads, count=count, combined=combined)
+
+
+# 共用建任务流程：校验完整批次、独立保存引用、逐图提示词、原子入队及失败目录回收。
+async def create_prepared_job(
+    db: AsyncSession, user: User, *, kind: str, params: dict, title: str,
+    uploads: list[tuple[str, bytes, str]], count: int, combined: bool,
+) -> EcomJob:
     if len(title) > 128:
         raise ValueError("标题不能超过 128 字")
-    sizes = [await asyncio.to_thread(inspect_upload, data, name) for data, name in uploads + references]
+    sizes = [await asyncio.to_thread(inspect_upload, data, name) for _, data, name in uploads]
     await ensure_balance_for_task_batch(db, user, TaskRun(
-        domain="studio", task_type="ecom_job_image", requested_by=user.id, payload={"clarity": clean["clarity"]},
-    ), output_count)
-    job = EcomJob(user_id=user.id, kind=kind, title=title.strip(), params=clean, status="queued")
+        domain="studio", task_type="ecom_job_image", requested_by=user.id, payload={"clarity": params["clarity"]},
+    ), count)
+    job = EcomJob(user_id=user.id, kind=kind, title=title.strip(), params=params, status="queued")
     db.add(job)
     await db.flush()
     directory = job_dir(user.id, job.id)
     try:
         inputs = []
-        for idx, (data, _) in enumerate(uploads + references):
+        for idx, (role, data, _) in enumerate(uploads):
             dest = directory / f"input_{idx}.png"
             await asyncio.to_thread(save_upload, data, dest)
             url = await asyncio.to_thread(public_url, dest)
-            inputs.append({"role": "product" if idx < len(uploads) else "style", "path": str(dest), "url": url})
+            inputs.append({"role": role, "path": str(dest), "url": url})
+        products = [ref for ref in inputs if ref["role"] == "product"]
+        references = [ref for ref in inputs if ref["role"] != "product"]
         items = []
-        for idx in range(output_count):
-            if kind == "style" and clean["mode"] == "single":
-                item_inputs = inputs
-            else:
-                item_inputs = [inputs[idx]] + inputs[len(uploads):]
-            ratio, size = kinds.image_geometry(clean["ratio"], clean["clarity"], sizes[min(idx, len(uploads) - 1)])
+        for idx in range(count):
+            item_inputs = inputs if combined else [products[idx]] + references
+            ratio, size = kinds.image_geometry(params["ratio"], params["clarity"], sizes[0 if combined else idx])
             item = EcomJobItem(job_id=job.id, idx=idx, inputs=item_inputs,
-                               prompt=kinds.KINDS[kind].prompt_builder(clean), ratio=ratio, size=size, status="queued")
+                               prompt=kinds.build_item_prompt(kind, params, item_inputs, idx),
+                               ratio=ratio, size=size, status="queued")
             db.add(item)
             items.append(item)
         await db.flush()

@@ -27,6 +27,24 @@ class StyleParams(BaseModel):
     notes: str = Field(default="", max_length=500)
 
 
+class BuyerShowParams(BaseModel):
+    """买家秀或种草图参数，每张输出独立排队。"""
+
+    model_config = {"extra": "forbid"}
+    mode: Literal["buyer", "seeding"] = "buyer"
+    count: int = Field(default=1, ge=1, le=8, strict=True)
+    ratio: Literal["1:1", "3:4", "9:16", "16:9"] = "3:4"
+    clarity: Literal["2k", "4k"] = "2k"
+    notes: str = Field(default="", max_length=500)
+
+
+class EcomVariantsParams(BaseModel):
+    """从一张已完成结果派生的输出数量。"""
+
+    model_config = {"extra": "forbid"}
+    count: int = Field(default=1, ge=1, le=8, strict=True)
+
+
 class EcomInputOut(BaseModel):
     """对外参考图仅公开角色和可访问 URL。"""
 

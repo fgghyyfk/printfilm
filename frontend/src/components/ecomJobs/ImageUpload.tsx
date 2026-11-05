@@ -28,7 +28,7 @@ export default function ImageUpload({ files, maxImages, disabled, role = 'produc
   return (
     <div className="pf-job-upload">
       <label className="pf-job-upload-label">
-        <strong>{t(role === 'style' ? 'ecomJobs.style.reference' : 'ecomJobs.images')}</strong>
+        <strong>{t(role === 'style' ? 'ecomJobs.style.reference' : role === 'model' || role === 'scene' ? `ecomJobs.buyerShow.${role}` : 'ecomJobs.images')}</strong>
         <span className="pf-muted">{t('ecomJobs.uploadHint', { max: maxImages, count: files.length })}</span>
         <input type="file" multiple accept="image/png,image/jpeg,image/webp" disabled={disabled}
           onChange={(event) => { addFiles(Array.from(event.target.files || [])); event.target.value = '' }} />

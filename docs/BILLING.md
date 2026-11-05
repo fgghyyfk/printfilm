@@ -182,6 +182,7 @@ sequenceDiagram
 | 工作室工具 | `run_billed_ephemeral(domain=studio, tool_image/tool_video)` |
 | 一图出套图·规划 | `run_billed_ephemeral(domain=studio, ecom_set_plan)`：**固定价**，写一条 `billing_key=ecom_set_plan`、`charge_fen=ECOM_SET_PLAN_FEN`（默认 10 分）的用量行，不按 token 计；规划失败不扣 |
 | 一图出套图·生图 | `create_task(domain=studio, ecom_set_image)`，按 `clarity=2k/4k` 匹配生图目录估价（沿用模型能力钳制），每张独立预扣与结算；预设 4/6/8 或自定义 3–10 槽位按实际张数计价；语言及广告版式不另收费；复用精修结果仅收新套图的规划和生图费用；本地 mock 不联网。一张一个 TaskRun，executor 自动 freeze/settle，handler 内 `record_seedream_image_usage`；入队前 `ensure_balance_for_task_batch` 一次校验 N 张；单张失败不扣；改文案（重新排版）不调模型、免费 |
+| 电商买家秀 / 种草图 | 复用 `create_task(domain=studio, ecom_job_image)`；`kind=buyer_show` 按 `count=1–8` 张计价，产品 / 模特 / 场景参考不另计费；整批校验余额后逐张预扣，按 `clarity=2k/4k` 目录估价，记录 `tool_id=ecom_buyer_show` 并结算；失败重抛不扣费，本地 mock 不联网。通用裂变接口为已完成结果创建独立同类 job，按新输出张数重新预扣与结算，保留原任务和结果 |
 | 电商风格复刻 | 复用 `create_task(domain=studio, ecom_job_image)`；`kind=style` 单图模式按 `count=1–4` 张计价，批量模式按产品图数量（最多 20 张）计价，参考设计图不另计费；整批校验余额后逐张预扣，按 `clarity=2k/4k` 目录估价，记录 `tool_id=ecom_style` 并结算；失败重抛不扣费，本地 mock 不联网 |
 | 电商批量精修 | `create_task(domain=studio, ecom_job_image)`，每张独立 TaskRun；整批入队前校验可用余额，按 `clarity=2k/4k` 复用图像目录估价（沿用模型清晰度钳制），生成后记录 `tool_id=ecom_refine` 用量并结算；失败重抛不扣费，重试仅允许失败图片并重新检查余额；透明底 Pillow 后处理不另收费；本地 mock 不调用上游 |
 | 开放 API | `run_billed_ephemeral(domain=api, v1_image/v1_video/v1_seedance)` |

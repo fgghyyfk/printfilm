@@ -15,6 +15,7 @@ from app.config import get_settings
 from app.models_ecom import EcomJob, EcomJobItem
 from app.models_tasks import TaskRun
 from app.services import storage
+from app.services.ecom_jobs.buyer_show import generate_mock as generate_buyer_mock
 from app.services.ecom_jobs.mock import generate_mock
 from app.services.ecom_jobs.style import generate_mock as generate_style_mock
 from app.services.ecom_jobs.refine import NEGATIVE_PROMPT, remove_white_background
@@ -93,22 +94,27 @@ async def generate_image(db: AsyncSession, job: EcomJob, item: EcomJobItem) -> t
     directory = job_dir(job.user_id, job.id)
     source = directory / f"base_{item.idx}_{uuid.uuid4().hex[:8]}.png"
     if get_settings().ark_mock:
-        if job.kind == "style":
+        if job.kind == "buyer_show":
+            await asyncio.to_thread(generate_buyer_mock, item.inputs, source, size=item.size, idx=item.idx)
+        elif job.kind == "style":
             reference = next(Path(ref["path"]) for ref in item.inputs if ref["role"] == "style")
             products = [Path(ref["path"]) for ref in item.inputs if ref["role"] == "product"]
             await asyncio.to_thread(generate_style_mock, reference, products, source, size=item.size)
         else:
-            await asyncio.to_thread(generate_mock, Path(item.inputs[0]["path"]), source,
+            await asyncio.to_thread(generate_mock, Path(next((ref for ref in item.inputs if ref["role"] == "source"), item.inputs[0])["path"]), source,
                                     size=item.size, background=params.get("background", "white"))
         return source, None
     from app.services.ark import get_ark
     # 传公开参考地址，结构化通路由网关按需转换本地图片，文本降级不会夹带 base64。
-    refs = [storage.to_public_url(ref["url"]) for ref in item.inputs if ref["role"] == "product"]
-    style_refs = [storage.to_public_url(ref["url"]) for ref in item.inputs if ref["role"] == "style"]
+    # 买家秀及裂变必须传入全部角色，顺序与逐图提示词一致。
+    explicit_roles = job.kind == "buyer_show" or any(ref["role"] == "source" for ref in item.inputs)
+    refs = [storage.to_public_url(ref["url"]) for ref in item.inputs if explicit_roles or ref["role"] == "product"]
+    style_refs = [] if explicit_roles else [storage.to_public_url(ref["url"]) for ref in item.inputs if ref["role"] == "style"]
     result = await get_ark().gen_image(
         item.prompt, NEGATIVE_PROMPT, refs, project_id=0, shot_no=job.user_id,
         size=item.size, aspect_ratio=item.ratio, structured_refs=True,
         **({"style_ref_urls": style_refs} if style_refs else {}),
+        **({"reference_roles": [ref["role"] for ref in item.inputs]} if explicit_roles else {}),
     )
     url = result.local_url or result.remote_url
     if not url:

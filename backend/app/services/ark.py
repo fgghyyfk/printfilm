@@ -903,6 +903,7 @@ class ArkGateway:
         aspect_ratio: str | None = None,
         style_ref_urls: list[str] | None = None,
         structured_refs: bool = False,
+        reference_roles: list[str] | None = None,
     ) -> ImageResult:
         """调用 TokenFree 生图（Seedream 家族在网关侧重映射）。
 
@@ -963,6 +964,7 @@ class ArkGateway:
                     aspect_ratio=aspect_ratio,
                     style_ref_urls=style_ref_urls,
                     structured_refs=structured_refs,
+                    **({"reference_roles": reference_roles} if reference_roles else {}),
                 )
             except Exception as exc:  # noqa: BLE001
                 last_err = exc
@@ -1002,6 +1004,7 @@ class ArkGateway:
         aspect_ratio: str | None = None,
         style_ref_urls: list[str] | None = None,
         structured_refs: bool = False,
+        reference_roles: list[str] | None = None,
     ) -> ImageResult:
         """单次 Seedream 请求并落盘（文件名含 uuid，避免重生成覆盖）。"""
         route = self._resolve_ark_route("image", model)
@@ -1083,6 +1086,7 @@ class ArkGateway:
                 ref_urls=subject_refs,
                 style_ref_urls=style_refs,
                 structured_refs=structured_refs,
+                reference_roles=reference_roles,
             )
         else:
             path = "/responses"
@@ -1097,6 +1101,7 @@ class ArkGateway:
                 ref_urls=subject_refs,
                 style_ref_urls=style_refs,
                 structured_refs=structured_refs,
+                reference_roles=reference_roles,
             )
 
         try:

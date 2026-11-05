@@ -31,6 +31,13 @@ export type StyleParams = {
   clarity: '2k' | '4k'
   notes: string
 }
+export type BuyerShowParams = {
+  mode: 'buyer' | 'seeding'
+  count: number
+  ratio: '1:1' | '3:4' | '9:16' | '16:9'
+  clarity: '2k' | '4k'
+  notes: string
+}
 export type EcomJob = {
   id: number
   kind: string
@@ -58,10 +65,12 @@ export function getEcomJobOptions(): Promise<EcomJobOptions> {
 }
 
 /** 上传整批商品图并创建指定功能的任务。 */
-export function createEcomJob(kind: string, files: File[], params: RefineParams | StyleParams, styleFiles: File[] = []): Promise<EcomJob> {
+export function createEcomJob(kind: string, files: File[], params: RefineParams | StyleParams | BuyerShowParams, styleFiles: File[] = [], references: { model?: File[]; scene?: File[] } = {}): Promise<EcomJob> {
   const body = new FormData()
   files.forEach((file) => body.append('files', file))
   styleFiles.forEach((file) => body.append('style_files', file))
+  references.model?.forEach((file) => body.append('model_files', file))
+  references.scene?.forEach((file) => body.append('scene_files', file))
   body.append('params', JSON.stringify(params))
   return request(`${BASE}/${kind}`, { method: 'POST', body })
 }
@@ -92,4 +101,9 @@ export async function downloadEcomJobImage(id: number, item: EcomJobItem): Promi
   if (!item.result_url) return
   const blob = await fetchMediaBlob(resolveToolMediaUrl(item.result_url))
   triggerBlobDownload(blob, `ecom-${id}-${item.idx + 1}.png`)
+}
+
+/** 从已完成图片创建同类裂变任务，费用与新出图一致。 */
+export function createEcomJobVariants(id: number, idx: number, count: number): Promise<EcomJob> {
+  return request(`${BASE}/${id}/items/${idx}/variants`, { method: 'POST', body: JSON.stringify({ count }) })
 }

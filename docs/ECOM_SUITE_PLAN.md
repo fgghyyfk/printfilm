@@ -49,12 +49,14 @@
 - `gen_image` 新增关键字参数 `structured_refs: bool = False`；为 True 时在 TokenFree `/responses` 通路把参考图作为 `input_image` 内容块传入（gpt-image 通路按其接口支持情况传图，不支持则保持原文本方式并打日志）
 - **默认关闭**，只有电商新功能显式开启，避免影响科普/漫剧现有出图
 - 每个参考图带角色说明（"图1 为产品主体，必须保持外形/颜色/logo；图2 仅参考风格"）
+- E3 增加可选 `reference_roles`，区分产品、模特外形、场景与裂变成图参考；显式结构化模式最多保留 12 张引用（9 产品 + 1 模特 + 1 场景 + 1 成图），默认通路不变。
 
 ### 4.4 接口（`api/ecom_jobs.py`，挂 `/api/tools/ecom-jobs`）
 - `GET /options`：各 kind 的上限、比例、清晰度、单价
 - `POST /{kind}`（multipart）：建任务并入队
 - `GET ""`（服务端分页 `page/page_size/meta.total`，可按 kind 筛选）、`GET /{id}`
 - `POST /{id}/items/{idx}/retry`、`GET /{id}/download`（zip）
+- `POST /{id}/items/{idx}/variants`：JSON `count=1–8`，仅接受当前用户的成功结果，复制引用并新建同 kind 的独立 job；实际输出数量以 `items` 为准，逐张预扣与结算，原任务保留。
 
 ### 4.5 前端
 - `frontend/src/api/ecomJobs.ts`；`components/ecomJobs/`：多图上传（带角色）、参数面板、结果网格（加载/空/错三态，单张重试/下载）、历史列表
@@ -81,7 +83,7 @@
 | E0 底座 + 精修 | Codex CLI | 已完成 | |
 | E1 风格复刻 | Codex CLI | 已完成 | |
 | E2 套图增强 | Codex CLI | 已完成 | |
-| E3 买家秀/种草图 | Codex CLI | 待执行 | |
+| E3 买家秀/种草图 | Codex CLI | 已完成 | |
 | E4 SKU 替换 | Codex CLI | 待执行 | |
 | E5 图片翻译 | Codex CLI | 待执行 | |
 | E6 工作台入口/文档 | Codex CLI | 待执行 | |

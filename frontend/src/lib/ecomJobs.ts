@@ -57,3 +57,17 @@ export function styleProductLimit(mode: 'single' | 'batch'): number {
 export function styleOutputCount(mode: 'single' | 'batch', products: number, count: number): number {
   return mode === 'single' ? count : products
 }
+
+/** 买家秀要求产品图，模特与场景可缺省且各限一张。 */
+export function validateBuyerShowImages(products: readonly Pick<File, 'type' | 'size'>[], models: readonly Pick<File, 'type' | 'size'>[], scenes: readonly Pick<File, 'type' | 'size'>[]): string | null {
+  const problem = validateEcomImages(products, 9)
+  if (problem) return problem
+  if (models.length > 1 || scenes.length > 1) return 'optional'
+  for (const files of [models, scenes]) {
+    if (files.length) {
+      const optionalProblem = validateEcomImages(files, 1)
+      if (optionalProblem) return optionalProblem
+    }
+  }
+  return null
+}

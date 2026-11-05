@@ -1,6 +1,32 @@
 /** 英文：电商批量任务与图片精修。 */
 export const enEcomJobs = {
   ecomJobs: {
+    buyerShow: {
+      title: 'Buyer photos / Lifestyle images',
+      lead: 'Turn product images into casual buyer photos or polished lifestyle shots, then create variants from a result you like.',
+      model: 'Model reference (optional, up to 1)',
+      scene: 'Scene reference (optional, up to 1)',
+      mode: 'Image style',
+      modes: { buyer: 'Buyer photo: casual phone shot', seeding: 'Lifestyle: polished everyday scene' },
+      count: 'Output count',
+      notesHint: 'For example: natural window light, product on a table, space at the top',
+      referenceHint: 'Model images are appearance references only. Do not copy real identities or celebrity likenesses, or imply an endorsement. Without a model reference, faces are not shown.',
+      optionalError: 'Upload at most 1 model image and 1 scene image',
+      start: 'Generate images',
+      confirmTitle: 'Confirm image generation',
+      confirm: 'Generate {count} images for an estimated {price}. Continue?',
+      results: 'Buyer photo / Lifestyle results',
+      generating: 'Generating',
+      newJob: 'New buyer photo / Lifestyle job',
+      history: 'My buyer photo / Lifestyle jobs',
+      noHistory: 'No jobs yet. Upload product images to get started.',
+      variants: 'Create variants',
+      variantsTitle: 'Create variants from this result',
+      variantsCount: 'Enter the number of variants (1–8). Style, aspect ratio and resolution will follow this job.',
+      variantsInvalid: 'Variant count must be an integer from 1 to 8',
+      variantsConfirm: 'Use this result as a reference for {count} new images, estimated at {price}. Continue?',
+      catalog: { title: 'Buyer photos / Lifestyle images', desc: 'Create lifestyle shots with optional model and scene references', panelHint: 'Upload 1–9 product images and optional model and scene references.', cta: 'Create buyer photos' },
+    },
     style: {
       title: 'Style recreation',
       lead: 'Recreate a design’s composition, lighting and colors with your own products.',

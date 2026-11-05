@@ -1,6 +1,32 @@
 /** 中文：电商批量任务与图片精修。 */
 export const zhEcomJobs = {
   ecomJobs: {
+    buyerShow: {
+      title: '买家秀 / 种草图',
+      lead: '上传商品图，生成生活化晒图或精致种草图，还可从满意的结果继续裂变。',
+      model: '模特参考（选填，最多 1 张）',
+      scene: '场景参考（选填，最多 1 张）',
+      mode: '图片风格',
+      modes: { buyer: '买家秀：手机随手拍', seeding: '种草图：精致生活感' },
+      count: '输出张数',
+      notesHint: '例如：自然窗光，产品放在桌面，画面顶部留白',
+      referenceHint: '模特图仅作外形参考，不复制真人身份或名人肖像，不暗示真人代言。没有模特图时不展示人物面部。',
+      optionalError: '模特图和场景图各最多上传 1 张',
+      start: '开始生成',
+      confirmTitle: '确认生成图片',
+      confirm: '将生成 {count} 张图片，预计扣费 {price}，确认开始？',
+      results: '买家秀 / 种草图结果',
+      generating: '生成中',
+      newJob: '新建买家秀 / 种草图任务',
+      history: '我的买家秀 / 种草图任务',
+      noHistory: '还没有任务，上传产品图开始吧',
+      variants: '裂变',
+      variantsTitle: '以这张结果继续裂变',
+      variantsCount: '请输入裂变张数（1–8），将保留当前任务的风格、比例和清晰度。',
+      variantsInvalid: '裂变张数必须为 1–8 的整数',
+      variantsConfirm: '将以这张成图为参考生成 {count} 张新图，预计扣费 {price}，确认继续？',
+      catalog: { title: '买家秀 / 种草图', desc: '商品图变生活晒图，支持模特、场景参考与裂变', panelHint: '上传 1–9 张产品图，可选模特和场景参考。', cta: '生成买家秀' },
+    },
     style: {
       title: '风格复刻',
       lead: '借鉴参考设计的构图、光影与配色，用自己的商品生成新图。',

@@ -12,16 +12,17 @@ type Props = {
   onRetry: (item: EcomJobItem) => void
   onDownload: (item: EcomJobItem) => void
   onZip: () => void
+  onVariants?: (item: EcomJobItem) => void
 }
 
 /** 通用逐图结果网格：排队、失败、成图及空态，附单张和整批下载。 */
-export default function ResultsGrid({ job, busyIdx, downloading, onRetry, onDownload, onZip }: Props) {
+export default function ResultsGrid({ job, busyIdx, downloading, onRetry, onDownload, onZip, onVariants }: Props) {
   const { t } = useI18n()
   const completed = job.items.filter((item) => item.status === 'succeeded' && item.result_url).length
   return (
     <section className="pf-job-section" aria-live="polite">
       <div className="pf-job-head">
-        <div><h2>{t(job.kind === 'style' ? 'ecomJobs.style.results' : 'ecomJobs.results')}</h2><p className="pf-muted">{t(`ecomJobs.status.${job.status}`)} · {t('ecomJobs.progress', { done: completed, total: job.items.length })}</p></div>
+        <div><h2>{t(job.kind === 'style' ? 'ecomJobs.style.results' : job.kind === 'buyer_show' ? 'ecomJobs.buyerShow.results' : 'ecomJobs.results')}</h2><p className="pf-muted">{t(`ecomJobs.status.${job.status}`)} · {t('ecomJobs.progress', { done: completed, total: job.items.length })}</p></div>
         <Button type="button" variant="lime" disabled={!completed || downloading} onClick={onZip}>
           {downloading ? t('ecomJobs.downloading') : t('ecomJobs.zip')}
         </Button>
@@ -33,7 +34,7 @@ export default function ResultsGrid({ job, busyIdx, downloading, onRetry, onDown
             <strong>{t('ecomJobs.imageNumber', { n: item.idx + 1 })}</strong>
             <div className="pf-job-image">
               {item.status === 'queued' || item.status === 'running' ? (
-                <div className="pf-job-state"><Loader2 className="pf-tool-spin" aria-hidden />{t(job.kind === 'style' && item.status === 'running' ? 'ecomJobs.style.generating' : `ecomJobs.itemStatus.${item.status}`)}</div>
+                <div className="pf-job-state"><Loader2 className="pf-tool-spin" aria-hidden />{t(item.status === 'running' && job.kind === 'buyer_show' ? 'ecomJobs.buyerShow.generating' : job.kind === 'style' && item.status === 'running' ? 'ecomJobs.style.generating' : `ecomJobs.itemStatus.${item.status}`)}</div>
               ) : item.status === 'failed' ? (
                 <div className="pf-job-state pf-tool-error"><strong>{t('ecomJobs.itemStatus.failed')}</strong><span>{item.error ? ecomJobErrorText(item.error, t) : t('ecomJobs.failed')}</span></div>
               ) : item.result_url ? (
@@ -45,6 +46,7 @@ export default function ResultsGrid({ job, busyIdx, downloading, onRetry, onDown
             <div className="pf-job-actions">
               {item.status === 'failed' ? <Button type="button" size="sm" variant="outline" disabled={busyIdx !== null} onClick={() => onRetry(item)}>{busyIdx === item.idx ? t('ecomJobs.submitting') : t('ecomJobs.retry')}</Button> : null}
               {item.status === 'succeeded' && item.result_url ? <Button type="button" size="sm" variant="outline" disabled={busyIdx !== null} onClick={() => onDownload(item)}>{t('ecomJobs.download')}</Button> : null}
+              {onVariants && item.status === 'succeeded' && item.result_url ? <Button type="button" size="sm" variant="outline" disabled={busyIdx !== null} onClick={() => onVariants(item)}>{t('ecomJobs.buyerShow.variants')}</Button> : null}
               {job.kind === 'refine' && item.status === 'succeeded' && item.result_url ? <Button size="sm" variant="outline"
                 to={`/daihuo?source_job_id=${job.id}&source_item_idx=${item.idx}`}>{t('ecomSet.enhanced.useRefine')}</Button> : null}
             </div>

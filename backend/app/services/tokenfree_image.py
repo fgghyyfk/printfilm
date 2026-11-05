@@ -75,6 +75,7 @@ def build_tokenfree_openai_image_body(
     ref_urls: list[str] | None = None,
     style_ref_urls: list[str] | None = None,
     structured_refs: bool = False,
+    reference_roles: list[str] | None = None,
 ) -> dict[str, Any]:
     """GPT Image 2.5：POST /images/generations（openai 渠道），并带上 resolution 供计费。"""
     if structured_refs and (ref_urls or style_ref_urls):
@@ -86,9 +87,13 @@ def build_tokenfree_openai_image_body(
         prompt=prompt,
         size=size,
         aspect_ratio=aspect_ratio,
-        ref_urls=None if design_refs else ref_urls,
+        ref_urls=None if design_refs or reference_roles else ref_urls,
         style_ref_urls=None if design_refs else style_ref_urls,
     )
+    if reference_roles:
+        narrative["input"] += "。参考图按正文角色使用：" + "；".join(
+            f"图{idx + 1}（{role}）：{url}" for idx, (role, url) in enumerate(zip(reference_roles, ref_urls or []))
+        )
     if design_refs:
         products = " ".join(url.strip() for url in (ref_urls or []) if url and url.strip())
         narrative["input"] += f"。产品主体参考（保持外形、颜色、logo与文字不变）：{products}"
@@ -106,7 +111,7 @@ def build_tokenfree_openai_image_body(
     }
 
 
-# 显式结构化模式允许 data URI 和本站图片地址，保留最多六张产品与一张风格参考。
+# 显式结构化模式允许 data URI 和本站地址，容纳九张产品、模特、场景及裂变成图。
 def split_tokenfree_structured_refs(
     ref_urls: list[str] | None, style_ref_urls: list[str] | None,
 ) -> tuple[list[str], list[str]]:
@@ -115,7 +120,7 @@ def split_tokenfree_structured_refs(
         return list(dict.fromkeys(url.strip() for url in (urls or []) if url and url.strip()))
 
     styles = clean(style_ref_urls)[:1]
-    return clean(ref_urls)[:6], styles
+    return clean(ref_urls)[:12], styles
 
 
 # 结构化通路优先编码已有本地参考图，远程图保持 URL，文本降级不调用此函数。
@@ -171,6 +176,7 @@ def build_tokenfree_image_body(
     ref_urls: list[str] | None = None,
     style_ref_urls: list[str] | None = None,
     structured_refs: bool = False,
+    reference_roles: list[str] | None = None,
 ) -> dict[str, Any]:
     """线上成功体只要 model + 自然语言 input，不要 size: 这种协议字段。
 
@@ -199,7 +205,9 @@ def build_tokenfree_image_body(
         content: list[dict[str, Any]] = [{"type": "input_text", "text": text}]
         for idx, url in enumerate(refs, 1):
             content.extend([
-                {"type": "input_text", "text": f"图{idx} 为产品主体，必须保持外形、颜色与 logo。"},
+                {"type": "input_text", "text": (f"图{idx} 的角色为 {reference_roles[idx - 1]}，严格按正文对应角色使用。"
+                                                  if reference_roles and idx <= len(reference_roles)
+                                                  else f"图{idx} 为产品主体，必须保持外形、颜色与 logo。")},
                 {"type": "input_image", "image_url": url},
             ])
         for idx, url in enumerate(style_refs, len(refs) + 1):
