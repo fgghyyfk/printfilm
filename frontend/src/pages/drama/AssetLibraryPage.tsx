@@ -17,6 +17,9 @@ import { DRAMA_VOICE_BINDING_ENABLED } from '../../lib/dramaVoiceBinding'
 import { pageCountOf } from '../../lib/pagination'
 import { subscribeWorkspace, workspaceScope } from '../../features/teams/workspaceScope'
 import RequireAuth from './RequireAuth'
+import { useNavigate } from 'react-router-dom'
+import EcomSetBatches from '../../components/ecomSet/EcomSetBatches'
+import '../../styles/tools-base.css'
 import './drama.css'
 
 const PAGE_SIZE_OPTIONS = [12, 24, 36] as const
@@ -42,7 +45,25 @@ function previewAudio(asset: MediaLibraryItem): string {
   return asset.media_kind === 'audio' ? asset.url || '' : readAssetVoiceBinding(asset)?.url || ''
 }
 
+/** 把当前页资产按「来源项目 + 生成时间（30 分钟内算同一批）」分组，保持原有顺序 */
+function groupByBatch(items: MediaLibraryItem[]): { key: string; title: string; time: string; items: MediaLibraryItem[] }[] {
+  const groups: { key: string; title: string; time: string; items: MediaLibraryItem[] }[] = []
+  for (const item of items) {
+    const at = item.updated_at ? new Date(item.updated_at) : null
+    const bucket = at ? Math.floor(at.getTime() / (30 * 60 * 1000)) : 0
+    const key = `${item.project_kind || ''}:${item.project_id || 0}:${bucket}`
+    const last = groups[groups.length - 1]
+    if (last && last.key === key) { last.items.push(item); continue }
+    groups.push({ key, title: item.project_title || (item.project_id ? '项目素材' : '未关联项目'),
+      time: at ? at.toLocaleString() : '', items: [item] })
+  }
+  return groups
+}
+
 function AssetLibraryInner() {
+  const navigate = useNavigate()
+  // 展示方式：电商图套图（按批次）/ 资产按批次分组 / 全部平铺
+  const [view, setView] = useState<'sets' | 'batch' | 'grid'>('batch')
   const [listing, setListing] = useState<MediaLibraryPage>({ items: [], meta: { total: 0, total_all: 0, page: 1, page_size: 12 } })
   const [projects, setProjects] = useState<LibraryProject[]>([])
   const [projectId, setProjectId] = useState('')
@@ -144,11 +165,18 @@ function AssetLibraryInner() {
           </div>
         </div>
       </header>
+      <div className="pf-library-views pf-tool-chips" role="tablist" aria-label="展示方式">
+        {([['batch', '按批次'], ['sets', '电商图套图'], ['grid', '全部平铺']] as const).map(([id, label]) =>
+          <button key={id} type="button" role="tab" aria-selected={view === id} className={view === id ? 'active' : ''} onClick={() => setView(id)}>{label}</button>)}
+      </div>
+      {view === 'sets' ? <EcomSetBatches onOpen={(id) => navigate(`/daihuo?id=${id}`)} /> : <>
       {error && <div role="alert"><BillingErrorNotice message={error} className="drama-error" /><Button size="sm" onClick={() => setRevision((value) => value + 1)}>重新加载</Button></div>}
       {playbackError && <p role="alert" className="drama-error">{playbackError}</p>}
       <div className="pf-library-meta"><p className="pf-muted" style={{ margin: 0 }} role="status">{loading ? '加载中…' : `共 ${listing.meta.total_all} 项 · 筛选后 ${listing.meta.total} 项 · 第 ${listing.meta.page}/${pageCount} 页`}</p></div>
       {loading ? <div className="pf-library-empty" aria-busy="true">正在加载资产…</div> : error ? null : listing.items.length === 0 ? <AssetEmpty /> : <>
-        <AssetGrid>{listing.items.map((asset) => {
+        {(view === 'batch' ? groupByBatch(listing.items) : [{ key: 'all', title: '', time: '', items: listing.items }]).map((group) => <div key={group.key} className="pf-library-batch">
+        {view === 'batch' ? <h3>{group.title} <span className="pf-muted">· {group.time} · {group.items.length} 项</span></h3> : null}
+        <AssetGrid>{group.items.map((asset) => {
           const audio = asset.media_kind === 'audio'
           const preview = previewAudio(asset)
           const playing = playingKey === asset.key
@@ -161,8 +189,9 @@ function AssetLibraryInner() {
               {!audio && DRAMA_VOICE_BINDING_ENABLED && preview && <CharacterVoicePreviewButton url={preview} label={asset.name || undefined} onError={setPlaybackError} />}
               {asset.project_url ? <Button to={asset.project_url} variant="ghost" size="sm">打开项目</Button> : <Button size="sm" onClick={() => setSelectedAsset(asset)}>查看素材</Button>}
             </>} />
-        })}</AssetGrid>
+        })}</AssetGrid></div>)}
         <Pagination page={listing.meta.page} pageCount={pageCount} total={listing.meta.total} pageSize={pageSize} pageSizeOptions={PAGE_SIZE_OPTIONS} onPageSizeChange={(size) => { setPageSize(size); setPage(1) }} onChange={setPage} ariaLabel="数字资产库分页" />
+      </>}
       </>}
       {selectedAsset && <AssetDetailDialog asset={selectedAsset} audioUrl={selectedAsset.media_kind !== 'audio' ? previewAudio(selectedAsset) : undefined} onClose={() => setSelectedAsset(null)} actions={selectedAsset.project_url ? <Button to={selectedAsset.project_url} variant="dark">打开来源项目</Button> : undefined} />}
     </div>

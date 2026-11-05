@@ -9,7 +9,7 @@ import ProductStep from '../components/ecomStudio/ProductStep'
 import ModelStep from '../components/ecomStudio/ModelStep'
 import SlotStep from '../components/ecomStudio/SlotStep'
 import ProductsTab from '../components/ecomStudio/ProductsTab'
-import EcomSetHistory from '../components/ecomSet/EcomSetHistory'
+import EcomSetBatches from '../components/ecomSet/EcomSetBatches'
 import { getEcomSetOptions, planEcomSet, type EcomSetOptions } from '../api/ecomSet'
 import type { EcomProduct } from '../api/ecomProducts'
 import { resolveToolMediaUrl } from '../api/tools'
@@ -98,7 +98,7 @@ export default function EcomStudioPage() {
 
       {optionsError ? <p className="pf-tool-error">{optionsError}</p> : !options ? <p className="pf-muted"><Loader2 size={16} className="pf-tool-spin" /></p>
         : tab === 'products' ? <ProductsTab categories={categories} onUse={(p) => { pickProduct(p, 0); setTab('make'); setStep(1) }} />
-          : tab === 'history' ? <EcomSetHistory currentId={null} refreshKey={0} onOpen={(id) => nav(`/daihuo?id=${id}`)} />
+          : tab === 'history' ? <EcomSetBatches onOpen={(id) => nav(`/daihuo?id=${id}`)} />
             : <>
               <div className="pf-ecom-steps"><Stepper steps={steps} current={step} /></div>
               {step === 0 ? <ProductStep categories={categories} product={product} colorIndex={colorIndex} onPick={pickProduct} /> : null}
