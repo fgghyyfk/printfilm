@@ -342,6 +342,8 @@ async def _apply_schema_patches(engine_override: AsyncEngine | None = None) -> N
             await conn.execute(text("ALTER TABLE task_runs ADD COLUMN provider_name VARCHAR(64)"))
         if "provider_status" not in trcols:
             await conn.execute(text("ALTER TABLE task_runs ADD COLUMN provider_status VARCHAR(32)"))
+        if "recovery_count" not in trcols:
+            await conn.execute(text("ALTER TABLE task_runs ADD COLUMN recovery_count INTEGER DEFAULT 0"))
         if "dedupe_key" not in trcols:
             await conn.execute(text("ALTER TABLE task_runs ADD COLUMN dedupe_key VARCHAR(128)"))
         if "batch_key" not in trcols:

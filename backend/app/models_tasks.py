@@ -28,6 +28,8 @@ class TaskRun(Base):
     provider_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
     provider_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
     status: Mapped[str] = mapped_column(String(32), index=True, default="pending")
+    # 已观察到的执行中断次数，与步骤生成尝试独立。
+    recovery_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     priority: Mapped[int] = mapped_column(Integer, default=100)
     requested_by: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id"), nullable=True, index=True)

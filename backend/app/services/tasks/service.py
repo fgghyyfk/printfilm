@@ -123,6 +123,7 @@ async def create_task(
     body: TaskCreateRequest,
     *,
     commit: bool = True,
+    prepared_estimate_fen: int | None = None,
 ) -> TaskRun:
     """创建任务；文字 LLM 提交后立即执行，媒体任务留给调度器。"""
     ensure_voice_generation_task_enabled(body.domain, body.task_type)
@@ -152,7 +153,12 @@ async def create_task(
     )
     from app.services.media_models.planning import prepare_task_media
     await prepare_task_media(db, balance_probe)
-    estimate_fen = await ensure_balance_for_task(db, user, balance_probe)
+    if prepared_estimate_fen is None:
+        estimate_fen = await ensure_balance_for_task(db, user, balance_probe)
+    else:
+        estimate_fen = await ensure_balance_for_task(
+            db, user, balance_probe, prepared_estimate_fen=prepared_estimate_fen,
+        )
     planned_steps = handler.plan_steps(body)
     first_step = planned_steps[0] if planned_steps else None
     now = datetime.now(UTC)

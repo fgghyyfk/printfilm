@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.schemas_common import PageMeta
 
@@ -146,6 +146,7 @@ class TaskRunBriefOut(BaseModel):
     provider_name: str | None = None
     provider_status: str | None = None
     status: str
+    recovery_count: int = 0
     current_step_key: str | None = None
     current_step_status: str | None = None
     progress_percent: int = 0
@@ -163,6 +164,12 @@ class TaskRunBriefOut(BaseModel):
 
     model_config = {"from_attributes": True}
 
+    @field_validator("recovery_count", mode="before")
+    @classmethod
+    def normalize_recovery_count(cls, value):
+        """升级前 NULL 计数按零返回。"""
+        return value or 0
+
 
 class TaskRunOut(BaseModel):
     """Unified task output model."""
@@ -176,6 +183,7 @@ class TaskRunOut(BaseModel):
     provider_name: str | None = None
     provider_status: str | None = None
     status: str
+    recovery_count: int = 0
     priority: int
     requested_by: int
     client_request_id: str | None = None
@@ -215,6 +223,12 @@ class TaskRunOut(BaseModel):
     events: list[TaskEventOut] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
+
+    @field_validator("recovery_count", mode="before")
+    @classmethod
+    def normalize_recovery_count(cls, value):
+        """升级前 NULL 计数按零返回。"""
+        return value or 0
 
 
 class TaskListOut(BaseModel):

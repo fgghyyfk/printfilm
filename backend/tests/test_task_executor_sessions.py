@@ -188,12 +188,13 @@ async def test_interrupted_provider_wait_uses_latest_cancellation_and_preserves_
 
     async with sessions() as db:
         task = await get_task_for_runtime(db, task_id)
-        assert task.status == ("cancelled" if cancel_requested else "pending")
+        # mock_delay 不能靠任务号恢复：中断后判失败，不再重新执行，以免重复提交付费请求。
+        assert task.status == ("cancelled" if cancel_requested else "failed")
         assert task.provider_task_id == "accepted-before-interruption"
         if cancel_requested:
             assert task.steps[0].status == "cancelled"
             assert task.finished_at is not None
         else:
-            assert task.steps[0].status == "pending"
+            assert task.steps[0].status == "failed"
             assert task.payload["provider_task_id"] == "accepted-before-interruption"
-            assert task.next_action_at is not None
+            assert task.next_action_at is None

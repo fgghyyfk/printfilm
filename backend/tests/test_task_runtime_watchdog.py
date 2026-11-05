@@ -104,7 +104,7 @@ async def test_recover_skips_local_alive_jobs():
             return self
 
         def all(self):
-            return [fake_task]
+            return [42]
 
     class _FakeSession:
         async def __aenter__(self):

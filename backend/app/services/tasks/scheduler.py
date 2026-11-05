@@ -521,63 +521,35 @@ async def recover_orphaned_tasks() -> int:
     now = datetime.now(UTC)
     grace_sec = max(5, int(get_settings().task_runtime_recover_grace_sec))
     stale_before = now - timedelta(seconds=grace_sec)
-    async with AsyncSessionLocal() as db:
-        stmt = select(TaskRun).where(
+    from app.services.tasks.recovery import recover_interrupted_task
+
+    # 只扫描 ID；失败结算会提交事务，不能持有整批 ORM 快照或行锁逐条消费。
+    # 判定沿用租约：内联任务靠心跳续约，请求还在执行时 lease_until 未到期，不得回收。
+    stale_clause = or_(
+        and_(
+            TaskRun.status == "leased",
             or_(
-                and_(
-                    TaskRun.status == "leased",
-                    or_(
-                        and_(TaskRun.lease_until.is_(None), TaskRun.updated_at < stale_before),
-                        and_(TaskRun.lease_until.is_not(None), TaskRun.lease_until < now),
-                    ),
-                ),
-                and_(
-                    TaskRun.status == "running",
-                    TaskRun.updated_at.is_not(None),
-                    TaskRun.updated_at < stale_before,
-                    or_(TaskRun.lease_until.is_(None), TaskRun.lease_until < now),
-                ),
-            )
-        )
-        rows = list((await db.execute(stmt.with_for_update(skip_locked=True))).scalars().all())
-        changed = 0
-        for task in rows:
-            if _job_alive(int(task.id)):
-                continue
-            from app.services.tasks.inline import INLINE_LEASE_PREFIX
-            if str(task.lease_token or "").startswith(INLINE_LEASE_PREFIX):
-                # HTTP inline executors have no replayable job. A restarted
-                # process must not queue their noop handler or resubmit a POST.
-                from app.services.billing.settlement import settle_task
-                task.status = "cancelled" if task.cancel_requested else "failed"
-                task.error_code = "inline_execution_interrupted"
-                task.error_message = "生成请求执行中断，请重新发起"
-                task.finished_at = now
-                task.next_action_at = None
-                task.lease_token = None
-                task.lease_until = None
-                await append_task_event(
-                    db, task.id, event_type=f"task.{task.status}", status=task.status,
-                    phase=task.current_step_key, message=task.error_message,
-                )
-                if task.billing_status in {"frozen", "reserved"}:
-                    await settle_task(db, task.id)
+                and_(TaskRun.lease_until.is_(None), TaskRun.updated_at < stale_before),
+                and_(TaskRun.lease_until.is_not(None), TaskRun.lease_until < now),
+            ),
+        ),
+        and_(
+            TaskRun.status == "running",
+            TaskRun.updated_at.is_not(None),
+            TaskRun.updated_at < stale_before,
+            or_(TaskRun.lease_until.is_(None), TaskRun.lease_until < now),
+        ),
+    )
+    async with AsyncSessionLocal() as db:
+        task_ids = list((await db.execute(select(TaskRun.id).where(stale_clause).order_by(TaskRun.id))).scalars().all())
+    changed = 0
+    for task_id in task_ids:
+        if _job_alive(int(task_id)):
+            continue
+        async with AsyncSessionLocal() as db:
+            if await recover_interrupted_task(db, int(task_id), stale_clause=stale_clause,
+                                              job_alive=_job_alive, event_type="task.recovered"):
                 changed += 1
-                continue
-            task.status = "cancel_requested" if task.cancel_requested else "pending"
-            task.next_action_at = now
-            task.lease_token = None
-            task.lease_until = None
-            await append_task_event(
-                db,
-                task.id,
-                event_type="task.recovered",
-                status=task.status,
-                phase=task.current_step_key,
-                message="检测到任务执行中断或租约过期，已重新排队",
-            )
-            changed += 1
-        if changed:
-            await db.commit()
-            logger.warning("recovered orphaned task runs count=%s", changed)
-        return changed
+    if changed:
+        logger.warning("recovered orphaned task runs count=%s", changed)
+    return changed
