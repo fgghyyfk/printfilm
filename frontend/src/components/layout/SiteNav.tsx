@@ -12,7 +12,7 @@ import { useI18n } from '../../i18n'
 import LanguageSwitch from './LanguageSwitch'
 import { MyTasksButton } from '../MyTasks'
 
-export type NavActive = 'home' | 'kaikou' | 'drama' | 'kepu' | 'tools' | 'assets' | 'pricing' | 'templates' | 'studio' | 'history'
+export type NavActive = 'home' | 'ecom' | 'kaikou' | 'drama' | 'kepu' | 'tools' | 'assets' | 'pricing' | 'templates' | 'studio' | 'history'
 
 type Props = {
   active?: NavActive
@@ -31,12 +31,14 @@ function normalizeActive(active: NavActive | undefined, pathname: string): NavAc
   ) {
     return 'kepu'
   }
+  if (pathname.startsWith('/ecom') || pathname === '/daihuo') return 'ecom'
   if (pathname.startsWith('/tools')) return 'tools'
   if (pathname.startsWith('/pricing')) return 'pricing'
   if (pathname === '/') return 'home'
   return undefined
 }
 
+// 展示桌面与移动导航，并统一电商工作台的入口高亮。
 export default function SiteNav({ active }: Props) {
   const nav = useNavigate()
   const location = useLocation()
@@ -94,6 +96,9 @@ export default function SiteNav({ active }: Props) {
       </NavLink>
       <NavLink to="/history" className={() => isActive('kepu')}>
         {t('nav.kepu')}
+      </NavLink>
+      <NavLink to="/ecom" className={() => isActive('ecom')}>
+        {t('ecomHub.title')}
       </NavLink>
       <NavLink to="/tools" className={() => isActive('tools')}>
         {t('nav.tools')}

@@ -145,9 +145,9 @@ function TranslateWorkspace() {
   }
 
   return (
-    <AppShell active="tools">
+    <AppShell active="ecom">
       <div className="pf-tool-detail pf-job-page">
-        <Link to="/tools" className="pf-tool-back"><ArrowLeft size={16} aria-hidden />{t('ecomJobs.back')}</Link>
+        <Link to="/ecom" className="pf-tool-back"><ArrowLeft size={16} aria-hidden />{t('ecomHub.back')}</Link>
         <header className="pf-tool-detail-head"><Sparkles size={26} aria-hidden /><div><h1>{t('ecomJobs.translate.title')}</h1><p className="pf-muted">{t('ecomJobs.translate.lead')}</p></div></header>
         <p><Link to="/daihuo">{t('ecomJobs.translate.setLink')}</Link></p>
         {error ? <BillingErrorNotice message={ecomJobErrorText(error, t)} className="pf-tool-error" /> : null}

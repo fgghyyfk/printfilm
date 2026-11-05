@@ -416,11 +416,11 @@ function EcomSetWorkspace() {
   const stepIndex = daihuoStepIndex(set)
 
   return (
-    <AppShell active="kaikou">
+    <AppShell active="ecom">
       <div className="pf-tool-detail pf-ecom-page">
-        <Link to="/studio/new" className="pf-tool-back">
+        <Link to="/ecom" className="pf-tool-back">
           <ArrowLeft size={16} strokeWidth={2} aria-hidden />
-          {t('daihuo.back')}
+          {t('ecomHub.back')}
         </Link>
         <header className="pf-tool-detail-head">
           <span className="pf-ws-tool-icon" aria-hidden>

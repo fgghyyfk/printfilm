@@ -13,15 +13,14 @@ from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
 from app.models import Project, ProjectStatus, Shot, ShotStatus, User
-from app.models_ecom import EcomSet
+from app.models_ecom import EcomJobVideo, EcomSet
 from app.services import storage
 from app.services.daihuo.frames import pad_to_frame
+from app.services.daihuo.images import ALLOWED_RATIOS, create_image_project, quote_images
 from app.services.daihuo.script import DAIHUO_SYSTEM, build_user_prompt, mock_segments, parse_segments
 from app.services.ecom_set.presets import slot_label
-from app.services.templates_seed_daihuo import DAIHUO_TEMPLATE_ID
 
 logger = logging.getLogger(__name__)
-ALLOWED_RATIOS = {"9:16", "16:9", "1:1", "4:3"}
 
 
 async def create_project_from_set(
@@ -54,31 +53,24 @@ async def create_project_from_set(
             return existing
     if not usable_items(ecom):
         raise ValueError("套图还没有生成好的图片")
-    product = (ecom.plan or {}).get("product") or {}
-    points = "；".join(product.get("selling_points") or [])
-    source = "\n".join(x for x in [f"商品：{ecom.name}", points and f"卖点：{points}", ecom.notes] if x)
-    project = Project(
-        user_id=user.id, template_id=DAIHUO_TEMPLATE_ID, title=ecom.name[:60] or "商品带货",
-        source_type="script", source_text=source or ecom.name, resolution_mode="preview",
-        pipeline_mode="image_text",
-        output_ratio=ratio, voice_id=voice, ecom_set_id=ecom.id,
-        daihuo_request_id=request_id if create_new else None, status=ProjectStatus.DRAFT,
+    project = await create_image_project(
+        db, user, name=ecom.name, notes=ecom.notes or "", product=(ecom.plan or {}).get("product") or {},
+        items=usable_items(ecom), output_ratio=ratio, voice_id=voice, ecom_set_id=ecom.id,
+        request_id=request_id if create_new else None,
     )
-    db.add(project)
-    await db.flush()
     # 兼容单指针入口：指向最近创建的视频，旧项目与作品仍各自保留。
     ecom.project_id = project.id
     await db.commit()
     return project
 
 
-# 项目是否关联了套图（写稿阶段据此走带货分支）
+# 项目是否有关联的电商图片来源（保留旧函数名兼容流水线入口）
 async def project_has_ecom_set(project_id: int) -> bool:
     from app.database import AsyncSessionLocal
 
     async with AsyncSessionLocal() as db:
         project = await db.get(Project, project_id)
-        return bool(project and project.ecom_set_id)
+        return bool(project and (project.ecom_set_id or await db.get(EcomJobVideo, project_id)))
 
 
 # 套图里可用作画面的各张（已成功、有底图），转成写稿用的字典
@@ -122,10 +114,21 @@ async def build_daihuo_shots(project_id: int) -> int:
                 .options(selectinload(Project.template), selectinload(Project.shots))
             )
         ).scalar_one()
-        ecom = await db.get(EcomSet, project.ecom_set_id)
-        if ecom is None:
-            raise ValueError("关联的套图不存在")
-        items = usable_items(ecom)
+        if project.ecom_set_id:
+            ecom = await db.get(EcomSet, project.ecom_set_id)
+            if ecom is None or ecom.user_id != project.user_id:
+                raise ValueError("关联的套图不存在")
+            items = usable_items(ecom)
+        else:
+            from types import SimpleNamespace
+
+            source = await db.get(EcomJobVideo, project_id)
+            if source is None:
+                raise ValueError("关联的图片不存在")
+            ecom = SimpleNamespace(name=source.name, notes=source.notes, plan={})
+            items = [item for item in source.frames if Path(item["base_path"]).is_file()]
+            if len(items) != len(source.frames):
+                raise ValueError("图片无法识别，请换一张")
         if not items:
             raise ValueError("套图还没有生成好的图片")
         ratio = _project_output_ratio(project)
@@ -167,32 +170,13 @@ async def build_daihuo_shots(project_id: int) -> int:
     if not get_settings().ark_mock:
         s = get_settings()
         await _record_usage_est(project_id, "llm_chat", tokens=4000, model=s.model_llm)
-    logger.info("daihuo shots built project=%s set=%s shots=%d", project_id, ecom.id, len(items))
+    logger.info("daihuo shots built project=%s shots=%d", project_id, len(items))
     return len(items)
 
 
 async def quote_project_from_set(db: AsyncSession, user: User, set_id: int, *, output_ratio: str = '9:16', voice_id: str = '') -> dict:
     """只读套图归属与可用底图；沿现有阶段估价，不创建项目、任务或冻结。"""
-    from app.services.billing.estimates import estimate_phase_fen
-    from app.services.billing.settlement import billing_active
-    from app.services.tokenfree_pricing import ensure_official_rates
-
     ecom = (await db.execute(select(EcomSet).where(EcomSet.id == set_id, EcomSet.user_id == user.id))).scalar_one_or_none()
     if ecom is None:
-        raise LookupError('套图不存在')
-    items = usable_items(ecom)
-    if not items:
-        raise ValueError('套图还没有生成好的图片')
-    ratio = output_ratio if output_ratio in ALLOWED_RATIOS else '9:16'
-    voice = (voice_id or '').strip()
-    # transient 模型只供已有估价函数读取；所有图均已存在，不估重复生图费用。
-    probe = Project(pipeline_mode='image_text', output_ratio=ratio, voice_id=voice,
-                    shots=[Shot(image_url=item['base_path'], narration='', duration=8) for item in items])
-    settings = get_settings()
-    script = tts = 0
-    if billing_active(user, settings):
-        await ensure_official_rates(settings)
-        script = estimate_phase_fen(probe, 'script', settings)
-        tts = estimate_phase_fen(probe, 'assets', settings)
-    return {'output_ratio': ratio, 'voice_id': voice, 'usable_images': len(items), 'image_fen': 0,
-            'script_fen': script, 'tts_fen': tts, 'estimate_fen': script + tts}
+        raise LookupError("套图不存在")
+    return await quote_images(user, usable_items(ecom), output_ratio=output_ratio, voice_id=voice_id)

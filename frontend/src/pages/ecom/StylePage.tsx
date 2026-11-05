@@ -9,6 +9,8 @@ import BillingErrorNotice from '../../components/billing/BillingErrorNotice'
 import ImageUpload from '../../components/ecomJobs/ImageUpload'
 import JobHistory from '../../components/ecomJobs/JobHistory'
 import StyleParameterPanel from '../../components/ecomJobs/StyleParameterPanel'
+import SourceReference from '../../components/ecomJobs/SourceReference'
+import { useRefineSource } from '../../components/ecomSet/useRefineSource'
 import ResultsGrid from '../../components/ecomJobs/ResultsGrid'
 import AppShell from '../../components/layout/AppShell'
 import Button from '../../components/ui/Button'
@@ -31,6 +33,7 @@ export default function StylePage() {
 function StyleWorkspace() {
   const { t } = useI18n()
   const [search, setSearch] = useSearchParams()
+  const source = useRefineSource()
   const rawId = Number(search.get('id'))
   const jobId = Number.isSafeInteger(rawId) && rawId > 0 ? rawId : null
   /* 选项与重载；上传文件和风格参数。 */
@@ -88,14 +91,14 @@ function StyleWorkspace() {
   async function submit() {
     if (!kindOptions || creating) return
     const referenceProblem = validateEcomImages(styleFiles, 1)
-    if (referenceProblem) { setError(t('ecomJobs.style.referenceRequired')); return }
+    if (!source.source && referenceProblem) { setError(t('ecomJobs.style.referenceRequired')); return }
     const problem = validateEcomImages(files, maxProducts)
     if (problem) { setError(t(`ecomJobs.errors.${problem}`, { max: maxProducts })); return }
     if (options?.billing_enabled && !await dialog.confirm({ title: t('ecomJobs.style.confirmTitle'), message: t('ecomJobs.style.confirm', { count: outputCount, price: formatFen(estimate) }), confirmText: t('ecomJobs.style.start') })) return
     setCreating(true)
     setError('')
     try {
-      const next = await createEcomJob('style', files, params, styleFiles)
+      const next = await createEcomJob('style', files, params, source.source ? [] : styleFiles, {}, source.source || undefined)
       currentIdRef.current = next.id
       setSearch({ id: String(next.id) })
       setHistoryKey((value) => value + 1)
@@ -137,9 +140,9 @@ function StyleWorkspace() {
   }
 
   return (
-    <AppShell active="tools">
+    <AppShell active="ecom">
       <div className="pf-tool-detail pf-job-page">
-        <Link to="/tools" className="pf-tool-back"><ArrowLeft size={16} aria-hidden />{t('ecomJobs.back')}</Link>
+        <Link to="/ecom" className="pf-tool-back"><ArrowLeft size={16} aria-hidden />{t('ecomHub.back')}</Link>
         <header className="pf-tool-detail-head"><Sparkles size={26} aria-hidden /><div><h1>{t('ecomJobs.style.title')}</h1><p className="pf-muted">{t('ecomJobs.style.lead')}</p></div></header>
         {error ? <BillingErrorNotice message={ecomJobErrorText(error, t)} className="pf-tool-error" /> : null}
         {jobId && optionsError ? <div role="alert"><p className="pf-tool-error">{ecomJobErrorText(optionsError, t)}</p><Button type="button" variant="outline" onClick={() => setReloadOptions((value) => value + 1)}>{t('ecomJobs.retry')}</Button></div> : null}
@@ -152,11 +155,12 @@ function StyleWorkspace() {
           <div role="alert"><p className="pf-tool-error">{ecomJobErrorText(optionsError, t)}</p><Button type="button" onClick={() => setReloadOptions((value) => value + 1)}>{t('ecomJobs.retry')}</Button></div>
         ) : !kindOptions ? <p role="status">{t('ecomJobs.loading')}</p> : (
           <section className="pf-job-section">
-            <ImageUpload files={styleFiles} maxImages={1} role="style" disabled={creating} onChange={setStyleFiles} />
+            <SourceReference value={source} kind="style" />
+            {!source.source ? <ImageUpload files={styleFiles} maxImages={1} role="style" disabled={creating} onChange={setStyleFiles} /> : null}
             <ImageUpload files={files} maxImages={maxProducts} disabled={creating} onChange={setFiles} />
             <StyleParameterPanel value={params} options={kindOptions} disabled={creating} onChange={setParams} />
             <div className="pf-job-actions">
-              <Button type="button" variant="lime" disabled={creating || !files.length || styleFiles.length !== 1 || files.length > maxProducts} onClick={submit}>{creating ? t('ecomJobs.submitting') : t('ecomJobs.style.start')}</Button>
+              <Button type="button" variant="lime" disabled={creating || !files.length || (!source.source && styleFiles.length !== 1) || files.length > maxProducts} onClick={submit}>{creating ? t('ecomJobs.submitting') : t('ecomJobs.style.start')}</Button>
               {options?.billing_enabled ? <span className="pf-muted">{t('ecomJobs.estimate', { price: formatFen(estimate) })}</span> : null}
             </div>
           </section>

@@ -119,3 +119,18 @@ class EcomJobItem(Base):
     error: Mapped[str | None] = mapped_column(String(512), nullable=True)
     task_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     job: Mapped[EcomJob] = relationship(back_populates="items")
+
+
+class EcomJobVideo(Base):
+    """批量出图转带货项目的来源快照和幂等键，新表由 create_all 创建。"""
+
+    __tablename__ = "ecom_job_videos"
+    __table_args__ = (UniqueConstraint("job_id", "request_id", name="uq_ecom_job_video_request"),)
+
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("ecom_jobs.id", ondelete="CASCADE"), index=True)
+    request_id: Mapped[str] = mapped_column(String(64))
+    # 保存创建时的图片列表；重试原出图不会改变已创建视频的素材。
+    name: Mapped[str] = mapped_column(String(128), default="")
+    notes: Mapped[str] = mapped_column(Text, default="")
+    frames: Mapped[list] = mapped_column(JSON, default=list)

@@ -11,13 +11,15 @@ import JobHistory from '../../components/ecomJobs/JobHistory'
 import SkuParameterPanel from '../../components/ecomJobs/SkuParameterPanel'
 import SkuProductUpload from '../../components/ecomJobs/SkuProductUpload'
 import { validateSkuImages } from '../../lib/ecomSku'
+import SourceReference from '../../components/ecomJobs/SourceReference'
+import { useRefineSource } from '../../components/ecomSet/useRefineSource'
 import ResultsGrid from '../../components/ecomJobs/ResultsGrid'
 import AppShell from '../../components/layout/AppShell'
 import Button from '../../components/ui/Button'
 import { useEcomJobPolling } from '../../hooks/useEcomJobPolling'
 import { useI18n } from '../../i18n'
 import { dialog } from '../../lib/dialog'
-import { ecomJobErrorText, ecomJobNeedsPolling } from '../../lib/ecomJobs'
+import { ecomJobErrorText, ecomJobNeedsPolling, validateEcomImages } from '../../lib/ecomJobs'
 import { formatFen } from '../../lib/ecomSet'
 
 const PAGE_PATH = '/ecom/sku'
@@ -33,6 +35,7 @@ export default function SkuPage() {
 function SkuWorkspace() {
   const { t } = useI18n()
   const [search, setSearch] = useSearchParams()
+  const source = useRefineSource()
   const rawId = Number(search.get('id'))
   const jobId = Number.isSafeInteger(rawId) && rawId > 0 ? rawId : null
   /* 选项与重载；上传文件和 SKU 参数。 */
@@ -89,14 +92,14 @@ function SkuWorkspace() {
   // 整批提交前校验图片，启用计费时明确确认本批预估金额。
   async function submit() {
     if (!kindOptions || creating) return
-    const problem = validateSkuImages(files, sceneFiles)
+    const problem = source.source ? validateEcomImages(files, maxProducts) : validateSkuImages(files, sceneFiles)
     if (problem) { setError(t(problem === 'sceneRequired' ? 'ecomJobs.sku.sceneRequired' : `ecomJobs.errors.${problem}`, { max: maxProducts })); return }
     if (params.sku_names.some((name) => !name.trim())) { setError(t('ecomJobs.sku.nameRequired')); return }
     if (options?.billing_enabled && !await dialog.confirm({ title: t('ecomJobs.sku.confirmTitle'), message: t('ecomJobs.sku.confirm', { count: outputCount, price: formatFen(estimate) }), confirmText: t('ecomJobs.sku.start') })) return
     setCreating(true)
     setError('')
     try {
-      const next = await createEcomJob('sku', files, params, [], { scene: sceneFiles })
+      const next = await createEcomJob('sku', files, params, [], { scene: source.source ? [] : sceneFiles }, source.source || undefined)
       currentIdRef.current = next.id
       setSearch({ id: String(next.id) })
       setHistoryKey((value) => value + 1)
@@ -139,9 +142,9 @@ function SkuWorkspace() {
   }
 
   return (
-    <AppShell active="tools">
+    <AppShell active="ecom">
       <div className="pf-tool-detail pf-job-page">
-        <Link to="/tools" className="pf-tool-back"><ArrowLeft size={16} aria-hidden />{t('ecomJobs.back')}</Link>
+        <Link to="/ecom" className="pf-tool-back"><ArrowLeft size={16} aria-hidden />{t('ecomHub.back')}</Link>
         <header className="pf-tool-detail-head"><Sparkles size={26} aria-hidden /><div><h1>{t('ecomJobs.sku.title')}</h1><p className="pf-muted">{t('ecomJobs.sku.lead')}</p></div></header>
         {error ? <BillingErrorNotice message={ecomJobErrorText(error, t)} className="pf-tool-error" /> : null}
         {jobId && optionsError ? <div role="alert"><p className="pf-tool-error">{ecomJobErrorText(optionsError, t)}</p><Button type="button" variant="outline" onClick={() => setReloadOptions((value) => value + 1)}>{t('ecomJobs.retry')}</Button></div> : null}
@@ -154,12 +157,13 @@ function SkuWorkspace() {
           <div role="alert"><p className="pf-tool-error">{ecomJobErrorText(optionsError, t)}</p><Button type="button" onClick={() => setReloadOptions((value) => value + 1)}>{t('ecomJobs.retry')}</Button></div>
         ) : !kindOptions ? <p role="status">{t('ecomJobs.loading')}</p> : (
           <section className="pf-job-section">
-            <ImageUpload files={sceneFiles} maxImages={1} role="scene" labelKey="ecomJobs.sku.scene" disabled={creating} onChange={setSceneFiles} />
+            <SourceReference value={source} kind="sku" />
+            {!source.source ? <ImageUpload files={sceneFiles} maxImages={1} role="scene" labelKey="ecomJobs.sku.scene" disabled={creating} onChange={setSceneFiles} /> : null}
             <SkuProductUpload files={files} names={params.sku_names} maxImages={maxProducts} disabled={creating}
               onChange={(next, names) => { setFiles(next); setParams((value) => ({ ...value, sku_names: names })) }} />
             <SkuParameterPanel value={params} options={kindOptions} disabled={creating} onChange={setParams} />
             <div className="pf-job-actions">
-              <Button type="button" variant="lime" disabled={creating || !files.length || sceneFiles.length !== 1 || files.length > maxProducts} onClick={submit}>{creating ? t('ecomJobs.submitting') : t('ecomJobs.sku.start')}</Button>
+              <Button type="button" variant="lime" disabled={creating || !files.length || (!source.source && sceneFiles.length !== 1) || files.length > maxProducts} onClick={submit}>{creating ? t('ecomJobs.submitting') : t('ecomJobs.sku.start')}</Button>
               {options?.billing_enabled ? <span className="pf-muted">{t('ecomJobs.estimate', { price: formatFen(estimate) })}</span> : null}
             </div>
           </section>

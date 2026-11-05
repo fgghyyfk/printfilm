@@ -4,6 +4,8 @@ import { resolveToolMediaUrl } from '../../api/tools'
 import { translationProgress } from '../../lib/ecomTranslate'
 import { ecomJobErrorText } from '../../lib/ecomJobs'
 import { useI18n } from '../../i18n'
+import { canUseJobVideo } from '../../lib/ecomHub'
+import ResultNextMenu from './ResultNextMenu'
 import Button from '../ui/Button'
 
 type Props = {
@@ -32,6 +34,7 @@ export default function ResultsGrid({ job, busyIdx, downloading, onRetry, onDown
       {job.kind === 'translate' && job.params.mock === true ? <p className="pf-muted" role="note">{t('ecomJobs.translate.mock')}</p> : null}
       {progress.skipped ? <p className="pf-muted">{t('ecomJobs.translate.skippedCount', { count: progress.skipped })}</p> : null}
       {!job.items.length ? <p className="pf-muted">{t('ecomJobs.noResults')}</p> : null}
+      <div className="pf-job-actions"><Button variant="outline" to={`/ecom/video?job_id=${job.id}`} disabled={!canUseJobVideo(job.items)}>{t('ecomHub.makeVideo')}</Button>{!canUseJobVideo(job.items) ? <span className="pf-muted">{t('ecomHub.minImages')}</span> : null}</div>
       <div className={`pf-job-grid${job.kind === 'translate' ? ' pf-job-translate-grid' : ''}`}>
         {job.items.map((item) => (
           <article className="pf-job-card" key={item.idx}>
@@ -62,8 +65,7 @@ export default function ResultsGrid({ job, busyIdx, downloading, onRetry, onDown
               {item.status === 'failed' ? <Button type="button" size="sm" variant="outline" disabled={busyIdx !== null} onClick={() => onRetry(item)}>{busyIdx === item.idx ? t('ecomJobs.submitting') : t('ecomJobs.retry')}</Button> : null}
               {item.status === 'succeeded' && item.result_url ? <Button type="button" size="sm" variant="outline" disabled={busyIdx !== null} onClick={() => onDownload(item)}>{t('ecomJobs.download')}</Button> : null}
               {onVariants && item.status === 'succeeded' && item.result_url ? <Button type="button" size="sm" variant="outline" disabled={busyIdx !== null} onClick={() => onVariants(item)}>{t('ecomJobs.buyerShow.variants')}</Button> : null}
-              {job.kind === 'refine' && item.status === 'succeeded' && item.result_url ? <Button size="sm" variant="outline"
-                to={`/daihuo?source_job_id=${job.id}&source_item_idx=${item.idx}`}>{t('ecomSet.enhanced.useRefine')}</Button> : null}
+              {item.status === 'succeeded' && item.result_url ? <ResultNextMenu jobId={job.id} idx={item.idx} /> : null}
             </div>
           </article>
         ))}

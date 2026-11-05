@@ -67,17 +67,23 @@ async def create(
     kind: str, files: list[UploadFile] = File(...), params: str = Form("{}"), title: str = Form(""),
     style_files: list[UploadFile] | None = File(None),
     model_files: list[UploadFile] | None = File(None), scene_files: list[UploadFile] | None = File(None),
+    source_job_id: int | None = Form(None), source_item_idx: int | None = Form(None),
     db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user),
 ):
     from app.services.ecom_jobs.kinds import validate
+    from app.services.ecom_jobs.sources import source_uploads
 
+    source = source_job_id is not None or source_item_idx is not None
     try:
-        if (kind == "style" and len(style_files or []) != 1) or (kind != "style" and style_files):
+        if source and (kind not in {"style", "sku"} or source_job_id is None or source_item_idx is None
+                       or source_job_id <= 0 or source_item_idx < 0 or style_files or scene_files):
+            raise ValueError("参数错误")
+        if not source and (kind == "style" and len(style_files or []) != 1 or kind != "style" and style_files):
             raise ValueError("参考设计图数量错误")
         if (len(model_files or []) > 1 or len(scene_files or []) > 1
                 or (kind != "buyer_show" and model_files)
                 or (kind not in {"buyer_show", "sku"} and scene_files)
-                or (kind == "sku" and len(scene_files or []) != 1)):
+                or (kind == "sku" and not source and len(scene_files or []) != 1)):
             raise ValueError("参考图数量错误")
         raw = json.loads(params)
         clean = validate(kind, len(files), raw)
@@ -93,6 +99,12 @@ async def create(
     style_uploads = [(await file.read(svc.MAX_UPLOAD + 1), file.filename or "") for file in style_files or []]
     model_uploads = [(await file.read(svc.MAX_UPLOAD + 1), file.filename or "") for file in model_files or []]
     scene_uploads = [(await file.read(svc.MAX_UPLOAD + 1), file.filename or "") for file in scene_files or []]
+    if source:
+        selected = await _guard(db, source_uploads(db, user, source_job_id, source_item_idx))
+        if kind == "style":
+            style_uploads = selected
+        else:
+            scene_uploads = selected
     job = await _guard(db, svc.create_job(db, user, kind=kind, uploads=uploads, params=clean, title=title,
                                         style_uploads=style_uploads, model_uploads=model_uploads, scene_uploads=scene_uploads))
     return svc.to_out(job)

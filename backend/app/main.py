@@ -10,7 +10,7 @@ from sqlalchemy import select, text
 from app.api import auth, billing, projects, tasks, templates, tools
 from app.api import api_keys as user_api_keys
 from app.api import project_avatar
-from app.api import ecom_jobs, ecom_set
+from app.api import ecom_hub, ecom_jobs, ecom_set
 from app.api.v1 import router as v1_router
 from app.api.admin import router as admin_router
 from app.api.drama import router as drama_router
@@ -95,6 +95,7 @@ app.include_router(tasks.router, prefix="/api")
 app.include_router(billing.router, prefix="/api")
 app.include_router(ecom_set.router, prefix="/api")
 app.include_router(ecom_jobs.router, prefix="/api")
+app.include_router(ecom_hub.router, prefix="/api")
 app.include_router(tools.router, prefix="/api")
 app.include_router(user_api_keys.router, prefix="/api")
 app.include_router(v1_router, prefix="/api")

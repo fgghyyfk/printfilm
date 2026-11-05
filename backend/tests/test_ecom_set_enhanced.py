@@ -223,8 +223,7 @@ async def test_refine_to_set_integration(db_session, monkeypatch, tmp_path):
         await sources.refine_product(db_session, user, job.id, 0)
     item.status, job.kind = "succeeded", "style"
     await db_session.commit()
-    with pytest.raises(ValueError):
-        await sources.refine_product(db_session, user, job.id, 0)
+    assert await sources.refine_product(db_session, user, job.id, 0) == image
     job.kind = "refine"
     await db_session.commit()
     ecom = await service.create_plan(db_session, user, data=b"", filename="", name="Cup", platform="xhs",

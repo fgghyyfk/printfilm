@@ -2,7 +2,7 @@ import { Clapperboard, Image, Images, Play, ShoppingBag, Sparkles, Video } from 
 import type { LucideIcon } from 'lucide-react'
 import type { Messages } from '../i18n'
 
-export type ToolId = 't2i' | 'i2i' | 'i2p' | 't2v' | 'v2v' | 'ecom' | 'refine' | 'style' | 'buyer_show' | 'sku'
+export type ToolId = 't2i' | 'i2i' | 'i2p' | 't2v' | 'v2v' | 'ecom' | 'refine' | 'style' | 'buyer_show' | 'sku' | 'set' | 'translate' | 'daihuo'
 
 export type ToolField = {
   key: string
@@ -16,6 +16,7 @@ export type ToolField = {
 
 export type ToolDef = {
   id: ToolId
+  group?: 'ecom'
   title: string
   desc: string
   soon: boolean
@@ -29,8 +30,12 @@ export type ToolDef = {
 }
 
 export const TOOL_DEFS: ToolDef[] = [
+  { id: 'set', group: 'ecom', title: '商品套图', desc: '一张商品图生成营销套图', soon: false, icon: Images, panelHint: '', fields: [], cta: '开始制作', href: '/daihuo' },
+  { id: 'translate', group: 'ecom', title: '图片翻译', desc: '翻译套图或外部图片', soon: false, icon: Images, panelHint: '', fields: [], cta: '开始翻译', href: '/ecom/translate' },
+  { id: 'daihuo', group: 'ecom', title: '商品带货视频', desc: '已有图片制作带货视频', soon: false, icon: Video, panelHint: '', fields: [], cta: '选择图片', href: '/ecom#recent-ecom-tasks' },
   {
     id: 'sku',
+    group: 'ecom',
     title: 'SKU 替换',
     desc: '保留场景构图，为每个 SKU 替换商品主体',
     soon: false,
@@ -42,6 +47,7 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     id: 'buyer_show',
+    group: 'ecom',
     title: '买家秀 / 种草图',
     desc: '商品图变生活晒图，支持模特、场景参考与裂变',
     soon: false,
@@ -53,6 +59,7 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     id: 'style',
+    group: 'ecom',
     title: '风格复刻',
     desc: '参考设计风格，替换为自己的商品',
     soon: false,
@@ -64,6 +71,7 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     id: 'refine',
+    group: 'ecom',
     title: '图片精修',
     desc: '批量精修商品图，支持白底与透明底',
     soon: false,
@@ -103,6 +111,7 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     id: 'i2p',
+    group: 'ecom',
     title: '图生产品',
     desc: '一键生成白底图与场景商品图',
     soon: false,
@@ -150,6 +159,7 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     id: 'ecom',
+    group: 'ecom',
     title: '电商工具',
     desc: '主图拼接、详情排版等小工具合集',
     soon: false,
@@ -187,6 +197,8 @@ export function defaultToolChips(tool: ToolDef): Record<string, string> {
 
 // 用当前语言覆盖工具标题、说明与字段文案（options 值保持中文给 API）
 export function localizeToolDef(tool: ToolDef, m: Messages): ToolDef {
+  if (tool.id === 'set' || tool.id === 'translate') return { ...tool, title: m.ecomHub.kinds[tool.id], desc: m.ecomHub.descriptions[tool.id] }
+  if (tool.id === 'daihuo') return { ...tool, title: m.ecomHub.video, desc: m.ecomHub.videoHint }
   if (tool.id === 'sku') return { ...tool, ...m.ecomJobs.sku.catalog }
   if (tool.id === 'buyer_show') return { ...tool, ...m.ecomJobs.buyerShow.catalog }
   if (tool.id === 'style') return { ...tool, ...m.ecomJobs.style.catalog }
@@ -211,6 +223,7 @@ export function localizeToolDef(tool: ToolDef, m: Messages): ToolDef {
   }
 }
 
+// 按当前语言生成工具目录，保留声明的分组。
 export function localizeToolDefs(m: Messages): ToolDef[] {
   return TOOL_DEFS.map((tool) => localizeToolDef(tool, m))
 }

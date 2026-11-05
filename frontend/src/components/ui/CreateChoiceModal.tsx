@@ -8,7 +8,7 @@ type Props = {
   onClose: () => void
 }
 
-/** 开始创作：在漫剧、短视频、商品带货之间选择入口 */
+/** 开始创作：在漫剧、短视频、电商工作台之间选择入口 */
 export default function CreateChoiceModal({ open, onClose }: Props) {
   const nav = useNavigate()
   const { t } = useI18n()
@@ -39,12 +39,12 @@ export default function CreateChoiceModal({ open, onClose }: Props) {
           <strong>{t('create.kepu')}</strong>
           <span className="pf-muted">{t('create.kepuHint')}</span>
         </button>
-        <button type="button" className="pf-create-choice-card" onClick={() => go('/daihuo')}>
+        <button type="button" className="pf-create-choice-card" onClick={() => go('/ecom')}>
           <span className="pf-ws-product-icon" aria-hidden>
             <ShoppingBag size={24} strokeWidth={1.6} />
           </span>
-          <strong>{t('create.daihuo')}</strong>
-          <span className="pf-muted">{t('create.daihuoHint')}</span>
+          <strong>{t('ecomHub.title')}</strong>
+          <span className="pf-muted">{t('ecomHub.lead')}</span>
         </button>
       </div>
       <p className="pf-create-choice-foot">

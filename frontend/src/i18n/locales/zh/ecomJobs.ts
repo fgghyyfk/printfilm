@@ -135,7 +135,8 @@ export const zhEcomJobs = {
     status: { queued: '排队中', running: '生成中', done: '已完成', partial: '部分完成', failed: '失败' },
     itemStatus: { queued: '排队中', running: '精修中', succeeded: '已完成', failed: '生成失败' },
     errors: { required: '请上传产品图', count: '最多上传 {max} 张图片', type: '仅支持 PNG / JPG / WebP 图片', size: '单张图片不能超过 10MB' },
-    serverErrors: { translationFormat: '翻译结果格式错误，请重试', setIncomplete: '请先完成套图生成', ocrTimeout: '图片识字超时，请减少图片后重试', vision: '请先配置视觉模型', cancelled: '任务已取消', invalid: '参数错误，请检查图片数量和选项', notFound: '请求的内容不存在', type: '仅支持 PNG / JPG / WebP 图片', required: '请上传产品图', size: '单张图片不能超过 10MB', image: '图片无法识别，请换一张', busy: '这张图仍在处理中，请稍后查看', empty: '还没有生成好的图片', retryFailed: '只能重试失败的图片', unavailable: '生成服务暂时不可用，请稍后查看任务状态', generation: '生成失败，请查看任务记录或联系客服', timeout: '上游响应尚未确认，请先查看任务状态，避免重复提交', account: '模型服务暂不可用，请联系管理员', billingReview: '本次调用的结果和费用待核对，请勿重复生成，请联系客服' },
+    serverErrors: {
+    videoImages: '请至少生成两张成功图片', productName: '请填写品名', videoOptions: '请重新选择生成选项后再试', translationFormat: '翻译结果格式错误，请重试', setIncomplete: '请先完成套图生成', ocrTimeout: '图片识字超时，请减少图片后重试', vision: '请先配置视觉模型', cancelled: '任务已取消', invalid: '参数错误，请检查图片数量和选项', notFound: '请求的内容不存在', type: '仅支持 PNG / JPG / WebP 图片', required: '请上传产品图', size: '单张图片不能超过 10MB', image: '图片无法识别，请换一张', busy: '这张图仍在处理中，请稍后查看', empty: '还没有生成好的图片', retryFailed: '只能重试失败的图片', unavailable: '生成服务暂时不可用，请稍后查看任务状态', generation: '生成失败，请查看任务记录或联系客服', timeout: '上游响应尚未确认，请先查看任务状态，避免重复提交', account: '模型服务暂不可用，请联系管理员', billingReview: '本次调用的结果和费用待核对，请勿重复生成，请联系客服' },
     catalog: { title: '图片精修', desc: '批量精修商品图，支持白底与透明底', panelHint: '上传产品图，选择背景与清晰度后开始精修。', cta: '开始精修' },
   },
 }

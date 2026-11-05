@@ -217,7 +217,14 @@ async def estimate_task_fen(db: AsyncSession, task: TaskRun, settings: Settings 
         return 0
     s = settings or get_settings()
     # 电商本地 mock 仅使用本地价格目录，保持无 Key、离线可运行。
-    if not (s.ark_mock and task.domain == "studio" and task.task_type in {"ecom_job_image", "ecom_set_image", "ecom_set_plan", "ecom_set_translate"}):
+    offline_ecom = s.ark_mock and task.domain == "studio" and task.task_type in {"ecom_job_image", "ecom_set_image", "ecom_set_plan", "ecom_set_translate"}
+    if s.ark_mock and db is not None and (task.domain, task.task_type) == ("kepu", "project_pipeline"):
+        from app.models_ecom import EcomJobVideo
+
+        project_id = task.project_id or (task.payload or {}).get("project_id")
+        project = await db.get(Project, project_id) if project_id else None
+        offline_ecom = bool(project and (project.ecom_set_id or await db.get(EcomJobVideo, project.id)))
+    if not offline_ecom:
         await ensure_official_rates(s)
     domain = (task.domain or "").strip()
     task_type = (task.task_type or "").strip()

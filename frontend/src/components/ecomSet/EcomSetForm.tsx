@@ -111,9 +111,9 @@ export default function EcomSetForm({ options, initial, busy, error, onSubmit }:
           onDrop={onDrop}
         >
           {shownPreview ? <img className="pf-ecom-upload-preview" src={shownPreview} alt="" /> : null}
-          {file ? `${file.name} · ${t('ecomSet.form.imageChange')}` : refined.source ? t('ecomSet.enhanced.sourceReady') : t('ecomSet.form.imageHint')}
+          {file ? `${file.name} · ${t('ecomSet.form.imageChange')}` : refined.source ? t('ecomHub.sourceReady') : t('ecomSet.form.imageHint')}
         </div>
-        {!file && refined.loading ? <span className="pf-muted">{t('ecomSet.enhanced.sourceLoading')}</span> : null}
+        {!file && refined.loading ? <span className="pf-muted">{t('ecomHub.sourceLoading')}</span> : null}
         {!file && refined.error ? <Button type="button" variant="text" size="sm" onClick={refined.retry}>{t('ecomSet.retry')}</Button> : null}
         <Button size="sm" variant="text" to="/ecom/refine">{t('ecomSet.enhanced.noWhite')}</Button>
         {!file && !refined.source && initial?.name ? <span className="pf-muted">{t('ecomSet.form.reuploadHint')}</span> : null}

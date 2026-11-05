@@ -5,6 +5,7 @@ import ComingSoon from '../components/ui/ComingSoon'
 import { useI18n } from '../i18n'
 import { PRODUCT_ICONS, localizeToolDefs, toolHref } from '../lib/toolsCatalog'
 
+// 电商工具归入同组，其他创作工具保留原有卡片。
 export default function ToolsPage() {
   const { t, m } = useI18n()
   const DramaIcon = PRODUCT_ICONS.drama
@@ -19,8 +20,10 @@ export default function ToolsPage() {
           <p className="pf-muted">{t('tools.lead')}</p>
         </div>
       </div>
+      {['ecom', 'creative'].map((group) => <section key={group} className="pf-job-section">
+      <h2>{t(group === 'ecom' ? 'ecomHub.title' : 'tools.title')}</h2>
       <div className="pf-tools-grid pf-tools-grid-lg">
-        {tools.map((tool) => {
+        {tools.filter((tool) => (tool.group === 'ecom') === (group === 'ecom')).map((tool) => {
           const Icon = tool.icon
           return (
             <Link
@@ -45,6 +48,7 @@ export default function ToolsPage() {
           )
         })}
       </div>
+      </section>)}
       <section className="pf-ws-products" style={{ marginTop: '2.5rem' }}>
         <Link to="/drama" className="pf-ws-product pf-ws-product-drama">
           <span className="pf-ws-product-icon" aria-hidden>

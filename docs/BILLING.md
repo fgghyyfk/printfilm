@@ -183,7 +183,7 @@ sequenceDiagram
 | 一图出套图·规划 | `run_billed_ephemeral(domain=studio, ecom_set_plan)`：**固定价**，写一条 `billing_key=ecom_set_plan`、`charge_fen=ECOM_SET_PLAN_FEN`（默认 10 分）的用量行，不按 token 计；规划失败不扣 |
 | 一图出套图·翻译 | `run_billed_ephemeral(domain=studio, ecom_set_translate)`；翻译全部文案后复用底图 PIL 重排，生成独立套图并记录 `source_set_id` / `language`；仅一次固定文本费用 `ECOM_SET_PLAN_FEN`（默认 10 分），写 `billing_key=ecom_set_translate` 的 llm 用量行，无新生图费用；翻译或排版失败整笔回滚 |
 | 外部图片翻译 | `kind=translate`，1–20 张；先视觉识字并翻译，识字不另收费。明确无字项为 `skipped`（无可翻译文字），无 TaskRun、无冻结及扣费；仅有文字的图片进入 `ecom_job_image`，按 2K 图像目录整批校验余额、逐张预扣，记录 `tool_id=ecom_translate` 用量后结算，生图失败不扣。识字整批总限时 480 秒，超时或 JSON 无效则回滚本批、不进入生图队列；可减少图片重试；缺视觉模型时拒绝建任务，mock 全程本地且标记为示意结果 |
-| 一图出套图·生图 | `create_task(domain=studio, ecom_set_image)`，按 `clarity=2k/4k` 匹配生图目录估价（沿用模型能力钳制），每张独立预扣与结算；预设 4/6/8 或自定义 3–10 槽位按实际张数计价；语言及广告版式不另收费；复用精修结果仅收新套图的规划和生图费用；本地 mock 不联网。一张一个 TaskRun，executor 自动 freeze/settle，handler 内 `record_seedream_image_usage`；入队前 `ensure_balance_for_task_batch` 一次校验 N 张；单张失败不扣；改文案（重新排版）不调模型、免费 |
+| 一图出套图·生图 | `create_task(domain=studio, ecom_set_image)`，按 `clarity=2k/4k` 匹配生图目录估价（沿用模型能力钳制），每张独立预扣与结算；预设 4/6/8 或自定义 3–10 槽位按实际张数计价；语言及广告版式不另收费；复用任意电商成功结果仅收新套图的规划和生图费用；本地 mock 不联网。一张一个 TaskRun，executor 自动 freeze/settle，handler 内 `record_seedream_image_usage`；入队前 `ensure_balance_for_task_batch` 一次校验 N 张；单张失败不扣；改文案（重新排版）不调模型、免费 |
 | 电商买家秀 / 种草图 | 复用 `create_task(domain=studio, ecom_job_image)`；`kind=buyer_show` 按 `count=1–8` 张计价，产品 / 模特 / 场景参考不另计费；整批校验余额后逐张预扣，按 `clarity=2k/4k` 目录估价，记录 `tool_id=ecom_buyer_show` 并结算；失败重抛不扣费，本地 mock 不联网。通用裂变接口为已完成结果创建独立同类 job，按新输出张数重新预扣与结算，保留原任务和结果 |
 | 电商 SKU 替换 | 复用 `create_task(domain=studio, ecom_job_image)`；`kind=sku` 每张产品图对应 1 张输出（1–20 张），场景参考不另计费；整批校验余额，逐张预扣并按 `clarity=2k/4k` 目录估价，记录 `tool_id=ecom_sku` 后结算；失败重抛不扣费，本地 mock 不联网 |
 | 电商风格复刻 | 复用 `create_task(domain=studio, ecom_job_image)`；`kind=style` 单图模式按 `count=1–4` 张计价，批量模式按产品图数量（最多 20 张）计价，参考设计图不另计费；整批校验余额后逐张预扣，按 `clarity=2k/4k` 目录估价，记录 `tool_id=ecom_style` 并结算；失败重抛不扣费，本地 mock 不联网 |
@@ -306,3 +306,21 @@ EPAY_RETURN_URL=https://your-site.example.com/pricing?paid=1
 人工操作沿所属项目/分集 → TaskRun → 钱包顺序加锁；新增锁使用 NOWAIT，碰撞返回 409 并回滚，稍后可按同一核对请求重试。缺失费用以 `manual_review` 用量行记录，用户扣费仍等于成本；该行显示「人工核对」，不被自动日志匹配改写。原费用、补记费用、冻结退还及零金额核对审计在同一事务提交。同一任务相同金额和依据重放只返回原结果，不重复扣退；冲突核对及历史已结算任务拒绝追扣。依据与操作人仅保存到管理员可查询的 `billing_review` 钱包审计流水，最终序列化长度不超过 255，用户任务事件不包含私有依据。操作结束本地任务并同步工具历史，保留原上游任务号和媒体，不重新生成、不宣称上游已取消。
 
 同分集视频入队在余额锁前锁定分集并重读所选镜头及活跃任务；报价准备留在锁外，期间分镜/规格/衔接设置改变即 409。两个同时入队请求只创建一份同镜任务承诺，终态后仍允许用户主动重生成。正常停服恢复不消耗异常恢复次数，但继续经过未知费用、取消、收尾及原上游任务保护。
+
+
+### 电商工作台 E0–E6 任务类型与串联（2026-11-05）
+
+统一入口为 `/ecom`，本系列登记的 TaskRun 类型如下，均复用预扣、用量行、结算流程：
+
+| domain / task_type | 用途 | 预估与实扣 |
+|---|---|---|
+| `studio / ecom_job_image` | 精修、风格复刻、买家秀、SKU、外部图片翻译；每张输出一条 | 按 `clarity=2k/4k` 调图像目录价（外部翻译固定 2K），实际以用量/账单为准；整批校验、逐张预扣结算 |
+| `studio / ecom_set_plan` | 商品套图规划 | `ECOM_SET_PLAN_FEN` 固定价，默认 10 分；失败不扣 |
+| `studio / ecom_set_image` | 套图各槽位生成 | 按实际槽位数和 2K/4K 目录价逐张预扣结算 |
+| `studio / ecom_set_translate` | 套图文案翻译后复用底图排版 | 一次 `ECOM_SET_PLAN_FEN` 文本费用，不新增生图费用 |
+
+E6 的聚合历史、结果菜单、引用现有成图、创建带货草稿和只读报价均不新增 TaskRun，不冻结或扣费。结果送往套图、风格复刻、SKU 替换后，仅在用户确认新任务时按目标工具实际输出重新收费，参考图本身免费。批量结果转视频至少需要两张成功图；视频复用图片的生图费为 0，写稿继续使用已有 `kepu / project_pipeline` 的 script 阶段，后续配音/合成仍按现有阶段单独确认和结算。
+
+`ARK_MOCK=true` 时电商出图、参考图复用和带货写稿使用本地素材，不请求模型、OSS 或目录价网络；mock 产物只供联调，不表示真实模型质量验收。
+
+带货入口通过 `POST /api/tools/ecom/projects/{id}/script` 仅授权脚本阶段：在项目锁内检查已有分镜与活动任务，重复提交只返回原项目，不自动推进配音等下一收费阶段。

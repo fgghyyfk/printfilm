@@ -10,12 +10,13 @@ import './home/home.css'
 
 const AVATAR_PATH = '/studio/new?mode=avatar'
 const MORE_LINKS = [
-  { path: '/daihuo', icon: ShoppingBag },
+  { path: '/ecom', icon: ShoppingBag },
   { path: '/studio/new', icon: Video },
   { path: '/drama', icon: Clapperboard },
   { path: '/tools', icon: Wand2 },
 ]
 
+// 展示创作方式和电商工作台入口，登录后保留目标地址。
 export default function HomePage() {
   const nav = useNavigate()
   const { t, m } = useI18n()

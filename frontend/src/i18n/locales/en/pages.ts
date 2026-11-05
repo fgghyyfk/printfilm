@@ -32,7 +32,7 @@ export const enPages = {
     ],
     moreTitle: 'Other ways to make video',
     more: [
-      { title: 'Product promo', desc: 'Image set and promo video' },
+      { title: 'E-commerce workspace', desc: 'Retouch, create image sets, translate and make promo videos' },
       { title: 'Explainer video', desc: 'Topic to storyboard film' },
       { title: 'AI Drama', desc: 'Script to episodes' },
       { title: 'Tools', desc: 'Image and video gen' },

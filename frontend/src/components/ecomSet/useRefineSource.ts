@@ -4,7 +4,7 @@ import { getEcomJob } from '../../api/ecomJobs'
 import { useI18n } from '../../i18n'
 import { parseRefineSource } from '../../lib/ecomSet'
 
-/** 从 URL 读取精修来源并加载预览；创建套图时由后端再次校验归属和状态。 */
+/** 从 URL 读取电商结果来源并加载预览；创建套图时由后端再次校验归属和状态。 */
 export function useRefineSource() {
   const [params] = useSearchParams()
   const { t } = useI18n()
@@ -23,20 +23,20 @@ export function useRefineSource() {
     setLoading(false)
     const parsed = parseRefineSource(job, item)
     if (!parsed) {
-      if (job !== null || item !== null) setError(t('ecomSet.enhanced.sourceError'))
+      if (job !== null || item !== null) setError(t('ecomHub.sourceError'))
       return
     }
     setLoading(true)
     getEcomJob(parsed.jobId).then((result) => {
       if (cancelled) return
       const image = result.items.find((image) => image.idx === parsed.idx)
-      if (result.kind !== 'refine' || image?.status !== 'succeeded' || !image.result_url) {
-        setError(t('ecomSet.enhanced.sourceError'))
+      if (image?.status !== 'succeeded' || !image.result_url) {
+        setError(t('ecomHub.sourceError'))
       } else {
         setValue({ ...parsed, url: image.result_url })
       }
     }).catch(() => {
-      if (!cancelled) setError(t('ecomSet.enhanced.sourceError'))
+      if (!cancelled) setError(t('ecomHub.sourceError'))
     }).finally(() => {
       if (!cancelled) setLoading(false)
     })

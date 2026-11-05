@@ -3,9 +3,11 @@ import { useNavigate } from 'react-router-dom'
 import { ArrowRight, Clapperboard, Loader2 } from 'lucide-react'
 import { api, resolveVoiceId, type VoicePreset } from '../../api'
 import { createDaihuoProject, quoteDaihuoProject, type DaihuoVideoQuote, type DaihuoRatio, type EcomSet } from '../../api/ecomSet'
+import { createJobVideo, quoteJobVideo, startDaihuoScript } from '../../api/ecomHub'
 import { useVoicePreview } from '../../hooks/useVoicePreview'
 import { dialog } from '../../lib/dialog'
 import { useI18n } from '../../i18n'
+import { ecomJobErrorText } from '../../lib/ecomJobs'
 import { DAIHUO_RATIOS } from '../../lib/ecomSet'
 import BillingErrorNotice from '../billing/BillingErrorNotice'
 import Button from '../ui/Button'
@@ -17,7 +19,11 @@ function voiceKey(v: VoicePreset): string {
 }
 
 /** 第⑤步：复用套图生成口播分镜，继续最近项目或明确新建另一条。 */
-export default function DaihuoVideoPanel({ set }: { set: EcomSet }) {
+export default function DaihuoVideoPanel({ set, job }: { set: EcomSet; job?: never } | { set?: never; job: { id: number; project_id: number | null; title: string } }) {
+  // 两种图片来源共用画幅、音色、报价和分阶段写稿流程。
+  const source = job || set
+  const quoteVideo = job ? quoteJobVideo : quoteDaihuoProject
+  const createVideo = job ? createJobVideo : createDaihuoProject
   const { t , t: translateUi } = useI18n()
   const nav = useNavigate()
 
@@ -26,11 +32,14 @@ export default function DaihuoVideoPanel({ set }: { set: EcomSet }) {
   const [voices, setVoices] = useState<VoicePreset[] | null>(null)
   const [voiceId, setVoiceId] = useState('')
   const [voicesError, setVoicesError] = useState('')
+  /* 批量结果没有商品规划，写稿前补充品名和卖点。 */
+  const [name, setName] = useState(job?.title || '')
+  const [notes, setNotes] = useState('')
 
   /* 提交态：busy 创建/开写中；error 失败提示；projectId 已关联项目（含本次刚建好的） */
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [projectId, setProjectId] = useState<number | null>(set.project_id)
+  const [projectId, setProjectId] = useState<number | null>(source.project_id)
   const [createNew, setCreateNew] = useState(false)
   const submitting = useRef(false)
   const requestRef = useRef<{ options: string; id: string } | null>(null)
@@ -44,12 +53,12 @@ export default function DaihuoVideoPanel({ set }: { set: EcomSet }) {
     setQuote(null)
     setQuoteError('')
     const timer = setTimeout(() => {
-      quoteDaihuoProject(set.id, { output_ratio: ratio, voice_id: voiceId }, controller.signal)
+      quoteVideo(source.id, { output_ratio: ratio, voice_id: voiceId }, controller.signal)
         .then((next) => { if (!controller.signal.aborted) setQuote(next) })
         .catch((err) => { if (!controller.signal.aborted) setQuoteError(err instanceof Error ? err.message : translateUi("workflow.couldNotEstimateTheCost")) })
     }, 300)
     return () => { clearTimeout(timer); controller.abort() }
-  }, [set.id, ratio, voiceId, projectId, createNew])
+  }, [source.id, ratio, voiceId, projectId, createNew, quoteVideo, translateUi])
 
   // 初次创建或明确新建时加载音色列表，默认选第一个
   useEffect(() => {
@@ -74,31 +83,31 @@ export default function DaihuoVideoPanel({ set }: { set: EcomSet }) {
 
   // 建项目 → 开始写带货口播 → 跳转分镜页
   async function onCreate() {
-    if (submitting.current) return
+    if (submitting.current || (job && !name.trim())) return
     submitting.current = true
     setBusy(true)
     setError('')
     let pid: number | null = null
     try {
       stopPreview()
-      const options = `${ratio}:${voiceId}`
+      const options = JSON.stringify([ratio, voiceId, name.trim(), notes.trim()])
       if (createNew && requestRef.current?.options !== options) {
         const id = Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('')
         requestRef.current = { options, id }
       }
       const payload = { output_ratio: ratio, voice_id: voiceId, create_new: createNew,
-        request_id: createNew ? requestRef.current!.id : undefined }
-      const estimate = quote?.output_ratio === ratio && quote.voice_id === voiceId ? quote : await quoteDaihuoProject(set.id, payload)
+        request_id: createNew ? requestRef.current!.id : undefined, ...(job ? { name: name.trim(), notes: notes.trim() } : {}) }
+      const estimate = quote?.output_ratio === ratio && quote.voice_id === voiceId ? quote : await quoteVideo(source.id, payload)
       const confirmed = await dialog.confirm({ title: translateUi("workflow.createProductNarrationStoryboards"),
         message: translateUi("workflow.reuseBaseImagesWith0InNewImageCharges", { v1: String(estimate.usable_images), v2: String((estimate.script_fen / 100).toFixed(2)), v3: String((estimate.tts_fen / 100).toFixed(2)) }),
         confirmText: translateUi("workflow.startWriting"),
       })
       if (!confirmed) return
-      pid = (await createDaihuoProject(set.id, payload)).project_id
+      pid = (await createVideo(source.id, payload)).project_id
       setProjectId(pid)
       setCreateNew(false)
       requestRef.current = null
-      await api.generate(pid)
+      await startDaihuoScript(pid)
       nav(`/studio/${pid}`)
     } catch (err) {
       if (pid) setProjectId(pid)
@@ -125,7 +134,7 @@ export default function DaihuoVideoPanel({ set }: { set: EcomSet }) {
             </Button>
           </div>
         </div>
-        {error ? <BillingErrorNotice message={error} className="pf-tool-error" /> : null}
+        {error ? <BillingErrorNotice message={ecomJobErrorText(error, t)} className="pf-tool-error" /> : null}
       </section>
     )
   }
@@ -139,6 +148,10 @@ export default function DaihuoVideoPanel({ set }: { set: EcomSet }) {
         </div>
       </div>
 
+      {job ? <>
+        <label className="pf-tool-field"><span>{t('ecomSet.form.name')}</span><input value={name} maxLength={128} disabled={busy} onChange={(event) => setName(event.target.value)} /></label>
+        <label className="pf-tool-field"><span>{t('ecomSet.form.notes')}</span><textarea value={notes} maxLength={500} disabled={busy} onChange={(event) => setNotes(event.target.value)} /></label>
+      </> : null}
       <div className="pf-tool-field">
         <span>{t('daihuo.video.ratio')}</span>
         <div className="pf-tool-chips">
@@ -187,13 +200,13 @@ export default function DaihuoVideoPanel({ set }: { set: EcomSet }) {
         </Button>
         {isFallback ? <span role="status">{translateUi("workflow.thisPreviewUsesABackupVoice")}</span> : null}
       </div>
-      <p className="pf-muted" role="status">{quote ? translateUi("workflow.reuseImages0ScriptEstimateLaterNarrationEstimate", { v1: String(quote.usable_images), v2: String((quote.script_fen / 100).toFixed(2)), v3: String((quote.tts_fen / 100).toFixed(2)) }) : quoteError || translateUi("workflow.estimatingCost")}</p>
+      <p className="pf-muted" role="status">{quote ? translateUi("workflow.reuseImages0ScriptEstimateLaterNarrationEstimate", { v1: String(quote.usable_images), v2: String((quote.script_fen / 100).toFixed(2)), v3: String((quote.tts_fen / 100).toFixed(2)) }) : (quoteError ? ecomJobErrorText(quoteError, t) : translateUi("workflow.estimatingCost"))}</p>
       <p className="pf-muted">{translateUi("workflow.startWithNarrationStoryboardsThenContinueByStageNarration")}</p>
-      {error ? <BillingErrorNotice message={error} className="pf-tool-error" /> : null}
+      {error ? <BillingErrorNotice message={ecomJobErrorText(error, t)} className="pf-tool-error" /> : null}
 
       <div className="pf-ecom-actions pf-daihuo-submit">
         {createNew ? <Button variant="ghost" disabled={busy} onClick={() => { stopPreview(); setCreateNew(false) }}>{translateUi("workflow.backToExistingVideo")}</Button> : null}
-        <Button variant="lime" icon disabled={busy || voices == null || !quote} onClick={onCreate}>
+        <Button variant="lime" icon disabled={busy || voices == null || !quote || Boolean(job && !name.trim())} onClick={onCreate}>
           {busy ? <Loader2 size={16} className="pf-tool-spin" aria-hidden /> : <Clapperboard size={16} aria-hidden />}
           {busy ? t('daihuo.video.creating') : translateUi("workflow.createNarrationStoryboards")}
         </Button>

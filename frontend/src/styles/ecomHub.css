@@ -1,0 +1,7 @@
+/* 电商工作台沿用 pf 设计体系，窄屏时参考图与结果菜单自然换行。 */
+.pf-ecom-next-menu { position: relative; font-size: .85rem; }
+.pf-ecom-next-menu summary { cursor: pointer; padding: .5rem; border: 1px solid var(--pf-line); border-radius: 8px; }
+.pf-ecom-next-menu nav { display: grid; gap: .75rem; padding: .75rem; }
+.pf-ecom-next-menu a { color: inherit; }
+.pf-job-source { border: 1px solid var(--pf-line); border-radius: 12px; padding: 1rem; margin-bottom: 1rem; }
+.pf-job-source img { display: block; width: 120px; height: 120px; object-fit: contain; }

@@ -10,6 +10,8 @@ import MethodPage from './pages/MethodPage'
 import ToolsPage from './pages/ToolsPage'
 import ToolDetailPage from './pages/ToolDetailPage'
 import DaihuoPage from './pages/DaihuoPage'
+import EcomHubPage from './pages/ecom/EcomHubPage'
+import EcomVideoPage from './pages/ecom/EcomVideoPage'
 import RefinePage from './pages/ecom/RefinePage'
 import StylePage from './pages/ecom/StylePage'
 import SkuPage from './pages/ecom/SkuPage'
@@ -52,6 +54,8 @@ function AppRoutes() {
         <Route path="/templates" element={<TemplatesPage />} />
         <Route path="/tools" element={<ToolsPage />} />
         <Route path="/daihuo" element={<DaihuoPage />} />
+        <Route path="/ecom" element={<EcomHubPage />} />
+        <Route path="/ecom/video" element={<EcomVideoPage />} />
         <Route path="/ecom/refine" element={<RefinePage />} />
         <Route path="/ecom/sku" element={<SkuPage />} />
         <Route path="/ecom/translate" element={<TranslatePage />} />
