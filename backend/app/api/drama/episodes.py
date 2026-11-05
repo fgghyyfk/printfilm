@@ -743,6 +743,31 @@ async def generate_episode(
                     detail="已开启尾帧衔接：请先生成上一镜并等待尾帧就绪后，再点本镜生成",
                 )
 
+    # 上面的判定与尾帧准备都在锁外；这里锁分集后重读所选分镜，并发重复提交在此收敛，
+    # 避免同一镜头建两个任务、向上游提交两次并扣两次费。锁序：分集 → 钱包。
+    await db.execute(
+        select(DramaEpisode.id).where(DramaEpisode.id == episode_id).with_for_update(key_share=True)
+    )
+    fresh_frags = await db.scalars(
+        select(DramaEpisodeFragment)
+        .where(DramaEpisodeFragment.id.in_([f.id for f in idle_frags]))
+        .options(selectinload(DramaEpisodeFragment.asset_references))
+        .execution_options(populate_existing=True)
+    )
+    idle_frags = sorted(
+        (
+            f
+            for f in fresh_frags
+            if fragment_generation_status(f).get("status") not in {"queued", "running", "generating"}
+        ),
+        key=lambda f: int(f.sort_order or 0),
+    )
+    if not idle_frags:
+        raise HTTPException(
+            status_code=409,
+            detail="所选分镜正在生成，请等待完成后再试",
+        )
+
     # 清除进程内「本集已取消」标记，避免旧取消态把新入队任务立刻作废
     clear_episode_video_cancelled(episode_id)
 
