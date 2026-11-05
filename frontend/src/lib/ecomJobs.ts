@@ -47,3 +47,13 @@ export function ecomJobErrorText(message: string, t: (key: string) => string): s
   const key = ERROR_KEYS[message]
   return key ? t(`ecomJobs.serverErrors.${key}`) : message
 }
+
+/** 返回风格复刻各模式的产品数量上限。 */
+export function styleProductLimit(mode: 'single' | 'batch'): number {
+  return mode === 'single' ? 6 : 20
+}
+
+/** 以实际输出张数计算批次估价，参考设计图不计作输出。 */
+export function styleOutputCount(mode: 'single' | 'batch', products: number, count: number): number {
+  return mode === 'single' ? count : products
+}

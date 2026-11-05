@@ -11,6 +11,7 @@ import ToolsPage from './pages/ToolsPage'
 import ToolDetailPage from './pages/ToolDetailPage'
 import DaihuoPage from './pages/DaihuoPage'
 import RefinePage from './pages/ecom/RefinePage'
+import StylePage from './pages/ecom/StylePage'
 import HelpPage from './pages/HelpPage'
 import { PrivacyPage, TermsPage } from './pages/LegalDocPage'
 import ContactPage from './pages/ContactPage'
@@ -49,6 +50,7 @@ function AppRoutes() {
         <Route path="/tools" element={<ToolsPage />} />
         <Route path="/daihuo" element={<DaihuoPage />} />
         <Route path="/ecom/refine" element={<RefinePage />} />
+        <Route path="/ecom/style" element={<StylePage />} />
         <Route path="/tools/ecom-set" element={<ToDaihuo />} />
         <Route path="/tools/ecomset" element={<ToDaihuo />} />
         <Route path="/tools/:toolId" element={<ToolDetailPage />} />

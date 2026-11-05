@@ -14,6 +14,8 @@ type Props = { kind: string; currentId: number | null; refreshKey: number; onOpe
 /** 按功能加载任务历史，分页和总数以服务端为准。 */
 export default function JobHistory({ kind, currentId, refreshKey, onOpen }: Props) {
   const { t } = useI18n()
+  // 按任务类型选择标题，分页和数据请求保持共用。
+  const copy = kind === 'style' ? 'ecomJobs.style' : 'ecomJobs'
   /* 当前页、当前页数据及总数；独立维护加载、错误与重试状态。 */
   const [page, setPage] = useState(1)
   const [items, setItems] = useState<EcomJob[]>([])
@@ -33,17 +35,17 @@ export default function JobHistory({ kind, currentId, refreshKey, onOpen }: Prop
   }, [kind, page, refreshKey, reload, t])
   return (
     <section className="pf-job-section">
-      <h2>{t('ecomJobs.history')}</h2>
+      <h2>{t(`${copy}.history`)}</h2>
       {loading ? <p role="status" className="pf-muted">{t('ecomJobs.loading')}</p> : error ? (
         <div role="alert"><p className="pf-tool-error">{ecomJobErrorText(error, t)}</p><Button type="button" variant="outline" onClick={() => setReload((value) => value + 1)}>{t('ecomJobs.retry')}</Button></div>
-      ) : !items.length ? <p className="pf-muted">{t('ecomJobs.noHistory')}</p> : (
+      ) : !items.length ? <p className="pf-muted">{t(`${copy}.noHistory`)}</p> : (
         <div className="pf-job-history-grid">
           {items.map((job) => {
             const cover = job.items.find((item) => item.result_url)?.result_url || job.items[0]?.inputs[0]?.url
             return (
               <button type="button" className={`pf-job-history-card${job.id === currentId ? ' is-current' : ''}`} key={job.id} onClick={() => onOpen(job.id)}>
                 {cover ? <img src={resolveToolMediaUrl(cover)} alt="" loading="lazy" /> : null}
-                <strong>{job.title || t('ecomJobs.title')}</strong>
+                <strong>{job.title || t(`${copy}.title`)}</strong>
                 <span>{t(`ecomJobs.status.${job.status}`)}</span>
                 <small>{formatDateTime(job.created_at)}</small>
               </button>

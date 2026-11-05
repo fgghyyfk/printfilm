@@ -24,6 +24,13 @@ export type RefineParams = {
   clarity: '2k' | '4k'
   notes: string
 }
+export type StyleParams = {
+  mode: 'single' | 'batch'
+  count: number
+  ratio: '1:1' | '3:4' | '9:16' | '16:9'
+  clarity: '2k' | '4k'
+  notes: string
+}
 export type EcomJob = {
   id: number
   kind: string
@@ -36,6 +43,8 @@ export type EcomJob = {
 }
 export type EcomKindOptions = {
   max_images: number
+  mode_limits?: Record<string, number> | null
+  max_count?: number
   ratios: string[]
   clarities: string[]
   prices: Record<string, number>
@@ -49,9 +58,10 @@ export function getEcomJobOptions(): Promise<EcomJobOptions> {
 }
 
 /** 上传整批商品图并创建指定功能的任务。 */
-export function createEcomJob(kind: string, files: File[], params: RefineParams): Promise<EcomJob> {
+export function createEcomJob(kind: string, files: File[], params: RefineParams | StyleParams, styleFiles: File[] = []): Promise<EcomJob> {
   const body = new FormData()
   files.forEach((file) => body.append('files', file))
+  styleFiles.forEach((file) => body.append('style_files', file))
   body.append('params', JSON.stringify(params))
   return request(`${BASE}/${kind}`, { method: 'POST', body })
 }

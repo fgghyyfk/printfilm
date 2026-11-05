@@ -1,6 +1,28 @@
 /** 中文：电商批量任务与图片精修。 */
 export const zhEcomJobs = {
   ecomJobs: {
+    style: {
+      title: '风格复刻',
+      lead: '借鉴参考设计的构图、光影与配色，用自己的商品生成新图。',
+      reference: '参考设计图（1 张）',
+      referenceRequired: '请上传 1 张参考设计图',
+      referenceHint: '仅参考设计风格，不复制参考图中的品牌、商标和文字；保留商品外形、颜色和包装文字。',
+      mode: '生成模式',
+      modes: { single: '单图：组合所有商品', batch: '批量：每张产品图各出一张' },
+      hints: { single: '最多 6 张产品图一起作为主体，生成 1–4 张图片。', batch: '1 张参考设计 × 最多 20 张产品图，每张产品图生成 1 张图片。' },
+      count: '输出张数',
+      notesHint: '例如：保留参考构图与暖色光线，突出产品质感',
+      start: '开始复刻',
+      confirmTitle: '确认风格复刻',
+      confirm: '将生成 {count} 张图片，预计扣费 {price}，确认开始？',
+      results: '风格复刻结果',
+      generating: '复刻中',
+      newJob: '新建风格复刻任务',
+      history: '我的风格复刻任务',
+      noHistory: '还没有风格复刻任务，上传参考设计图与产品图开始吧',
+      catalog: { title: '风格复刻', desc: '参考设计风格，替换为自己的商品', panelHint: '上传一张参考设计图和产品图，单图合成或批量生成。', cta: '开始复刻' },
+    },
+
     title: '图片精修',
     lead: '批量优化商品质感与光线，生成白底、原背景或透明底图片。',
     back: '返回工具中心',

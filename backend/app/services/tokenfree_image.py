@@ -79,14 +79,20 @@ def build_tokenfree_openai_image_body(
     """GPT Image 2.5：POST /images/generations（openai 渠道），并带上 resolution 供计费。"""
     if structured_refs and (ref_urls or style_ref_urls):
         logger.info("GPT Image generations 暂不支持结构化参考图，保留文本参考方式 model=%s", model)
+    # 显式角色模式的设计参考允许按正文借用构图，旧通路继续沿用原有画风限制。
+    design_refs = [url.strip() for url in (style_ref_urls or []) if url and url.strip()] if structured_refs else []
     narrative = build_tokenfree_image_body(
         model=model,
         prompt=prompt,
         size=size,
         aspect_ratio=aspect_ratio,
-        ref_urls=ref_urls,
-        style_ref_urls=style_ref_urls,
+        ref_urls=None if design_refs else ref_urls,
+        style_ref_urls=None if design_refs else style_ref_urls,
     )
+    if design_refs:
+        products = " ".join(url.strip() for url in (ref_urls or []) if url and url.strip())
+        narrative["input"] += f"。产品主体参考（保持外形、颜色、logo与文字不变）：{products}"
+        narrative["input"] += f"。设计风格参考（构图按正文要求，不复制主体、品牌、logo与文字）：{' '.join(design_refs)}"
     pixel = (size or "").strip()
     if not _is_pixel_size(pixel):
         pixel = "1024x1024"
@@ -100,7 +106,7 @@ def build_tokenfree_openai_image_body(
     }
 
 
-# 显式结构化模式允许 data URI 和本站图片地址，保留主体优先、风格一张的上限。
+# 显式结构化模式允许 data URI 和本站图片地址，保留最多六张产品与一张风格参考。
 def split_tokenfree_structured_refs(
     ref_urls: list[str] | None, style_ref_urls: list[str] | None,
 ) -> tuple[list[str], list[str]]:
@@ -109,7 +115,7 @@ def split_tokenfree_structured_refs(
         return list(dict.fromkeys(url.strip() for url in (urls or []) if url and url.strip()))
 
     styles = clean(style_ref_urls)[:1]
-    return clean(ref_urls)[:6 - len(styles)], styles
+    return clean(ref_urls)[:6], styles
 
 
 # 结构化通路优先编码已有本地参考图，远程图保持 URL，文本降级不调用此函数。

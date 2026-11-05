@@ -6,7 +6,9 @@ from math import gcd, sqrt
 from typing import Callable
 
 from app.services.compliance.ad_words import check_text
+from app.schemas_ecom_jobs import StyleParams
 from app.services.ecom_jobs.refine import build_prompt
+from app.services.ecom_jobs.style import build_prompt as build_style_prompt
 
 
 @dataclass(frozen=True)
@@ -19,14 +21,28 @@ class Kind:
     prompt_builder: Callable[[dict], str]
 
 
-KINDS = {"refine": Kind(20, ("1:1", "3:4", "原比例"), ("2k", "4k"), build_prompt)}
+STYLE_MODE_LIMITS = {"single": 6, "batch": 20}
+KINDS = {
+    "refine": Kind(20, ("1:1", "3:4", "原比例"), ("2k", "4k"), build_prompt),
+    "style": Kind(20, ("1:1", "3:4", "9:16", "16:9"), ("2k", "4k"), build_style_prompt),
+}
 
 
-# 严格校验 kind、图片数量和精修参数，备注经广告词替换后保存。
+# 严格校验 kind、图片数量和参数，备注经广告词替换后保存。
 def validate(kind: str, count: int, params: dict) -> dict:
     spec = KINDS.get(kind)
     if spec is None:
         raise ValueError("未知工具")
+    if kind == "style":
+        if not isinstance(params, dict):
+            raise ValueError("参数错误")
+        clean = StyleParams.model_validate(params).model_dump()
+        if not 1 <= count <= STYLE_MODE_LIMITS[clean["mode"]]:
+            raise ValueError("产品图数量超限")
+        if clean["mode"] == "batch" and clean["count"] != 1:
+            raise ValueError("批量模式每个产品仅生成一张")
+        clean["notes"], _ = check_text(clean["notes"].strip())
+        return clean
     if not 1 <= count <= spec.max_images:
         raise ValueError("请上传 1 至 20 张商品图")
     if not isinstance(params, dict) or set(params) - {"background", "ratio", "clarity", "notes"}:

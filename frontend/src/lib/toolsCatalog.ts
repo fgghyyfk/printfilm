@@ -2,7 +2,7 @@ import { Clapperboard, Image, Images, Play, ShoppingBag, Sparkles, Video } from 
 import type { LucideIcon } from 'lucide-react'
 import type { Messages } from '../i18n'
 
-export type ToolId = 't2i' | 'i2i' | 'i2p' | 't2v' | 'v2v' | 'ecom' | 'refine'
+export type ToolId = 't2i' | 'i2i' | 'i2p' | 't2v' | 'v2v' | 'ecom' | 'refine' | 'style'
 
 export type ToolField = {
   key: string
@@ -29,6 +29,17 @@ export type ToolDef = {
 }
 
 export const TOOL_DEFS: ToolDef[] = [
+  {
+    id: 'style',
+    title: '风格复刻',
+    desc: '参考设计风格，替换为自己的商品',
+    soon: false,
+    icon: Images,
+    panelHint: '上传一张参考设计图和产品图，单图合成或批量生成。',
+    fields: [],
+    cta: '开始复刻',
+    href: '/ecom/style',
+  },
   {
     id: 'refine',
     title: '图片精修',
@@ -154,6 +165,7 @@ export function defaultToolChips(tool: ToolDef): Record<string, string> {
 
 // 用当前语言覆盖工具标题、说明与字段文案（options 值保持中文给 API）
 export function localizeToolDef(tool: ToolDef, m: Messages): ToolDef {
+  if (tool.id === 'style') return { ...tool, ...m.ecomJobs.style.catalog }
   if (tool.id === 'refine') return { ...tool, ...m.ecomJobs.catalog }
   const pack = m.tools.items[tool.id]
   return {

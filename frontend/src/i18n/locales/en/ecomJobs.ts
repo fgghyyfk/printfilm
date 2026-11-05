@@ -1,6 +1,28 @@
 /** 英文：电商批量任务与图片精修。 */
 export const enEcomJobs = {
   ecomJobs: {
+    style: {
+      title: 'Style recreation',
+      lead: 'Recreate a design’s composition, lighting and colors with your own products.',
+      reference: 'Reference design (1 image)',
+      referenceRequired: 'Please upload exactly 1 reference design',
+      referenceHint: 'Use the design style only, without copying its brands, logos or text. Preserve the product shape, color and packaging text.',
+      mode: 'Generation mode',
+      modes: { single: 'Single: combine all products', batch: 'Batch: one output per product image' },
+      hints: { single: 'Combine up to 6 product images into each of 1–4 outputs.', batch: '1 reference design × up to 20 product images, with 1 output per product image.' },
+      count: 'Output count',
+      notesHint: 'For example: retain the composition and warm lighting, emphasize product texture',
+      start: 'Recreate style',
+      confirmTitle: 'Confirm style recreation',
+      confirm: 'Generate {count} images for an estimated {price}. Continue?',
+      results: 'Style recreation results',
+      generating: 'Recreating',
+      newJob: 'New style recreation job',
+      history: 'My style recreation jobs',
+      noHistory: 'No style recreation jobs yet. Upload a reference design and product images to get started.',
+      catalog: { title: 'Style recreation', desc: 'Recreate a reference design with your own products', panelHint: 'Upload a reference design and product images to combine or generate in batches.', cta: 'Recreate style' },
+    },
+
     title: 'Product retouching',
     lead: 'Improve product detail and lighting in batches, with white, original or transparent backgrounds.',
     back: 'Back to tools',

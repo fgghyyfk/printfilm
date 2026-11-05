@@ -65,11 +65,14 @@ async def options(db: AsyncSession = Depends(get_db), user: User = Depends(get_c
 @router.post("/{kind}", response_model=EcomJobOut)
 async def create(
     kind: str, files: list[UploadFile] = File(...), params: str = Form("{}"), title: str = Form(""),
+    style_files: list[UploadFile] | None = File(None),
     db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user),
 ):
     from app.services.ecom_jobs.kinds import validate
 
     try:
+        if (kind == "style" and len(style_files or []) != 1) or (kind != "style" and style_files):
+            raise ValueError("参考设计图数量错误")
         raw = json.loads(params)
         clean = validate(kind, len(files), raw)
         if kind == "refine":
@@ -81,7 +84,8 @@ async def create(
         # 每张只读取上限加一字节，避免超大文件被一次载入内存。
         data = await file.read(svc.MAX_UPLOAD + 1)
         uploads.append((data, file.filename or ""))
-    job = await _guard(db, svc.create_job(db, user, kind=kind, uploads=uploads, params=clean, title=title))
+    style_uploads = [(await file.read(svc.MAX_UPLOAD + 1), file.filename or "") for file in style_files or []]
+    job = await _guard(db, svc.create_job(db, user, kind=kind, uploads=uploads, params=clean, title=title, style_uploads=style_uploads))
     return svc.to_out(job)
 
 

@@ -16,6 +16,17 @@ class RefineParams(BaseModel):
     notes: str = Field(default="", max_length=500)
 
 
+class StyleParams(BaseModel):
+    """风格复刻参数：单图合成或逐产品批量生成。"""
+
+    model_config = {"extra": "forbid"}
+    mode: Literal["single", "batch"] = "single"
+    count: int = Field(default=1, ge=1, le=4, strict=True)
+    ratio: Literal["1:1", "3:4", "9:16", "16:9"] = "1:1"
+    clarity: Literal["2k", "4k"] = "2k"
+    notes: str = Field(default="", max_length=500)
+
+
 class EcomInputOut(BaseModel):
     """对外参考图仅公开角色和可访问 URL。"""
 
@@ -61,6 +72,8 @@ class EcomKindOut(BaseModel):
     """可用 kind 的上限、比例、清晰度和单张价格（分）。"""
 
     max_images: int
+    mode_limits: dict[str, int] | None = None
+    max_count: int = 1
     ratios: list[str]
     clarities: list[str]
     prices: dict[str, int]

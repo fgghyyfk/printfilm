@@ -69,6 +69,8 @@ async def get_options(db: AsyncSession, user: User) -> dict:
         prices = {clarity: await image_unit_fen(db, clarity) for clarity in kind.clarities}
         options[key] = {"max_images": kind.max_images, "ratios": list(kind.ratios),
                         "clarities": list(kind.clarities), "prices": prices}
+        if key == "style":
+            options[key].update(mode_limits=kinds.STYLE_MODE_LIMITS, max_count=4)
     return {"kinds": options, "billing_enabled": billing_active(user)}
 
 
@@ -92,26 +94,38 @@ async def enqueue_items(db: AsyncSession, user: User, job: EcomJob, items: list[
 # 校验整批图片后保存上传，创建 job/items 并原子入队；失败清理本次目录。
 async def create_job(
     db: AsyncSession, user: User, *, kind: str, uploads: list[tuple[bytes, str]], params: dict, title: str = "",
+    style_uploads: list[tuple[bytes, str]] | None = None,
 ) -> EcomJob:
     clean = kinds.validate(kind, len(uploads), params)
+    references = style_uploads or []
+    if (kind == "style" and len(references) != 1) or (kind != "style" and references):
+        raise ValueError("请上传一张参考设计图")
+    output_count = clean["count"] if kind == "style" and clean["mode"] == "single" else len(uploads)
     if len(title) > 128:
         raise ValueError("标题不能超过 128 字")
-    sizes = [await asyncio.to_thread(inspect_upload, data, name) for data, name in uploads]
+    sizes = [await asyncio.to_thread(inspect_upload, data, name) for data, name in uploads + references]
     await ensure_balance_for_task_batch(db, user, TaskRun(
         domain="studio", task_type="ecom_job_image", requested_by=user.id, payload={"clarity": clean["clarity"]},
-    ), len(uploads))
+    ), output_count)
     job = EcomJob(user_id=user.id, kind=kind, title=title.strip(), params=clean, status="queued")
     db.add(job)
     await db.flush()
     directory = job_dir(user.id, job.id)
     try:
-        items = []
-        for idx, ((data, _), original) in enumerate(zip(uploads, sizes, strict=True)):
+        inputs = []
+        for idx, (data, _) in enumerate(uploads + references):
             dest = directory / f"input_{idx}.png"
             await asyncio.to_thread(save_upload, data, dest)
             url = await asyncio.to_thread(public_url, dest)
-            ratio, size = kinds.image_geometry(clean["ratio"], clean["clarity"], original)
-            item = EcomJobItem(job_id=job.id, idx=idx, inputs=[{"role": "product", "path": str(dest), "url": url}],
+            inputs.append({"role": "product" if idx < len(uploads) else "style", "path": str(dest), "url": url})
+        items = []
+        for idx in range(output_count):
+            if kind == "style" and clean["mode"] == "single":
+                item_inputs = inputs
+            else:
+                item_inputs = [inputs[idx]] + inputs[len(uploads):]
+            ratio, size = kinds.image_geometry(clean["ratio"], clean["clarity"], sizes[min(idx, len(uploads) - 1)])
+            item = EcomJobItem(job_id=job.id, idx=idx, inputs=item_inputs,
                                prompt=kinds.KINDS[kind].prompt_builder(clean), ratio=ratio, size=size, status="queued")
             db.add(item)
             items.append(item)
