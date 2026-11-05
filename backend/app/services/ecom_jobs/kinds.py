@@ -6,8 +6,8 @@ from math import gcd, sqrt
 from typing import Callable
 
 from app.services.compliance.ad_words import check_text
-from app.schemas_ecom_jobs import BuyerShowParams, StyleParams
-from app.services.ecom_jobs import buyer_show
+from app.schemas_ecom_jobs import BuyerShowParams, SkuParams, StyleParams
+from app.services.ecom_jobs import buyer_show, sku
 from app.services.ecom_jobs.refine import build_prompt
 from app.services.ecom_jobs.style import build_prompt as build_style_prompt
 
@@ -24,6 +24,7 @@ class Kind:
 
 STYLE_MODE_LIMITS = {"single": 6, "batch": 20}
 KINDS = {
+    "sku": Kind(20, sku.RATIOS, ("2k", "4k"), sku.build_prompt),
     "refine": Kind(20, ("1:1", "3:4", "原比例"), ("2k", "4k"), build_prompt),
     "style": Kind(20, ("1:1", "3:4", "9:16", "16:9"), ("2k", "4k"), build_style_prompt),
     "buyer_show": Kind(9, ("1:1", "3:4", "9:16", "16:9"), ("2k", "4k"), buyer_show.build_prompt),
@@ -35,6 +36,14 @@ def validate(kind: str, count: int, params: dict) -> dict:
     spec = KINDS.get(kind)
     if spec is None:
         raise ValueError("未知工具")
+    if kind == "sku":
+        if not isinstance(params, dict) or not 1 <= count <= spec.max_images:
+            raise ValueError("参数错误")
+        clean = SkuParams.model_validate(params).model_dump()
+        if clean["sku_names"] and len(clean["sku_names"]) != count:
+            raise ValueError("参数错误")
+        clean["notes"], _ = check_text(clean["notes"].strip())
+        return clean
     if kind == "buyer_show":
         if not isinstance(params, dict) or not 1 <= count <= spec.max_images:
             raise ValueError("参数错误")
@@ -76,8 +85,11 @@ def build_item_prompt(kind: str, params: dict, inputs: list[dict], idx: int) -> 
         "scene": "场景参考，借用生活环境与光线",
         "source": "已完成的成图参考，保留商品特征，变化拍摄角度和取景，不复制人物身份",
     }
+    if kind == "sku":
+        descriptions["scene"] = "被替换的场景原图，构图、背景、光影、道具与机位必须不变"
+        descriptions["source"] = "已完成的成图参考，仅参考商品替换效果，原场景保持不变"
     prompt += "。" + "；".join(f"图{i + 1} 为{descriptions[ref['role']]}" for i, ref in enumerate(inputs))
-    if any(ref["role"] == "source" for ref in inputs):
+    if kind != "sku" and any(ref["role"] == "source" for ref in inputs):
         prompt += f"。裂变拍摄变化：{buyer_show.SHOT_VARIATIONS[idx % len(buyer_show.SHOT_VARIATIONS)]}"
     return prompt
 

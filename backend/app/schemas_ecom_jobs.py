@@ -1,8 +1,8 @@
 """电商批量任务 API 参数和响应结构。"""
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
 
 from app.schemas_common import PageMeta
 
@@ -36,6 +36,16 @@ class BuyerShowParams(BaseModel):
     ratio: Literal["1:1", "3:4", "9:16", "16:9"] = "3:4"
     clarity: Literal["2k", "4k"] = "2k"
     notes: str = Field(default="", max_length=500)
+
+
+class SkuParams(BaseModel):
+    """SKU 参数：空比例由场景推导，名称按产品顺序一一对应。"""
+
+    model_config = {"extra": "forbid"}
+    ratio: Literal["1:1", "3:4", "9:16", "16:9"] | None = None
+    clarity: Literal["2k", "4k"] = "2k"
+    notes: str = Field(default="", max_length=500)
+    sku_names: list[Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]] = Field(default_factory=list, max_length=20)
 
 
 class EcomVariantsParams(BaseModel):

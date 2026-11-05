@@ -1,6 +1,26 @@
 /** 英文：电商批量任务与图片精修。 */
 export const enEcomJobs = {
   ecomJobs: {
+    sku: {
+      title: 'SKU replacement',
+      lead: 'Upload one original scene and 1–20 product images to create one replacement image for each SKU.',
+      scene: 'Original scene (required, 1 image)',
+      sceneRequired: 'Please upload exactly 1 original scene image',
+      autoRatio: 'Follow scene (closest supported ratio)',
+      name: 'SKU {n} name',
+      nameRequired: 'Please enter a name for every SKU',
+      notesHint: 'For example: replace only the cup on the left, keeping the table and other products',
+      referenceHint: 'Keep the scene composition, background, lighting, props and camera position. Replace only the selected product, preserving its shape, color and logo.',
+      start: 'Replace products',
+      confirmTitle: 'Confirm SKU replacement',
+      confirm: 'Generate {count} images for an estimated {price}. Continue?',
+      results: 'SKU replacement results',
+      generating: 'Replacing',
+      newJob: 'New SKU replacement job',
+      history: 'My SKU replacement jobs',
+      noHistory: 'No SKU jobs yet. Upload a scene and product images to get started.',
+      catalog: { title: 'SKU replacement', desc: 'Keep the scene composition and replace the product for each SKU', panelHint: 'Upload 1 original scene and 1–20 SKU product images.', cta: 'Replace products' },
+    },
     buyerShow: {
       title: 'Buyer photos / Lifestyle images',
       lead: 'Turn product images into casual buyer photos or polished lifestyle shots, then create variants from a result you like.',

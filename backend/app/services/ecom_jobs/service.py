@@ -19,7 +19,7 @@ from app.schemas_tasks import TaskCreateRequest
 from app.services import storage
 from app.services.billing.estimates import estimate_task_fen
 from app.services.billing.settlement import billing_active, ensure_balance_for_task_batch
-from app.services.ecom_jobs import kinds
+from app.services.ecom_jobs import kinds, sku
 from app.services.ecom_jobs.jobs import ACTIVE_ITEMS, job_dir, public_url, reconcile_items, refresh_job_status
 
 MAX_UPLOAD = 10 * 1024 * 1024
@@ -93,7 +93,7 @@ async def enqueue_items(db: AsyncSession, user: User, job: EcomJob, items: list[
         item.task_run_id, item.status, item.error = task.id, "queued", None
 
 
-# 校验各角色数量后交给底座落盘；可选模特与场景仅限买家秀使用。
+# 校验各角色数量后交给底座落盘；SKU 必须带一张场景原图。
 async def create_job(
     db: AsyncSession, user: User, *, kind: str, uploads: list[tuple[bytes, str]], params: dict, title: str = "",
     style_uploads: list[tuple[bytes, str]] | None = None,
@@ -106,7 +106,9 @@ async def create_job(
         raise ValueError("参数错误")
     if len(model_uploads or []) > 1 or len(scene_uploads or []) > 1:
         raise ValueError("参数错误")
-    if kind != "buyer_show" and (model_uploads or scene_uploads):
+    if (kind != "buyer_show" and model_uploads) or (kind not in {"buyer_show", "sku"} and scene_uploads):
+        raise ValueError("参数错误")
+    if kind == "sku" and len(scene_uploads or []) != 1:
         raise ValueError("参数错误")
     role_uploads = [("product", data, name) for data, name in uploads]
     for role, batch in (("style", references), ("model", model_uploads), ("scene", scene_uploads)):
@@ -125,6 +127,14 @@ async def create_prepared_job(
     if len(title) > 128:
         raise ValueError("标题不能超过 128 字")
     sizes = [await asyncio.to_thread(inspect_upload, data, name) for _, data, name in uploads]
+    if kind == "sku":
+        params = dict(params)
+        if not params.get("ratio"):
+            scene_size = next(size for (role, _, _), size in zip(uploads, sizes) if role == "scene")
+            params["ratio"] = sku.nearest_ratio(scene_size)
+        if not params.get("sku_names"):
+            params["sku_names"] = [(Path(name.replace("\\", "/")).stem.strip() or f"SKU {idx + 1}")[:100]
+                                   for idx, (role, _, name) in enumerate(uploads) if role == "product"]
     await ensure_balance_for_task_batch(db, user, TaskRun(
         domain="studio", task_type="ecom_job_image", requested_by=user.id, payload={"clarity": params["clarity"]},
     ), count)

@@ -38,6 +38,12 @@ export type BuyerShowParams = {
   clarity: '2k' | '4k'
   notes: string
 }
+export type SkuParams = {
+  ratio: '1:1' | '3:4' | '9:16' | '16:9' | null
+  clarity: '2k' | '4k'
+  notes: string
+  sku_names: string[]
+}
 export type EcomJob = {
   id: number
   kind: string
@@ -65,7 +71,7 @@ export function getEcomJobOptions(): Promise<EcomJobOptions> {
 }
 
 /** 上传整批商品图并创建指定功能的任务。 */
-export function createEcomJob(kind: string, files: File[], params: RefineParams | StyleParams | BuyerShowParams, styleFiles: File[] = [], references: { model?: File[]; scene?: File[] } = {}): Promise<EcomJob> {
+export function createEcomJob(kind: string, files: File[], params: RefineParams | StyleParams | BuyerShowParams | SkuParams, styleFiles: File[] = [], references: { model?: File[]; scene?: File[] } = {}): Promise<EcomJob> {
   const body = new FormData()
   files.forEach((file) => body.append('files', file))
   styleFiles.forEach((file) => body.append('style_files', file))

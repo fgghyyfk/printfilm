@@ -74,7 +74,10 @@ async def create(
     try:
         if (kind == "style" and len(style_files or []) != 1) or (kind != "style" and style_files):
             raise ValueError("参考设计图数量错误")
-        if len(model_files or []) > 1 or len(scene_files or []) > 1 or (kind != "buyer_show" and (model_files or scene_files)):
+        if (len(model_files or []) > 1 or len(scene_files or []) > 1
+                or (kind != "buyer_show" and model_files)
+                or (kind not in {"buyer_show", "sku"} and scene_files)
+                or (kind == "sku" and len(scene_files or []) != 1)):
             raise ValueError("参考图数量错误")
         raw = json.loads(params)
         clean = validate(kind, len(files), raw)

@@ -44,7 +44,13 @@ async def create_variants(db, user, job_id: int, idx: int, *, count: int):
         raise ValueError("还没有生成好的图片")
     inputs = [ref for ref in item.inputs if ref["role"] != "source"]
     product_count = sum(ref["role"] == "product" for ref in inputs)
-    params = kinds.validate(job.kind, product_count, job.params)
+    source_params = dict(job.params)
+    if job.kind == "sku":
+        # 单项派生仅延续所选 SKU，不能拿整批名称校验单个产品。
+        source_params["sku_names"] = [source_params["sku_names"][item.idx]]
+    params = kinds.validate(job.kind, product_count, source_params)
+    if job.kind == "sku":
+        params["sku_names"] *= count
     if job.kind == "buyer_show":
         params["count"] = count
     # 结果图有本地副本，即使 result_url 已回填为 OSS 仍优先复用。

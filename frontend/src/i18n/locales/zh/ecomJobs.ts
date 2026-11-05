@@ -1,6 +1,26 @@
 /** 中文：电商批量任务与图片精修。 */
 export const zhEcomJobs = {
   ecomJobs: {
+    sku: {
+      title: 'SKU 替换',
+      lead: '上传一张场景原图和 1–20 张产品图，每个 SKU 各生成一张商品替换图。',
+      scene: '场景原图（必填，1 张）',
+      sceneRequired: '请上传 1 张场景原图',
+      autoRatio: '跟随场景（匹配最接近的比例）',
+      name: 'SKU {n} 名称',
+      nameRequired: '请填写每个 SKU 的名称',
+      notesHint: '例如：只替换左侧那个杯子，保留桌面和其它商品',
+      referenceHint: '保留场景构图、背景、光影、道具和机位，只替换指定商品；产品外形、颜色与 logo 保持准确。',
+      start: '开始替换',
+      confirmTitle: '确认 SKU 替换',
+      confirm: '将生成 {count} 张图片，预计扣费 {price}，确认开始？',
+      results: 'SKU 替换结果',
+      generating: '替换中',
+      newJob: '新建 SKU 替换任务',
+      history: '我的 SKU 替换任务',
+      noHistory: '还没有 SKU 替换任务，上传场景和产品图开始吧',
+      catalog: { title: 'SKU 替换', desc: '保留场景构图，为每个 SKU 替换商品主体', panelHint: '上传 1 张场景原图和 1–20 张 SKU 产品图。', cta: '开始替换' },
+    },
     buyerShow: {
       title: '买家秀 / 种草图',
       lead: '上传商品图，生成生活化晒图或精致种草图，还可从满意的结果继续裂变。',

@@ -13,7 +13,7 @@
 .pf-job-upload-item small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pf-job-params { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; margin: 1rem 0; }
 .pf-job-params label { display: flex; flex-direction: column; gap: .4rem; }
-.pf-job-params select, .pf-job-params textarea { width: 100%; box-sizing: border-box; padding: .65rem; border: 1px solid var(--pf-line); border-radius: 10px; background: var(--pf-bg); color: var(--pf-ink); font: inherit; }
+.pf-job-params input, .pf-job-params select, .pf-job-params textarea { width: 100%; box-sizing: border-box; padding: .65rem; border: 1px solid var(--pf-line); border-radius: 10px; background: var(--pf-bg); color: var(--pf-ink); font: inherit; }
 .pf-job-notes { grid-column: 1 / -1; margin: 0; }
 .pf-job-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem; }
 .pf-job-card { display: flex; flex-direction: column; gap: .6rem; border: 1px solid var(--pf-line); border-radius: 12px; padding: .7rem; }
@@ -25,3 +25,6 @@
 .pf-job-history-card.is-current { border-color: var(--pf-ink); }
 .pf-job-history-card img { width: 100%; aspect-ratio: 1; object-fit: contain; border-radius: 8px; }
 @media (max-width: 600px) { .pf-job-params { grid-template-columns: 1fr; } .pf-job-section { padding: .8rem; } }
+
+/* SKU 名称允许长文件名换行，避免窄屏表单与结果卡片溢出。 */
+.pf-job-params label, .pf-job-card > strong { min-width: 0; overflow-wrap: anywhere; }

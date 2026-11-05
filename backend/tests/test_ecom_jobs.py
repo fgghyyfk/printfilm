@@ -304,7 +304,7 @@ async def test_options_prices(db_session):
     from conftest import make_user
     user = await make_user(db_session)
     options = await service.get_options(db_session, user)
-    assert set(options["kinds"]) == {"refine", "style", "buyer_show"}
+    assert set(options["kinds"]) == {"refine", "style", "buyer_show", "sku"}
     assert options["kinds"]["refine"]["max_images"] == 20
     for clarity in ("2k", "4k"):
         assert options["kinds"]["refine"]["prices"][clarity] == await service.image_unit_fen(db_session, clarity)

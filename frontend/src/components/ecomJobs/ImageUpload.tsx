@@ -3,10 +3,10 @@ import { useI18n } from '../../i18n'
 import { validateEcomImages } from '../../lib/ecomJobs'
 import Button from '../ui/Button'
 
-type Props = { files: File[]; maxImages: number; disabled: boolean; role?: string; onChange: (files: File[]) => void }
+type Props = { files: File[]; maxImages: number; disabled: boolean; role?: string; labelKey?: string; onChange: (files: File[]) => void }
 
 /** 多图上传与本地预览，整批校验数量和格式并及时释放预览地址。 */
-export default function ImageUpload({ files, maxImages, disabled, role = 'product', onChange }: Props) {
+export default function ImageUpload({ files, maxImages, disabled, role = 'product', labelKey, onChange }: Props) {
   const { t } = useI18n()
   /* previews 为当前文件的临时地址；error 为上传校验结果。 */
   const [previews, setPreviews] = useState<string[]>([])
@@ -28,7 +28,7 @@ export default function ImageUpload({ files, maxImages, disabled, role = 'produc
   return (
     <div className="pf-job-upload">
       <label className="pf-job-upload-label">
-        <strong>{t(role === 'style' ? 'ecomJobs.style.reference' : role === 'model' || role === 'scene' ? `ecomJobs.buyerShow.${role}` : 'ecomJobs.images')}</strong>
+        <strong>{t(labelKey || (role === 'style' ? 'ecomJobs.style.reference' : role === 'model' || role === 'scene' ? `ecomJobs.buyerShow.${role}` : 'ecomJobs.images'))}</strong>
         <span className="pf-muted">{t('ecomJobs.uploadHint', { max: maxImages, count: files.length })}</span>
         <input type="file" multiple accept="image/png,image/jpeg,image/webp" disabled={disabled}
           onChange={(event) => { addFiles(Array.from(event.target.files || [])); event.target.value = '' }} />

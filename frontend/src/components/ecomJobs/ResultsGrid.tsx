@@ -22,7 +22,7 @@ export default function ResultsGrid({ job, busyIdx, downloading, onRetry, onDown
   return (
     <section className="pf-job-section" aria-live="polite">
       <div className="pf-job-head">
-        <div><h2>{t(job.kind === 'style' ? 'ecomJobs.style.results' : job.kind === 'buyer_show' ? 'ecomJobs.buyerShow.results' : 'ecomJobs.results')}</h2><p className="pf-muted">{t(`ecomJobs.status.${job.status}`)} · {t('ecomJobs.progress', { done: completed, total: job.items.length })}</p></div>
+        <div><h2>{t(job.kind === 'sku' ? 'ecomJobs.sku.results' : job.kind === 'style' ? 'ecomJobs.style.results' : job.kind === 'buyer_show' ? 'ecomJobs.buyerShow.results' : 'ecomJobs.results')}</h2><p className="pf-muted">{t(`ecomJobs.status.${job.status}`)} · {t('ecomJobs.progress', { done: completed, total: job.items.length })}</p></div>
         <Button type="button" variant="lime" disabled={!completed || downloading} onClick={onZip}>
           {downloading ? t('ecomJobs.downloading') : t('ecomJobs.zip')}
         </Button>
@@ -31,10 +31,10 @@ export default function ResultsGrid({ job, busyIdx, downloading, onRetry, onDown
       <div className="pf-job-grid">
         {job.items.map((item) => (
           <article className="pf-job-card" key={item.idx}>
-            <strong>{t('ecomJobs.imageNumber', { n: item.idx + 1 })}</strong>
+            <strong>{job.kind === 'sku' && Array.isArray(job.params.sku_names) ? String(job.params.sku_names[item.idx] || '') : t('ecomJobs.imageNumber', { n: item.idx + 1 })}</strong>
             <div className="pf-job-image">
               {item.status === 'queued' || item.status === 'running' ? (
-                <div className="pf-job-state"><Loader2 className="pf-tool-spin" aria-hidden />{t(item.status === 'running' && job.kind === 'buyer_show' ? 'ecomJobs.buyerShow.generating' : job.kind === 'style' && item.status === 'running' ? 'ecomJobs.style.generating' : `ecomJobs.itemStatus.${item.status}`)}</div>
+                <div className="pf-job-state"><Loader2 className="pf-tool-spin" aria-hidden />{t(item.status === 'running' && job.kind === 'sku' ? 'ecomJobs.sku.generating' : item.status === 'running' && job.kind === 'buyer_show' ? 'ecomJobs.buyerShow.generating' : job.kind === 'style' && item.status === 'running' ? 'ecomJobs.style.generating' : `ecomJobs.itemStatus.${item.status}`)}</div>
               ) : item.status === 'failed' ? (
                 <div className="pf-job-state pf-tool-error"><strong>{t('ecomJobs.itemStatus.failed')}</strong><span>{item.error ? ecomJobErrorText(item.error, t) : t('ecomJobs.failed')}</span></div>
               ) : item.result_url ? (

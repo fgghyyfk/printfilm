@@ -2,7 +2,7 @@ import { Clapperboard, Image, Images, Play, ShoppingBag, Sparkles, Video } from 
 import type { LucideIcon } from 'lucide-react'
 import type { Messages } from '../i18n'
 
-export type ToolId = 't2i' | 'i2i' | 'i2p' | 't2v' | 'v2v' | 'ecom' | 'refine' | 'style' | 'buyer_show'
+export type ToolId = 't2i' | 'i2i' | 'i2p' | 't2v' | 'v2v' | 'ecom' | 'refine' | 'style' | 'buyer_show' | 'sku'
 
 export type ToolField = {
   key: string
@@ -29,6 +29,17 @@ export type ToolDef = {
 }
 
 export const TOOL_DEFS: ToolDef[] = [
+  {
+    id: 'sku',
+    title: 'SKU 替换',
+    desc: '保留场景构图，为每个 SKU 替换商品主体',
+    soon: false,
+    icon: ShoppingBag,
+    panelHint: '上传 1 张场景原图和 1–20 张 SKU 产品图。',
+    fields: [],
+    cta: '开始替换',
+    href: '/ecom/sku',
+  },
   {
     id: 'buyer_show',
     title: '买家秀 / 种草图',
@@ -176,6 +187,7 @@ export function defaultToolChips(tool: ToolDef): Record<string, string> {
 
 // 用当前语言覆盖工具标题、说明与字段文案（options 值保持中文给 API）
 export function localizeToolDef(tool: ToolDef, m: Messages): ToolDef {
+  if (tool.id === 'sku') return { ...tool, ...m.ecomJobs.sku.catalog }
   if (tool.id === 'buyer_show') return { ...tool, ...m.ecomJobs.buyerShow.catalog }
   if (tool.id === 'style') return { ...tool, ...m.ecomJobs.style.catalog }
   if (tool.id === 'refine') return { ...tool, ...m.ecomJobs.catalog }
