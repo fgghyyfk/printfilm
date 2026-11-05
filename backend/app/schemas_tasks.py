@@ -250,6 +250,14 @@ class MockDelayTaskRequest(BaseModel):
     dedupe_key: str | None = Field(default=None, max_length=128)
 
 
+class AdminTaskBillingReviewRequest(BaseModel):
+    """管理员核对待核对任务：成本只进平台账，收费才向用户收取。"""
+
+    cost_fen: int = Field(default=0, ge=0, le=100_000_000, description="核定的上游成本（分），未知填 0")
+    charge_fen: int = Field(default=0, ge=0, le=100_000_000, description="向用户收取的金额（分），不超过预扣额")
+    note: str = Field(min_length=1, max_length=200, description="核对依据")
+
+
 class AdminTaskRunOut(TaskRunOut):
     """管理员任务投影，事件数组有界，完整历史通过分页接口获取。"""
 

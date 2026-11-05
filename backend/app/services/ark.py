@@ -51,6 +51,7 @@ from app.services.tokenfree_image import (
     tokenfree_image_user_error,
 )
 from app.services.voices import edge_tts_voice_for_speaker, openai_voice
+from app.services.video_recovery import raise_video_billing_pending
 from app.services.tts_billing import AudioResponseHook, TTSBillingPending, TTSResult, record_tts_response, tts_response_usage
 from app.services.tokenfree_video import (
     extract_video_result_url,
@@ -1567,7 +1568,12 @@ class ArkGateway:
                     raise RuntimeError(_format_seedance_create_error(resp.status_code, resp.text))
                 data = resp.json()
         except httpx.TimeoutException as exc:
+            # 请求已发出但没等到响应：上游可能已建单计费。连接超时才确定没有发出。
+            if isinstance(exc, (httpx.ReadTimeout, httpx.WriteTimeout)):
+                await raise_video_billing_pending("submit_result_unknown", cause=exc)
             reraise_upstream_timeout(exc, kind="生视频", read_sec=VIDEO_CREATE_READ_SEC)
+        except (httpx.RemoteProtocolError, httpx.ReadError, httpx.WriteError) as exc:
+            await raise_video_billing_pending("submit_result_unknown", cause=exc)
 
         task_id = extract_video_task_id(data)
         if not task_id:
@@ -1698,7 +1704,12 @@ class ArkGateway:
                         )
                 data = resp.json()
         except httpx.TimeoutException as exc:
+            # 请求已发出但没等到响应：上游可能已建单计费。连接超时才确定没有发出。
+            if isinstance(exc, (httpx.ReadTimeout, httpx.WriteTimeout)):
+                await raise_video_billing_pending("submit_result_unknown", cause=exc)
             reraise_upstream_timeout(exc, kind="生视频", read_sec=VIDEO_CREATE_READ_SEC)
+        except (httpx.RemoteProtocolError, httpx.ReadError, httpx.WriteError) as exc:
+            await raise_video_billing_pending("submit_result_unknown", cause=exc)
 
         task_id = extract_video_task_id(data)
         if not task_id:
@@ -1797,7 +1808,8 @@ class ArkGateway:
                 if result.status == "failed":
                     return result
                 await asyncio.sleep(self.settings.ark_video_poll_interval)
-        return TaskResult(status="failed", error="poll timeout", provider_task_id=task_id)
+        # 等待超时不代表上游失败：任务可能仍在生成并计费，不能当免费失败退款。
+        await raise_video_billing_pending("poll_timeout", provider_task_id=task_id)
 
     async def fetch_task_once(self, task_id: str) -> TaskResult:
         """单次查询 Seedance 任务，不阻塞等待。"""

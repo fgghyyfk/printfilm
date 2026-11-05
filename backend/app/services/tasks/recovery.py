@@ -67,9 +67,12 @@ async def recover_interrupted_task(db, task_id: int, *, stale_clause=None, job_a
     task.lease_until = None
     task.next_action_at = None
     if task.recovery_count >= limit:
+        if provider_id:
+            _mark_provider_cost_unknown(task, provider_id)
         await _fail_recovered_task(db, task, f"任务执行中断已达 {limit} 次，已停止重试，按实际用量结算并退回剩余冻结金额")
         return True
     if provider_id and (task.domain, task.task_type) not in _PROVIDER_RESUMABLE:
+        _mark_provider_cost_unknown(task, provider_id)
         await _fail_recovered_task(db, task, "任务执行中断，已有上游任务暂不支持安全恢复，已保留上游任务号，请联系客服核对")
         return True
     now = datetime.now(UTC)
@@ -82,6 +85,16 @@ async def recover_interrupted_task(db, task_id: int, *, stale_clause=None, job_a
                             payload={"recovery_count": task.recovery_count})
     await db.commit()
     return True
+
+
+def _mark_provider_cost_unknown(task, provider_id: str) -> None:
+    """上游已接受的任务放弃跟进后费用未知，保留冻结待核对，不能全额退款。"""
+    from app.services.video_recovery import VIDEO_PENDING_KEY
+
+    task.result_payload = {
+        **(task.result_payload if isinstance(task.result_payload, dict) else {}),
+        VIDEO_PENDING_KEY: {"reason": "interrupted_after_accept", "provider_task_id": provider_id},
+    }
 
 
 async def _fail_recovered_task(db, task, message: str) -> None:

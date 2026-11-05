@@ -17,6 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TaskUpstreamPanel } from "@/components/tasks/TaskUpstreamPanel";
 import { TaskEventsPanel } from "@/components/tasks/TaskEventsPanel";
 import { TaskDetailSummary } from "@/components/tasks/TaskDetailSummary";
+import { TaskBillingReviewPanel } from "@/components/tasks/TaskBillingReviewPanel";
 import { useTaskClock } from "@/hooks/useTaskClock";
 import { taskDomainLabel, taskStatusLabel, taskTypeLabel } from "@/lib/statusLabels";
 import { hasJsonContent, prettyJson } from "@/lib/jsonPreview";
@@ -250,6 +251,15 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
       ) : task ? (
         <Tabs className="task-detail-body" value={tab} onValueChange={(value) => setTab(value as DetailTab)}>
           <TaskDetailSummary task={task} now={now} onJump={setTab} />
+          {task.status === "awaiting_review" ? (
+            <TaskBillingReviewPanel
+              task={task}
+              onResolved={(updated) => {
+                setTask(updated);
+                onCancelled?.();
+              }}
+            />
+          ) : null}
           <TabsList className="task-detail-tabs !h-auto !justify-start !rounded-none !bg-white !p-0">
             {(
               [

@@ -267,8 +267,12 @@ async def _poll_one_ephemeral_task(task_id: int, *, now, timeout_sec: float) -> 
         if started and (now - started).total_seconds() > timeout_sec:
             task.status = "failed"
             task.error_code = "poll_timeout"
-            task.error_message = "视频轮询超时，预扣已退回"
+            task.error_message = "视频结果和费用待核对，已保留原任务，请勿重新生成"
             task.finished_at = now
+            # 等待超时不代表上游失败，保留冻结待核对；计费关闭时 settle_task 按普通失败结束。
+            task.result_payload = {**(task.result_payload or {}), "video_billing_pending": {
+                "reason": "poll_timeout", "provider_task_id": task.provider_task_id,
+            }}
             if task.domain == "studio" and task.provider_task_id:
                 await update_tool_run_task(db, task.requested_by, task.provider_task_id,
                                            {"status": "failed", "error": task.error_message})

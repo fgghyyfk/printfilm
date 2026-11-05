@@ -10,8 +10,9 @@ from app.database import get_db
 from app.deps import get_current_admin
 from app.models import UsageEvent, User
 from app.schemas import PageMeta
-from app.schemas_tasks import AdminTaskEventListOut, AdminTaskListOut, AdminTaskRunOut, AdminTaskStatsOut, AdminUsageEventBriefOut, TaskRunOut
+from app.schemas_tasks import AdminTaskBillingReviewRequest, AdminTaskEventListOut, AdminTaskListOut, AdminTaskRunOut, AdminTaskStatsOut, AdminUsageEventBriefOut, TaskRunOut
 from app.services.billing.display import billing_basis_label, resolve_billing_basis
+from app.services.billing.review import resolve_billing_review
 from app.services.tasks.admin_events import AdminEventSummary, list_admin_task_events, load_admin_event_summaries
 from app.services.tasks.runtime import runtime_summary
 from app.services.tasks.queues import QUEUE_TYPES, queue_capacity, queue_stats, task_queue
@@ -182,6 +183,34 @@ async def admin_list_task_events(
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return AdminTaskEventListOut(items=rows, total=total, page=page, page_size=page_size)
+
+
+@router.post("/tasks/{task_id}/billing-review", response_model=AdminTaskRunOut,
+    summary="核对待核对任务的费用",
+    description="管理员填写核定成本、用户收费和核对依据后结束待核对任务，退回其余预扣。只能处理待核对状态的任务。",
+    response_description="操作成功，返回结算后的任务详情",
+)
+async def admin_review_task_billing(
+    task_id: int,
+    body: AdminTaskBillingReviewRequest,
+    admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+) -> AdminTaskRunOut:
+    # 待核对任务唯一的结算出口
+    note = body.note.strip()
+    if not note:
+        raise HTTPException(status_code=422, detail="请填写核对依据")
+    try:
+        await resolve_billing_review(
+            db, task_id, admin_id=int(admin.id), cost_fen=body.cost_fen, charge_fen=body.charge_fen, note=note,
+        )
+    except LookupError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return await admin_get_task(task_id, admin, db)
 
 
 @router.post("/tasks/{task_id}/cancel", response_model=AdminTaskRunOut,

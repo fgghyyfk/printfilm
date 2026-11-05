@@ -164,9 +164,11 @@ async def test_poll_persistent_429_ends_in_poll_timeout(ark_client, monkeypatch)
     # 0.05s 总超时 + interval=0：持续 429 必须被 deadline 收敛，而不是首轮判 failed
     ark_client.settings.ark_video_poll_timeout = 0.05
     calls = _install_fake_http(monkeypatch, lambda: _FakeResponse(429, text="rate limited"))
-    result = await ark_client.poll_task("task-abc")
-    assert result.status == "failed"
-    assert result.error == "poll timeout"
+    from app.services.video_recovery import VideoBillingPending
+
+    with pytest.raises(VideoBillingPending) as caught:
+        await ark_client.poll_task("task-abc")
+    assert caught.value.reason == "poll_timeout"
     assert len(calls) >= 2
 
 

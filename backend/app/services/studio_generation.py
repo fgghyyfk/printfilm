@@ -156,6 +156,7 @@ async def poll_generation_video(task_id: int) -> None:
     from app.services.ark import TaskResult
     from app.services.drama.billing_util import record_seedance_video_usage, seedance_billing_key
     from app.services.tasks.executor import _complete_task, _fail_task
+    from app.services.video_recovery import VideoBillingPending
 
     async with AsyncSessionLocal() as db:
         # One process owns this poll and its result/usage transaction. Other pollers skip it.
@@ -174,7 +175,8 @@ async def poll_generation_video(task_id: int) -> None:
         if started and started.tzinfo is None:
             started = started.replace(tzinfo=UTC)
         if started and (datetime.now(UTC) - started).total_seconds() > get_settings().ark_video_poll_timeout:
-            await _fail_task(db, task, TimeoutError("视频生成超时"))
+            # 等待超时不代表上游失败：保留冻结待核对，不能当免费失败退款。
+            await _fail_task(db, task, VideoBillingPending("poll_timeout", provider_task_id=task.provider_task_id))
             return
         user = await db.get(User, task.requested_by)
         async with billing_scope(task.id, snapshot=task.billing_snapshot), upstream_event_session(db):
@@ -209,7 +211,7 @@ async def sync_generation_record(db, row: ToolRun) -> TaskRun | None:
         return None
     task = await db.get(TaskRun, int(task_id), populate_existing=True)
     if task and task.requested_by == row.user_id:
-        row.status = {"pending": "queued", "leased": "queued", "awaiting_poll": "running"}.get(task.status, task.status)
+        row.status = {"pending": "queued", "leased": "queued", "awaiting_poll": "running", "awaiting_review": "failed"}.get(task.status, task.status)
         row.error = task.error_message
         result = task.result_payload or {}
         if result.get("urls"):

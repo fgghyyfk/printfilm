@@ -59,7 +59,7 @@ export const TASK_STATUS_LABELS: Record<string, string> = {
   leased: "已租约",
   running: "执行中",
   awaiting_poll: "等待轮询",
-  awaiting_review: "待审核",
+  awaiting_review: "待核对",
   cancel_requested: "取消中",
   succeeded: "已成功",
   failed: "失败",

@@ -232,11 +232,16 @@ async def settle_task(db: AsyncSession, task_id: int) -> dict[str, int]:
     task = await _lock_task(db, task_id)
     if not task:
         return {"charged": 0, "refunded": 0}
-    if isinstance(task.result_payload, dict) and task.result_payload.get("tts_billing_pending"):
-        # 已成功的付费配音尚未落账；取消、失败补偿或直接结算都不能当成零成本退款。
+    result_payload = task.result_payload if isinstance(task.result_payload, dict) else {}
+    tts_pending = bool(result_payload.get("tts_billing_pending"))
+    # 视频待核对只在确有冻结时生效；计费关闭时没有钱要保留，按普通失败结束。
+    video_pending = bool(result_payload.get("video_billing_pending")) and task.billing_status in {"frozen", "reserved"}
+    if tts_pending or video_pending:
+        # 已成功的付费配音尚未落账，或视频结果未知；取消、失败补偿或直接结算都不能当成零成本退款
         task.status = "awaiting_review"
-        task.error_code = "tts_billing_pending"
-        task.error_message = "配音已生成，计费记录待核对，请勿重新生成"
+        task.error_code = "tts_billing_pending" if tts_pending else "video_billing_pending"
+        task.error_message = ("配音已生成，计费记录待核对，请勿重新生成" if tts_pending
+                              else "视频结果和费用待核对，已保留原任务，请勿重新生成")
         task.finished_at = None
         task.next_action_at = None
         task.lease_until = None
