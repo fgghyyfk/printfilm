@@ -54,3 +54,10 @@
 .pf-es-check-row small { font-size: 0.8rem; }
 .pf-es-real { display: flex; align-items: center; justify-content: center; gap: 4px; min-height: 26px; border: 1px dashed var(--pf-line); border-radius: 7px; font-size: 0.72rem; color: var(--pf-muted, #888); cursor: pointer; }
 .pf-es-real img { width: 22px; height: 22px; object-fit: cover; border-radius: 4px; aspect-ratio: 1; }
+/* 模特放大预览 */
+.pf-es-card { cursor: zoom-in; }
+.pf-es-card-new { cursor: pointer; }
+.pf-es-preview { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; align-content: center; gap: 0.8rem; padding: 2rem 1rem; background: rgba(0, 0, 0, 0.82); }
+.pf-es-preview img { max-width: min(92vw, 820px); max-height: 78vh; object-fit: contain; border-radius: 10px; cursor: default; }
+.pf-es-preview-bar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; width: min(92vw, 820px); padding: 0.6rem 0.8rem; border-radius: 12px; background: var(--pf-card, #fff); color: var(--pf-ink, #222); }
+.pf-es-preview-close { position: absolute; top: 16px; right: 16px; display: grid; place-items: center; width: 40px; height: 40px; border: 0; border-radius: 50%; background: rgba(255, 255, 255, 0.15); color: #fff; cursor: pointer; }
