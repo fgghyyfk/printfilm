@@ -29,7 +29,10 @@ COUNTS = (4, 6, 8)
 DEFAULT_COUNT = 6
 
 # 生图像素（Seedream 要求总像素 ≥ 3686400）
-GEN_SIZE = {"1:1": "1920x1920", "3:4": "1728x2304"}
+GEN_SIZE = {"1:1": "1920x1920", "3:4": "1728x2304", "16:9": "2560x1440"}
+GEN_SIZE_4K = {"1:1": "4096x4096", "3:4": "3072x4096", "16:9": "4096x2304"}
+LANGUAGES = ("zh", "en", "ja", "none")
+CLARITIES = ("2k", "4k")
 
 
 @dataclass(frozen=True)
@@ -81,6 +84,14 @@ SLOTS: dict[str, Slot] = {
         "真实使用情境图，可出现手部或人物局部正在使用商品，生活感强",
         "title_corner", "3:4", "top",
     ),
+    "ad_banner": Slot(
+        "ad_banner", "广告图·横版", "横版电商广告横幅，商品突出，宽幅简洁背景，适合品牌活动推广，不虚构优惠信息",
+        "title_sub", "16:9", "top",
+    ),
+    "ad_square": Slot(
+        "ad_square", "广告图·方形", "方形促销广告图，商品居中，醒目配色，突出真实卖点，不虚构价格与折扣",
+        "title_bullets", "1:1", "top",
+    ),
     "package": Slot(
         "package", "包装清单",
         "商品与包装盒、配件整齐平铺摆放的俯拍图，干净浅色背景",
@@ -122,17 +133,45 @@ def slots_for_count(count: int) -> list[Slot]:
     return [SLOTS[k] for k in SET_COMPOSITION[normalize_count(count)]]
 
 
-# 按平台与槽位得到最终输出像素 (宽, 高)
-def output_size(platform: str, slot_key: str) -> tuple[int, int]:
+# 自定义列表严格校验；未指定时沿用 4/6/8 预设。
+def select_slots(count: int, keys: list[str] | None) -> list[Slot]:
+    if keys is None:
+        return slots_for_count(count)
+    if not isinstance(keys, list) or not 3 <= len(keys) <= 10:
+        raise ValueError("请选择 3 至 10 个槽位")
+    if any(not isinstance(key, str) or key not in SLOTS for key in keys):
+        raise ValueError("槽位不存在")
+    if len(set(keys)) != len(keys):
+        raise ValueError("槽位不能重复")
+    slots = [SLOTS[key] for key in keys]
+    if not any(slot.is_main for slot in slots):
+        raise ValueError("请至少选择一个主图槽位")
+    return slots
+
+
+# 按清晰度选取尺寸：最长边不超过 4096，总像素不超过 4096²。
+def generation_size(ratio: str, clarity: str = "2k") -> str:
+    return (GEN_SIZE_4K if clarity == "4k" else GEN_SIZE)[ratio]
+
+
+# 按平台与槽位取输出尺寸；4K 保留生图分辨率，广告槽位使用固定画幅。
+def output_size(platform: str, slot_key: str, clarity: str = "2k") -> tuple[int, int]:
     _, main, detail = PLATFORMS[normalize_platform(platform)]
     slot = SLOTS.get(slot_key)
-    return main if slot and slot.is_main else detail
+    if slot_key in {"ad_banner", "ad_square"}:
+        size = (1600, 900) if slot_key == "ad_banner" else (1200, 1200)
+    else:
+        size = main if slot and slot.is_main else detail
+    if clarity == "4k":
+        ratio = "16:9" if slot_key == "ad_banner" else ("1:1" if size[0] == size[1] else "3:4")
+        return tuple(map(int, generation_size(ratio, clarity).split("x")))
+    return size
 
 
-# 按输出尺寸选生图画幅（方图 1:1，其余 3:4），避免小红书等 3:4 主图被裁掉两侧
+# 从实际输出尺寸取画幅，广告横图独立于平台主图规则。
 def gen_ratio(platform: str, slot_key: str) -> str:
     w, h = output_size(platform, slot_key)
-    return "1:1" if w == h else "3:4"
+    return "16:9" if w > h else ("1:1" if w == h else "3:4")
 
 
 # 槽位中文名

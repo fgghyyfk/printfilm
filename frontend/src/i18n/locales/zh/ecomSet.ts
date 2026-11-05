@@ -2,6 +2,68 @@
 
 export const zhEcomSet = {
   ecomSet: {
+    enhanced: {
+      custom: '自定义模块',
+      slotsHint: '选择 3–10 个模块，至少包含一个主图；按勾选顺序出图。',
+      slotsError: '请选择 3–10 个不重复模块，至少包含一个主图',
+      language: '文案语言',
+      clarity: '清晰度',
+      noWhite: '没有白底图？去精修',
+      useRefine: '用这张做套图',
+      sourceLoading: '正在载入精修结果…',
+      sourceReady: '已选用精修结果，可直接规划或上传替换',
+      sourceError: '精修图片不可用，请重试或上传商品图',
+      price: '预计生图 {price} / 张',
+      clarityHint: '4K 输出最长边 4096；实际生图清晰度受所选模型能力限制。',
+      languages: {
+        zh: '中文',
+        en: '英文',
+        ja: '日文',
+        none: '无文字',
+      },
+      slots: {
+        main_white: {
+          name: '主图·白底',
+          description: '突出商品主体的纯白底主图',
+        },
+        main_scene: {
+          name: '主图·场景',
+          description: '在真实场景中展示商品的主图',
+        },
+        selling_1: {
+          name: '核心卖点',
+          description: '突出一个主要卖点',
+        },
+        selling_2: {
+          name: '卖点详解',
+          description: '展示更多功能与使用利益',
+        },
+        selling_3: {
+          name: '卖点补充',
+          description: '补充一个具体使用效果',
+        },
+        detail: {
+          name: '细节特写',
+          description: '展示材质、纹理与做工',
+        },
+        usage: {
+          name: '使用场景',
+          description: '展示商品在日常生活中的使用方式',
+        },
+        package: {
+          name: '包装清单',
+          description: '平铺展示包装和随附配件',
+        },
+        ad_banner: {
+          name: '广告图·横版',
+          description: '16:9 横版活动推广图',
+        },
+        ad_square: {
+          name: '广告图·方形',
+          description: '1:1 方形促销图',
+        },
+      },
+    },
     title: '一图出套图',
     lead: '上传一张商品图，AI 先出方案，确认后生成整套电商主图与详情图。',
     steps: ['填写商品', '确认方案', '批量生成', '完成下载', '带货视频'],

@@ -89,7 +89,7 @@ export default function EcomSetPlan({ set, billingEnabled, busy, error, onSave, 
           <article key={item.idx} className="pf-ecom-card">
             <div className="pf-ecom-card-head">
               <strong>
-                {item.idx + 1}. {item.slot_label}
+                {item.idx + 1}. {t(`ecomSet.enhanced.slots.${item.slot}.name`)}
               </strong>
               <span className="pf-badge">{item.ratio}</span>
             </div>
@@ -105,6 +105,7 @@ export default function EcomSetPlan({ set, billingEnabled, busy, error, onSave, 
             </label>
             {hasCopy(item) ? (
               <EcomSetCopyFields
+                language={set.language}
                 value={{ title: item.title, subtitle: item.subtitle, bullets: item.bullets }}
                 disabled={Boolean(busy)}
                 onChange={(copy) => patchItem(item.idx, copy)}

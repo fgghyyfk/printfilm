@@ -23,6 +23,9 @@ class EcomSet(Base):
     platform: Mapped[str] = mapped_column(String(16), default="taobao")
     style: Mapped[str] = mapped_column(String(16), default="minimal")
     count: Mapped[int] = mapped_column(Integer, default=6)
+    # 目标文案语言与生成清晰度，旧套图默认为中文 2K。
+    language: Mapped[str] = mapped_column(String(8), default="zh", server_default="zh")
+    clarity: Mapped[str] = mapped_column(String(8), default="2k", server_default="2k")
     notes: Mapped[str] = mapped_column(Text, default="")
     product_image_path: Mapped[str] = mapped_column(String(1024), default="")
     product_image_url: Mapped[str] = mapped_column(String(1024), default="")

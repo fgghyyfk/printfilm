@@ -10,11 +10,12 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps, ImageStat
 
 from app.config import get_settings
 
-# 字体候选：Docker 里装 fonts-noto-cjk（思源黑体同源，OFL）；本机 macOS 回落苹方/黑体
+# 字体候选：Docker 里装 fonts-noto-cjk（思源黑体同源，OFL）；本机 macOS 优先 Hiragino（日文假名/汉字与英文）再回落苹方/黑体
 FONT_CANDIDATES = {
     True: [
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Black.ttc",
+        "/System/Library/Fonts/ヒラギノ角ゴシック W6.ttc",
         "/System/Library/Fonts/STHeiti Medium.ttc",
         "/System/Library/Fonts/PingFang.ttc",
         "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
@@ -22,6 +23,7 @@ FONT_CANDIDATES = {
     False: [
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Medium.ttc",
+        "/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc",
         "/System/Library/Fonts/STHeiti Light.ttc",
         "/System/Library/Fonts/PingFang.ttc",
         "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
@@ -163,6 +165,7 @@ def render(
     layout: str,
     blank: str,
     copy: dict | None,
+    language: str = "zh",
 ) -> Path:
     """把文案按版式排到底图上，裁到 size 并保存为 JPEG。
 
@@ -174,7 +177,7 @@ def render(
     title = str(body.get("title") or "").strip()
     subtitle = str(body.get("subtitle") or "").strip()
     bullets = [str(b).strip() for b in body.get("bullets") or [] if str(b).strip()]
-    if layout != "none" and (title or subtitle or bullets):
+    if language != "none" and layout != "none" and (title or subtitle or bullets):
         _draw_layout(img, layout=layout, blank=blank, title=title, subtitle=subtitle, bullets=bullets)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     img.convert("RGB").save(out_path, format="JPEG", quality=92)
@@ -193,10 +196,12 @@ def _draw_layout(img: Image.Image, *, layout: str, blank: str, title: str, subti
     dark_text = bright
     align = "left" if layout == "title_corner" else "center"
 
-    t_font, t_lines = fit_lines(title, int(W * 0.085), True, inner_w, 2) if title else (None, [])
-    s_font, s_lines = fit_lines(subtitle, int(W * 0.042), False, inner_w, 2) if subtitle else (None, [])
+    # 横幅按短边定字号，避免主副标题挤占商品区域；方图和竖图保持原字号。
+    text_scale = min(W, H)
+    t_font, t_lines = fit_lines(title, int(text_scale * 0.085), True, inner_w, 2) if title else (None, [])
+    s_font, s_lines = fit_lines(subtitle, int(text_scale * 0.042), False, inner_w, 2) if subtitle else (None, [])
     pills = bullets if layout == "title_bullets" else []
-    pill_size = int(W * 0.034)
+    pill_size = int(text_scale * 0.034)
 
     # 预估内容高度，用于底部对齐和底板
     def block_h(font: ImageFont.FreeTypeFont | None, n: int, gap: float = 0.25) -> int:
@@ -250,8 +255,8 @@ def _shadow(img: Image.Image, lines: list[str], font: ImageFont.FreeTypeFont, *,
 
 
 # 无 Key 联调：把商品图贴到渐变背景上，生成一张可排版的占位底图
-def mock_base(product_path: Path, out_path: Path, *, ratio: str, seed: str) -> Path:
-    W, H = (1080, 1080) if ratio == "1:1" else (1080, 1440)
+def mock_base(product_path: Path, out_path: Path, *, ratio: str, seed: str, size: str | None = None) -> Path:
+    W, H = tuple(map(int, size.split("x"))) if size else ((1080, 608) if ratio == "16:9" else ((1080, 1080) if ratio == "1:1" else (1080, 1440)))
     hue = int(hashlib.md5(seed.encode()).hexdigest()[:2], 16)
     top_c = (200 + hue % 40, 205 + hue % 30, 215)
     bottom_c = (120 + hue % 60, 130 + hue % 50, 150)

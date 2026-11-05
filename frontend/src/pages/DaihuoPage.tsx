@@ -254,7 +254,7 @@ function EcomSetWorkspace() {
       tone: 'danger',
     })
     if (!ok) return
-    backToForm({ name: set.name, platform: set.platform, style: set.style, count: set.count })
+    backToForm({ name: set.name, platform: set.platform, style: set.style, count: set.count, slots: set.items.map((item) => item.slot), language: set.language, clarity: set.clarity })
   }
 
   // ③ 失败单张直接重试（收费时确认）
@@ -442,6 +442,7 @@ function EcomSetWorkspace() {
         <EcomSetCopyModal
           key={`copy-${copyItem.idx}`}
           item={copyItem}
+          language={set?.language}
           busy={modalBusy}
           error={modalError}
           onClose={() => setCopyItem(null)}

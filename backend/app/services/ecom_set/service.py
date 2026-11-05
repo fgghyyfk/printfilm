@@ -30,6 +30,10 @@ from app.services.ecom_set.jobs import (
 from app.services.ecom_set.planner import plan_set
 from app.services.ecom_set.presets import (
     COUNTS,
+    SLOTS,
+    LANGUAGES,
+    CLARITIES,
+    select_slots,
     PLATFORMS,
     STYLES,
     gen_ratio,
@@ -37,7 +41,6 @@ from app.services.ecom_set.presets import (
     normalize_platform,
     normalize_style,
     slot_label,
-    slots_for_count,
 )
 from app.services.compliance.ad_words import Hit, summarize
 from app.services.ecom_set.prompts import clip, normalize_copy, sanitize_scene
@@ -69,8 +72,8 @@ def save_product_image(user_id: int, data: bytes, filename: str) -> Path:
 
 
 # 单张生图预估价（分）
-async def image_unit_fen(db: AsyncSession) -> int:
-    probe = TaskRun(domain="studio", task_type="ecom_set_image", payload={})
+async def image_unit_fen(db: AsyncSession, clarity: str = "2k") -> int:
+    probe = TaskRun(domain="studio", task_type="ecom_set_image", payload={"clarity": clarity})
     return int(await estimate_task_fen(db, probe))
 
 
@@ -81,6 +84,10 @@ async def get_options(db: AsyncSession) -> dict:
         "platforms": [{"id": k, "name": v[0]} for k, v in PLATFORMS.items()],
         "styles": [{"id": k, "name": v[0]} for k, v in STYLES.items()],
         "counts": list(COUNTS),
+        "slots": [{"id": slot.key, "name": slot.label, "description": slot.prompt,
+                   "ratio": slot.ratio, "layout": slot.layout, "is_main": slot.is_main} for slot in SLOTS.values()],
+        "languages": list(LANGUAGES), "clarities": list(CLARITIES),
+        "prices": {clarity: await image_unit_fen(db, clarity) for clarity in CLARITIES},
         "plan_fen": int(s.ecom_set_plan_fen),
         "image_fen": await image_unit_fen(db),
         "billing_enabled": billing_active(),
@@ -109,18 +116,30 @@ async def _record_plan_charge(db: AsyncSession, user_id: int) -> None:
 async def create_plan(
     db: AsyncSession, user: User, *, data: bytes, filename: str,
     name: str, platform: str, style: str, count: int | str | None, notes: str,
+    slot_keys: list[str] | None = None, language: str = "zh", clarity: str = "2k",
+    source_job_id: int | None = None, source_item_idx: int | None = None,
 ) -> EcomSet:
     """上传商品图 → 计费规划 → 落库套图与各张方案（status=planned）。"""
     name = clip(name, 60)
     if not name:
         raise ValueError("请填写品名")
     platform, style, count = normalize_platform(platform), normalize_style(style), normalize_count(count)
-    path = save_product_image(user.id, data, filename)
-    slots = slots_for_count(count)
+    slots = select_slots(count, slot_keys)
+    count = len(slots)
+    if language not in LANGUAGES or clarity not in CLARITIES:
+        raise ValueError("语言或清晰度不支持")
+    if source_job_id is not None or source_item_idx is not None:
+        if data or source_job_id is None or source_item_idx is None:
+            raise ValueError("请仅选择一种商品图来源")
+        from app.services.ecom_set.sources import refine_product
+        path = await refine_product(db, user, source_job_id, source_item_idx)
+    else:
+        path = save_product_image(user.id, data, filename)
 
+    # 在规划计费上下文内执行，并记录固定规划费用。
     async def _exec() -> dict:
         result = await plan_set(
-            image_path=path, name=name, notes=clip(notes, 500), platform=platform, style=style, slots=slots
+            image_path=path, name=name, notes=clip(notes, 500), platform=platform, style=style, slots=slots, language=language
         )
         await _record_plan_charge(db, user.id)
         return result
@@ -131,6 +150,7 @@ async def create_plan(
     )
     ecom = EcomSet(
         user_id=user.id, status="planned", name=name, platform=platform, style=style, count=count,
+        language=language, clarity=clarity,
         notes=clip(notes, 500), product_image_path=str(path),
         product_image_url=await asyncio.to_thread(public_url, path),
         plan={"product": plan["product"], "warnings": plan["warnings"], "vision": plan["vision"]},
@@ -140,8 +160,8 @@ async def create_plan(
     await db.flush()
     for idx, (slot, it) in enumerate(zip(slots, plan["items"], strict=True)):
         db.add(EcomSetItem(
-            set_id=ecom.id, idx=idx, slot=slot.key, layout=slot.layout,
-            ratio=gen_ratio(platform, slot.key), blank=slot.blank,
+            set_id=ecom.id, idx=idx, slot=slot.key, layout="none" if language == "none" else slot.layout,
+            ratio=gen_ratio(platform, slot.key), blank="none" if language == "none" else slot.blank,
             scene=it["scene"], copy_json=it["copy"], status="planned",
         ))
     await db.commit()
@@ -192,7 +212,7 @@ async def update_plan(db: AsyncSession, user: User, set_id: int, items: list[dic
             scene, sh = sanitize_scene(str(body.get("scene") or ""))
             it.scene = clip(scene, 300)
             hits += sh
-        copy, ch = normalize_copy(body, layout=it.layout)
+        copy, ch = normalize_copy(body, layout=it.layout, language=ecom.language)
         it.copy_json = copy
         hits += ch
     _set_edit_warnings(ecom, hits)
@@ -204,14 +224,14 @@ async def update_plan(db: AsyncSession, user: User, set_id: int, items: list[dic
 async def _enqueue_items(db: AsyncSession, user: User, ecom: EcomSet, items: list[EcomSetItem]) -> None:
     from app.services.tasks.service import create_task
 
-    probe = TaskRun(domain="studio", task_type="ecom_set_image", requested_by=user.id, payload={})
+    probe = TaskRun(domain="studio", task_type="ecom_set_image", requested_by=user.id, payload={"clarity": ecom.clarity})
     await ensure_balance_for_task_batch(db, user, probe, len(items))
     for it in items:
         task = await create_task(
             db, user,
             TaskCreateRequest(
                 domain="studio", task_type="ecom_set_image",
-                payload={"set_id": ecom.id, "idx": it.idx, "slot": it.slot, "ratio": it.ratio},
+                payload={"set_id": ecom.id, "idx": it.idx, "slot": it.slot, "ratio": it.ratio, "clarity": ecom.clarity},
                 dedupe_key=f"ecomset:{ecom.id}:{it.idx}:{uuid.uuid4().hex[:6]}",
             ),
             commit=False,
@@ -255,7 +275,7 @@ async def update_copy(db: AsyncSession, user: User, set_id: int, idx: int, body:
     it = _item(ecom, idx)
     if not it.base_path or not Path(it.base_path).exists():
         raise ValueError("这张图还没有底图，请先生成")
-    copy, hits = normalize_copy(body, layout=it.layout)
+    copy, hits = normalize_copy(body, layout=it.layout, language=ecom.language)
     it.copy_json = copy
     _set_edit_warnings(ecom, hits)
     _, it.final_url = await render_final(ecom, it, Path(it.base_path))
@@ -312,7 +332,7 @@ def to_out(ecom: EcomSet, *, image_fen: int) -> dict:
         })
     return {
         "id": ecom.id, "status": ecom.status, "name": ecom.name, "platform": ecom.platform,
-        "style": ecom.style, "count": ecom.count, "product_image_url": ecom.product_image_url,
+        "style": ecom.style, "count": ecom.count, "language": ecom.language, "clarity": ecom.clarity, "product_image_url": ecom.product_image_url,
         "product": plan.get("product") or {"name": ecom.name, "category": "", "colors": [], "selling_points": []},
         "warnings": list(plan.get("warnings") or []), "image_fen": image_fen,
         "total_fen": image_fen * len(items), "items": items,

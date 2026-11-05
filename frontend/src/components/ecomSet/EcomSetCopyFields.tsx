@@ -1,16 +1,18 @@
-import type { EcomSetCopyPatch } from '../../api/ecomSet'
+import type { EcomLanguage, EcomSetCopyPatch } from '../../api/ecomSet'
 import { useI18n } from '../../i18n'
-import { ECOM_COPY_LIMITS, padBullets } from '../../lib/ecomSet'
+import { copyLimits, padBullets } from '../../lib/ecomSet'
 
 type Props = {
   value: EcomSetCopyPatch
   onChange: (next: EcomSetCopyPatch) => void
   disabled?: boolean
+  language?: EcomLanguage
 }
 
 /** 文案编辑字段：主标题 / 副标题 / 最多 3 条卖点（方案卡片与改文案弹层共用） */
-export default function EcomSetCopyFields({ value, onChange, disabled }: Props) {
+export default function EcomSetCopyFields({ value, onChange, disabled, language }: Props) {
   const { t } = useI18n()
+  const limits = copyLimits(language)
   const bullets = padBullets(value.bullets)
 
   // 修改第 n 条卖点
@@ -26,13 +28,13 @@ export default function EcomSetCopyFields({ value, onChange, disabled }: Props) 
         <span className="pf-ecom-field-label">
           {t('ecomSet.plan.copyTitle')}
           <em>
-            {value.title.length}/{ECOM_COPY_LIMITS.title}
+            {value.title.length}/{limits.title}
           </em>
         </span>
         <input
           className="pf-ecom-input"
           type="text"
-          maxLength={ECOM_COPY_LIMITS.title}
+          maxLength={limits.title}
           value={value.title}
           disabled={disabled}
           onChange={(e) => onChange({ ...value, title: e.target.value })}
@@ -42,13 +44,13 @@ export default function EcomSetCopyFields({ value, onChange, disabled }: Props) 
         <span className="pf-ecom-field-label">
           {t('ecomSet.plan.subtitle')}
           <em>
-            {value.subtitle.length}/{ECOM_COPY_LIMITS.subtitle}
+            {value.subtitle.length}/{limits.subtitle}
           </em>
         </span>
         <input
           className="pf-ecom-input"
           type="text"
-          maxLength={ECOM_COPY_LIMITS.subtitle}
+          maxLength={limits.subtitle}
           value={value.subtitle}
           disabled={disabled}
           onChange={(e) => onChange({ ...value, subtitle: e.target.value })}
@@ -62,7 +64,7 @@ export default function EcomSetCopyFields({ value, onChange, disabled }: Props) 
               key={index}
               className="pf-ecom-input"
               type="text"
-              maxLength={ECOM_COPY_LIMITS.bullet}
+              maxLength={limits.bullet}
               placeholder={t('ecomSet.plan.bulletPlaceholder', { n: index + 1 })}
               value={bullet}
               disabled={disabled}

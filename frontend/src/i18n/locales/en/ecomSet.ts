@@ -2,6 +2,68 @@
 
 export const enEcomSet = {
   ecomSet: {
+    enhanced: {
+      custom: 'Custom slots',
+      slotsHint: 'Choose 3–10 slots including at least one hero image. Images follow selection order.',
+      slotsError: 'Choose 3–10 unique slots including at least one hero image',
+      language: 'Copy language',
+      clarity: 'Resolution',
+      noWhite: 'Need a white background? Refine your photo',
+      useRefine: 'Use this for an image set',
+      sourceLoading: 'Loading refined image…',
+      sourceReady: 'Refined image selected. Plan now or upload a replacement.',
+      sourceError: 'Refined image unavailable. Retry or upload a product photo.',
+      price: 'Estimated generation: {price} / image',
+      clarityHint: '4K output has a 4096px longest edge. Generation resolution depends on the selected model.',
+      languages: {
+        zh: 'Chinese',
+        en: 'English',
+        ja: 'Japanese',
+        none: 'No text',
+      },
+      slots: {
+        main_white: {
+          name: 'White background',
+          description: 'A clean white hero image',
+        },
+        main_scene: {
+          name: 'Lifestyle hero',
+          description: 'A hero image in a realistic setting',
+        },
+        selling_1: {
+          name: 'Key benefit',
+          description: 'Highlight one key benefit',
+        },
+        selling_2: {
+          name: 'Benefit details',
+          description: 'Explain features and benefits',
+        },
+        selling_3: {
+          name: 'More benefits',
+          description: 'Show an additional practical benefit',
+        },
+        detail: {
+          name: 'Detail close-up',
+          description: 'Show materials, texture and finish',
+        },
+        usage: {
+          name: 'In use',
+          description: 'Show the product in everyday use',
+        },
+        package: {
+          name: 'Package contents',
+          description: 'Show packaging and included accessories',
+        },
+        ad_banner: {
+          name: 'Wide ad banner',
+          description: 'A 16:9 promotional banner',
+        },
+        ad_square: {
+          name: 'Square ad',
+          description: 'A 1:1 promotional image',
+        },
+      },
+    },
     title: 'Product image set',
     lead: 'Upload one product photo. AI drafts a plan, then generates a full set of listing and detail images.',
     steps: ['Product', 'Plan', 'Generate', 'Download', 'Promo video'],

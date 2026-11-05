@@ -14,6 +14,7 @@ from app.config import get_settings
 from app.services.ecom_set.presets import PLATFORMS, Slot, normalize_platform
 from app.services.ecom_set.prompts import (
     PLAN_SYSTEM,
+    COPY_LIMITS,
     build_plan_user_text,
     clip,
     normalize_copy,
@@ -55,7 +56,7 @@ def extract_json(text: str) -> dict[str, Any]:
 
 
 # 把模型返回的 items 对齐到槽位列表：缺的补默认、多的丢掉、文案截断并过滤极限词
-def align_items(raw_items: Any, slots: list[Slot], *, name: str) -> tuple[list[dict], list[Hit]]:
+def align_items(raw_items: Any, slots: list[Slot], *, name: str, language: str = "zh") -> tuple[list[dict], list[Hit]]:
     by_slot: dict[str, dict] = {}
     ordered: list[dict] = []
     for it in raw_items if isinstance(raw_items, list) else []:
@@ -73,10 +74,10 @@ def align_items(raw_items: Any, slots: list[Slot], *, name: str) -> tuple[list[d
             # 只有该位置的项没标已知槽位时才按位置兜底，避免错配别的槽位的文案
             pos = ordered[i] if i < len(ordered) else {}
             src = pos if str(pos.get("slot") or "") not in valid else {}
-        copy, h = normalize_copy(src, layout=slot.layout)
+        copy, h = normalize_copy(src, layout=slot.layout, language=language)
         hits += h
-        if slot.layout != "none" and not copy["title"]:
-            copy["title"] = clip(name, 10)
+        if language == "zh" and slot.layout != "none" and not copy["title"]:
+            copy["title"] = clip(name, COPY_LIMITS[language][0])
         scene, sh = sanitize_scene(str(src.get("scene") or ""))
         hits += sh
         items.append({"slot": slot.key, "scene": clip(scene, 300), "copy": copy})
@@ -97,7 +98,7 @@ def normalize_product(raw: Any, *, name: str) -> dict:
 
 
 # 无 Key 联调（ARK_MOCK）时的固定规划
-def mock_plan(slots: list[Slot], *, name: str) -> dict:
+def mock_plan(slots: list[Slot], *, name: str, language: str = "zh") -> dict:
     items = []
     for slot in slots:
         items.append({
@@ -107,6 +108,12 @@ def mock_plan(slots: list[Slot], *, name: str) -> dict:
             "subtitle": "好物推荐 品质之选",
             "bullets": ["做工扎实", "设计贴心", "日常好用"],
         })
+    if language in {"en", "ja", "none"}:
+        samples = {"en": ("Everyday comfort", "Made for daily life", ["Thoughtful design", "Easy to use"]),
+                   "ja": ("毎日の暮らしに", "使いやすさを身近に", ["丁寧な仕上げ", "日常に寄り添う"]),
+                   "none": ("", "", [])}
+        for item in items:
+            item["title"], item["subtitle"], item["bullets"] = samples[language]
     return {"product": {"name": name, "category": "", "colors": [], "selling_points": []}, "items": items}
 
 
@@ -118,6 +125,7 @@ async def plan_set(
     platform: str,
     style: str,
     slots: list[Slot],
+    language: str = "zh",
 ) -> dict:
     """规划整套图。返回 {"product", "items":[{slot, scene, copy}], "warnings", "vision"}。
 
@@ -126,12 +134,12 @@ async def plan_set(
     settings = get_settings()
     platform_name = PLATFORMS[normalize_platform(platform)][0]
     user_text = build_plan_user_text(
-        name=name, notes=notes, platform_name=platform_name, style=style, slots=slots
+        name=name, notes=notes, platform_name=platform_name, style=style, slots=slots, language=language
     )
     warnings: list[str] = []
     vision = False
     if settings.ark_mock:
-        data = mock_plan(slots, name=name)
+        data = mock_plan(slots, name=name, language=language)
     else:
         data = None
         if (settings.model_vision or "").strip():
@@ -151,7 +159,7 @@ async def plan_set(
                 temperature=0.6, max_tokens=4096, timeout=180.0,
             )
             data = extract_json(text)
-    items, hits = align_items(data.get("items"), slots, name=name)
+    items, hits = align_items(data.get("items"), slots, name=name, language=language)
     warnings += summarize(hits)
     return {
         "product": normalize_product(data.get("product"), name=name),

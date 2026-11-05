@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from app.schemas_common import PublicErrorText
@@ -43,6 +45,8 @@ class EcomSetOut(BaseModel):
     platform: str
     style: str
     count: int
+    language: Literal["zh", "en", "ja", "none"] = "zh"
+    clarity: Literal["2k", "4k"] = "2k"
     product_image_url: str
     product: EcomProductOut
     warnings: list[str]
@@ -69,12 +73,25 @@ class EcomOptionOut(BaseModel):
     name: str
 
 
+class EcomSlotOut(EcomOptionOut):
+    """槽位说明、默认版式与是否主图。"""
+
+    description: str
+    ratio: str
+    layout: str
+    is_main: bool
+
+
 class EcomSetOptionsOut(BaseModel):
     """表单选项与价格。"""
 
     platforms: list[EcomOptionOut]
     styles: list[EcomOptionOut]
     counts: list[int]
+    slots: list[EcomSlotOut]
+    languages: list[str]
+    clarities: list[str]
+    prices: dict[str, int]
     plan_fen: int
     image_fen: int
     billing_enabled: bool
@@ -93,7 +110,7 @@ class EcomPlanItemIn(BaseModel):
 class EcomPlanUpdateIn(BaseModel):
     """修改方案请求。"""
 
-    items: list[EcomPlanItemIn] = Field(max_length=8)
+    items: list[EcomPlanItemIn] = Field(max_length=10)
 
 
 class EcomRegenerateIn(BaseModel):

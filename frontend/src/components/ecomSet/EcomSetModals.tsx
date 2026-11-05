@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Loader2 } from 'lucide-react'
-import type { EcomSetCopyPatch, EcomSetItem } from '../../api/ecomSet'
+import type { EcomLanguage, EcomSetCopyPatch, EcomSetItem } from '../../api/ecomSet'
 import { resolveToolMediaUrl } from '../../api/tools'
 import { useI18n } from '../../i18n'
 import { formatFen } from '../../lib/ecomSet'
@@ -10,6 +10,7 @@ import Modal from '../ui/Modal'
 import EcomSetCopyFields from './EcomSetCopyFields'
 
 type CopyProps = {
+  language?: EcomLanguage
   item: EcomSetItem
   busy: boolean
   error: string
@@ -18,7 +19,7 @@ type CopyProps = {
 }
 
 /** 改文案弹层：编辑后 PUT copy，同步重新排版（免费）；父组件以 item 作 key 重置 */
-export function EcomSetCopyModal({ item, busy, error, onClose, onSave }: CopyProps) {
+export function EcomSetCopyModal({ item, busy, error, onClose, onSave, language }: CopyProps) {
   const { t } = useI18n()
   const [copy, setCopy] = useState<EcomSetCopyPatch>({
     title: item.title,
@@ -31,7 +32,7 @@ export function EcomSetCopyModal({ item, busy, error, onClose, onSave }: CopyPro
       open
       onClose={onClose}
       dismissible={!busy}
-      title={t('ecomSet.copyModal.title', { label: item.slot_label })}
+      title={t('ecomSet.copyModal.title', { label: t(`ecomSet.enhanced.slots.${item.slot}.name`) })}
       footer={
         <>
           <Button variant="ghost" disabled={busy} onClick={onClose}>
@@ -46,7 +47,7 @@ export function EcomSetCopyModal({ item, busy, error, onClose, onSave }: CopyPro
     >
       <p className="pf-muted pf-ecom-modal-hint">{t('ecomSet.copyModal.hint')}</p>
       <div className="pf-ecom-modal-fields">
-        <EcomSetCopyFields value={copy} onChange={setCopy} disabled={busy} />
+        <EcomSetCopyFields language={language} value={copy} onChange={setCopy} disabled={busy} />
       </div>
       {error ? <BillingErrorNotice message={error} className="pf-tool-error" /> : null}
     </Modal>
@@ -75,7 +76,7 @@ export function EcomSetRegenModal({ item, imageFen, billingEnabled, busy, error,
       open
       onClose={onClose}
       dismissible={!busy}
-      title={t('ecomSet.regenModal.title', { label: item.slot_label })}
+      title={t('ecomSet.regenModal.title', { label: t(`ecomSet.enhanced.slots.${item.slot}.name`) })}
       footer={
         <>
           <Button variant="ghost" disabled={busy} onClick={onClose}>
@@ -109,8 +110,8 @@ export function EcomSetPreviewModal({ item, onClose }: { item: EcomSetItem; onCl
   const { t } = useI18n()
   const src = resolveToolMediaUrl(item.final_url)
   return (
-    <Modal open onClose={onClose} size="xl" title={item.slot_label} className="pf-ecom-preview">
-      <img src={src} alt={item.slot_label} />
+    <Modal open onClose={onClose} size="xl" title={t(`ecomSet.enhanced.slots.${item.slot}.name`)} className="pf-ecom-preview">
+      <img src={src} alt={t(`ecomSet.enhanced.slots.${item.slot}.name`)} />
       <a className="pf-tool-download" href={src} download target="_blank" rel="noreferrer">
         {t('tools.downloadImage')}
       </a>

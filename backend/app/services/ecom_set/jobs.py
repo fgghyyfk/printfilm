@@ -18,7 +18,7 @@ from app.models_ecom import EcomSet, EcomSetItem
 from app.models_tasks import TaskRun
 from app.services import storage
 from app.services.ecom_set.layout import mock_base, render
-from app.services.ecom_set.presets import GEN_SIZE, SLOTS, output_size
+from app.services.ecom_set.presets import SLOTS, output_size, generation_size
 from app.services.ecom_set.prompts import NEGATIVE_PROMPT, build_scene_prompt
 
 logger = logging.getLogger(__name__)
@@ -35,6 +35,8 @@ def set_dir(user_id: int, set_id: int) -> Path:
 
 # 本地文件转对外 URL（开 OSS 时同步上传）
 def public_url(path: Path) -> str:
+    if get_settings().ark_mock:
+        return storage.rel_static_url(path)
     local = storage.publish_local(path, sync=True)
     return storage.republish_url(local, sync=True) or local
 
@@ -92,20 +94,23 @@ async def generate_base(db: AsyncSession, ecom: EcomSet, item: EcomSetItem) -> P
     dest = set_dir(ecom.user_id, ecom.id) / f"base_{item.idx:02d}_{uuid.uuid4().hex[:6]}.jpg"
     product = Path(ecom.product_image_path)
     if settings.ark_mock:
-        return await asyncio.to_thread(mock_base, product, dest, ratio=item.ratio, seed=f"{ecom.id}-{item.idx}")
+        return await asyncio.to_thread(mock_base, product, dest, ratio=item.ratio, seed=f"{ecom.id}-{item.idx}",
+                                       size=generation_size(item.ratio, ecom.clarity or "2k"))
 
     from app.services.ark import get_ark
     from app.services.drama.billing_util import record_seedream_image_usage
 
     slot = SLOTS[item.slot]
-    prompt = build_scene_prompt(slot=slot, scene=item.scene, style=ecom.style, blank=item.blank)
+    prompt = build_scene_prompt(slot=slot, scene=item.scene, style=ecom.style, blank="none" if ecom.language == "none" else item.blank)
     result = await get_ark().gen_image(
         prompt,
         NEGATIVE_PROMPT,
         [ecom.product_image_url],
         project_id=0,
         shot_no=ecom.user_id,
-        size=GEN_SIZE.get(item.ratio, GEN_SIZE["1:1"]),
+        size=generation_size(item.ratio, ecom.clarity or "2k"),
+        structured_refs=True,
+        aspect_ratio=item.ratio,
     )
     await record_seedream_image_usage(
         db,
@@ -113,7 +118,7 @@ async def generate_base(db: AsyncSession, ecom: EcomSet, item: EcomSetItem) -> P
         model=settings.model_image,
         domain="studio",
         image_result=result,
-        extra_raw={"tool_id": "ecomset", "set_id": ecom.id, "idx": item.idx},
+        extra_raw={"tool_id": "ecomset", "set_id": ecom.id, "idx": item.idx, "size": ecom.clarity or "2k"},
     )
     url = result.local_url or result.remote_url or ""
     if not url:
@@ -128,10 +133,11 @@ async def render_final(ecom: EcomSet, item: EcomSetItem, base: Path) -> tuple[Pa
         render,
         base,
         out,
-        size=output_size(ecom.platform, item.slot),
+        size=output_size(ecom.platform, item.slot, ecom.clarity or "2k"),
         layout=item.layout,
         blank=item.blank,
         copy=item.copy_json,
+        language=ecom.language or "zh",
     )
     return out, await asyncio.to_thread(public_url, out)
 

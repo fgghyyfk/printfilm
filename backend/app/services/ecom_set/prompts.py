@@ -12,6 +12,9 @@ TITLE_MAX = 10
 SUBTITLE_MAX = 16
 BULLET_MAX = 12
 BULLETS_MAX = 3
+# 按字符宽度放宽：英文窄字符约为汉字一半；日文助词较多，给予约 25% 余量。
+COPY_LIMITS = {"zh": (10, 16, 12), "en": (24, 40, 30), "ja": (12, 20, 15), "none": (0, 0, 0)}
+LANGUAGE_NAMES = {"zh": "中文", "en": "English", "ja": "日本語", "none": "无文字"}
 
 # 底图统一后缀：锁定商品外观、禁止画面文字
 LOCK_SUFFIX = (
@@ -41,7 +44,7 @@ PLAN_SYSTEM = """你是资深电商视觉策划与文案。根据商品图片（
 要求：
 1. items 数量和 slot 必须与输入的槽位列表完全一致、顺序一致。
 2. scene 用 40-80 字中文描述该张底图的场景、道具、光线、机位；必须围绕这个商品真实的用途，不要编造商品不具备的功能；scene 里不要写任何要出现在画面上的文字。
-3. title ≤10 字、subtitle ≤16 字、每条 bullet ≤12 字、bullets 最多 3 条；标注为「无文案」的槽位 title/subtitle/bullets 留空。
+3. title/subtitle/bullets 必须使用输入指定的目标语言和字符上限；bullets 最多 3 条；标注为「无文案」的槽位 title/subtitle/bullets 留空。
 4. 文案口语、具体、有画面感，突出用户利益；不同图片的标题不要重复。
 5. 严禁使用《广告法》极限词：最、第一、唯一、顶级、国家级、极致、绝对、100%、全网、永久、万能 等；不得虚构认证、销量、功效数据。
 6. 如果看不到图片，就只根据用户给的品名和卖点来规划，不要假装看到了图片。"""
@@ -49,7 +52,7 @@ PLAN_SYSTEM = """你是资深电商视觉策划与文案。根据商品图片（
 
 # 组装规划的用户消息文本
 def build_plan_user_text(
-    *, name: str, notes: str, platform_name: str, style: str, slots: list[Slot]
+    *, name: str, notes: str, platform_name: str, style: str, slots: list[Slot], language: str = "zh"
 ) -> str:
     style_name, _ = STYLES[normalize_style(style)]
     lines = [
@@ -57,11 +60,15 @@ def build_plan_user_text(
         f"投放平台：{platform_name}",
         f"整体风格：{style_name}",
     ]
+    title_max, subtitle_max, bullet_max = COPY_LIMITS[language]
+    lines.append(f"目标语言：{LANGUAGE_NAMES[language]}；title ≤{title_max} 字符，subtitle ≤{subtitle_max} 字符，每条 bullet ≤{bullet_max} 字符。")
+    if language == "none":
+        lines.append("所有槽位无文案：title/subtitle 为空字符串，bullets 为空列表，只出纯视觉图，不为文案留白。")
     if notes.strip():
         lines.append(f"用户补充的卖点/信息：{notes.strip()}")
     lines.append("槽位列表（按顺序）：")
     for i, slot in enumerate(slots, 1):
-        copy_hint = "无文案" if slot.layout == "none" else f"版式 {slot.layout}"
+        copy_hint = "无文案" if language == "none" or slot.layout == "none" else f"版式 {slot.layout}"
         lines.append(f"{i}. slot={slot.key}（{slot.label}，{copy_hint}）用途：{slot.prompt}")
     return "\n".join(lines)
 
@@ -93,10 +100,11 @@ def clip(text: str, limit: int) -> str:
 
 
 # 规整一组文案：截断 + 过滤极限词，返回 (copy dict, 命中词)
-def normalize_copy(raw: dict | None, *, layout: str) -> tuple[dict, list[Hit]]:
-    if layout == "none":
+def normalize_copy(raw: dict | None, *, layout: str, language: str = "zh") -> tuple[dict, list[Hit]]:
+    if layout == "none" or language == "none":
         return {"title": "", "subtitle": "", "bullets": []}, []
     body = raw if isinstance(raw, dict) else {}
+    title_max, subtitle_max, bullet_max = COPY_LIMITS[language]
     hits: list[Hit] = []
     title, h1 = sanitize_copy(str(body.get("title") or ""))
     subtitle, h2 = sanitize_copy(str(body.get("subtitle") or ""))
@@ -106,9 +114,9 @@ def normalize_copy(raw: dict | None, *, layout: str) -> tuple[dict, list[Hit]]:
         text, h = sanitize_copy(str(b or ""))
         hits += h
         if text:
-            bullets.append(clip(text, BULLET_MAX))
+            bullets.append(clip(text, bullet_max))
     return {
-        "title": clip(title, TITLE_MAX),
-        "subtitle": clip(subtitle, SUBTITLE_MAX),
+        "title": clip(title, title_max),
+        "subtitle": clip(subtitle, subtitle_max),
         "bullets": bullets,
     }, hits

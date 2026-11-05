@@ -22,6 +22,7 @@
 }
 
 .pf-ecom-form input[type='text'],
+.pf-ecom-form select,
 .pf-ecom-input {
   border: 1px solid var(--pf-line);
   border-radius: 12px;

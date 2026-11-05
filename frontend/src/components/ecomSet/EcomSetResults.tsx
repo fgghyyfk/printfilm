@@ -83,7 +83,7 @@ function ResultCard({
     <article className="pf-ecom-card">
       <div className="pf-ecom-card-head">
         <strong>
-          {item.idx + 1}. {item.slot_label}
+          {item.idx + 1}. {t(`ecomSet.enhanced.slots.${item.slot}.name`)}
         </strong>
         <span className="pf-badge">{item.ratio}</span>
       </div>
@@ -106,7 +106,7 @@ function ResultCard({
             aria-label={t('ecomSet.result.preview')}
             onClick={() => onPreview(item)}
           >
-            <img src={image} alt={item.slot_label} loading="lazy" />
+            <img src={image} alt={t(`ecomSet.enhanced.slots.${item.slot}.name`)} loading="lazy" />
           </button>
         ) : (
           <div className="pf-ecom-thumb-state">{t('ecomSet.result.noImage')}</div>

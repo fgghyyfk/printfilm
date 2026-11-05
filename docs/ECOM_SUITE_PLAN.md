@@ -80,7 +80,7 @@
 |---|---|---|---|
 | E0 底座 + 精修 | Codex CLI | 已完成 | |
 | E1 风格复刻 | Codex CLI | 已完成 | |
-| E2 套图增强 | Codex CLI | 待执行 | |
+| E2 套图增强 | Codex CLI | 已完成 | |
 | E3 买家秀/种草图 | Codex CLI | 待执行 | |
 | E4 SKU 替换 | Codex CLI | 待执行 | |
 | E5 图片翻译 | Codex CLI | 待执行 | |

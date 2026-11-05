@@ -10,6 +10,9 @@ import type { ApiErrorHandler } from './http'
 
 const BASE = '/api/tools/ecom-set'
 
+export type EcomLanguage = 'zh' | 'en' | 'ja' | 'none'
+export type EcomClarity = '2k' | '4k'
+
 export type EcomSetItemStatus = 'planned' | 'queued' | 'running' | 'succeeded' | 'failed'
 export type EcomSetStatus = 'planned' | 'generating' | 'done' | 'partial' | 'failed'
 
@@ -36,6 +39,8 @@ export interface EcomSet {
   platform: string
   style: string
   count: number
+  language: EcomLanguage
+  clarity: EcomClarity
   product_image_url: string
   product: { name: string; category: string; colors: string[]; selling_points: string[] }
   warnings: string[]
@@ -51,6 +56,10 @@ export interface EcomSetOptions {
   platforms: { id: string; name: string }[]
   styles: { id: string; name: string }[]
   counts: number[]
+  slots: { id: string; name: string; description: string; ratio: string; layout: string; is_main: boolean }[]
+  languages: EcomLanguage[]
+  clarities: EcomClarity[]
+  prices: Record<EcomClarity, number>
   plan_fen: number
   image_fen: number
   billing_enabled: boolean
@@ -65,7 +74,12 @@ export type EcomSetList = {
 
 /** 规划请求参数（multipart） */
 export type EcomSetPlanPayload = {
-  file: File
+  file?: File
+  source_job_id?: number
+  source_item_idx?: number
+  slots?: string[]
+  language?: EcomLanguage
+  clarity?: EcomClarity
   name: string
   platform: string
   style: string
@@ -106,7 +120,12 @@ export function getEcomSetOptions(): Promise<EcomSetOptions> {
 // 上传商品图并生成出图方案（同步，约 10–20 秒，收规划费）
 export function planEcomSet(payload: EcomSetPlanPayload): Promise<EcomSet> {
   const body = new FormData()
-  body.append('file', payload.file)
+  if (payload.file) body.append('file', payload.file)
+  if (payload.source_job_id !== undefined) body.append('source_job_id', String(payload.source_job_id))
+  if (payload.source_item_idx !== undefined) body.append('source_item_idx', String(payload.source_item_idx))
+  if (payload.slots) body.append('slots', JSON.stringify(payload.slots))
+  body.append('language', payload.language || 'zh')
+  body.append('clarity', payload.clarity || '2k')
   body.append('name', payload.name)
   body.append('platform', payload.platform)
   body.append('style', payload.style)

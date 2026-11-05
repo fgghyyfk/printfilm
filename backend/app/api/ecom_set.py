@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import json
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
@@ -49,7 +50,7 @@ async def _guard(db: AsyncSession, coro):
 
 # 序列化套图
 async def _out(db: AsyncSession, ecom) -> EcomSetOut:
-    return EcomSetOut(**svc.to_out(ecom, image_fen=await svc.image_unit_fen(db)))
+    return EcomSetOut(**svc.to_out(ecom, image_fen=await svc.image_unit_fen(db, ecom.clarity)))
 
 
 # 表单选项与价格
@@ -61,19 +62,31 @@ async def options(db: AsyncSession = Depends(get_db), _: User = Depends(get_curr
 # 上传商品图并规划（同步，收一次规划费）
 @router.post("/plan", response_model=EcomSetOut)
 async def create_plan(
-    file: UploadFile = File(...),
+    file: UploadFile | None = File(None),
     name: str = Form(...),
     platform: str = Form("taobao"),
     style: str = Form("minimal"),
     count: int = Form(6),
     notes: str = Form(""),
+    slots: str | None = Form(None),
+    language: str = Form("zh"),
+    clarity: str = Form("2k"),
+    source_job_id: int | None = Form(None),
+    source_item_idx: int | None = Form(None),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    data = await file.read()
+    try:
+        slot_keys = json.loads(slots) if slots is not None else None
+        if slots is not None and not isinstance(slot_keys, list):
+            raise ValueError("槽位格式错误")
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail="槽位格式错误") from exc
+    data = await file.read() if file else b""
     ecom = await _guard(db, svc.create_plan(
-        db, user, data=data, filename=file.filename or "", name=name,
-        platform=platform, style=style, count=count, notes=notes,
+        db, user, data=data, filename=(file.filename or "") if file else "", name=name,
+        platform=platform, style=style, count=count, notes=notes, slot_keys=slot_keys, language=language, clarity=clarity,
+        source_job_id=source_job_id, source_item_idx=source_item_idx,
     ))
     return await _out(db, ecom)
 
@@ -87,9 +100,9 @@ async def list_sets(
     user: User = Depends(get_current_user),
 ):
     rows, total = await svc.list_sets(db, user, page=page, page_size=page_size)
-    unit = await svc.image_unit_fen(db)
+    prices = {clarity: await svc.image_unit_fen(db, clarity) for clarity in ("2k", "4k")}
     return EcomSetListOut(
-        items=[EcomSetOut(**svc.to_out(r, image_fen=unit)) for r in rows],
+        items=[EcomSetOut(**svc.to_out(r, image_fen=prices[r.clarity])) for r in rows],
         total=total, page=page, page_size=page_size,
     )
 
@@ -161,6 +174,7 @@ async def to_project(
     return EcomToProjectOut(project_id=project.id)
 
 
+# 预估套图转带货视频的阶段费用
 @router.post("/{set_id}/project/quote")
 async def quote_project(
     set_id: int, body: EcomToProjectIn,

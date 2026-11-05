@@ -45,6 +45,8 @@ export default function ResultsGrid({ job, busyIdx, downloading, onRetry, onDown
             <div className="pf-job-actions">
               {item.status === 'failed' ? <Button type="button" size="sm" variant="outline" disabled={busyIdx !== null} onClick={() => onRetry(item)}>{busyIdx === item.idx ? t('ecomJobs.submitting') : t('ecomJobs.retry')}</Button> : null}
               {item.status === 'succeeded' && item.result_url ? <Button type="button" size="sm" variant="outline" disabled={busyIdx !== null} onClick={() => onDownload(item)}>{t('ecomJobs.download')}</Button> : null}
+              {job.kind === 'refine' && item.status === 'succeeded' && item.result_url ? <Button size="sm" variant="outline"
+                to={`/daihuo?source_job_id=${job.id}&source_item_idx=${item.idx}`}>{t('ecomSet.enhanced.useRefine')}</Button> : null}
             </div>
           </article>
         ))}

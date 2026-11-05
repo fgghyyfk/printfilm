@@ -2,6 +2,7 @@
 
 import type {
   DaihuoRatio,
+  EcomLanguage,
   EcomSet,
   EcomSetCopyPatch,
   EcomSetItem,
@@ -198,4 +199,25 @@ export function parseSetId(raw: string | null): number | null {
   if (!raw) return null
   const id = Number(raw)
   return Number.isInteger(id) && id > 0 ? id : null
+}
+
+// 按目标语言选择编辑长度，与后端 prompts.COPY_LIMITS 一致。
+export function copyLimits(language: EcomLanguage = 'zh') {
+  if (language === 'en') return { title: 24, subtitle: 40, bullet: 30, bullets: 3 }
+  if (language === 'ja') return { title: 12, subtitle: 20, bullet: 15, bullets: 3 }
+  return ECOM_COPY_LIMITS
+}
+
+// 自定义槽位必须为 3–10 个已知且不重复的槽位，至少包含一个主图。
+export function validateSlotSelection(keys: string[], slots: { id: string; is_main: boolean }[]): boolean {
+  return keys.length >= 3 && keys.length <= 10 && new Set(keys).size === keys.length
+    && keys.every((key) => slots.some((slot) => slot.id === key))
+    && slots.some((slot) => slot.is_main && keys.includes(slot.id))
+}
+
+// 从 URL 解析精修来源；第 0 张有效，缺参或非十进制整数一律拒绝。
+export function parseRefineSource(job: string | null, item: string | null): { jobId: number; idx: number } | null {
+  if (!job || item === null || !/^[1-9]\d*$/.test(job) || !/^\d+$/.test(item)) return null
+  const jobId = Number(job), idx = Number(item)
+  return Number.isSafeInteger(jobId) && Number.isSafeInteger(idx) ? { jobId, idx } : null
 }
