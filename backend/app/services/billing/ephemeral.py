@@ -26,7 +26,6 @@ from app.services.tasks.upstream import upstream_event_session
 
 T = TypeVar("T")
 
-
 async def create_ephemeral_task_row(
     db: AsyncSession,
     user: User,
@@ -193,8 +192,11 @@ async def run_billed_ephemeral(
         await _cancel_inline_task(db, task, billable=billable)
         raise
     except Exception as exc:
+        from app.services.tts_billing import mark_tts_billing_pending
+
+        billing_pending = mark_tts_billing_pending(task, exc)
         task.status = "failed"
-        task.error_code = "ephemeral_failed"
+        task.error_code = "TTSBillingPending" if billing_pending else "ephemeral_failed"
         task.error_message = str(exc)[:500]
         task.finished_at = datetime.now(UTC)
         await append_task_event(

@@ -113,7 +113,8 @@ async def test_audio_runs_on_text_queue_and_returns_audio(studio, monkeypatch):
         assert task.queue_type == "text" and row.status == "succeeded"
         assert row.urls == ["https://cdn.test/narration.mp3"]
     assert tts.await_args.kwargs["shot_no"] == data["run_id"]
-    usage.assert_awaited_once()
+    # 配音用量由 gateway 按真实响应记一次；这里再记会重复收费。
+    usage.assert_not_awaited()
 
 
 async def test_video_resumes_existing_provider_id_and_polls_without_billing(studio, monkeypatch):

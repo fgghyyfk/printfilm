@@ -40,6 +40,9 @@ def test_archive_and_activate_video_version(tmp_path, monkeypatch):
     video_file.write_bytes(b"old-video")
     cover_file = tmp_path / "shot_009_cover.jpg"
     cover_file.write_bytes(b"old-cover")
+    # 当前 CDN take 由本地受控副本承接，激活历史仍须完整归档新视频、封面与尾帧。
+    for name, data in (("new.mp4", b"new-video"), ("new.jpg", b"new-cover"), ("new-last.jpg", b"new-last")):
+        (tmp_path / name).write_bytes(data)
 
     def fake_local_path(url: str):
         name = str(url).rsplit("/", 1)[-1]
@@ -80,6 +83,11 @@ def test_archive_and_activate_video_version(tmp_path, monkeypatch):
     out = activate_fragment_video_version(frag, version_id)  # type: ignore[arg-type]
     assert out["video"] == hist_video or "_hist_" in out["video"]
     assert frag.video == out["video"]
+    current = next(item for item in frag.params["video_versions"]
+                   if "new_hist_" in item["video"])
+    assert (tmp_path / current["video"].rsplit("/", 1)[-1]).read_bytes() == b"new-video"
+    assert (tmp_path / current["cover"].rsplit("/", 1)[-1]).read_bytes() == b"new-cover"
+    assert (tmp_path / current["lastFrameUrl"].rsplit("/", 1)[-1]).read_bytes() == b"new-last"
 
 
 def test_archive_skips_empty_video():

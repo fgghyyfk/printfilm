@@ -127,12 +127,9 @@ async def execute_generation(task: TaskRun) -> dict:
             return {"awaiting_poll": True}
         if row.kind == "audio":
             from app.services.ark import get_ark
-            from app.services.billing import record_line
             from app.services.studio_tools import ensure_public_url
             url = await get_ark().tts(row.prompt, params.get("voice") or "narrator_calm",
                                       project_id=0, shot_no=row.id, duration_hint=max(1, len(row.prompt) / 4))
-            await record_line(db, user_id=user.id, billing_key="tts", model=get_settings().model_audio,
-                              estimated=True, domain="studio", raw={"characters": len(row.prompt)})
             data = {"kind": "audio", "urls": [ensure_public_url(url) or url], "status": "succeeded"}
         else:
             from app.services.tool_models import model_prompt

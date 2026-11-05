@@ -168,7 +168,7 @@ async def test_tts_records_successful_fallback_model(monkeypatch, tmp_path):
     monkeypatch.setattr("app.services.ark.iter_tokenfree_tts_models", lambda _: ["first", "fallback"])
     monkeypatch.setattr(gateway, "_resolved_audio_model", lambda: "first")
 
-    async def speech(text, speaker, dest, *, model):
+    async def speech(text, speaker, dest, *, model, on_audio=None):
         if model == "first":
             return False
         dest.write_bytes(b"x" * 3000)
