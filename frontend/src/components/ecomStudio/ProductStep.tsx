@@ -54,7 +54,7 @@ export default function ProductStep({ categories, product, colorIndex, onPick }:
       <span>{text('选择颜色款', 'Colorway')}</span>
       <div className="pf-es-swatches">
         {product.colors.map((c, i) => <button key={c.image_url} type="button" className={`pf-es-swatch${colorIndex === i ? ' active' : ''}`} onClick={() => onPick(product, i)}>
-          <img src={resolveToolMediaUrl(c.image_url)} alt="" /><span>{c.name}</span>
+          <img src={resolveToolMediaUrl(c.image_url)} alt="" /><span>{c.name}{c.real_image_url ? text(' · 有实物图', ' · photo') : ''}</span>
         </button>)}
       </div>
     </div> : null}

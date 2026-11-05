@@ -161,3 +161,24 @@ async def test_upload_model(db_session, monkeypatch, tmp_path):
     assert rows[0].id == asset.id and tool_models.is_default_model(rows[0]) and len(rows) == 2
     with pytest.raises(ValueError):
         await tool_models.upload_model(db_session, user, data=b"x", filename="m.txt")
+
+
+# 实物图：按颜色款保存，规划时带上，提示词加说明
+async def test_color_real_image(db_session, monkeypatch, tmp_path):
+    from app.services.ecom_set import products, service as svc
+
+    user, _ = await _setup(db_session, monkeypatch, tmp_path)
+    row = await products.create_product(
+        db_session, user, name="太平有象", category="scarf", size="135", material="silk_wool", notes="",
+        colors=[("米白", _png(tmp_path / "c1.png").read_bytes(), "c1.png")], fabric=None,
+        reals={0: (_png(tmp_path / "r.png").read_bytes(), "r.png")},
+    )
+    assert products.to_out(row)["colors"][0]["real_image_url"]
+    ecom = await svc.create_plan(db_session, user, data=None, filename="", name="", platform="", style="", count=None,
+                                 notes="", product_id=row.id, slots_picked=["scarf_cover"])
+    assert svc.to_out(ecom, image_fen=80)["styled"]["real_url"]
+    row = await products.set_color_real(db_session, user, row.id, 0, None)
+    assert not products.to_out(row)["colors"][0]["real_image_url"]
+    p = categories.build_prompt("scarf", slot_prompt="x", scene="", ref="model", size="135", material="silk_wool",
+                                has_fabric=True, has_real=True)
+    assert categories.REAL_HINT in p and p.endswith(categories.FABRIC_HINT)

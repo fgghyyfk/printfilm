@@ -168,8 +168,12 @@ def slot_keys(category: str) -> list[str]:
     return [*longest, *rest]
 
 
+REAL_HINT = ("商品设计图后面的一张是实物照片：商品在真实光线下的颜色、质感、厚薄与垂坠以它为准；"
+             "图案和细节仍以设计图为准。")
+
+
 def build_prompt(category: str, *, slot_prompt: str, scene: str, ref: str, size: str | None,
-                 material: str | None, has_fabric: bool) -> str:
+                 material: str | None, has_fabric: bool, has_real: bool = False) -> str:
     """拼装底图提示词。"""
     if category == "scarf":
         text = scarf_mod.build_prompt(slot_prompt=slot_prompt, scene=scene, ref=ref, size=size, material=material)
@@ -179,6 +183,8 @@ def build_prompt(category: str, *, slot_prompt: str, scene: str, ref: str, size:
         prefix = GENERIC_MODEL_PREFIX if ref == "model" else GENERIC_PRODUCT_PREFIX
         parts = [prefix, slot_prompt, scene, look if ref == "model" else "", f"材质：{texture}", GENERIC_LOCK]
         text = "。".join(p.strip("。 ") for p in parts if p and p.strip())
+    if has_real:
+        text = f"{text}。{REAL_HINT}"
     return f"{text}。{FABRIC_HINT}" if has_fabric else text
 
 

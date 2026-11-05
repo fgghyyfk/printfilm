@@ -90,6 +90,7 @@ export type EcomStyledInfo = {
   color_index?: number
   color_name?: string
   fabric_url?: string
+  real_url?: string
 }
 
 /** 品类选项（来自 /options 的 styled） */

@@ -52,13 +52,22 @@ async def create_product(
     notes: str = Form(""), color_names: str = Form("", description="颜色名，JSON 数组或逗号分隔，与 files 一一对应"),
     files: list[UploadFile] = File(..., description="各颜色款的商品图"),
     fabric: UploadFile | None = File(default=None, description="面料/材质实拍（可选）"),
+    real_files: list[UploadFile] | None = File(default=None, description="实物图（可选），与 real_for 一一对应"),
+    real_for: str = Form("", description="实物图对应的颜色款序号，JSON 数组或逗号分隔"),
     db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user),
 ) -> dict:
     names = _names(color_names, len(files))
     colors = [(names[i], await f.read(), f.filename or "image.jpg") for i, f in enumerate(files)]
     fab = (await fabric.read(), fabric.filename or "fabric.jpg") if fabric is not None else None
+    reals: dict[int, tuple[bytes, str]] = {}
+    targets = _names(real_for, len(real_files or []))
+    for i, f in enumerate(real_files or []):
+        try:
+            reals[int(targets[i])] = (await f.read(), f.filename or "real.jpg")
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail="实物图对应的颜色款无效") from exc
     row = await _guard(db, svc.create_product(db, user, name=name, category=category, size=size, material=material,
-                                              notes=notes, colors=colors, fabric=fab))
+                                              notes=notes, colors=colors, fabric=fab, reals=reals))
     return svc.to_out(row)
 
 
@@ -85,6 +94,19 @@ async def add_color(product_id: int, name: str = Form(""), file: UploadFile = Fi
 async def remove_color(product_id: int, index: int, db: AsyncSession = Depends(get_db),
                        user: User = Depends(get_current_user)) -> dict:
     return svc.to_out(await _guard(db, svc.remove_color(db, user, product_id, index)))
+
+
+@router.put("/{product_id}/colors/{index}/real", summary="设置颜色款的实物图")
+async def set_color_real(product_id: int, index: int, file: UploadFile = File(...), db: AsyncSession = Depends(get_db),
+                         user: User = Depends(get_current_user)) -> dict:
+    row = await _guard(db, svc.set_color_real(db, user, product_id, index, (await file.read(), file.filename or "real.jpg")))
+    return svc.to_out(row)
+
+
+@router.delete("/{product_id}/colors/{index}/real", summary="清除颜色款的实物图")
+async def clear_color_real(product_id: int, index: int, db: AsyncSession = Depends(get_db),
+                           user: User = Depends(get_current_user)) -> dict:
+    return svc.to_out(await _guard(db, svc.set_color_real(db, user, product_id, index, None)))
 
 
 @router.put("/{product_id}/fabric", summary="设置面料实拍图")

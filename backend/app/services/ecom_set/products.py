@@ -33,6 +33,7 @@ def _normalize(category: str, size: str | None, material: str | None) -> tuple[s
 async def create_product(
     db: AsyncSession, user: User, *, name: str, category: str, size: str | None, material: str | None,
     notes: str, colors: list[tuple[str, bytes, str]], fabric: tuple[bytes, str] | None,
+    reals: dict[int, tuple[bytes, str]] | None = None,
 ) -> EcomProduct:
     """新建商品：至少一个颜色款（颜色名 + 平铺图）。"""
     name = clip(name, 60)
@@ -46,7 +47,10 @@ async def create_product(
     saved = []
     for i, (cname, data, filename) in enumerate(colors):
         path, url = await asyncio.to_thread(_save, user, data, filename)
-        saved.append({"name": clip(cname, 20) or f"颜色{i + 1}", "image_path": path, "image_url": url})
+        item = {"name": clip(cname, 20) or f"颜色{i + 1}", "image_path": path, "image_url": url}
+        if reals and i in reals:
+            item["real_image_path"], item["real_image_url"] = await asyncio.to_thread(_save, user, *reals[i])
+        saved.append(item)
     row = EcomProduct(user_id=user.id, name=name, category=cat, size=size, material=material,
                       notes=clip(notes, 500), colors=saved)
     if fabric is not None:
@@ -94,6 +98,23 @@ async def add_color(db: AsyncSession, user: User, product_id: int, *, name: str,
         raise ValueError(f"颜色款最多 {MAX_COLORS} 个")
     path, url = await asyncio.to_thread(_save, user, data, filename)
     colors.append({"name": clip(name, 20) or f"颜色{len(colors) + 1}", "image_path": path, "image_url": url})
+    row.colors = colors
+    await db.commit()
+    return row
+
+
+async def set_color_real(db: AsyncSession, user: User, product_id: int, index: int,
+                         upload: tuple[bytes, str] | None) -> EcomProduct:
+    """给某个颜色款设置或清除实物图（真实拍摄的商品照片）。"""
+    row = await get_product(db, user, product_id)
+    colors = [dict(c) for c in row.colors or []]
+    if not 0 <= index < len(colors):
+        raise LookupError("颜色款不存在")
+    if upload is None:
+        colors[index].pop("real_image_path", None)
+        colors[index].pop("real_image_url", None)
+    else:
+        colors[index]["real_image_path"], colors[index]["real_image_url"] = await asyncio.to_thread(_save, user, *upload)
     row.colors = colors
     await db.commit()
     return row
@@ -155,7 +176,8 @@ def to_out(row: EcomProduct) -> dict:
         "id": row.id, "name": row.name, "category": row.category, "size": row.size, "material": row.material,
         "material_label": categories.material_label(row.category, row.material) if categories.is_styled(row.category) else "",
         "notes": row.notes or "",
-        "colors": [{"name": c.get("name") or "", "image_url": c.get("image_url") or ""} for c in row.colors or []],
+        "colors": [{"name": c.get("name") or "", "image_url": c.get("image_url") or "",
+                    "real_image_url": c.get("real_image_url") or ""} for c in row.colors or []],
         "fabric_image_url": row.fabric_image_url or "",
         "created_at": row.created_at.isoformat() if row.created_at else "",
     }

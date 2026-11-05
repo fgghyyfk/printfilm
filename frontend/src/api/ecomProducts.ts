@@ -14,7 +14,7 @@ export type EcomProduct = {
   material: string
   material_label: string
   notes: string
-  colors: { name: string; image_url: string }[]
+  colors: { name: string; image_url: string; real_image_url?: string }[]
   fabric_image_url: string
   created_at: string
 }
@@ -26,7 +26,7 @@ export type EcomProductCreate = {
   size: string
   material: string
   notes: string
-  colors: { name: string; file: File }[]
+  colors: { name: string; file: File; real?: File | null }[]
   fabric?: File | null
 }
 
@@ -59,6 +59,9 @@ export function createEcomProduct(payload: EcomProductCreate): Promise<EcomProdu
   body.append('color_names', JSON.stringify(payload.colors.map((c) => c.name)))
   for (const c of payload.colors) body.append('files', c.file)
   if (payload.fabric) body.append('fabric', payload.fabric)
+  const reals = payload.colors.map((c, i) => ({ file: c.real, i })).filter((x): x is { file: File; i: number } => Boolean(x.file))
+  for (const r of reals) body.append('real_files', r.file)
+  if (reals.length) body.append('real_for', JSON.stringify(reals.map((r) => r.i)))
   return request('', '保存商品失败', { method: 'POST', body })
 }
 
@@ -73,6 +76,13 @@ export function addEcomProductColor(id: number, name: string, file: File): Promi
   body.append('name', name)
   body.append('file', file)
   return request(`/${id}/colors`, '添加颜色失败', { method: 'POST', body })
+}
+
+/** 设置颜色款的实物图 */
+export function setEcomProductColorReal(id: number, index: number, file: File): Promise<EcomProduct> {
+  const body = new FormData()
+  body.append('file', file)
+  return request(`/${id}/colors/${index}/real`, '上传实物图失败', { method: 'PUT', body })
 }
 
 /** 删除颜色款 */

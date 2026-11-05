@@ -50,6 +50,7 @@ async def _resolve_images(db: AsyncSession, user: User, *, product_id: int | Non
         color = products.color_of(row, color_index)
         out.update(product_id=row.id, color_index=color_index, color_name=color.get("name") or "",
                    image_path=color["image_path"], image_url=color["image_url"], product=row,
+                   real_url=color.get("real_image_url") or "",
                    fabric_path=row.fabric_image_path or "", fabric_url=row.fabric_image_url or "")
     else:
         if not data:
@@ -135,7 +136,7 @@ async def recolor_set(db: AsyncSession, user: User, set_id: int, color_index: in
         raise ValueError("这套图不是从「我的商品」创建的，无法一键换色")
     row = await products.get_product(db, user, int(styled["product_id"]))
     color = products.color_of(row, color_index)
-    styled.update(color_index=color_index, color_name=color.get("name") or "")
+    styled.update(color_index=color_index, color_name=color.get("name") or "", real_url=color.get("real_image_url") or "")
     plan = {**(src.plan or {}), "styled": styled}
     ecom = EcomSet(
         user_id=user.id, status="planned", name=src.name, platform=src.platform, style=src.style, count=src.count,
@@ -190,7 +191,7 @@ def styled_out(ecom: EcomSet) -> dict | None:
         "model_asset_id": info.get("model_asset_id"), "model_name": info.get("model_name") or "",
         "model_url": info.get("model_url") or "", "product_id": info.get("product_id"),
         "color_index": info.get("color_index") or 0, "color_name": info.get("color_name") or "",
-        "fabric_url": info.get("fabric_url") or "",
+        "fabric_url": info.get("fabric_url") or "", "real_url": info.get("real_url") or "",
     }
 
 

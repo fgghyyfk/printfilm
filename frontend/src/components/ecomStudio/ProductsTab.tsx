@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ImagePlus, Loader2, Plus, Trash2, X } from 'lucide-react'
 import {
-  addEcomProductColor, deleteEcomProduct, listEcomProducts, removeEcomProductColor, setEcomProductFabric, type EcomProduct,
+  addEcomProductColor, deleteEcomProduct, listEcomProducts, removeEcomProductColor, setEcomProductColorReal, setEcomProductFabric, type EcomProduct,
 } from '../../api/ecomProducts'
 import type { EcomStyledCategory } from '../../api/ecomSet'
 import { resolveToolMediaUrl } from '../../api/tools'
@@ -64,6 +64,12 @@ export default function ProductsTab({ categories, onUse }: Props) {
           <img src={resolveToolMediaUrl(c.image_url)} alt="" /><span>{c.name}</span>
           {p.colors.length > 1 ? <button type="button" className="pf-es-x" disabled={busy === p.id} aria-label={text('删除颜色', 'Remove color')}
             onClick={() => void act(p.id, () => removeEcomProductColor(p.id, i))}><X size={12} /></button> : null}
+          <label className="pf-es-real">{c.real_image_url ? <img src={resolveToolMediaUrl(c.real_image_url)} alt="" /> : <ImagePlus size={14} />}<span>{c.real_image_url ? text('换实物图', 'Replace photo') : text('+ 实物图', '+ Photo')}</span>
+            <input type="file" hidden accept={ECOM_UPLOAD_ACCEPT} disabled={busy === p.id} onChange={(e) => {
+              const f = e.target.files?.[0]; e.target.value = ''
+              if (f) void act(p.id, () => setEcomProductColorReal(p.id, i, f))
+            }} />
+          </label>
         </div>)}
         <label className="pf-es-add"><Plus size={16} /><span>{text('加颜色', 'Add color')}</span>
           <input type="file" hidden accept={ECOM_UPLOAD_ACCEPT} disabled={busy === p.id} onChange={(e) => {

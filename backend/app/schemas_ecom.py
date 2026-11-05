@@ -40,6 +40,7 @@ class EcomScarfOut(BaseModel):
     color_index: int = 0
     color_name: str = ""
     fabric_url: str = ""
+    real_url: str = ""
 
 
 class EcomProductOut(BaseModel):

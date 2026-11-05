@@ -30,6 +30,8 @@ export default function ModelStep({ modelId, onPick, imageFen, billing }: Props)
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const [pickerOpen, setPickerOpen] = useState(false)
+  // 已有模特时「生成新模特」默认收起，点开再填
+  const [genOpen, setGenOpen] = useState(false)
 
   // 首次加载：未选时预选默认模特
   useEffect(() => {
@@ -95,7 +97,8 @@ export default function ModelStep({ modelId, onPick, imageFen, billing }: Props)
       </button>
     </div>
     {!models.length ? <p className="pf-muted">{text('还没有模特：在下面一句话生成一位，或从资产库加入。', 'No models yet — generate one below.')}</p> : null}
-    <div className="pf-tool-panel pf-es-gen">
+    {models.length && !genOpen ? <button type="button" className="pf-es-link" onClick={() => setGenOpen(true)}><Sparkles size={14} />{text('一句话生成新模特（收一张生图费）', 'Generate a new model')}</button> : null}
+    {!models.length || genOpen ? <div className="pf-tool-panel pf-es-gen">
       <strong><Sparkles size={15} /> {text('一句话生成新模特', 'Generate a new model')}</strong>
       <textarea rows={2} maxLength={200} value={desc} disabled={!!busy} placeholder={text('年龄、长相、发型、气质…', 'Age, look, hair, vibe…')} onChange={(e) => setDesc(e.target.value)} />
       <div className="pf-tool-chips">{EXAMPLES.map((ex) => <button key={ex} type="button" disabled={!!busy} onClick={() => setDesc(ex)}>{ex.slice(0, 14)}…</button>)}</div>
@@ -103,8 +106,9 @@ export default function ModelStep({ modelId, onPick, imageFen, billing }: Props)
       <div className="pf-es-actions">
         <Button variant="lime" size="sm" disabled={!!busy} onClick={() => void generate()}>{busy === 'gen' ? <><Loader2 size={14} className="pf-tool-spin" />{text('生成中，约 30 秒…', 'Generating…')}</> : text('生成模特', 'Generate')}</Button>
         {billing ? <span className="pf-muted">{text(`约 ${formatFen(imageFen)} / 位`, `~${formatFen(imageFen)}`)}</span> : null}
+        {models.length ? <button type="button" className="pf-es-link" disabled={!!busy} onClick={() => setGenOpen(false)}>{text('收起', 'Hide')}</button> : null}
       </div>
-    </div>
+    </div> : null}
     {error ? <BillingErrorNotice message={error} className="pf-tool-error" /> : null}
     <ToolReferenceAssetPicker open={pickerOpen} onClose={() => setPickerOpen(false)} allowedKinds={['image']}
       onPick={(items) => { const first = items[0]; if (first) void save(first.id, !models.some((m) => m.is_default)) }} />

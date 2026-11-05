@@ -118,6 +118,7 @@ export default function EcomStudioPage() {
                   <strong>{text('素材检查', 'Inputs')}</strong>
                   {[
                     { ok: Boolean(product.colors[colorIndex]?.image_url), label: text('设计图', 'Design image'), tip: text('出图的图案和颜色以它为准', 'Pattern & color source') },
+                    { ok: Boolean(product.colors[colorIndex]?.real_image_url), label: text('实物图（选填）', 'Real photo (optional)'), tip: text('有实物图时，真实光线下的颜色和质感更准；可到「我的商品」给这个颜色加一张', 'Add one in My products for true color') },
                     { ok: Boolean(product.fabric_image_url), label: text('材质实拍', 'Fabric photo'), tip: text('没有时质感靠文字描述，容易偏；建议到「我的商品」补一张近拍', 'Add a close-up in My products for accurate texture') },
                     { ok: !needsModel || Boolean(modelId), label: text('模特图', 'Model'), tip: text('所有上身图都以这位模特为原型', 'Every on-model shot uses this model') },
                     { ok: Boolean(product.notes.trim() || notes.trim()), label: text('成分与卖点', 'Selling points'), tip: text('没有时文案会比较泛，建议写成分、工艺', 'Add composition & craft for better copy') },

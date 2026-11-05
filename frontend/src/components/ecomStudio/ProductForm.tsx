@@ -12,7 +12,7 @@ type Props = {
   onCancel: () => void
 }
 
-type ColorDraft = { name: string; file: File; preview: string }
+type ColorDraft = { name: string; file: File; preview: string; real?: { file: File; preview: string } | null }
 
 /** 新建商品：款名、品类、尺寸、材质、颜色款（平铺图）、面料实拍、卖点——录一次，以后直接选 */
 export default function ProductForm({ categories, onSaved, onCancel }: Props) {
@@ -56,7 +56,7 @@ export default function ProductForm({ categories, onSaved, onCancel }: Props) {
     try {
       const saved = await createEcomProduct({
         name: name.trim(), category, size, material, notes: notes.trim(),
-        colors: colors.map((c, i) => ({ name: c.name.trim() || text(`颜色${i + 1}`, `Color ${i + 1}`), file: c.file })),
+        colors: colors.map((c, i) => ({ name: c.name.trim() || text(`颜色${i + 1}`, `Color ${i + 1}`), file: c.file, real: c.real?.file })),
         fabric: fabric?.file,
       })
       onSaved(saved)
@@ -87,12 +87,18 @@ export default function ProductForm({ categories, onSaved, onCancel }: Props) {
           <input className="pf-ecom-input" maxLength={20} value={c.name} disabled={busy} placeholder={text('颜色名，如米白', 'Color name')}
             onChange={(e) => setColors((prev) => prev.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} />
           <button type="button" className="pf-es-x" aria-label={text('移除', 'Remove')} disabled={busy} onClick={() => setColors((prev) => prev.filter((_, j) => j !== i))}><X size={12} /></button>
+          <label className="pf-es-real">{c.real ? <img src={c.real.preview} alt="" /> : <ImagePlus size={14} />}<span>{c.real ? text('实物图 ✓', 'Photo ✓') : text('+ 实物图', '+ Photo')}</span>
+            <input type="file" hidden accept={ECOM_UPLOAD_ACCEPT} disabled={busy} onChange={(e) => {
+              const f = e.target.files?.[0]; e.target.value = ''
+              if (f) setColors((prev) => prev.map((x, j) => (j === i ? { ...x, real: { file: f, preview: URL.createObjectURL(f) } } : x)))
+            }} />
+          </label>
         </div>)}
         <label className="pf-es-add"><Plus size={18} /><span>{text('添加设计图', 'Add design')}</span>
           <input type="file" hidden multiple accept={ECOM_UPLOAD_ACCEPT} disabled={busy} onChange={(e) => { addColorFiles(e.target.files); e.target.value = '' }} />
         </label>
       </div>
-      <span className="pf-muted">{text('平铺图越清晰、越正，生成后的图案和颜色越准。', 'Flat, sharp images give the most accurate results.')}</span>
+      <span className="pf-muted">{text('设计图越清晰、越正，生成后的图案和颜色越准。每个颜色还可以加一张「实物图」（真实拍摄的商品照片），让真实光线下的颜色和质感更准。', 'Clear designs give accurate patterns. Add a real photo per color for true-to-life color.')}</span>
     </div>
     <div className="pf-tool-field"><span>{text('② 材质实拍（强烈推荐）', '② Fabric close-up (recommended)')}</span>
       <div className="pf-es-colors">

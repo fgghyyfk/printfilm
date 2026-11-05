@@ -101,11 +101,14 @@ async def generate_base(db: AsyncSession, ecom: EcomSet, item: EcomSetItem) -> P
         from app.services.ecom_set import categories
 
         fabric = scarf.get("fabric_url") or ""
+        real = scarf.get("real_url") or ""
         prompt = categories.build_prompt(scarf.get("category") or "scarf", slot_prompt=slot.prompt, scene=item.scene,
                                          ref=slot.ref, size=scarf.get("size"), material=scarf.get("material"),
-                                         has_fabric=bool(fabric))
+                                         has_fabric=bool(fabric), has_real=bool(real))
         refs = [scarf["model_url"], ecom.product_image_url] if slot.ref == "model" and scarf.get("model_url") \
             else [ecom.product_image_url]
+        if real:
+            refs.append(real)
         if fabric:
             refs.append(fabric)
     else:
