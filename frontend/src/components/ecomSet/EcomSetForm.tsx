@@ -4,7 +4,7 @@ import { Loader2 } from 'lucide-react'
 import type { EcomSetOptions, EcomSetPlanPayload } from '../../api/ecomSet'
 import { listToolModels, resolveToolMediaUrl, type ToolModel } from '../../api/tools'
 import { useI18n } from '../../i18n'
-import { ECOM_UPLOAD_ACCEPT, formatFen, validateProductFile } from '../../lib/ecomSet'
+import { ECOM_UPLOAD_ACCEPT, ecomFormCategories, formatFen, validateProductFile } from '../../lib/ecomSet'
 import BillingErrorNotice from '../billing/BillingErrorNotice'
 import Button from '../ui/Button'
 
@@ -30,7 +30,8 @@ export default function EcomSetForm({ options, initial, busy, error, onSubmit }:
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState('')
   const [name, setName] = useState(initial?.name || '')
-  const [platform, setPlatform] = useState(initial?.platform || options.platforms[0]?.id || '')
+  // 模特上身套图的 platform 存的是画幅 id，不在平台选项内时回到第一个平台
+  const [platform, setPlatform] = useState(options.platforms.some((opt) => opt.id === initial?.platform) ? initial!.platform! : options.platforms[0]?.id || '')
   const [style, setStyle] = useState(initial?.style || options.styles[0]?.id || '')
   const [count, setCount] = useState(initial?.count || (options.counts.includes(6) ? 6 : options.counts[0] || 6))
   const [notes, setNotes] = useState(initial?.notes || '')
@@ -107,10 +108,10 @@ export default function EcomSetForm({ options, initial, busy, error, onSubmit }:
 
   return (
     <form className="pf-tool-panel pf-ecom-form" onSubmit={submit}>
-      {options.categories?.length ? <div className="pf-tool-field">
+      {ecomFormCategories(options.categories).length ? <div className="pf-tool-field">
         <span>{t('ecomSet.form.category')}</span>
         <div className="pf-tool-chips">
-          {options.categories.map((opt) => (
+          {ecomFormCategories(options.categories).map((opt) => (
             <button key={opt.id} type="button" disabled={busy} className={category === opt.id ? 'active' : ''}
               onClick={() => setCategory(opt.id === 'scarf' ? 'scarf' : 'general')}>{opt.name}</button>
           ))}

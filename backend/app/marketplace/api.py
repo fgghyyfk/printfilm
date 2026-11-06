@@ -1,6 +1,6 @@
 """公开目录和作者工作台；只操作 marketplace_ 表。"""
 from fastapi import APIRouter, HTTPException, Query
-from sqlalchemy import func, literal, select, union_all
+from sqlalchemy import case, func, literal, select, union_all
 
 from app.models import User
 from .dependencies import Actor, DB, Visitor
@@ -72,8 +72,10 @@ async def works(db: DB, q: str = Query("", max_length=100), category: str = Quer
     from .series import public_series_filters
     if sort not in {"latest", "price_asc", "price_desc"}:
         fail("排序参数无效")
+    # 与作品卡片展示一致：免费为 0，平台投放取解锁价，其余取版权参考价。
+    work_price = case((Work.sale_type == "free", 0), (Work.sale_type == "platform_unlock", Work.unlock_price_fen), else_=Work.price_fen)
     work_query = select(Work.id.label("item_id"), literal("work").label("kind"), Work.created_at.label("sort_at"),
-                        Work.price_fen.label("price")).join(Asset, Asset.id == Work.asset_id).join(Rights, Rights.asset_id == Asset.id).where(*public_work_filters())
+                        work_price.label("price")).join(Asset, Asset.id == Work.asset_id).join(Rights, Rights.asset_id == Asset.id).where(*public_work_filters())
     series_query = select(Series.id.label("item_id"), literal("series").label("kind"), Series.created_at.label("sort_at"),
                           Series.copyright_price_fen.label("price")).where(*public_series_filters())
     if q:
@@ -83,10 +85,10 @@ async def works(db: DB, q: str = Query("", max_length=100), category: str = Quer
         work_query = work_query.where(Work.category == category)
         series_query = series_query.where(Series.category == category)
     if min_price is not None:
-        work_query = work_query.where(Work.price_fen >= min_price)
+        work_query = work_query.where(work_price >= min_price)
         series_query = series_query.where(Series.copyright_price_fen >= min_price)
     if max_price is not None:
-        work_query = work_query.where(Work.price_fen <= max_price)
+        work_query = work_query.where(work_price <= max_price)
         series_query = series_query.where(Series.copyright_price_fen <= max_price)
     combined = union_all(work_query, series_query).subquery()
     total = (await db.execute(select(func.count()).select_from(combined))).scalar_one()

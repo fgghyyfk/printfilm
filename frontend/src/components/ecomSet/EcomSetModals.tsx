@@ -112,7 +112,7 @@ export function EcomSetPreviewModal({ item, onClose }: { item: EcomSetItem; onCl
     <Modal open onClose={onClose} size="xl" title={item.slot_label} className="pf-ecom-preview">
       <img src={src} alt={item.slot_label} />
       <a className="pf-tool-download" href={src} download target="_blank" rel="noreferrer">
-        {t('tools.downloadImage')}
+        {t('ecomSet.result.downloadImage')}
       </a>
     </Modal>
   )

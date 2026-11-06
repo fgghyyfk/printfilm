@@ -120,7 +120,8 @@ class EcomPlanItemIn(BaseModel):
 class EcomPlanUpdateIn(BaseModel):
     """修改方案请求。"""
 
-    items: list[EcomPlanItemIn] = Field(max_length=8)
+    # 上限须覆盖各品类的全部可选槽位（丝巾 11 个，官方预设最多 10 张）
+    items: list[EcomPlanItemIn] = Field(max_length=12)
 
 
 class EcomRegenerateIn(BaseModel):

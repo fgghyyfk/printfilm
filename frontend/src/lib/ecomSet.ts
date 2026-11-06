@@ -146,10 +146,40 @@ export function ecomSetCover(set: EcomSet): string {
   return set.items.find((item) => item.final_url)?.final_url || set.product_image_url || ''
 }
 
-// 生成全部的预估总价（后端未给时按单价 × 张数）
+// 生成全部的预估总价：以后端只计收费张数的 total_fen 为准，全免费时就是 0
 export function ecomSetTotalFen(set: EcomSet): number {
-  if (set.total_fen > 0) return set.total_fen
-  return set.image_fen * set.items.length
+  return set.total_fen
+}
+
+// 上传或生成模特后选中新加入的那位；默认模特排在列表首位，不能取第一项
+export function newlyAddedModelId(before: { id: number }[], after: { id: number }[]): number | null {
+  const known = new Set(before.map((item) => item.id))
+  return (after.find((item) => !known.has(item.id)) ?? after[0])?.id ?? null
+}
+
+// 商品颜色款增删后，按原图地址找回当前颜色的新序号；原颜色已删除时回到第一个
+export function reconcileColorIndex(
+  previous: { image_url: string }[],
+  index: number,
+  next: { image_url: string }[],
+): number {
+  const found = next.findIndex((color) => color.image_url === previous[index]?.image_url)
+  return found >= 0 ? found : 0
+}
+
+/** 套图表单实际支持的品类；服饰、首饰、包袋只能从电商图（/ecom）选商品出图 */
+const ECOM_FORM_CATEGORIES = ['general', 'scarf']
+
+// 过滤出套图表单能处理的品类选项
+export function ecomFormCategories<T extends { id: string }>(options: T[] | undefined): T[] {
+  return (options || []).filter((option) => ECOM_FORM_CATEGORIES.includes(option.id))
+}
+
+// 重新规划的去向：从商品库建的或表单不支持的品类回电商图，并带上原商品与颜色款；其余（返回 null）回本页表单
+export function ecomReplanPath(set: Pick<EcomSet, 'category' | 'styled'>): string | null {
+  const productId = set.styled?.product_id
+  if (productId) return `/ecom?product=${productId}&color=${set.styled?.color_index ?? 0}`
+  return ECOM_FORM_CATEGORIES.includes(set.category || 'general') ? null : '/ecom'
 }
 
 // CSS aspect-ratio 值：'3:4' → '3 / 4'

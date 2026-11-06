@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Check, FolderOpen, Loader2, Sparkles, Star, Upload, X } from 'lucide-react'
 import { generateToolModel, listToolModels, resolveToolMediaUrl, updateToolModel, uploadToolModel, type ToolModel } from '../../api/tools'
-import { ECOM_UPLOAD_ACCEPT, formatFen, validateProductFile } from '../../lib/ecomSet'
+import { ECOM_UPLOAD_ACCEPT, formatFen, newlyAddedModelId, validateProductFile } from '../../lib/ecomSet'
 import { useGenerationText } from '../../lib/generationMedia'
 import ToolReferenceAssetPicker from '../tools/ToolReferenceAssetPicker'
 import BillingErrorNotice from '../billing/BillingErrorNotice'
@@ -62,7 +62,7 @@ export default function ModelStep({ modelId, onPick, imageFen, billing }: Props)
     try {
       const r = await generateToolModel({ description: desc.trim(), make_default: asDefault })
       setModels(r.items)
-      onPick(r.items[0]?.id ?? null)
+      onPick(newlyAddedModelId(models || [], r.items))
       setDesc('')
     } catch (err) { setError(err instanceof Error ? err.message : text('生成失败', 'Failed')) }
     finally { setBusy('') }
@@ -73,7 +73,7 @@ export default function ModelStep({ modelId, onPick, imageFen, billing }: Props)
     if (!file) return
     if (validateProductFile(file)) return setError(text('图片仅支持 PNG / JPG / WebP，且不超过 10MB', 'PNG / JPG / WebP up to 10MB'))
     setBusy('upload'); setError('')
-    try { const r = await uploadToolModel(file, !(models || []).some((m) => m.is_default)); setModels(r.items); onPick(r.items[0]?.id ?? null) }
+    try { const r = await uploadToolModel(file, !(models || []).some((m) => m.is_default)); setModels(r.items); onPick(newlyAddedModelId(models || [], r.items)) }
     catch (err) { setError(err instanceof Error ? err.message : text('上传失败', 'Upload failed')) }
     finally { setBusy('') }
   }

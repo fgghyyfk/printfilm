@@ -182,3 +182,14 @@ async def test_color_real_image(db_session, monkeypatch, tmp_path):
     p = categories.build_prompt("scarf", slot_prompt="x", scene="", ref="model", size="135", material="silk_wool",
                                 has_fabric=True, has_real=True)
     assert categories.REAL_HINT in p and p.endswith(categories.FABRIC_HINT)
+
+
+# 改方案的条数上限要覆盖每个品类的全部可选槽位（丝巾官方预设就有 10 张）
+def test_plan_update_accepts_every_selectable_slot():
+    from app.schemas_ecom import EcomPlanUpdateIn
+
+    assert len(presets.SCARF_COMPOSITION[10]) == 10
+    for category in ("scarf", "apparel", "jewelry", "bag"):
+        count = len(categories.slot_keys(category))
+        body = EcomPlanUpdateIn(items=[{"idx": i, "scene": "画面"} for i in range(count)])
+        assert len(body.items) == count

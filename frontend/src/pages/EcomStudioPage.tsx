@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, ArrowRight, CheckCircle2, CircleAlert, Loader2, Wand2 } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import Stepper from '../components/ui/Stepper'
@@ -11,9 +11,9 @@ import SlotStep from '../components/ecomStudio/SlotStep'
 import ProductsTab from '../components/ecomStudio/ProductsTab'
 import EcomSetBatches from '../components/ecomSet/EcomSetBatches'
 import { getEcomSetOptions, planEcomSet, type EcomSetOptions } from '../api/ecomSet'
-import type { EcomProduct } from '../api/ecomProducts'
+import { getEcomProduct, type EcomProduct } from '../api/ecomProducts'
 import { resolveToolMediaUrl } from '../api/tools'
-import { formatFen } from '../lib/ecomSet'
+import { formatFen, parseSetId, reconcileColorIndex } from '../lib/ecomSet'
 import { useGenerationText } from '../lib/generationMedia'
 import '../styles/tools-base.css'
 import '../components/ecomSet/ecomSet.css'
@@ -28,6 +28,9 @@ type Tab = 'make' | 'products' | 'history'
 export default function EcomStudioPage() {
   const text = useGenerationText()
   const nav = useNavigate()
+  /* 重新规划带来的 ?product=&color=：选项就绪后预选一次 */
+  const [params, setParams] = useSearchParams()
+  const replanApplied = useRef(false)
   /* 选项与页签 */
   const [options, setOptions] = useState<EcomSetOptions | null>(null)
   const [optionsError, setOptionsError] = useState('')
@@ -57,10 +60,44 @@ export default function EcomStudioPage() {
   // 选商品：换品类时默认勾上该品类的默认整套
   function pickProduct(p: EcomProduct, ci: number) {
     const changed = p.category !== product?.category
+    setError('')
     setProduct(p); setColorIndex(ci)
     const cat = categories.find((c) => c.id === p.category)
     if (cat && (changed || !slots.length)) setSlots(cat.compositions[String(cat.default_count)] || [])
   }
+
+  // 重新规划回到本页：预选原商品与颜色款，直接进入选模特；商品已删除时留在第一步并提示
+  useEffect(() => {
+    const productId = parseSetId(params.get('product'))
+    if (!productId || !options || replanApplied.current) return
+    replanApplied.current = true
+    const color = Number(params.get('color')) || 0
+    setParams({}, { replace: true })
+    void getEcomProduct(productId)
+      .then((p) => { pickProduct(p, p.colors[color] ? color : 0); setStep(1) })
+      .catch((err) => setError(err instanceof Error ? err.message : text('加载失败', 'Load failed')))
+    // pickProduct 依赖当前选择，这里只在选项就绪后执行一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [options, params])
+
+  // 回到「做图」时同步商品最新资料（可能刚在「我的商品」补图、删色或删除），避免用旧快照出图
+  const currentProductId = product?.id
+  useEffect(() => {
+    if (tab !== 'make' || !currentProductId) return
+    const previous = product?.colors || []
+    const controller = new AbortController()
+    void getEcomProduct(currentProductId, controller.signal).then((fresh) => {
+      setColorIndex((index) => reconcileColorIndex(previous, index, fresh.colors))
+      setProduct(fresh)
+    }).catch((err) => {
+      if (controller.signal.aborted || !(err instanceof Error) || err.message !== '商品不存在') return
+      setProduct(null); setStep(0)
+      setError(text('这款商品已被删除，请重新选择', 'This product was deleted. Please pick another.'))
+    })
+    return () => controller.abort()
+    // 只在切回「做图」或换商品时同步；product 本身会被这里更新，不能作为依赖
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, currentProductId, text])
 
   const canNext = [Boolean(product), !needsModel || Boolean(modelId), slots.length > 0, true][step]
 
@@ -101,6 +138,7 @@ export default function EcomStudioPage() {
           : tab === 'history' ? <EcomSetBatches onOpen={(id) => nav(`/daihuo?id=${id}`)} />
             : <>
               <div className="pf-ecom-steps"><Stepper steps={steps} current={step} /></div>
+              {step === 0 && error ? <p className="pf-tool-error" role="alert">{error}</p> : null}
               {step === 0 ? <ProductStep categories={categories} product={product} colorIndex={colorIndex} onPick={pickProduct} /> : null}
               {step === 1 ? <ModelStep modelId={modelId} onPick={setModelId} imageFen={options.image_fen} billing={options.billing_enabled} /> : null}
               {step === 2 && category ? <SlotStep category={category} frames={options.frames || []} frame={frame} slots={slots} onFrame={setFrame} onSlots={setSlots} /> : null}

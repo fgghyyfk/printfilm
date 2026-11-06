@@ -1208,3 +1208,34 @@ async def test_uploaded_media_preview_uses_original_without_worker(ctx, monkeypa
     ctx.user = ctx.stranger
     assert (await ctx.client.get(f'/api/marketplace/media/asset/{video.id}/original')).status_code == 404
 
+
+
+async def test_catalog_price_filter_and_sort_follow_displayed_work_price(ctx):
+    """作品广场的筛选和排序按卡片展示价：平台投放取解锁价，免费为 0，版权出售取参考价。"""
+    async def listed(title, *, sale_type, price_fen, unlock_price_fen=0):
+        video = await asset(ctx)
+        proof = await rights(ctx, video, full=True)
+        item = Work(owner_id=ctx.owner.id, title=title, category="其他", price_fen=price_fen, sale_type=sale_type,
+                    unlock_price_fen=unlock_price_fen, asset_id=video.id, source=proof.details["source"], license_scope="展示",
+                    audit_status="approved", listed=True, version=1)
+        ctx.db.add(item)
+        await ctx.db.flush()
+        if sale_type != "free":
+            await ready_work_preview(ctx, item.id, video.id)
+        return item
+
+    await listed("投放", sale_type="platform_unlock", price_fen=100_000, unlock_price_fen=100)
+    await listed("版权", sale_type="copyright_contact", price_fen=5_000)
+    await listed("免费", sale_type="free", price_fen=9_000)
+    ctx.user = None
+
+    async def titles(**params):
+        response = await ctx.client.get("/api/marketplace/works", params=params)
+        assert response.status_code == 200, response.text
+        return [item["title"] for item in response.json()["items"]]
+
+    assert await titles(sort="price_asc") == ["免费", "投放", "版权"]
+    assert await titles(sort="price_desc") == ["版权", "投放", "免费"]
+    assert await titles(min_price=50, max_price=500) == ["投放"]
+    assert await titles(min_price=50_000) == []
+    assert await titles(max_price=0) == ["免费"]
