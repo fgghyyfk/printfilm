@@ -48,6 +48,7 @@ from app.services.drama.access import (
     replace_fragment_asset_refs,
     match_fragments_for_generate,
 )
+from app.services.drama.fragment_editing import merge_saved_fragment_params
 from app.services.drama.generation import (
     activate_fragment_video_version,
     collect_active_fragment_ids_from_tasks,
@@ -589,15 +590,30 @@ async def save_fragments(
 ) -> DramaEpisodeOut:
     """按 id 更新已有分镜、新增无 id 项、删除未提交项；删除时作废旧视频任务，避免 ID 轮转导致上下文丢失。"""
     ep = await get_owned_episode(db, episode_id, user)
-    existing = {int(f.id): f for f in (ep.fragments or [])}
-    keep_ids: set[int] = set()
+    # 先取消被删分镜的任务再锁分镜：后台失败收敛是任务→分镜的顺序，反过来可能死锁。
+    submitted_ids = {int(item.id) for item in body.fragments if item.id}
+    stale_ids = [int(f.id) for f in (ep.fragments or []) if int(f.id) not in submitted_ids]
+    if stale_ids:
+        await cancel_fragment_video_tasks_for_fragments(db, stale_ids)
+        await detach_task_fragment_refs(db, stale_ids)
+    # 锁行并重读：后台回填可能刚写入新成片，下面要基于最新内容合并。
+    locked = await db.scalars(
+        select(DramaEpisodeFragment)
+        .where(DramaEpisodeFragment.episode_id == episode_id)
+        .order_by(DramaEpisodeFragment.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    existing = {int(f.id): f for f in locked}
 
     for item in body.fragments:
         item_id = int(item.id) if item.id else 0
         frag = existing.get(item_id) if item_id > 0 else None
         if frag is None:
             # 先挂上空集合，flush 后不要再 lazy load asset_references
-            frag = DramaEpisodeFragment(episode_id=ep.id)
+            frag = DramaEpisodeFragment(
+                episode_id=ep.id, cover=(item.cover or "")[:1024], video=(item.video or "")[:1024],
+            )
             frag.asset_references = []
             ep.fragments.append(frag)
             await db.flush()
@@ -607,11 +623,9 @@ async def save_fragments(
             duration_sec=int(item.duration_sec or 0) or None,
             is_opening=int(item.sort_order or 0) == 0,
         )
-        frag.cover = (item.cover or "")[:1024]
-        frag.video = (item.video or "")[:1024]
+        # 成片和封面只由后台回填和版本切换写入，这里不接受页面上可能已过期的值。
         frag.duration_sec = item.duration_sec
-        frag.params = item.params
-        keep_ids.add(int(frag.id))
+        frag.params = merge_saved_fragment_params(frag.params, item.params)
 
         asset_ids = await filter_valid_project_asset_ids(
             db,
@@ -620,10 +634,7 @@ async def save_fragments(
         )
         await replace_fragment_asset_refs(db, frag, asset_ids)
 
-    stale_ids = [fid for fid in existing if fid not in keep_ids]
     if stale_ids:
-        await cancel_fragment_video_tasks_for_fragments(db, stale_ids)
-        await detach_task_fragment_refs(db, stale_ids)
         for fid in stale_ids:
             old = existing.get(fid)
             if old is not None:

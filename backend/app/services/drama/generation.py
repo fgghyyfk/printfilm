@@ -1782,6 +1782,8 @@ async def apply_fragment_video_assets(
     from app.services.ffmpeg_compose import extract_video_last_frame, extract_video_poster_frame
 
     settings = get_settings()
+    # 下载成片期间用户可能已保存；锁行重读后再合并，不能用下载前的旧快照覆盖。
+    await db.refresh(fragment, attribute_names=["params", "video", "cover"], with_for_update=True)
     # 覆盖前归档旧成片，供版本切换
     archive_fragment_video_version(fragment)
     video_url = storage_svc.republish_url(local_video, sync=True) or local_video
