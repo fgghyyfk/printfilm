@@ -308,7 +308,7 @@ export default function AvatarCreateProjectPage() {
   }
 
   return (
-    <AppShell active="studio" wide>
+    <AppShell active="kaikou" wide>
       <header className="pf-page-head">
         <div className="pf-page-head-row">
           <div>
@@ -316,9 +316,10 @@ export default function AvatarCreateProjectPage() {
               <IconChevronLeft size={18} />
               新建项目 / 开始创作
             </button>
-            <h1 className="pf-page-title">创建项目</h1>
+            <h1 className="pf-page-title">数字人口播</h1>
+            <p className="pf-muted" style={{ margin: '0.35rem 0 0' }}>先定口播内容，下一步上传半身照并选配音。</p>
           </div>
-          <Stepper steps={kepuSteps()} current={kepuStepIndex('create')} doneThrough={-1} />
+          <Stepper steps={kepuSteps('avatar')} current={kepuStepIndex('create')} doneThrough={-1} />
         </div>
       </header>
 
