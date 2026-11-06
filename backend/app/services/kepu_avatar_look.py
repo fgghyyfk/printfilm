@@ -75,9 +75,9 @@ async def write_script(project_id: int) -> None:
         result = await db.execute(select(Project).where(Project.id == project_id)
                                   .options(selectinload(Project.shots)))
         project = result.scalar_one()
-        for shot in list(project.shots):
-            await db.delete(shot)
-        await db.flush()
+        from app.services.kepu_shot_edits import clear_storyboard_rows
+
+        await clear_storyboard_rows(db, project)
         # 标题：项目标题还是占位（或就是主题原文，批量建项目时如此）才用模型给的
         # 带货/获客模板（或带货文案风格）：标题与口播自动替换广告法极限词
         from app.models import Template

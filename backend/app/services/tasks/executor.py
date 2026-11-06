@@ -191,11 +191,32 @@ async def _fail_task_before_start(db, task, step, *, error_code: str, message: s
     )
     # 资产生图/视频：同步写回 asset.params.generation，避免前端只看到空的「生图失败」
     await _fail_drama_asset_generation_if_needed(db, task, task.error_message)
+    await _fail_kepu_project_if_running(db, task, task.error_message)
     try:
         await settle_task(db, task.id)
     except Exception:  # noqa: BLE001
         logger.exception("settle_task failed task_id=%s", task.id)
     await db.commit()
+
+
+# 科普项目还停在进行中时转为失败，否则页面一直转圈且无法重试。
+async def _fail_kepu_project_if_running(db, task, message: str) -> None:
+    if task.domain != "kepu" or not task.project_id:
+        return
+    from app.models import Project, ProjectStatus
+
+    running = {
+        ProjectStatus.SCRIPTING,
+        ProjectStatus.IMAGING,
+        ProjectStatus.VIDEOING,
+        ProjectStatus.AUDIOING,
+        ProjectStatus.COMPOSING,
+        ProjectStatus.AUDITING,
+    }
+    project = await db.get(Project, int(task.project_id))
+    if project and project.status in running:
+        project.status = ProjectStatus.FAILED
+        project.error_msg = message[:2000]
 
 
 # 把任务收敛到失败态。
@@ -237,21 +258,7 @@ async def _fail_task(db, task, exc: Exception) -> None:
                 task.error_message or str(exc),
             )
             frag.params = params
-    if task.domain == "kepu" and task.project_id:
-        from app.models import Project, ProjectStatus
-
-        running = {
-            ProjectStatus.SCRIPTING,
-            ProjectStatus.IMAGING,
-            ProjectStatus.VIDEOING,
-            ProjectStatus.AUDIOING,
-            ProjectStatus.COMPOSING,
-            ProjectStatus.AUDITING,
-        }
-        project = await db.get(Project, int(task.project_id))
-        if project and project.status in running:
-            project.status = ProjectStatus.FAILED
-            project.error_msg = (task.error_message or str(exc))[:2000]
+    await _fail_kepu_project_if_running(db, task, task.error_message or str(exc))
     payload = task.payload if isinstance(task.payload, dict) else {}
     if payload.get("sequential") and task.batch_key:
         from app.services.tasks.service import fail_remaining_sequential_batch

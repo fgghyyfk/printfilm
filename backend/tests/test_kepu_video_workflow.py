@@ -105,6 +105,7 @@ async def test_mode_and_bgm_change_rechecks_new_mode_even_from_image_ready(monke
 async def test_mode_change_rejects_active_generation(monkeypatch):
     """视频生成执行期间不能改模式而让计费与实际阶段分离。"""
     project = _project(status=ProjectStatus.VIDEOING)
+    project.active_tasks = [SimpleNamespace(status="running", task_type="project_pipeline")]
     db, user = _api_context(monkeypatch, project)
     with pytest.raises(HTTPException) as error:
         await projects.update_project(project.id, ProjectUpdate(pipeline_mode="image_text"), db, user)

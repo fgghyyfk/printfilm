@@ -213,6 +213,7 @@ async def _run_kepu_project_pipeline(task: TaskRun) -> dict[str, Any] | None:
     if task.cancel_requested:
         return {"cancelled": True, "project_id": task.project_id}
     project_id = _require_int(task.project_id, "project_id")
+    restart = bool(payload.get("restart"))
     raw_phase = payload.get("phase")
     phase = str(raw_phase).strip().lower() if raw_phase is not None else None
     if phase not in {"script", "assets", "videos", "compose"}:
@@ -229,7 +230,7 @@ async def _run_kepu_project_pipeline(task: TaskRun) -> dict[str, Any] | None:
             if project is not None:
                 # Resolve legacy auto/produce before generation changes readiness.
                 # Use the pipeline's shared rules for both execution and its saved output.
-                phase = normalize_kepu_pipeline_phase(phase, project)
+                phase = "script" if restart else normalize_kepu_pipeline_phase(phase, project)
         # The read transaction is closed before awaiting external generation.
     # The previous task can have been cancelled before its pipeline ever ran,
     # leaving a process-local marker. Clear it in the executing worker only for
@@ -240,6 +241,7 @@ async def _run_kepu_project_pipeline(task: TaskRun) -> dict[str, Any] | None:
         run_pipeline(
             project_id,
             phase=phase,
+            **({"restart": True} if restart else {}),
         ),
         phase=phase,
     )

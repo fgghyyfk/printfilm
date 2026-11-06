@@ -123,9 +123,9 @@ async def build_daihuo_shots(project_id: int) -> int:
                 select(Project).where(Project.id == project_id).options(selectinload(Project.shots))
             )
         ).scalar_one()
-        for shot in list(project.shots):
-            await db.delete(shot)
-        await db.flush()
+        from app.services.kepu_shot_edits import clear_storyboard_rows
+
+        await clear_storyboard_rows(db, project)
         out_dir = storage.project_dir(project_id) / "daihuo"
         for no, it in enumerate(items, start=1):
             seg = seg_by_idx.get(it["idx"]) or {}

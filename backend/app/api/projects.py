@@ -234,22 +234,18 @@ def _ensure_side_task_allowed(project: Project) -> None:
             raise HTTPException(status_code=409, detail="整片生成进行中，请稍后")
 
 
-# COMPOSING 且无进行中任务时视为拼接已失败卡住，允许重新发起
+def _ensure_project_idle(project: Project, *, detail: str = "生成进行中，请稍后") -> None:
+    """活跃任务才是忙碌的依据；残留的运行状态不能挡住失败后的修改和重试。"""
+    if getattr(project, "active_tasks", None):
+        raise HTTPException(status_code=409, detail=detail)
+
+
+# 没有进行中任务时都可重试拼接，包括拼接失败后卡住的状态
 async def _ensure_compose_allowed(db: AsyncSession, user: User, project: Project) -> None:
     _ensure_wizard_project(project)
     active = await list_active_tasks_for_owner(db, user.id, project_id=project.id)
     if active:
         raise HTTPException(status_code=409, detail="生成进行中，请稍后")
-    running = {
-        ProjectStatus.SCRIPTING,
-        ProjectStatus.IMAGING,
-        ProjectStatus.VIDEOING,
-        ProjectStatus.AUDIOING,
-        ProjectStatus.AUDITING,
-    }
-    if project.status in running:
-        raise HTTPException(status_code=409, detail="生成进行中，请稍后")
-    # COMPOSING / FAILED / VIDEO_READY / DONE 等均可重试拼接（无 active task）
 
 
 # 为科普项目/镜头创建统一任务，由平台调度器自动执行
@@ -508,15 +504,7 @@ async def update_project(
 ) -> Project:
     project = await _get_owned_project(db, project_id, user)
     _ensure_wizard_project(project)
-    if project.status in {
-        ProjectStatus.SCRIPTING,
-        ProjectStatus.IMAGING,
-        ProjectStatus.VIDEOING,
-        ProjectStatus.AUDIOING,
-        ProjectStatus.COMPOSING,
-        ProjectStatus.AUDITING,
-    }:
-        raise HTTPException(status_code=409, detail="生成进行中，无法修改")
+    _ensure_project_idle(project, detail="生成进行中，无法修改")
 
     data = body.model_dump(exclude_unset=True)
     if "template_id" in data:
@@ -640,26 +628,13 @@ async def generate_project(
     """需要登录，为本人分步创作项目提交后台任务。首次生成或 restart=true 时仅生成分镜脚本，之后按当前素材状态逐阶段生成素材或视频；素材齐备时需调用合成接口。restart=true 会删除原分镜和素材。返回当前项目，不等待生成完成。"""
     project = await _get_owned_project(db, project_id, user)
     _ensure_wizard_project(project)
-    if project.status in {
-        ProjectStatus.SCRIPTING,
-        ProjectStatus.IMAGING,
-        ProjectStatus.VIDEOING,
-        ProjectStatus.AUDIOING,
-        ProjectStatus.COMPOSING,
-        ProjectStatus.AUDITING,
-    }:
-        raise HTTPException(status_code=409, detail="生成进行中，请稍后")
+    _ensure_project_idle(project)
 
-    if restart:
-        for shot in list(project.shots):
-            await db.delete(shot)
-        await db.flush()
-        await pipeline.delete_project_assets(project_id)
-        project.cover_url = None
-
+    # 重做不在这里删旧稿：新分镜可能失败，由流水线在新稿写好后替换。
     # Resume: clear error, keep existing shots/media (pipeline skips finished stages)
     project.error_msg = None
-    project.final_video_url = None
+    if not restart:
+        project.final_video_url = None
     shots = list(project.shots or [])
     phase = "script" if (restart or not shots) else resolve_kepu_billing_phase(project)
     if phase == "compose":
@@ -975,6 +950,8 @@ async def update_shot(
     shot = next((s for s in project.shots if s.id == shot_id), None)
     if not shot:
         raise HTTPException(status_code=404, detail="分镜不存在")
+    # 整片任务（含合成）在读旁白和音轨，改稿会让成片和稿子对不上。
+    _ensure_side_task_allowed(project)
     data = body.model_dump(exclude_unset=True)
     # 带货/获客模板：用户手改的旁白与叠字同样自动替换广告法极限词（科普模板只在编辑页提示）
     from app.services.compliance.ad_words import REPLACE
@@ -1121,7 +1098,7 @@ async def regen_image(
         raise HTTPException(status_code=404, detail="分镜不存在")
     project.status = ProjectStatus.IMAGING
     project.error_msg = None
-    await db.commit()
+    # 状态和任务同事务提交：建任务失败（如余额不足）时一起回滚，项目不会卡在进行中。
     await _create_kepu_task(
         db,
         user,
@@ -1155,7 +1132,7 @@ async def regen_video(
         raise HTTPException(status_code=400, detail=detail)
     project.status = ProjectStatus.VIDEOING
     project.error_msg = None
-    await db.commit()
+    # 状态和任务同事务提交：建任务失败（如余额不足）时一起回滚，项目不会卡在进行中。
     await _create_kepu_task(
         db,
         user,
@@ -1186,7 +1163,7 @@ async def regen_audio(
         raise HTTPException(status_code=404, detail="分镜不存在")
     project.status = ProjectStatus.AUDIOING
     project.error_msg = None
-    await db.commit()
+    # 状态和任务同事务提交：建任务失败（如余额不足）时一起回滚，项目不会卡在进行中。
     await _create_kepu_task(
         db,
         user,
@@ -1212,22 +1189,14 @@ async def regen_all_audio(
     """需要登录，为已有分镜且未在生成中的本人项目提交后台任务，按当前音色重新生成全部配音并重新合成成片。返回项目当前状态。"""
     project = await _get_owned_project(db, project_id, user)
     _ensure_wizard_project(project)
-    if project.status in {
-        ProjectStatus.SCRIPTING,
-        ProjectStatus.IMAGING,
-        ProjectStatus.VIDEOING,
-        ProjectStatus.AUDIOING,
-        ProjectStatus.COMPOSING,
-        ProjectStatus.AUDITING,
-    }:
-        raise HTTPException(status_code=409, detail="生成进行中，请稍后")
+    _ensure_project_idle(project)
     if not project.shots:
         raise HTTPException(status_code=400, detail="暂无分镜，请先生成")
     project.status = ProjectStatus.AUDIOING
     project.progress = 80
     project.error_msg = None
     project.final_video_url = None
-    await db.commit()
+    # 状态和任务同事务提交：建任务失败（如余额不足）时一起回滚，项目不会卡在进行中。
     await _create_kepu_task(
         db,
         user,
@@ -1263,7 +1232,7 @@ async def compose_only(
     project.status = ProjectStatus.COMPOSING
     project.progress = 90
     project.error_msg = None
-    await db.commit()
+    # 状态和任务同事务提交：建任务失败（如余额不足）时一起回滚，项目不会卡在进行中。
     await _create_kepu_task(
         db,
         user,

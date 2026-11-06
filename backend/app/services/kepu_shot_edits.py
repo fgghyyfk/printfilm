@@ -3,7 +3,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.models import Shot
+from sqlalchemy import update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models import Project, Shot
+from app.models_tasks import TaskRun
 from app.services.seedance_segments import narration_from_script, seedance_timeline_without_voice
 
 
@@ -19,3 +23,15 @@ def shot_video_content_changed(shot: Shot, data: dict[str, Any], *, native_audio
     if "duration" in data and data["duration"] != shot.duration:
         return True
     return "camera" in data and str(data["camera"] or "").strip() != str(shot.camera or "").strip()
+
+
+async def clear_storyboard_rows(db: AsyncSession, project: Project) -> None:
+    """新稿写好后替换旧分镜；任务历史解除关联后保留，否则外键会挡住删除。"""
+    ids = [shot.id for shot in project.shots]
+    if ids:
+        await db.execute(update(TaskRun).where(TaskRun.shot_id.in_(ids)).values(shot_id=None))
+    for shot in list(project.shots):
+        await db.delete(shot)
+    await db.flush()
+    project.cover_url = None
+    project.final_video_url = None

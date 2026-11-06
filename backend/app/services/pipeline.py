@@ -415,7 +415,7 @@ async def _resume_plan(project_id: int) -> tuple[bool, bool, bool, bool]:
 
 
 @storage.without_intermediate_oss
-async def run_pipeline(project_id: int, *, phase: str | None = None) -> None:
+async def run_pipeline(project_id: int, *, phase: str | None = None, restart: bool = False) -> None:
     """跑科普流水线；phase 指定时只执行该计费阶段，避免冻 A 跑 B。"""
     from app.services.kepu_stages import normalize_kepu_pipeline_phase
 
@@ -433,9 +433,10 @@ async def run_pipeline(project_id: int, *, phase: str | None = None) -> None:
                         .options(selectinload(Project.shots))
                     )
                 ).scalar_one_or_none()
-            requested = normalize_kepu_pipeline_phase(phase, project)
+            requested = "script" if restart else normalize_kepu_pipeline_phase(phase, project)
 
-        if not skip_script:
+        # 重做时旧分镜还在，必须显式走写稿阶段。
+        if restart or not skip_script:
             if requested and requested not in {"script", "produce"}:
                 raise RuntimeError(
                     f"分镜尚未就绪，无法执行阶段 {requested}；请先生成分镜脚本"
@@ -712,7 +713,48 @@ async def _set_status(project_id: int, status: str, progress: int, stage: str) -
     await publish_progress(project_id, {"event": "progress", "stage": stage, "percent": progress})
 
 
+async def _old_shot_media(project_id: int) -> set[str]:
+    """记下旧分镜引用的媒体，等新稿写好后再清理。"""
+    async with AsyncSessionLocal() as db:
+        project = (await db.execute(
+            select(Project).where(Project.id == project_id).options(selectinload(Project.shots))
+        )).scalar_one_or_none()
+        if project is None:
+            return set()
+        return {
+            url for shot in project.shots
+            for url in (shot.image_url, shot.video_url, shot.last_frame_url, shot.audio_url) if url
+        }
+
+
+async def _remove_replaced_media(project_id: int, old_urls: set[str]) -> None:
+    """新稿已提交后清掉旧分镜独有的文件；封面和数字人照片等上传文件不在其中。"""
+    async with AsyncSessionLocal() as db:
+        project = (await db.execute(
+            select(Project).where(Project.id == project_id).options(selectinload(Project.shots))
+            .execution_options(populate_existing=True)
+        )).scalar_one_or_none()
+        kept = {
+            url for shot in (project.shots if project else [])
+            for url in (shot.image_url, shot.video_url, shot.last_frame_url, shot.audio_url) if url
+        } | {project.avatar_image_url if project else None}
+    for url in old_urls - kept:
+        path = storage.local_path_from_url(url)
+        if path is not None:
+            path.unlink(missing_ok=True)
+    # 整片音轨只按文件是否存在判断可用，留着会把旧稿配音当成新稿的。
+    (storage.project_dir(project_id) / "full_narration.mp3").unlink(missing_ok=True)
+
+
 async def _script_stage(project_id: int) -> None:
+    """写分镜；有旧稿时（重做）等新稿提交后才清旧文件，失败则旧稿原样保留。"""
+    old_urls = await _old_shot_media(project_id)
+    await _write_storyboard(project_id)
+    if old_urls:
+        await _remove_replaced_media(project_id, old_urls)
+
+
+async def _write_storyboard(project_id: int) -> None:
     await _set_status(project_id, ProjectStatus.SCRIPTING, 5, "SCRIPTING")
     # 商品带货：按关联套图写口播、建分镜（画面复用套图底图，不走通用拆镜与出图）
     from app.services.daihuo.service import build_daihuo_shots
@@ -804,9 +846,9 @@ async def _script_stage(project_id: int) -> None:
             or (plans[0].bgm if plans else "")
             or "轻快专业"
         )
-        for shot in list(project.shots):
-            await db.delete(shot)
-        await db.flush()
+        from app.services.kepu_shot_edits import clear_storyboard_rows
+
+        await clear_storyboard_rows(db, project)
         bible = project.character_bible
         for plan in plans:
             segment_script = (plan.segment_script or plan.video_prompt or "").strip()
