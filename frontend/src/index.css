@@ -1,20 +1,32 @@
 :root {
-  --pf-lime: #ff6a3d;
-  --pf-lime-soft: #ffede5;
-  --pf-ink: #111318;
-  --pf-muted: #6b7280;
-  --pf-bg: #f7f8fa;
-  --pf-card: #ffffff;
-  --pf-line: rgba(17, 19, 24, 0.1);
-  --pf-radius: 14px;
-  --pf-radius-sm: 10px;
-  --pf-shadow: 0 8px 28px rgba(17, 19, 24, 0.06);
+  /* 开口播「演播室字幕」设计语言：暖纸底、墨黑、广播朱红、字幕黄，切角硬朗。
+     --pf-lime 是历史变量名，实际为品牌朱红。 */
+  --pf-lime: #dc3a14;
+  --pf-lime-soft: #fbe5dc;
+  --pf-accent-deep: #a82a0c;
+  --pf-caption: #ffd21f;
+  --pf-ink: #17130e;
+  --pf-ink-soft: #4a4338;
+  --pf-muted: #6b6357;
+  --pf-faint: #8e8678;
+  --pf-bg: #f3eee4;
+  --pf-card: #fffdf8;
+  --pf-sunken: #ece6da;
+  --pf-line: rgba(23, 19, 14, 0.13);
+  --pf-line-solid: #dfd8ca;
+  --pf-line-strong: #c9c1b1;
+  --pf-radius-lg: 12px;
+  --pf-radius: 8px;
+  --pf-radius-sm: 6px;
+  --pf-radius-pill: 6px;
+  --pf-shadow: 0 1px 0 rgba(23, 19, 14, 0.05), 0 12px 26px -20px rgba(23, 19, 14, 0.35);
+  --pf-hard: 3px 3px 0 var(--pf-ink);
   --pf-nav-h: 64px;
 
   /* legacy aliases used by residual styles */
   --ink: var(--pf-ink);
   --paper: var(--pf-bg);
-  --paper-deep: #e8eaee;
+  --paper-deep: var(--pf-sunken);
   --accent: var(--pf-lime);
   --teal: #2a6f7a;
   --crimson: #c43c2e;

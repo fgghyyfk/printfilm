@@ -1,7 +1,7 @@
 /* 共享资产的唯一视觉实现，供个人、团队、项目与选择器共同使用。 */
-.pf-library-panel { min-width: 0; padding: clamp(18px, 2.5vw, 30px); background: #fff; border: 1px solid #e9e4e2; border-radius: 16px; }
+.pf-library-panel { min-width: 0; padding: clamp(18px, 2.5vw, 30px); background: var(--pf-card); border: 1px solid #e9e4e2; border-radius: var(--pf-radius-lg); }
 .pf-library-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
-.pf-library-heading h1, .pf-library-heading h2 { margin: 0; font-size: 20px; font-weight: 650; color: #2b2320; }
+.pf-library-heading h1, .pf-library-heading h2 { margin: 0; font-size: 20px; font-weight: 650; color: var(--pf-ink); }
 .pf-library-heading p { margin: 9px 0 0; font-size: 12px; line-height: 1.8; color: #9e8983; }
 .pf-library-count { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid #e9e4e2; border-radius: 5px; color: #97817a; background: #f9f6f5; font-size: 11px; }
 .pf-library-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px; padding: 22px 0; }
@@ -14,22 +14,22 @@
 .pf-library-image-categories, .pf-library-generation-status { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .pf-library-image-categories > span, .pf-library-generation-status > span { color: #949e89; font-size: 11px; }
 .pf-library-image-categories .pf-library-pill, .pf-library-generation-status .pf-library-pill { min-height: 30px; padding: 6px 10px; font-size: 11px; }
-.pf-library-pill { display: inline-flex; align-items: center; justify-content: center; min-height: 35px; padding: 8px 12px; border: 1px solid #e9e4e2; border-radius: 7px; background: #fff; color: #89917f; font: inherit; font-size: 12px; cursor: pointer; transition: background .18s, border-color .18s; }
+.pf-library-pill { display: inline-flex; align-items: center; justify-content: center; min-height: 35px; padding: 8px 12px; border: 1px solid #e9e4e2; border-radius: 7px; background: var(--pf-card); color: #89917f; font: inherit; font-size: 12px; cursor: pointer; transition: background .18s, border-color .18s; }
 .pf-library-pill:hover { border-color: #c68f7d; color: #513f39; }
 .pf-library-pill:disabled { opacity: .55; cursor: not-allowed; }
 .pf-library-pill.is-active { color: #301006; background: #f5cabc; border-color: #e5b1a0; }
-.pf-library-search { display: flex; align-items: center; gap: 9px; width: 280px; max-width: 100%; padding: 11px 13px; border: 1px solid #e9e4e2; border-radius: 9px; color: #a1a795; background: #fbf9f8; box-sizing: border-box; }
+.pf-library-search { display: flex; align-items: center; gap: 9px; width: 280px; max-width: 100%; padding: 11px 13px; border: 1px solid #e9e4e2; border-radius: var(--pf-radius-sm); color: #a1a795; background: var(--pf-sunken); box-sizing: border-box; }
 .pf-library-search svg { flex-shrink: 0; }
 .pf-library-search input { min-width: 0; width: 100%; padding: 0; border: 0; outline: none; background: transparent; font: inherit; font-size: 12px; color: #382d2a; }
 .pf-library-search input::placeholder { color: #a3a99a; }
 .pf-library-search:focus-within { border-color: #ca836c; box-shadow: 0 0 0 3px #dcf19d38; }
-.pf-library-banner { display: flex; align-items: center; gap: 15px; padding: 19px 22px; border: 1px solid #eadcd7; border-radius: 12px; background: #f8f1ef; }
-.pf-library-banner-icon { display: grid; place-items: center; width: 43px; height: 43px; flex-shrink: 0; border-radius: 11px; background: #efd7cf; color: #985a46; }
+.pf-library-banner { display: flex; align-items: center; gap: 15px; padding: 19px 22px; border: 1px solid #eadcd7; border-radius: var(--pf-radius); background: #f8f1ef; }
+.pf-library-banner-icon { display: grid; place-items: center; width: 43px; height: 43px; flex-shrink: 0; border-radius: var(--pf-radius-sm); background: #efd7cf; color: #985a46; }
 .pf-library-banner strong { font-weight: 550; color: #634b44; font-size: 13px; }
 .pf-library-banner p { color: #9e8881; font-size: 12px; line-height: 1.8; margin: 5px 0 0; }
 .pf-library-collection { container-type: inline-size; min-width: 0; width: 100%; }
 .pf-library-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: start; gap: 18px; }
-.pf-library-card { min-width: 0; display: flex; flex-direction: column; padding: 0; border: 1px solid #eae2df; border-radius: 11px; overflow: hidden; background: #fff; transition: transform .2s, border-color .2s; }
+.pf-library-card { min-width: 0; display: flex; flex-direction: column; padding: 0; border: 1px solid #eae2df; border-radius: var(--pf-radius-sm); overflow: hidden; background: var(--pf-card); transition: transform .2s, border-color .2s; }
 .pf-library-card:hover { transform: translateY(-3px); border-color: #c68f7d; }
 .pf-library-card.is-selected { border-color: #bb6f57; box-shadow: 0 0 0 2px #c5df8b60; }
 .pf-library-cover { position: relative; display: block; width: 100%; padding: 0; border: 0; aspect-ratio: 1; overflow: hidden; background: #363e31; color: #fff; text-align: left; font: inherit; }
@@ -74,7 +74,7 @@ button.pf-library-cover { cursor: pointer; }
 .pf-library-card.is-compact .pf-library-card-actions { gap: 5px; padding: 7px; }
 .pf-library-spinner { animation: pf-library-spin 1s linear infinite; }
 .pf-library-voice-field { display: grid; gap: 7px; font-size: 11px; }
-.pf-library-voice-field textarea { box-sizing: border-box; width: 100%; resize: vertical; min-height: 76px; border: 1px solid #e9dfdc; border-radius: 7px; padding: 9px; color: #513f39; background: #fbf9f8; font: inherit; line-height: 1.6; }
+.pf-library-voice-field textarea { box-sizing: border-box; width: 100%; resize: vertical; min-height: 76px; border: 1px solid #e9dfdc; border-radius: 7px; padding: 9px; color: #513f39; background: var(--pf-sunken); font: inherit; line-height: 1.6; }
 .pf-library-voice-field textarea:focus { outline: 2px solid #dfac9c; }
 .pf-library-audio { width: 100%; max-width: 100%; height: 32px; margin-top: 12px; }
 @keyframes pf-library-spin { to { transform: rotate(360deg); } }

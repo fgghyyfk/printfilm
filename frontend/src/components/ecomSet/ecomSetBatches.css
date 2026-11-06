@@ -1,6 +1,6 @@
 /* 套图按批次展示（pf-batch-*） */
 .pf-batches { display: grid; gap: 1rem; }
-.pf-batch { display: grid; gap: 0.7rem; padding: 0.9rem 1rem; border: 1px solid var(--pf-line); border-radius: 14px; background: var(--pf-card, transparent); }
+.pf-batch { display: grid; gap: 0.7rem; padding: 0.9rem 1rem; border: 1px solid var(--pf-line); border-radius: var(--pf-radius); background: var(--pf-card, transparent); }
 .pf-batch-head { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
 .pf-batch-head strong { font-size: 1rem; }
 .pf-batch-head .pf-muted { font-size: 0.85rem; }
@@ -8,7 +8,7 @@
 .pf-batch-strip { display: grid; grid-auto-flow: column; grid-auto-columns: 200px; gap: 0.7rem; overflow-x: auto; padding-bottom: 0.4rem; }
 .pf-batch-item { display: grid; gap: 0.3rem; padding: 0; border: 0; background: none; color: inherit; font: inherit; font-size: 0.8rem; text-align: left; cursor: zoom-in; }
 .pf-batch-item:disabled { cursor: default; }
-.pf-batch-item img, .pf-batch-ph { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 10px; background: var(--pf-bg); }
+.pf-batch-item img, .pf-batch-ph { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: var(--pf-radius-sm); background: var(--pf-bg); }
 .pf-batch-ph { display: grid; place-items: center; color: var(--pf-muted, #999); font-size: 0.8rem; }
 .pf-batch-lightbox { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; align-content: center; gap: 0.6rem; padding: 2rem 1rem; background: rgba(0, 0, 0, 0.82); color: #fff; }
 .pf-batch-lightbox img { max-width: min(92vw, 1100px); max-height: 84vh; object-fit: contain; border-radius: 8px; }

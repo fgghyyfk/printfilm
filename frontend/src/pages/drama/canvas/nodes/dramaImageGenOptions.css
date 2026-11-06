@@ -19,20 +19,20 @@
   height: 30px;
   padding: 0 10px;
   border: none;
-  border-radius: 999px;
+  border-radius: var(--pf-radius-pill);
   background: transparent;
-  color: #475569;
+  color: var(--pf-ink-soft);
   font-size: 12px;
   cursor: pointer;
 }
 
 .fc-gen-opt-btn:hover:not(:disabled) {
-  background: #f1f5f9;
+  background: var(--pf-sunken);
 }
 
 .fc-gen-opt-btn.active {
-  background: rgba(255, 106, 61, 0.28);
-  color: #9a3412;
+  background: rgba(220, 58, 20, 0.28);
+  color: var(--pf-accent-deep);
 }
 
 .fc-gen-opt-btn:disabled {
@@ -55,9 +55,9 @@
   max-height: 320px;
   overflow: auto;
   padding: 12px;
-  border: 1px solid #e2e8f0;
-  border-radius: 14px;
-  background: #fff;
+  border: 1px solid var(--pf-line-solid);
+  border-radius: var(--pf-radius);
+  background: var(--pf-card);
   box-shadow: 0 12px 32px rgba(15, 23, 42, 0.14);
 }
 
@@ -88,7 +88,7 @@
 
 .fc-gen-opt-panel-title {
   margin-bottom: 8px;
-  color: #0f172a;
+  color: var(--pf-ink);
   font-size: 13px;
   font-weight: 600;
 }
@@ -104,10 +104,10 @@
   flex-direction: column;
   gap: 4px;
   padding: 0;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
+  border: 1px solid var(--pf-line-solid);
+  border-radius: var(--pf-radius-sm);
   overflow: hidden;
-  background: #fff;
+  background: var(--pf-card);
   cursor: pointer;
   text-align: left;
 }
@@ -117,12 +117,12 @@
   width: 100%;
   aspect-ratio: 16 / 10;
   object-fit: cover;
-  background: #f8fafc;
+  background: var(--pf-sunken);
 }
 
 .fc-gen-style-card span {
   padding: 4px 6px 6px;
-  color: #334155;
+  color: var(--pf-ink-soft);
   font-size: 11px;
   line-height: 1.3;
 }
@@ -151,20 +151,20 @@
   flex-direction: column;
   gap: 2px;
   padding: 10px 12px;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  background: #fff;
+  border: 1px solid var(--pf-line-solid);
+  border-radius: var(--pf-radius-sm);
+  background: var(--pf-card);
   text-align: left;
   cursor: pointer;
 }
 
 .fc-gen-model-item strong {
-  color: #0f172a;
+  color: var(--pf-ink);
   font-size: 13px;
 }
 
 .fc-gen-model-item span {
-  color: #64748b;
+  color: var(--pf-muted);
   font-size: 11px;
   line-height: 1.4;
 }
@@ -182,8 +182,8 @@
   width: 100%;
   padding: 9px 10px;
   border: 1px solid #e8edf3;
-  border-radius: 10px;
-  background: #fff;
+  border-radius: var(--pf-radius-sm);
+  background: var(--pf-card);
   text-align: left;
   cursor: pointer;
   transition: border-color 0.12s ease, background 0.12s ease;
@@ -191,7 +191,7 @@
 
 .fc-gen-model-card:hover {
   border-color: #d4d4d8;
-  background: #fafafa;
+  background: var(--pf-sunken);
 }
 
 .fc-gen-model-card.selected {
@@ -209,7 +209,7 @@
   margin-top: 1px;
   border-radius: 8px;
   color: #57534e;
-  background: #f5f5f4;
+  background: var(--pf-sunken);
 }
 
 .fc-gen-model-card-icon.is-seedance25,
@@ -219,7 +219,7 @@
 .fc-gen-model-card-icon.is-seedream,
 .fc-gen-model-card-icon.is-gptImage {
   color: #57534e;
-  background: #f5f5f4;
+  background: var(--pf-sunken);
 }
 
 .fc-gen-model-card.selected .fc-gen-model-card-icon {
@@ -294,7 +294,7 @@
 }
 
 .fc-gen-model-card-price {
-  color: #64748b;
+  color: var(--pf-muted);
   font-size: 11px;
   font-weight: 500;
   line-height: 1.35;
@@ -309,18 +309,18 @@
 .fc-gen-chip {
   height: 28px;
   padding: 0 10px;
-  border: 1px solid #e2e8f0;
-  border-radius: 999px;
-  background: #fff;
-  color: #475569;
+  border: 1px solid var(--pf-line-solid);
+  border-radius: var(--pf-radius-pill);
+  background: var(--pf-card);
+  color: var(--pf-ink-soft);
   font-size: 12px;
   cursor: pointer;
 }
 
 .fc-gen-chip.selected {
-  border-color: rgba(255, 106, 61, 0.9);
-  background: rgba(255, 106, 61, 0.28);
-  color: #9a3412;
+  border-color: rgba(220, 58, 20, 0.9);
+  background: rgba(220, 58, 20, 0.28);
+  color: var(--pf-accent-deep);
 }
 
 .fc-gen-duration-custom {
@@ -329,7 +329,7 @@
   justify-content: space-between;
   gap: 8px;
   margin-top: 12px;
-  color: #64748b;
+  color: var(--pf-muted);
   font-size: 12px;
 }
 
@@ -337,10 +337,10 @@
   width: 72px;
   height: 28px;
   padding: 0 8px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--pf-line-solid);
   border-radius: 8px;
-  background: #fff;
-  color: #0f172a;
+  background: var(--pf-card);
+  color: var(--pf-ink);
   font: inherit;
   font-size: 12px;
 }
@@ -348,9 +348,9 @@
 .drama-assets-gen-opts {
   margin: 0 0 1rem;
   padding: 10px 12px;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  background: #fff;
+  border: 1px solid var(--pf-line-solid);
+  border-radius: var(--pf-radius);
+  background: var(--pf-card);
 }
 
 .drama-assets-gen-opts .fc-gen-opts {
@@ -373,14 +373,14 @@
   border: none;
   padding: 0;
   background: none;
-  color: #64748b;
+  color: var(--pf-muted);
   font-size: 12px;
   cursor: pointer;
 }
 
 .fc-skill-picker-link:hover,
 .pf-skill-picker-link:hover {
-  color: #9a3412;
+  color: var(--pf-accent-deep);
 }
 
 .fc-skill-picker-list,
@@ -399,10 +399,10 @@
   align-items: flex-start;
   gap: 8px;
   padding: 8px 10px;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
+  border: 1px solid var(--pf-line-solid);
+  border-radius: var(--pf-radius-sm);
   cursor: pointer;
-  color: #0f172a;
+  color: var(--pf-ink);
 }
 
 .fc-skill-picker-item input,
@@ -427,7 +427,7 @@
 
 .fc-skill-picker-item em,
 .pf-skill-picker-item em {
-  color: #94a3b8;
+  color: var(--pf-faint);
   font-style: normal;
   font-size: 11px;
   line-height: 1.4;
@@ -439,8 +439,8 @@
 
 .fc-skill-picker-item.is-checked,
 .pf-skill-picker-item.is-checked {
-  border-color: rgba(255, 106, 61, 0.9);
-  background: rgba(255, 106, 61, 0.18);
+  border-color: rgba(220, 58, 20, 0.9);
+  background: rgba(220, 58, 20, 0.18);
 }
 
 .fc-skill-picker-row,
@@ -471,26 +471,26 @@
   justify-content: center;
   width: 28px;
   height: 28px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--pf-line-solid);
   border-radius: 8px;
-  background: #fff;
-  color: #64748b;
+  background: var(--pf-card);
+  color: var(--pf-muted);
   cursor: pointer;
   padding: 0;
 }
 
 .fc-skill-picker-action:hover,
 .pf-skill-picker-action:hover {
-  color: #9a3412;
-  border-color: #cbd5e1;
+  color: var(--pf-accent-deep);
+  border-color: var(--pf-line-strong);
 }
 
 .fc-skill-picker-preview,
 .pf-skill-picker-preview {
   margin-top: 10px;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  background: #f8fafc;
+  border: 1px solid var(--pf-line-solid);
+  border-radius: var(--pf-radius);
+  background: var(--pf-sunken);
   overflow: hidden;
 }
 
@@ -501,8 +501,8 @@
   justify-content: space-between;
   gap: 10px;
   padding: 10px 12px;
-  border-bottom: 1px solid #e2e8f0;
-  background: #fff;
+  border-bottom: 1px solid var(--pf-line-solid);
+  background: var(--pf-card);
 }
 
 .fc-skill-picker-preview-head > div:first-child,
@@ -516,13 +516,13 @@
 .fc-skill-picker-preview-head strong,
 .pf-skill-picker-preview-head strong {
   font-size: 13px;
-  color: #0f172a;
+  color: var(--pf-ink);
 }
 
 .fc-skill-picker-preview-head span,
 .pf-skill-picker-preview-head span {
   font-size: 11px;
-  color: #64748b;
+  color: var(--pf-muted);
   line-height: 1.4;
 }
 
@@ -544,14 +544,14 @@
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
-  color: #334155;
+  color: var(--pf-ink-soft);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 .fc-skill-picker-empty,
 .pf-skill-picker-empty {
   margin: 0;
-  color: #94a3b8;
+  color: var(--pf-faint);
   font-size: 12px;
 }
 

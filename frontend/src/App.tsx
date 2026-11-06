@@ -10,6 +10,7 @@ import { setWorkspaceTeam, subscribeWorkspace, workspaceScope } from './features
 import { TeamPreviewProvider } from './features/teams/TeamPreviewContext'
 import './styles/printfilm.css'
 import './App.css'
+import './styles/brand.css'
 import DocumentTitle from './components/layout/DocumentTitle'
 
 /* 除首页与登录页外，页面按路由拆包，首屏只下载需要的代码 */

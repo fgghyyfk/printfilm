@@ -9,6 +9,8 @@ export const zhPages = {
     templatesHint: '默认 3D 动画，也可选择二维动漫、绘本插画或国风水墨。',
     templatesLoadFailed: '暂时无法加载画风，请稍后重试，或直接开始创作。',
     headline: '一张照片，开口讲科普',
+    headA: '一张照片，',
+    headB: '开口讲科普',
     sub1: '上传半身照，写下要讲的话。',
     sub2: '配音、对口型、标题条，一次出成片。',
     start: '立即制作',

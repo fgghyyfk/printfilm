@@ -8,8 +8,8 @@
   display: grid;
   place-items: center;
   min-height: 220px;
-  background: #111;
-  border-radius: 12px;
+  background: var(--pf-ink);
+  border-radius: var(--pf-radius);
   overflow: hidden;
 }
 .pf-tool-run-media img,
@@ -92,9 +92,9 @@
 }
 .pf-tool-panel,
 .pf-tool-result {
-  background: #fff;
+  background: var(--pf-card);
   border: 1px solid var(--pf-line);
-  border-radius: 16px;
+  border-radius: var(--pf-radius-lg);
   box-shadow: var(--pf-shadow);
 }
 .pf-tool-panel {
@@ -115,15 +115,15 @@
 }
 .pf-tool-field textarea {
   border: 1px solid var(--pf-line);
-  border-radius: 12px;
+  border-radius: var(--pf-radius);
   padding: 0.65rem 0.75rem;
   font: inherit;
   resize: vertical;
   background: var(--pf-bg);
 }
 .pf-tool-upload {
-  border: 1px dashed rgba(17, 19, 24, 0.22);
-  border-radius: 12px;
+  border: 1px dashed rgba(23, 19, 14, 0.22);
+  border-radius: var(--pf-radius);
   padding: 1.5rem 1rem;
   text-align: center;
   color: var(--pf-muted);
@@ -165,8 +165,8 @@
 }
 .pf-tool-chips button {
   border: 1px solid var(--pf-line);
-  background: #fff;
-  border-radius: 999px;
+  background: var(--pf-card);
+  border-radius: var(--pf-radius-pill);
   padding: 0.35rem 0.75rem;
   font: inherit;
   font-size: 0.85rem;
@@ -203,8 +203,8 @@
   width: 100%;
   max-height: 560px;
   object-fit: contain;
-  border-radius: 12px;
-  background: #111;
+  border-radius: var(--pf-radius);
+  background: var(--pf-ink);
 }
 .pf-tool-result-item {
   display: flex;

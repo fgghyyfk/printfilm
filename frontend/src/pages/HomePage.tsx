@@ -1,4 +1,4 @@
-/** 开口播官网首页：简洁风，居中主张 + 产品示意窗 + 平台条 + 流程标签页 + 其他出片方式 */
+/** 开口播官网首页：演播室字幕风，主张 + 监视器示意 + 平台条 + 流程标签页 + 其他出片方式 */
 import { useState, type KeyboardEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ArrowRight, Clapperboard, ShoppingBag, Video, Wand2 } from 'lucide-react'
@@ -6,7 +6,7 @@ import AppShell from '../components/layout/AppShell'
 import BrandMark from '../components/BrandMark'
 import HomeFlowPreview from './home/HomeFlowPreview'
 import { useI18n } from '../i18n'
-import { brandFullName, brandName } from '../lib/siteLinks'
+import { brandFullName } from '../lib/siteLinks'
 import './home/home.css'
 
 const AVATAR_PATH = '/studio/new?mode=avatar'
@@ -45,83 +45,76 @@ export default function HomePage() {
   return (
     <AppShell active="home" flush>
       <section className="kk-hero">
-        <p className="kk-eyebrow">{t('home.eyebrow')}</p>
-        <h1>
-          <span className="kk-brand">
-            {brandName(locale)}
-            <i className="kk-cursor" aria-hidden />
-          </span>{' '}
-          {t('home.headline')}
-        </h1>
-        <p className="kk-sub">
-          {t('home.sub1')}
-          <br />
-          {t('home.sub2')}
-        </p>
-        <div className="kk-cta">
-          <button type="button" className="kk-pill is-fill" onClick={() => goAuthOr(AVATAR_PATH)}>
-            {t('home.start')}
-          </button>
-          <button type="button" className="kk-pill is-line" onClick={() => goAuthOr('/ecom')}>
-            {t('home.ecom')}
-          </button>
-        </div>
-        <p className="kk-cta-note">
-          {loggedIn ? (
-            <Link to="/tasks">{t('home.myTasks')}</Link>
-          ) : (
-            <>
-              {t('home.newHere')}{' '}
-              <Link to={`/auth?mode=register&next=${encodeURIComponent(AVATAR_PATH)}`}>{t('home.trial')}</Link>
-            </>
-          )}
-        </p>
-
-        <div className="kk-window" aria-hidden>
-          <div className="kk-window-bar">
-            <span className="kk-lights">
-              <i />
-              <i />
-              <i />
+        <div className="kk-hero-copy">
+          <p className="kk-eyebrow">
+            <i aria-hidden />
+            {t('home.eyebrow')}
+          </p>
+          <h1>
+            <span>{t('home.headA')}</span>
+            <span className="kk-caption-line">
+              {t('home.headB')}
+              <i className="kk-cursor" aria-hidden />
             </span>
-            <span className="kk-window-title">{t('home.winTitle')}</span>
-            <span className="kk-window-status">{t('home.winStatus')}</span>
+          </h1>
+          <p className="kk-sub">
+            {t('home.sub1')}
+            <br />
+            {t('home.sub2')}
+          </p>
+          <div className="kk-cta">
+            <button type="button" className="kk-pill is-fill" onClick={() => goAuthOr(AVATAR_PATH)}>
+              {t('home.start')}
+            </button>
+            <button type="button" className="kk-pill is-line" onClick={() => goAuthOr('/ecom')}>
+              {t('home.ecom')}
+            </button>
           </div>
-          <div className="kk-window-body">
-            <aside className="kk-window-side">
-              {m.home.winSteps.map((s, i) => (
-                <span key={s} className={i === 3 ? 'is-on' : i < 3 ? 'is-done' : ''}>
-                  <b />
-                  {s}
-                </span>
-              ))}
-            </aside>
-            <div className="kk-window-main">
-              <p className="kk-window-task">{t('home.winTask')}</p>
-              <div className="kk-window-grid">
-                <div className="kk-phone">
-                  <img src="/char-presets/real.jpg" alt="" width={170} height={302} decoding="async" />
-                  <div className="kk-phone-title">
-                    <span className="is-top">{t('home.winTitleTop')}</span>
-                    <span>{t('home.winTitleBottom')}</span>
-                  </div>
+          <p className="kk-cta-note">
+            {loggedIn ? (
+              <Link to="/tasks">{t('home.myTasks')}</Link>
+            ) : (
+              <>
+                {t('home.newHere')}{' '}
+                <Link to={`/auth?mode=register&next=${encodeURIComponent(AVATAR_PATH)}`}>{t('home.trial')}</Link>
+              </>
+            )}
+          </p>
+        </div>
+
+        <div className="kk-monitor-wrap">
+          <div className="kk-monitor" aria-hidden>
+            <div className="kk-monitor-bar">
+              <span className="kk-rec">
+                <i />
+                REC
+              </span>
+              <span className="kk-monitor-title">{t('home.winTask')}</span>
+              <span className="kk-timecode">00:00:18:06</span>
+            </div>
+            <div className="kk-monitor-body">
+              <div className="kk-phone">
+                <img src="/char-presets/real.jpg" alt="" width={190} height={338} decoding="async" />
+                <div className="kk-phone-title">
+                  <span className="is-top">{t('home.winTitleTop')}</span>
+                  <span>{t('home.winTitleBottom')}</span>
                 </div>
-                <ul className="kk-rows">
-                  {m.home.winRows.map((r, i) => (
-                    <li key={r.label} className={`is-${i < 2 ? 'done' : i === 2 ? 'run' : 'wait'}`}>
-                      <span>{r.label}</span>
-                      <span className="kk-bar">
-                        <i />
-                      </span>
-                      <em>{r.state}</em>
-                    </li>
-                  ))}
-                </ul>
               </div>
+              <ul className="kk-rows">
+                {m.home.winRows.map((r, i) => (
+                  <li key={r.label} className={`is-${i < 2 ? 'done' : i === 2 ? 'run' : 'wait'}`}>
+                    <span>{r.label}</span>
+                    <em>{r.state}</em>
+                    <span className="kk-bar">
+                      <i />
+                    </span>
+                  </li>
+                ))}
+              </ul>
             </div>
           </div>
+          <p className="kk-note">{t('home.winNote')}</p>
         </div>
-        <p className="kk-note">{t('home.winNote')}</p>
       </section>
 
       <section className="kk-platforms">
@@ -134,9 +127,7 @@ export default function HomePage() {
       </section>
 
       <section className="kk-flow" id="how">
-        <h2>
-          <span className="kk-brand-sm">{brandName(locale)}.</span> {t('home.flowTitle')}
-        </h2>
+        <h2>{t('home.flowTitle')}</h2>
         <p className="kk-sub">{t('home.flowSub')}</p>
         <div className="kk-tabs" role="tablist" aria-label={t('home.flowTitle')} onKeyDown={onFlowKeyDown}>
           {m.home.flow.map((f, i) => (
@@ -151,13 +142,14 @@ export default function HomePage() {
               className={i === flowIdx ? 'is-on' : ''}
               onClick={() => setFlowIdx(i)}
             >
+              <small>0{i + 1}</small>
               {f.tab}
             </button>
           ))}
         </div>
         <div className="kk-flow-panel" id="kk-flow-panel" role="tabpanel" aria-labelledby={`kk-flow-tab-${flowIdx}`}>
           <div key={flowIdx} className="kk-flow-copy">
-            <span className="kk-flow-no">0{flowIdx + 1}</span>
+            <span className="kk-flow-no">00:0{flowIdx + 1}</span>
             <h3>{flow.title}</h3>
             <p>{flow.desc}</p>
           </div>
@@ -183,7 +175,9 @@ export default function HomePage() {
       </section>
 
       <section className="kk-close">
-        <h2>{t('home.closeTitle')}</h2>
+        <h2>
+          <span className="kk-caption-line">{t('home.closeTitle')}</span>
+        </h2>
         <p className="kk-sub">{t('home.closeSub')}</p>
         <button type="button" className="kk-pill is-fill" onClick={() => goAuthOr(AVATAR_PATH)}>
           {t('home.start')}

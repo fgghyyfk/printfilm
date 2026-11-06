@@ -24,7 +24,7 @@
 .pf-pricing-guest-tip svg { margin-left: 3px; flex: 0 0 auto; }
 
 /* 账户卡避免将加载中或匿名账户显示成零余额。 */
-.pf-pricing-wallet-dark { position: relative; isolation: isolate; min-width: 0; overflow: hidden; padding: 23px 25px 19px; border: 1px solid #292e27; border-radius: 20px; background: #171c16; color: #fff; box-shadow: 0 12px 24px #1a201312; }
+.pf-pricing-wallet-dark { position: relative; isolation: isolate; min-width: 0; overflow: hidden; padding: 23px 25px 19px; border: 1px solid #292e27; border-radius: var(--pf-radius-lg); background: #171c16; color: #fff; box-shadow: 0 12px 24px #1a201312; }
 .pf-pricing-wallet-dark::before { content: ''; position: absolute; z-index: -1; width: 215px; height: 215px; top: -126px; right: -49px; border: 1px solid #c5ed8730; border-radius: 50%; box-shadow: 0 0 0 25px #c5ed8706, 0 0 0 51px #c5ed8704; pointer-events: none; }
 .pf-pricing-wallet-dark-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .pf-pricing-wallet-dark-label { display: inline-flex; align-items: center; gap: 8px; color: #dcd1cd; font-size: 12px; }
@@ -50,10 +50,10 @@
 .pf-pricing-wallet-error button { display: inline-flex; align-items: center; gap: 4px; padding: 3px 0 3px 5px; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
 
 .pf-pricing-body { min-width: 0; }
-.pf-pricing-hint, .pf-pricing-error { display: flex; align-items: center; gap: 9px; padding: 13px 16px; margin: 0 0 16px; border: 1px solid #e7cdc5; border-radius: 10px; background: #f9ede9; font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
+.pf-pricing-hint, .pf-pricing-error { display: flex; align-items: center; gap: 9px; padding: 13px 16px; margin: 0 0 16px; border: 1px solid #e7cdc5; border-radius: var(--pf-radius-sm); background: #f9ede9; font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
 .pf-pricing-hint > svg { color: #854d3b; flex: 0 0 auto; }
 .pf-pricing-error { border-color: #f0d8d2; background: #fff5f2; color: #a53e2c; }
-.pf-pricing-topup-panel { padding: clamp(18px, 2.7vw, 32px); border: 1px solid var(--pricing-line); border-radius: 22px; background: #fff; }
+.pf-pricing-topup-panel { padding: clamp(18px, 2.7vw, 32px); border: 1px solid var(--pricing-line); border-radius: var(--pf-radius-lg); background: var(--pf-card); }
 .pf-pricing-section-head { margin-bottom: 21px; }
 .pf-pricing-section-head.is-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px 20px; }
 .pf-pricing-section-head h2 { display: flex; align-items: center; gap: 11px; min-width: 0; margin: 0; font-size: 16px; font-weight: 750; letter-spacing: -.02em; line-height: 1.6; }
@@ -64,7 +64,7 @@
 .pf-pricing-pay-trust > svg { color: #97817a; flex: 0 0 auto; }
 .pf-pricing-pay-tip { padding: 9px 12px; margin: -7px 0 13px; border-radius: 7px; background: #fff9ed; color: #966a24; font-size: 12px; line-height: 1.6; }
 .pf-pricing-pay-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-.pf-pricing-pay-tile { position: relative; display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-width: 0; min-height: 64px; appearance: none; padding: 14px; border: 1px solid var(--pricing-line); border-radius: 12px; background: #fff; color: var(--pf-ink); font: inherit; text-align: left; cursor: pointer; transition: border-color .15s ease, background .15s ease; }
+.pf-pricing-pay-tile { position: relative; display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-width: 0; min-height: 64px; appearance: none; padding: 14px; border: 1px solid var(--pricing-line); border-radius: var(--pf-radius); background: var(--pf-card); color: var(--pf-ink); font: inherit; text-align: left; cursor: pointer; transition: border-color .15s ease, background .15s ease; }
 .pf-pricing-pay-tile:hover { border-color: #b5a19b; background: #fcfaf9; }
 .pf-pricing-pay-tile.is-active { border-color: #ae5c42; background: #fbf2ef; box-shadow: inset 0 0 0 1px #8cae4225; }
 .pf-pricing-pay-tile.is-disabled { background: #fbf9f9; color: #858d7f; }
@@ -78,7 +78,7 @@
 
 /* 自动分配任意数量的真实 SKU；宽屏最多四列，窄屏自然收至单列。 */
 .pf-pricing-sku-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); align-items: stretch; gap: 14px; }
-.pf-pricing-sku-card { display: flex; flex-direction: column; min-width: 0; padding: 21px 19px 19px; border: 1px solid var(--pricing-line); border-radius: 14px; background: #fff; scroll-margin-top: 100px; transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
+.pf-pricing-sku-card { display: flex; flex-direction: column; min-width: 0; padding: 21px 19px 19px; border: 1px solid var(--pricing-line); border-radius: var(--pf-radius); background: var(--pf-card); scroll-margin-top: 100px; transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
 .pf-pricing-sku-card:hover { border-color: #c5b4af; box-shadow: 0 6px 16px #1a201309; transform: translateY(-2px); }
 .pf-pricing-sku-card.is-recommended { border-color: #c8816a; background: linear-gradient(180deg, #faede9, #fff 66%); box-shadow: inset 0 0 0 1px #b5d17720; }
 .pf-pricing-sku-card-head { display: flex; align-items: center; flex-wrap: wrap; gap: 7px 9px; margin-bottom: 6px; }
@@ -93,7 +93,7 @@
 .pf-pricing-sku-bonus { display: flex; align-items: center; gap: 4px; min-height: 20px; margin: 8px 0 19px; color: #7f4431; font-size: 12px; font-weight: 600; line-height: 1.6; }
 .pf-pricing-sku-bonus > svg { flex: 0 0 auto; }
 .pf-pricing-sku-bonus.is-empty { visibility: hidden; }
-.pf-pricing-sku-cta { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 44px; appearance: none; padding: 10px 12px; margin-top: auto; border: 1px solid #e1d9d6; border-radius: 8px; background: #f7f2f1; color: #40312c; font: inherit; font-size: 13px; font-weight: 750; line-height: 1.6; cursor: pointer; transition: background .15s ease, border-color .15s ease; }
+.pf-pricing-sku-cta { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 44px; appearance: none; padding: 10px 12px; margin-top: auto; border: 1px solid #e1d9d6; border-radius: 8px; background: var(--pf-sunken); color: #40312c; font: inherit; font-size: 13px; font-weight: 750; line-height: 1.6; cursor: pointer; transition: background .15s ease, border-color .15s ease; }
 .pf-pricing-sku-cta > svg { flex: 0 0 auto; }
 .pf-pricing-sku-cta:hover:not(:disabled) { border-color: #a7918a; background: #f0e6e3; }
 .pf-pricing-sku-cta.is-primary { border-color: var(--pf-lime); background: var(--pf-lime); color: #32140b; }
@@ -101,13 +101,13 @@
 .pf-pricing-sku-cta:disabled { opacity: .55; cursor: wait; }
 .pf-pricing-spinner { animation: pf-pricing-spin .8s linear infinite; }
 .pf-pricing-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
-.pf-pricing-state { display: flex; flex-direction: column; align-items: center; padding: 38px 20px; border: 1px dashed #e5dad7; border-radius: 14px; background: #fcfaf9; text-align: center; }
+.pf-pricing-state { display: flex; flex-direction: column; align-items: center; padding: 38px 20px; border: 1px dashed #e5dad7; border-radius: var(--pf-radius); background: #fcfaf9; text-align: center; }
 .pf-pricing-state > svg { margin-bottom: 12px; color: #9d7c72; }
 .pf-pricing-state h3 { margin: 0 0 8px; font-size: 15px; font-weight: 700; line-height: 1.7; }
 .pf-pricing-state p { margin: 0; color: var(--pricing-muted); font-size: 12px; line-height: 1.7; }
-.pf-pricing-state a, .pf-pricing-retry { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 38px; margin-top: 18px; padding: 8px 18px; border: 1px solid #e3d5d0; border-radius: 7px; background: #fff; color: #563a31; font: inherit; font-size: 12px; font-weight: 600; text-decoration: none; cursor: pointer; }
+.pf-pricing-state a, .pf-pricing-retry { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 38px; margin-top: 18px; padding: 8px 18px; border: 1px solid #e3d5d0; border-radius: 7px; background: var(--pf-card); color: #563a31; font: inherit; font-size: 12px; font-weight: 600; text-decoration: none; cursor: pointer; }
 .pf-pricing-state a:hover, .pf-pricing-retry:hover { border-color: #af8e83; }
-.pf-pricing-sku-skeleton { min-width: 0; min-height: 280px; padding: 22px 19px; border: 1px solid #f0eae8; border-radius: 14px; }
+.pf-pricing-sku-skeleton { min-width: 0; min-height: 280px; padding: 22px 19px; border: 1px solid var(--pf-line-solid); border-radius: var(--pf-radius); }
 .pf-pricing-sku-skeleton i { display: block; width: 55%; height: 12px; margin-bottom: 12px; border-radius: 4px; background: #f3edeb; animation: pf-pricing-pulse 1.6s ease-in-out infinite; }
 .pf-pricing-sku-skeleton i:nth-child(2) { width: 75%; height: 9px; }
 .pf-pricing-sku-skeleton i:nth-child(3) { width: 65%; height: 44px; margin: 30px 0 55px; }
@@ -115,7 +115,7 @@
 
 .pf-pricing-info { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 30px 52px; padding: 32px 4px; }
 .pf-pricing-info-card { display: grid; grid-template-columns: 33px minmax(0, 1fr); align-items: start; gap: 12px; min-width: 0; }
-.pf-pricing-info-visual { display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid #e8dfdc; border-radius: 9px; background: #f3e9e6; color: #906c60; }
+.pf-pricing-info-visual { display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid #e8dfdc; border-radius: var(--pf-radius-sm); background: #f3e9e6; color: #906c60; }
 .pf-pricing-info-visual > svg { width: 17px; height: 17px; }
 .pf-pricing-info-card h3 { margin: 6px 0 13px; font-size: 13px; font-weight: 750; line-height: 1.5; }
 .pf-pricing-info-card ul { display: grid; gap: 8px; margin: 0; padding: 0; color: var(--pricing-muted); font-size: 12px; line-height: 1.85; list-style: none; }
@@ -161,26 +161,26 @@
   .pf-pricing-lead { font-size: 13px; }
   .pf-pricing-hero-features { gap: 10px 15px; margin-top: 17px; }
   .pf-pricing-guest-tip { margin-top: 15px; font-size: 11px; }
-  .pf-pricing-wallet-dark { padding: 20px; border-radius: 16px; }
+  .pf-pricing-wallet-dark { padding: 20px; border-radius: var(--pf-radius-lg); }
   .pf-pricing-wallet-dark-head { align-items: center; }
   .pf-pricing-wallet-dark-label { padding: 0; }
   .pf-pricing-wallet-dark-actions { max-width: none; }
   .pf-pricing-wallet-dark-balance { min-height: 46px; margin-top: 16px; margin-bottom: 18px; font-size: 36px; }
-  .pf-pricing-topup-panel { padding: 19px 17px; border-radius: 16px; }
+  .pf-pricing-topup-panel { padding: 19px 17px; border-radius: var(--pf-radius-lg); }
   .pf-pricing-section-head { margin-bottom: 17px; }
   .pf-pricing-section-head h2 { gap: 8px; font-size: 15px; }
   .pf-pricing-section-head.is-row { gap: 8px; }
   .pf-pricing-pay-trust { font-size: 10px; }
   .pf-pricing-pay-section { padding-bottom: 23px; margin-bottom: 23px; }
   .pf-pricing-pay-grid { gap: 9px; }
-  .pf-pricing-pay-tile { grid-template-columns: 24px minmax(0, 1fr) 15px; gap: 7px; min-height: 62px; padding: 11px 9px; border-radius: 9px; }
+  .pf-pricing-pay-tile { grid-template-columns: 24px minmax(0, 1fr) 15px; gap: 7px; min-height: 62px; padding: 11px 9px; border-radius: var(--pf-radius-sm); }
   .pf-pricing-pay-tile .pf-pay-brand-icon, .pf-pricing-pay-tile-icon { width: 24px; height: 24px; }
   .pf-pricing-pay-tile-label { font-size: 11px; }
   .pf-pricing-pay-tile-check { width: 15px; height: 15px; }
   .pf-pricing-pay-tile-check > svg { width: 11px; height: 11px; }
   .pf-pricing-pay-tile-soon, .pf-pricing-pay-tile-sub { font-size: 9px; }
   .pf-pricing-sku-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
-  .pf-pricing-sku-card { padding: 19px; border-radius: 11px; }
+  .pf-pricing-sku-card { padding: 19px; border-radius: var(--pf-radius-sm); }
   .pf-pricing-sku-card-head { justify-content: space-between; }
   .pf-pricing-sku-hint { margin-bottom: 19px; }
   .pf-pricing-sku-price { margin-bottom: 19px; }

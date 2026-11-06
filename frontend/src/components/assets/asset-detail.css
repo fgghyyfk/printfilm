@@ -1,7 +1,7 @@
 /* 资产详情唯一布局：完整媒体展示、有限高度的信息区与固定操作栏。 */
-.pf-modal-panel.pf-asset-detail-shell { width: min(1420px, 100%); max-height: calc(100dvh - 40px); border: 0; border-radius: 22px; }
+.pf-modal-panel.pf-asset-detail-shell { width: min(1420px, 100%); max-height: calc(100dvh - 40px); border: 0; border-radius: var(--pf-radius-lg); }
 .pf-asset-detail-shell > .pf-modal-body { padding: 0; overflow: hidden; gap: 0; }
-.pf-asset-detail-dialog { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(360px, 1fr); width: min(1420px, 100%); height: min(860px, calc(100dvh - 56px)); overflow: hidden; border-radius: 22px; background: #fff; box-shadow: 0 26px 90px #131b2433; outline: none; }
+.pf-asset-detail-dialog { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(360px, 1fr); width: min(1420px, 100%); height: min(860px, calc(100dvh - 56px)); overflow: hidden; border-radius: var(--pf-radius-lg); background: var(--pf-card); box-shadow: 0 26px 90px #131b2433; outline: none; }
 .pf-asset-detail-media { position: relative; min-width: 0; min-height: 0; display: grid; place-items: center; overflow: hidden; background: #f4efee; }
 .pf-asset-detail-media.is-video { background: #101218; }
 .pf-asset-detail-media > img, .pf-asset-detail-media > video { display: block; width: 100%; height: 100%; object-fit: contain; }
@@ -9,7 +9,7 @@
 .pf-asset-detail-media-tools { position: absolute; top: 16px; right: 16px; display: flex; gap: 8px; }
 .pf-asset-detail-media-tools button { display: grid; place-items: center; width: 35px; height: 35px; padding: 0; border: 1px solid #ffffff70; border-radius: 50%; background: #fffffff0; color: #624d47; cursor: pointer; }
 .pf-asset-detail-time { position: absolute; top: 16px; left: 16px; padding: 6px 10px; border-radius: 7px; background: #0009; color: #fff; font-size: 12px; font-variant-numeric: tabular-nums; pointer-events: none; }
-.pf-asset-detail-sidebar { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: #fff; border-left: 1px solid #ebe2df; }
+.pf-asset-detail-sidebar { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--pf-card); border-left: 1px solid #ebe2df; }
 .pf-asset-detail-scroll { min-height: 0; overflow-y: auto; padding: 30px 28px 24px; scrollbar-width: thin; scrollbar-color: #dfd1cd transparent; }
 .pf-asset-detail-type { display: inline-flex; padding: 5px 9px; border-radius: 6px; border: 1px solid #eadfdb; background: #f8f2f0; color: #8c6e65; font-size: 11px; }
 .pf-asset-detail-scroll h2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; margin: 17px 0 24px; font-size: 23px; line-height: 1.45; font-weight: 650; color: #43312b; }
@@ -19,7 +19,7 @@
 .pf-asset-detail-text .is-collapsed { display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
 .pf-asset-detail-text .is-expanded { max-height: 260px; overflow: auto; padding-right: 6px; }
 .pf-asset-detail-text .pf-detail-text-toggle { padding: 7px 0 0; border: 0; background: transparent; color: #925744; font: inherit; font-size: 12px; cursor: pointer; }
-.pf-detail-prompt-mention { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; margin: 2px 4px 2px 0; padding: 3px 8px 3px 3px; border: 1px solid #e6dbd7; border-radius: 20px; background: #faf5f4; color: #43312b; font: inherit; line-height: 1.5; vertical-align: middle; cursor: pointer; }
+.pf-detail-prompt-mention { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; margin: 2px 4px 2px 0; padding: 3px 8px 3px 3px; border: 1px solid #e6dbd7; border-radius: var(--pf-radius-lg); background: #faf5f4; color: #43312b; font: inherit; line-height: 1.5; vertical-align: middle; cursor: pointer; }
 .pf-detail-prompt-mention > span:not(.pf-detail-reference-thumb) { min-width: 0; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pf-detail-prompt-mention > small { max-width: 105px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #8b726a; font-size: 10px; }
 .pf-detail-reference-thumb { position: relative; display: grid; place-items: center; width: 100%; height: 100%; overflow: hidden; border-radius: inherit; background: #f1e9e7; color: #87967a; }
@@ -31,17 +31,17 @@
 .pf-detail-references > h3 { display: flex; align-items: center; gap: 7px; margin: 0 0 14px; font-size: 12px; font-weight: 500; color: #8b746d; }
 .pf-detail-references > h3 > span { padding: 1px 5px; border-radius: 4px; background: #f5ece9; font-size: 10px; font-variant-numeric: tabular-nums; }
 .pf-detail-reference-group + .pf-detail-reference-group { margin-top: 16px; }
-.pf-detail-reference-group > h4 { margin: 0 0 8px; color: #98a08f; font-size: 11px; font-weight: 400; }
+.pf-detail-reference-group > h4 { margin: 0 0 8px; color: var(--pf-faint); font-size: 11px; font-weight: 400; }
 .pf-detail-reference-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(74px, 1fr)); align-items: start; gap: 12px 10px; }
 .pf-detail-reference { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
-.pf-detail-reference-open { position: relative; display: block; width: 100%; aspect-ratio: 1; padding: 0; overflow: hidden; border: 1px solid #e9e0dd; border-radius: 10px; background: #f3edeb; cursor: pointer; }
+.pf-detail-reference-open { position: relative; display: block; width: 100%; aspect-ratio: 1; padding: 0; overflow: hidden; border: 1px solid #e9e0dd; border-radius: var(--pf-radius-sm); background: #f3edeb; cursor: pointer; }
 .pf-detail-reference-open:hover, .pf-detail-prompt-mention:hover { border-color: #c98b78; box-shadow: 0 0 0 2px #b8ed631c; }
 .pf-detail-reference-open:focus-visible, .pf-detail-prompt-mention:focus-visible { outline: 2px solid #b76950; outline-offset: 3px; }
 .pf-detail-reference-label { position: absolute; right: 0; bottom: 0; left: 0; padding: 12px 5px 4px; background: linear-gradient(transparent, #000a); color: #fff; font-size: 10px; text-align: center; }
 .pf-detail-reference-name { display: block; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #6b5650; font-size: 11px; }
 .pf-detail-reference > small { margin-top: -3px; color: #a08c86; font-size: 10px; }
 .pf-detail-reference-group.is-audio .pf-detail-reference-grid { grid-template-columns: 1fr; }
-.pf-detail-reference-group.is-audio .pf-detail-reference { position: relative; display: grid; grid-template-columns: 43px minmax(0, 1fr); gap: 4px 10px; padding: 10px; border: 1px solid #ebe2df; border-radius: 10px; }
+.pf-detail-reference-group.is-audio .pf-detail-reference { position: relative; display: grid; grid-template-columns: 43px minmax(0, 1fr); gap: 4px 10px; padding: 10px; border: 1px solid #ebe2df; border-radius: var(--pf-radius-sm); }
 .pf-detail-reference-group.is-audio .pf-detail-reference-open { grid-row: 1 / 3; align-self: center; border: 0; }
 .pf-detail-reference-group.is-audio .pf-detail-reference-label { display: none; }
 .pf-detail-reference-group.is-audio audio { grid-column: 2; display: block; width: 100%; height: 32px; }
@@ -56,7 +56,7 @@
 .pf-asset-detail-meta-row { display: contents; }
 .pf-asset-detail-meta dt { color: #99a38e; }
 .pf-asset-detail-meta dd { min-width: 0; margin: 0; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #53413b; }
-.pf-asset-detail-actions { margin-top: auto; display: flex; flex-direction: column; gap: 10px; padding: 18px 24px; border-top: 1px solid #f0e9e7; background: #fff; }
+.pf-asset-detail-actions { margin-top: auto; display: flex; flex-direction: column; gap: 10px; padding: 18px 24px; border-top: 1px solid #f0e9e7; background: var(--pf-card); }
 .pf-asset-detail-actions > p { margin: 0; font-size: 12px; color: #8f6355; }
 .pf-asset-detail-utilities { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
 .pf-asset-detail-utilities .pf-btn { flex: 1; justify-content: center; font-size: 11px; padding: 8px; }
@@ -80,8 +80,8 @@
 .pf-asset-detail-version-info { flex: 1; min-width: 0; color: #80645b; font-size: 11px; }
 .pf-asset-detail-version-info small { display: block; margin-top: 4px; color: #a0aa95; }
 @media (max-width: 760px) {
-  .pf-modal-panel.pf-asset-detail-shell { border-radius: 16px; }
-  .pf-asset-detail-dialog { grid-template-columns: 1fr; grid-template-rows: minmax(160px, 42%) minmax(0, 1fr); height: calc(100dvh - 40px); border-radius: 16px; }
+  .pf-modal-panel.pf-asset-detail-shell { border-radius: var(--pf-radius-lg); }
+  .pf-asset-detail-dialog { grid-template-columns: 1fr; grid-template-rows: minmax(160px, 42%) minmax(0, 1fr); height: calc(100dvh - 40px); border-radius: var(--pf-radius-lg); }
   .pf-asset-detail-sidebar { border-left: 0; }
   .pf-asset-detail-scroll { padding: 20px; }
   .pf-asset-detail-scroll h2 { font-size: 20px; margin: 12px 0 18px; }

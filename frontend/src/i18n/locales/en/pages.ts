@@ -9,6 +9,8 @@ export const enPages = {
     templatesHint: '3D animation by default, with 2D anime, storybook illustration, and Chinese ink painting.',
     templatesLoadFailed: 'Styles could not load. Try again later or start creating directly.',
     headline: 'One photo, ready to talk',
+    headA: 'One photo,',
+    headB: 'ready to talk',
     sub1: 'Upload a half-body photo and write what to say.',
     sub2: 'Voice, lip sync, and title bar — one finished video.',
     start: 'Make one now',

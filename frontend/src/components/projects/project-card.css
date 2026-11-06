@@ -1,7 +1,7 @@
 .pf-shared-project-grid,
 .pf-project-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; align-items: stretch; }
 
-.pf-shared-project-card { position: relative; display: flex; flex-direction: column; min-width: 0; isolation: isolate; border: 1px solid #e6dedc; border-radius: 18px; background: #fff; color: #302522; transition: transform .2s, border-color .2s, box-shadow .2s; }
+.pf-shared-project-card { position: relative; display: flex; flex-direction: column; min-width: 0; isolation: isolate; border: 1px solid #e6dedc; border-radius: var(--pf-radius-lg); background: var(--pf-card); color: #302522; transition: transform .2s, border-color .2s, box-shadow .2s; }
 .pf-shared-project-card:hover { transform: translateY(-3px); border-color: #cca99e; box-shadow: 0 12px 30px #2636190d; }
 .pf-shared-project-card:focus-within { z-index: 3; }
 .pf-shared-project-card.is-selected { border-color: #aa4728; box-shadow: 0 0 0 2px #cae88d80; }
@@ -33,7 +33,7 @@
 .pf-shared-project-progress-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #8a9481; font-size: 11px; }
 .pf-shared-project-progress-meta strong { color: #624c45; font-size: 12px; font-variant-numeric: tabular-nums; }
 .pf-shared-project-progress-meta strong > span { color: #9ca792; font-weight: 400; }
-.pf-shared-project-progress { height: 5px; overflow: hidden; border-radius: 9px; background: #f2ebe9; }
+.pf-shared-project-progress { height: 5px; overflow: hidden; border-radius: var(--pf-radius-sm); background: #f2ebe9; }
 .pf-shared-project-progress > span { display: block; height: 100%; border-radius: inherit; background: #dc8c73; }
 .pf-shared-project-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: auto; padding-top: 16px; border-top: 1px solid #f0e9e7; color: #99a38e; font-size: 11px; line-height: 1.5; }
 .pf-shared-project-footer > span { display: inline-flex; align-items: center; gap: 6px; }
@@ -44,7 +44,7 @@
 .pf-shared-project-card:focus-within .pf-shared-project-selection { opacity: 1; }
 .pf-shared-project-menu { position: absolute; top: 11px; right: 12px; z-index: 3; }
 .pf-shared-project-menu .drama-project-row-more-btn { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 1px solid #ffffff66; border-radius: 8px; background: #fffffff0; color: #62514b; }
-.pf-shared-project-menu .drama-project-row-more-btn:hover { background: #fff; }
+.pf-shared-project-menu .drama-project-row-more-btn:hover { background: var(--pf-card); }
 .pf-shared-project-menu .drama-project-row-menu { top: 35px; }
 .pf-shared-project-actions { position: relative; z-index: 2; display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin: -4px 12px 12px; }
 .pf-shared-project-actions .pf-btn { color: #aa5544; font-size: 11px; }

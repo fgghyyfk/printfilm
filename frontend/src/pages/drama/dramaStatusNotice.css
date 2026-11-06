@@ -9,7 +9,7 @@
   min-width: 0;
   padding: 13px 15px;
   border: 1px solid var(--notice-line);
-  border-radius: 12px;
+  border-radius: var(--pf-radius);
   background: var(--notice-bg);
   color: var(--notice-ink);
   font-size: 13px;
@@ -43,7 +43,7 @@
   place-items: center;
   flex: 0 0 30px;
   height: 30px;
-  border-radius: 9px;
+  border-radius: var(--pf-radius-sm);
   background: var(--notice-icon-bg);
 }
 

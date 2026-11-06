@@ -186,7 +186,7 @@ export function FreeCanvasFlow({ projectId }: FreeCanvasFlowProps) {
         proOptions={{ hideAttribution: true }}
         defaultEdgeOptions={{ type: 'default' }}
       >
-        <Background gap={CANVAS_SNAP_GRID[0]} size={1.2} color="#cbd5e1" />
+        <Background gap={CANVAS_SNAP_GRID[0]} size={1.2} color="#cfc7b8" />
         {showMinimap ? (
           <MiniMap
             pannable

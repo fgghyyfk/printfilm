@@ -1,10 +1,10 @@
 /* Portal theme tokens are shared with the page in generation.css. */
-.gen-floating { position: fixed; z-index: 240; overflow: auto; box-sizing: border-box; border: 1px solid var(--gen-line); border-radius: 14px; background: #fffffffc; box-shadow: 0 14px 44px #1113181c, 0 2px 8px #11131808; color: var(--pf-ink); font-family: inherit; backdrop-filter: blur(20px); animation: gen-pop-in .14s ease-out; overscroll-behavior: contain; }
+.gen-floating { position: fixed; z-index: 240; overflow: auto; box-sizing: border-box; border: 1px solid var(--gen-line); border-radius: var(--pf-radius); background: #fffffffc; box-shadow: 0 14px 44px #1113181c, 0 2px 8px #11131808; color: var(--pf-ink); font-family: inherit; backdrop-filter: blur(20px); animation: gen-pop-in .14s ease-out; overscroll-behavior: contain; }
 .gen-floating button { font-family: inherit; }
 .gen-layout :is(button, a):focus-visible, .gen-floating button:focus-visible { outline: 2px solid var(--gen-focus); outline-offset: 3px; }
 .gen-select { position: relative; min-width: 0; }
-.gen-select-trigger { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 52px; padding: 9px 12px; border: 1px solid var(--gen-line); border-radius: 11px; background: var(--pf-card); color: var(--pf-ink); text-align: left; cursor: pointer; box-shadow: 0 1px 2px #11131803; transition: border-color .15s, box-shadow .15s, background .15s; }
-.gen-select-trigger:hover { border-color: #cca99e; background: #fbf9f8; }
+.gen-select-trigger { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 52px; padding: 9px 12px; border: 1px solid var(--gen-line); border-radius: var(--pf-radius-sm); background: var(--pf-card); color: var(--pf-ink); text-align: left; cursor: pointer; box-shadow: 0 1px 2px #11131803; transition: border-color .15s, box-shadow .15s, background .15s; }
+.gen-select-trigger:hover { border-color: #cca99e; background: var(--pf-sunken); }
 .gen-select-trigger.is-open { border-color: #b47d6b; box-shadow: 0 0 0 3px #cae88d33; }
 .gen-select-icon { display: inline-grid; place-items: center; color: var(--gen-muted); flex-shrink: 0; }
 .gen-select-value { display: block; flex: 1; min-width: 0; }
@@ -15,7 +15,7 @@
 .gen-select.is-compact .gen-select-trigger { min-height: 35px; padding: 7px 10px; gap: 10px; border-radius: 8px; }
 .gen-select-popup { padding: 7px; }
 .gen-popup-label { padding: 7px 10px 10px; color: var(--gen-muted); font-size: 10px; font-weight: 600; letter-spacing: .5px; }
-.gen-select-option { display: flex; align-items: center; gap: 12px; min-height: 54px; margin: 2px 0; padding: 10px 12px; border-radius: 9px; color: var(--pf-ink); cursor: pointer; transition: background .1s; }
+.gen-select-option { display: flex; align-items: center; gap: 12px; min-height: 54px; margin: 2px 0; padding: 10px 12px; border-radius: var(--pf-radius-sm); color: var(--pf-ink); cursor: pointer; transition: background .1s; }
 .gen-select-option > span:not(.gen-option-icon) { flex: 1; min-width: 0; }
 .gen-select-option strong { display: block; font-size: 12px; font-weight: 550; }
 .gen-select-option small { display: block; margin-top: 4px; color: var(--gen-muted); font-size: 10px; line-height: 1.5; }
@@ -25,7 +25,7 @@
 .gen-select-option.is-selected .gen-option-icon { color: var(--gen-accent-ink); background: #eec5b8; border-color: #e5c2b7; }
 .gen-option-check { margin-left: auto; color: var(--gen-accent-ink); flex-shrink: 0; }
 .gen-date-control { position: relative; min-width: 188px; }
-.gen-date-trigger { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 42px; padding: 10px 13px; border: 1px solid var(--gen-line); border-radius: 10px; background: var(--pf-card); color: var(--gen-muted); font-size: 12px; cursor: pointer; white-space: nowrap; transition: border-color .15s, box-shadow .15s; }
+.gen-date-trigger { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 42px; padding: 10px 13px; border: 1px solid var(--gen-line); border-radius: var(--pf-radius-sm); background: var(--pf-card); color: var(--gen-muted); font-size: 12px; cursor: pointer; white-space: nowrap; transition: border-color .15s, box-shadow .15s; }
 .gen-date-trigger > span { flex: 1; text-align: left; }
 .gen-date-trigger > svg:first-child { color: var(--gen-muted); }
 .gen-date-trigger:hover { border-color: #cca99e; }
