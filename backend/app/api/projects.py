@@ -47,7 +47,7 @@ from app.services.tasks.service import (
     list_active_tasks_for_owner,
 )
 from app.services.voices import ensure_voice_preview, list_voices
-from app.services.kepu_stages import resolve_kepu_billing_phase
+from app.services.kepu_stages import VIDEO_SKIP_REASON_PRIVACY, resolve_kepu_billing_phase
 from app.services.kepu_projects import list_project_page, project_runtime_view
 
 router = APIRouter(tags=["projects"])
@@ -986,7 +986,28 @@ async def update_shot(
         if picked:
             cleaned, _ = sanitize_shot_fields(picked, mode=REPLACE)
             data.update(cleaned)
-    if "segment_script" in data and data["segment_script"] is not None:
+    narration_edited = (
+        data.get("narration") is not None
+        and str(data["narration"]).strip() != str(shot.narration or "").strip()
+    )
+    # 仅提交旁白时也同步已有制作脚本，避免重生视频仍朗读旧稿。
+    if narration_edited and "segment_script" not in data and (shot.segment_script or "").strip():
+        data["segment_script"] = shot.segment_script
+    # 历史镜头只有 video_prompt 承载旁白时同步它；没有旁白的旧空脚本保持原样。
+    if narration_edited and not (data.get("segment_script", shot.segment_script) or "").strip():
+        from app.services.seedance_segments import narration_from_script, replace_narration_in_script
+
+        effective_prompt = data.get("video_prompt", shot.video_prompt) or ""
+        if narration_from_script(effective_prompt):
+            data["video_prompt"] = replace_narration_in_script(effective_prompt, str(data["narration"]))
+    # 同值全字段保存不重新规范化；历史空脚本只改旁白时也不凭空生成制作脚本。
+    if "segment_script" in data and data["segment_script"] is not None and (
+        data["segment_script"] != shot.segment_script
+        or (
+            bool(data["segment_script"].strip())
+            and any(key in data and data[key] != getattr(shot, key) for key in ("narration", "img_prompt"))
+        )
+    ):
         from app.services.seedance_segments import (
             apply_segment_script_edit,
             replace_first_visual_in_script,
@@ -995,10 +1016,14 @@ async def update_shot(
 
         bgm = clip_shot_bgm(getattr(project, "bgm_lock", None) or shot.bgm_mood)
         script = str(data["segment_script"])
-        # 弹窗旁白/首帧优先写回脚本，避免保存时被旧脚本盖掉
+        # 弹窗旁白写回脚本；首帧只有真实编辑时才覆盖视频动作，兼容独立的首帧描述。
         if "narration" in data and data["narration"] is not None:
             script = replace_narration_in_script(script, str(data["narration"]))
-        if "img_prompt" in data and data["img_prompt"] is not None:
+        if (
+            "img_prompt" in data
+            and data["img_prompt"] is not None
+            and str(data["img_prompt"]).strip() != str(shot.img_prompt or "").strip()
+        ):
             script = replace_first_visual_in_script(script, str(data["img_prompt"]))
         normalized = apply_segment_script_edit(script, bgm_mood=bgm)
         data["segment_script"] = normalized["segment_script"]
@@ -1006,7 +1031,8 @@ async def update_shot(
         data["video_prompt"] = normalized["video_prompt"]
         if normalized.get("narration"):
             data["narration"] = normalized["narration"]
-        if normalized.get("img_prompt"):
+        # 显式首帧优先；未提交首帧时才从编辑后的脚本回填。
+        if normalized.get("img_prompt") and "img_prompt" not in data:
             data["img_prompt"] = normalized["img_prompt"]
     if "duration" in data and data["duration"] is not None:
         tpl = await db.get(Template, project.template_id)
@@ -1029,6 +1055,13 @@ async def update_shot(
         "img_prompt" in data
         and str(data["img_prompt"] or "").strip() != str(shot.img_prompt or "").strip()
     )
+    # 在覆盖旧字段前比较真实制作变化；内置口播的声音也是视频输入。
+    from app.services import pipeline as pipeline_service
+    from app.services.kepu_shot_edits import shot_video_content_changed
+
+    native_audio = pipeline_service._kepu_seedance_native_audio(project)
+    visual_video_dirty = shot_video_content_changed(shot, data)
+    video_dirty = shot_video_content_changed(shot, data, native_audio=native_audio) or (native_audio and audio_dirty)
     for k, v in data.items():
         setattr(shot, k, v)
     if (project.pipeline_mode or "") == "avatar":
@@ -1040,26 +1073,25 @@ async def update_shot(
         if audio_dirty or scene_dirty:
             shot.video_url = None
             shot.avatar_job_id = None
-    # Invalidate downstream if visual prompts changed
-    elif "img_prompt" in data:
+    # 仅画面真实变化才作废分镜图及其下游素材。
+    elif scene_dirty:
         shot.image_url = None
+        shot.image_ark_url = None
         shot.video_url = None
         shot.last_frame_url = None
         shot.video_skip_reason = None  # 画面变更，隐私拦截结论失效
         shot.status = ShotStatus.PENDING
-    elif (
-        "video_prompt" in data
-        or "segment_script" in data
-        or "duration" in data
-        or "camera" in data
-    ):
+    elif video_dirty:
         shot.video_url = None
         shot.last_frame_url = None
-        shot.video_skip_reason = None
+        # 仅口播变化不撤销同一画面的隐私降级结论。
+        if visual_video_dirty or shot.video_skip_reason != VIDEO_SKIP_REASON_PRIVACY:
+            shot.video_skip_reason = None
     if audio_dirty and (project.pipeline_mode or "") != "avatar":
         full_narration = storage.project_dir(project_id) / "full_narration.mp3"
         full_narration.unlink(missing_ok=True)
-        for sibling in project.shots:
+        # 内置口播下姊妹镜的音轨是各自的隐私备用音，与这次改稿无关。
+        for sibling in ([shot] if native_audio else project.shots):
             sibling.audio_url = None
     # 统一按素材进度把终态打回对应阶段并作废成片（本端点此前漏调，状态会卡在 DONE）
     _demote_after_edit(project)
