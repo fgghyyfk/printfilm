@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.projects import update_shot
+from app.config import get_settings
 from app.models import Project, ProjectStatus, Shot, ShotStatus, Template
 from app.schemas import ShotUpdate
 
@@ -58,6 +59,8 @@ async def test_narration_edit_invalidates_continuous_audio(
     monkeypatch.setattr(
         "app.services.storage.project_dir", lambda _pid: tmp_path
     )
+    # 内置口播下姊妹镜音轨是各自的隐私备用音；本用例验证外部整片连贯音轨模式
+    monkeypatch.setattr(get_settings(), "kepu_seedance_native_audio", False)
 
     await update_shot(
         project.id,

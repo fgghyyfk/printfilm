@@ -79,6 +79,7 @@ async def test_upload_endpoint_replaces_metadata_and_archives_previous(monkeypat
 
     asset = media_asset()
     monkeypatch.setattr("app.api.drama.assets.get_owned_asset", AsyncMock(return_value=asset))
+    monkeypatch.setattr("app.api.drama.assets.asset_reference_view", AsyncMock(side_effect=lambda db, row, **kw: row))
     monkeypatch.setattr("app.services.oss.oss_enabled", lambda: True)
     monkeypatch.setattr("app.services.oss.folder_prefix", lambda: "test")
     monkeypatch.setattr("app.services.oss.upload_fileobj", lambda *args, **kwargs: "https://cdn/upload.png")
@@ -98,6 +99,7 @@ async def test_editing_next_generation_freezes_legacy_media_options(monkeypatch)
 
     asset = media_asset(params={"model_id": "old-model", "resolution": "2K"})
     monkeypatch.setattr("app.api.drama.assets.get_owned_asset", AsyncMock(return_value=asset))
+    monkeypatch.setattr("app.api.drama.assets.asset_reference_view", AsyncMock(side_effect=lambda db, row, **kw: row))
     result = await update_asset(1, DramaAssetUpdate(params={"model_id": "next-model", "resolution": "4K"}), db=AsyncMock(), user=SimpleNamespace(id=1))
     assert result.params["model_id"] == "next-model"
     assert result.params["media_metadata"]["model_id"] == "old-model"
@@ -114,6 +116,7 @@ async def test_media_replacement_cannot_keep_previous_model(monkeypatch, importe
     source = media_asset(id=3, url="https://cdn/new.png", params={"media_metadata": {"source": "upload"}})
     access = AsyncMock(side_effect=lambda db, ident, user: source if ident == 3 else target)
     monkeypatch.setattr("app.api.drama.assets.get_owned_asset", access)
+    monkeypatch.setattr("app.api.drama.assets.asset_reference_view", AsyncMock(side_effect=lambda db, row, **kw: row))
     result = await update_asset(1, DramaAssetUpdate(url=source.url, params={"importedFromAssetId": 3} if imported else {}), db=AsyncMock(), user=SimpleNamespace(id=1))
     assert result.params["media_metadata"] == {"source": "upload" if imported else "unknown"}
     assert access.await_count == (2 if imported else 1)
