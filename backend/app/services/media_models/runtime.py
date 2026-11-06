@@ -46,7 +46,8 @@ def pin_route(capability: str, model_id: str) -> dict:
         if get_strategy(route.upstream_model).model_id != strategy.model_id:
             raise ValueError("route: 上游绑定与所选模型策略不匹配")
         return _public_route(route.model_dump(exclude={"api_key"}))
-    if is_managed_model(capability, model_id, models):
+    # Mock 联调不调用上游，没有渠道绑定时走下方运行时路由（见 deploy/LOCAL.md）。
+    if is_managed_model(capability, model_id, models) and not (settings.ark_mock or settings.local_media_mock):
         raise ValueError(f"route: {model_id} 没有启用的可用渠道绑定")
     if snapshot.channels and not (settings.ark_mock or settings.local_media_mock):
         raise ValueError(f"route: {model_id} 没有可用渠道，不会自动切换模型")
