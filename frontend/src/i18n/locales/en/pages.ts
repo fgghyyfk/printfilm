@@ -2,6 +2,9 @@
 
 export const enPages = {
   home: {
+    eyebrow: 'Talking-head video, no camera needed',
+    newHere: 'New here?',
+    myTasks: 'View my tasks',
     templatesTitle: 'Four curated short-video styles',
     templatesHint: '3D animation by default, with 2D anime, storybook illustration, and Chinese ink painting.',
     templatesLoadFailed: 'Styles could not load. Try again later or start creating directly.',
@@ -34,10 +37,20 @@ export const enPages = {
       { tab: 'Voice', title: 'Pick a voice', desc: 'Calm or high-energy, or lock one with a reference clip.' },
       { tab: 'Render', title: 'Lip sync and title bar', desc: 'New scene per segment, key words pop, vertical output.' },
     ],
+    flowPreview: {
+      photo: 'Your half-body photo',
+      checks: ['Clear front face', 'Face only', 'Auto styling'],
+      sample: 'Sample script',
+      segments: ['The market has room — pick the right platform.', 'Why platform beats niche.', 'Three checks you can use today.'],
+      segmentLabel: 'Part {n}',
+      voices: ['Calm', 'High-energy', 'Reference clip'],
+      voiceNow: 'Voicing · part 2',
+      outputs: ['9:16 vertical', 'Title bar', 'Key words pop'],
+    },
     moreTitle: 'Other ways to make video',
     more: [
       { title: 'Product promo', desc: 'Image set and promo video' },
-      { title: 'Explainer video', desc: 'Topic to storyboard film' },
+      { title: 'AI Short Video', desc: 'Topic to storyboard film' },
       { title: 'AI Drama', desc: 'Script to episodes' },
       { title: 'Tools', desc: 'Image, video and voice' },
     ],

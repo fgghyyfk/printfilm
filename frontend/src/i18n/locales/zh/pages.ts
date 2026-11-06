@@ -2,6 +2,9 @@
 
 export const zhPages = {
   home: {
+    eyebrow: '不用出镜的数字人口播',
+    newHere: '还没有账号？',
+    myTasks: '查看我的任务',
     templatesTitle: '四种精选短视频画风',
     templatesHint: '默认 3D 动画，也可选择二维动漫、绘本插画或国风水墨。',
     templatesLoadFailed: '暂时无法加载画风，请稍后重试，或直接开始创作。',
@@ -34,10 +37,20 @@ export const zhPages = {
       { tab: '配音', title: '选个音色，逐段配音', desc: '温和讲解或激情带货，可用参考音频固定音色。' },
       { tab: '成片', title: '对口型，加标题条', desc: '每段换场景，重点字放大，合成竖屏成片。' },
     ],
+    flowPreview: {
+      photo: '你的半身照',
+      checks: ['正脸清晰', '只取人脸', '自动定妆'],
+      sample: '示例稿',
+      segments: ['长寿行业不怕没机会，怕选错平台。', '为什么平台比赛道更重要？', '三个判断方法，现在就能用。'],
+      segmentLabel: '第 {n} 段',
+      voices: ['温和讲解', '激情带货', '参考音频'],
+      voiceNow: '正在配音 · 第 2 段',
+      outputs: ['9:16 竖屏', '标题条', '重点字放大'],
+    },
     moreTitle: '还能这样出片',
     more: [
       { title: '商品带货', desc: '一张商品图出套图和带货视频' },
-      { title: '科普短视频', desc: '主题自动拆镜成片' },
+      { title: 'AI短视频', desc: '主题自动拆镜成片' },
       { title: 'AI 漫剧', desc: '剧本到分集成片' },
       { title: '创作工具', desc: '生图、生视频、配音' },
     ],

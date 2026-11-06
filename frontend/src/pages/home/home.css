@@ -17,7 +17,18 @@
 
 .kk-hero {
   position: relative;
-  padding-top: 5.5rem;
+  padding-top: 4rem;
+}
+
+.kk-eyebrow {
+  display: inline-block;
+  margin: 0 0 1.1rem;
+  padding: 0.3rem 0.85rem;
+  border-radius: 999px;
+  background: var(--pf-lime-soft);
+  color: #c2410c;
+  font-size: 0.82rem;
+  font-weight: 650;
 }
 
 .kk-hero h1 {
@@ -59,8 +70,24 @@
 .kk-cta {
   display: flex;
   justify-content: center;
+  flex-wrap: wrap;
   gap: 0.9rem;
   margin-top: 2rem;
+}
+
+.kk-cta-note {
+  margin: 1rem 0 0;
+  font-size: 0.88rem;
+  color: var(--pf-muted);
+}
+
+.kk-cta-note a {
+  color: #c2410c;
+  font-weight: 650;
+}
+
+.kk-cta-note a:hover {
+  text-decoration: underline;
 }
 
 .kk-pill {
@@ -100,7 +127,7 @@
 
 /* 产品示意窗 */
 .kk-window {
-  margin: 3.5rem auto 0;
+  margin: 2.5rem auto 0;
   max-width: 960px;
   text-align: left;
   background: #fff;
@@ -227,6 +254,7 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
+  display: block;
 }
 
 .kk-phone-title {
@@ -321,8 +349,8 @@
 
 /* 平台条 */
 .kk-platforms {
-  padding-top: 4rem;
-  padding-bottom: 4.5rem;
+  padding-top: 3rem;
+  padding-bottom: 3.5rem;
 }
 
 .kk-platforms p {
@@ -338,7 +366,7 @@
   gap: 1rem 3rem;
   font-size: 1.1rem;
   font-weight: 650;
-  color: #8b8f98;
+  color: #6b7280;
 }
 
 /* 流程：灰底圆角大块 */
@@ -382,6 +410,7 @@
   color: var(--pf-ink);
   font-size: 0.9rem;
   font-weight: 600;
+  cursor: pointer;
 }
 
 .kk-tabs button.is-on {
@@ -419,50 +448,196 @@
   line-height: 1.7;
 }
 
-.kk-flow-card {
+/* 流程区示意：展示当前步骤的产出 */
+.kk-flow-copy {
+  animation: kk-fade 0.28s ease;
+}
+
+.kk-preview {
   display: flex;
-  flex-direction: column;
-  gap: 0.7rem;
-  padding: 1.3rem;
+  align-items: center;
+  justify-content: center;
+  min-height: 280px;
+  padding: 1.5rem;
   border-radius: 16px;
   background: #fff;
   box-shadow: 0 20px 40px -24px rgba(17, 19, 24, 0.2);
+  animation: kk-fade 0.28s ease;
 }
 
-.kk-flow-card span {
+.kk-preview > div {
+  width: 100%;
+}
+
+.kk-preview ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  font-size: 0.92rem;
+}
+
+.kk-preview li {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.6rem 0.75rem;
-  border-radius: 10px;
-  font-size: 0.92rem;
+  gap: 0.5rem;
+}
+
+.kk-preview li svg {
+  color: var(--pf-lime);
+  flex: none;
+}
+
+.kk-pv-label {
+  font-size: 0.8rem;
+  font-weight: 600;
   color: var(--pf-muted);
 }
 
-.kk-flow-card b {
-  display: inline-grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: #f1f1f3;
-  font-size: 0.75rem;
+.kk-pv-upload,
+.kk-pv-final {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.75rem;
 }
 
-.kk-flow-card .is-done b {
-  background: var(--pf-lime-soft);
+.kk-pv-upload figure {
+  position: relative;
+  flex: none;
+  width: 132px;
+  margin: 0;
+}
+
+.kk-pv-upload img {
+  display: block;
+  width: 100%;
+  height: 176px;
+  object-fit: cover;
+  border-radius: 12px;
+}
+
+.kk-pv-upload figcaption {
+  margin-top: 0.5rem;
+  font-size: 0.78rem;
+  text-align: center;
+  color: var(--pf-muted);
+}
+
+/* 人脸识别框：只取人脸的示意 */
+.kk-pv-face {
+  position: absolute;
+  left: 34%;
+  top: 14%;
+  width: 40%;
+  height: 34%;
+  border: 2px solid var(--pf-lime);
+  border-radius: 10px;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.5);
+}
+
+.kk-pv-script {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.kk-pv-script p {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 10px;
+  background: #f7f7f6;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  color: var(--pf-ink);
+}
+
+.kk-pv-script b {
+  font-size: 0.74rem;
   color: #c2410c;
 }
 
-.kk-flow-card .is-on {
+.kk-pv-voice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.kk-pv-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.kk-pv-chips span {
+  padding: 0.35rem 0.8rem;
+  border: 1px solid var(--pf-line);
+  border-radius: 999px;
+  font-size: 0.84rem;
+  color: var(--pf-muted);
+}
+
+.kk-pv-chips .is-on {
+  border-color: var(--pf-lime);
   background: var(--pf-lime-soft);
-  color: var(--pf-ink);
+  color: #c2410c;
   font-weight: 650;
 }
 
-.kk-flow-card .is-on b {
+.kk-pv-wave {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  height: 84px;
+}
+
+.kk-pv-wave i {
+  flex: 1 1 0;
+  max-width: 8px;
+  border-radius: 999px;
   background: var(--pf-lime);
-  color: #fff;
+  transform-origin: center;
+  animation: kk-wave 1.4s ease-in-out infinite alternate;
+}
+
+.kk-pv-final .kk-phone {
+  flex: none;
+  width: 130px;
+}
+
+.kk-pv-play {
+  position: absolute;
+  left: 50%;
+  top: 34%;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  margin-left: -19px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--pf-ink);
+}
+
+@keyframes kk-fade {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@keyframes kk-wave {
+  from {
+    transform: scaleY(0.45);
+  }
 }
 
 /* 其他出片方式 */
@@ -489,6 +664,7 @@
   background: #fff;
   text-align: left;
   color: var(--pf-ink);
+  cursor: pointer;
   transition: border-color 0.15s ease, transform 0.15s ease;
 }
 
@@ -518,10 +694,19 @@
   color: #c4c7cd;
 }
 
-/* 收尾 */
+/* 收尾：深色色块收束页面 */
 .kk-close {
-  padding-top: 6rem;
-  padding-bottom: 6rem;
+  margin-top: 5rem;
+  margin-bottom: 4rem;
+  padding-top: 4rem;
+  padding-bottom: 4rem;
+  border-radius: 28px;
+  background: var(--pf-ink);
+  color: #fff;
+}
+
+.kk-close .kk-sub {
+  color: rgba(255, 255, 255, 0.72);
 }
 
 .kk-close .kk-pill {
@@ -550,7 +735,8 @@
 
 .kk-foot nav {
   display: flex;
-  gap: 1.4rem;
+  flex-wrap: wrap;
+  gap: 0.6rem 1.4rem;
 }
 
 .kk-foot nav a:hover {
@@ -565,6 +751,35 @@
   color: #9ca3af;
 }
 
+/* 键盘焦点：仅键盘操作时显示，保证可达 */
+.kk-pill:focus-visible,
+.kk-tabs button:focus-visible,
+.kk-more-card:focus-visible,
+.kk-cta-note a:focus-visible,
+.kk-foot a:focus-visible {
+  outline: 2px solid #c2410c;
+  outline-offset: 2px;
+}
+
+.kk-close .kk-pill:focus-visible {
+  outline-color: #fff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kk-cursor,
+  .kk-rows .is-run .kk-bar i,
+  .kk-flow-copy,
+  .kk-preview,
+  .kk-pv-wave i {
+    animation: none;
+  }
+
+  .kk-pill,
+  .kk-more-card {
+    transition: none;
+  }
+}
+
 @media (max-width: 1000px) {
   .kk-more-grid {
     grid-template-columns: repeat(2, 1fr);
@@ -573,7 +788,34 @@
 
 @media (max-width: 760px) {
   .kk-hero {
-    padding-top: 3.5rem;
+    padding-top: 2.5rem;
+  }
+
+  .kk-cta .kk-pill {
+    flex: 1 1 100%;
+    max-width: 320px;
+  }
+
+  .kk-close {
+    margin: 3rem 1rem 2.5rem;
+    width: auto;
+    padding-left: 1.25rem;
+    padding-right: 1.25rem;
+  }
+
+  .kk-flow-panel {
+    gap: 1.5rem;
+    margin-top: 2rem;
+  }
+
+  .kk-preview {
+    padding: 1.1rem;
+    min-height: 240px;
+  }
+
+  .kk-pv-upload,
+  .kk-pv-final {
+    gap: 1.1rem;
   }
 
   .kk-window-body {
@@ -597,6 +839,12 @@
 
   .kk-flow {
     border-radius: 0;
+    padding-top: 3rem;
+    padding-bottom: 3rem;
+  }
+
+  .kk-more {
+    padding-top: 3rem;
   }
 
   .kk-tabs button {

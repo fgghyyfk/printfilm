@@ -1,9 +1,10 @@
 /** 开口播官网首页：简洁风，居中主张 + 产品示意窗 + 平台条 + 流程标签页 + 其他出片方式 */
-import { useState } from 'react'
+import { useState, type KeyboardEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ArrowRight, Clapperboard, ShoppingBag, Video, Wand2 } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import BrandMark from '../components/BrandMark'
+import HomeFlowPreview from './home/HomeFlowPreview'
 import { useI18n } from '../i18n'
 import { BRAND_NAME, BRAND_NAME_EN } from '../lib/siteLinks'
 import './home/home.css'
@@ -16,6 +17,7 @@ const MORE_LINKS = [
   { path: '/tools/image', icon: Wand2 },
 ]
 
+/** 首页：未登录的创作入口先去登录，登录后回跳到原目标。 */
 export default function HomePage() {
   const nav = useNavigate()
   const { t, m } = useI18n()
@@ -29,9 +31,21 @@ export default function HomePage() {
     nav(loggedIn ? path : `/auth?next=${encodeURIComponent(path)}`)
   }
 
+  // 流程标签页的方向键切换（WAI-ARIA tabs 约定），焦点跟随选中项
+  function onFlowKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    const count = m.home.flow.length
+    const target = { ArrowRight: flowIdx + 1, ArrowLeft: flowIdx - 1, Home: 0, End: count - 1 }[e.key]
+    if (target === undefined) return
+    e.preventDefault()
+    const next = (target + count) % count
+    setFlowIdx(next)
+    e.currentTarget.querySelectorAll('button')[next]?.focus()
+  }
+
   return (
     <AppShell active="home" flush>
       <section className="kk-hero">
+        <p className="kk-eyebrow">{t('home.eyebrow')}</p>
         <h1>
           <span className="kk-brand">
             {BRAND_NAME}
@@ -48,13 +62,20 @@ export default function HomePage() {
           <button type="button" className="kk-pill is-fill" onClick={() => goAuthOr(AVATAR_PATH)}>
             {t('home.start')}
           </button>
-          <Link className="kk-pill is-line" to={loggedIn ? AVATAR_PATH : '/auth?mode=register&next=/'}>
-            {t('home.trial')}
-          </Link>
           <button type="button" className="kk-pill is-line" onClick={() => goAuthOr('/ecom')}>
             {t('home.ecom')}
           </button>
         </div>
+        <p className="kk-cta-note">
+          {loggedIn ? (
+            <Link to="/tasks">{t('home.myTasks')}</Link>
+          ) : (
+            <>
+              {t('home.newHere')}{' '}
+              <Link to={`/auth?mode=register&next=${encodeURIComponent(AVATAR_PATH)}`}>{t('home.trial')}</Link>
+            </>
+          )}
+        </p>
 
         <div className="kk-window" aria-hidden>
           <div className="kk-window-bar">
@@ -79,7 +100,7 @@ export default function HomePage() {
               <p className="kk-window-task">{t('home.winTask')}</p>
               <div className="kk-window-grid">
                 <div className="kk-phone">
-                  <img src="/char-presets/real.jpg" alt="" />
+                  <img src="/char-presets/real.jpg" alt="" width={170} height={302} decoding="async" />
                   <div className="kk-phone-title">
                     <span className="is-top">{t('home.winTitleTop')}</span>
                     <span>{t('home.winTitleBottom')}</span>
@@ -117,13 +138,16 @@ export default function HomePage() {
           <span className="kk-brand-sm">{BRAND_NAME}.</span> {t('home.flowTitle')}
         </h2>
         <p className="kk-sub">{t('home.flowSub')}</p>
-        <div className="kk-tabs" role="tablist">
+        <div className="kk-tabs" role="tablist" aria-label={t('home.flowTitle')} onKeyDown={onFlowKeyDown}>
           {m.home.flow.map((f, i) => (
             <button
               key={f.tab}
               type="button"
               role="tab"
+              id={`kk-flow-tab-${i}`}
               aria-selected={i === flowIdx}
+              aria-controls="kk-flow-panel"
+              tabIndex={i === flowIdx ? 0 : -1}
               className={i === flowIdx ? 'is-on' : ''}
               onClick={() => setFlowIdx(i)}
             >
@@ -131,20 +155,13 @@ export default function HomePage() {
             </button>
           ))}
         </div>
-        <div className="kk-flow-panel">
-          <div>
+        <div className="kk-flow-panel" id="kk-flow-panel" role="tabpanel" aria-labelledby={`kk-flow-tab-${flowIdx}`}>
+          <div key={flowIdx} className="kk-flow-copy">
             <span className="kk-flow-no">0{flowIdx + 1}</span>
             <h3>{flow.title}</h3>
             <p>{flow.desc}</p>
           </div>
-          <div className="kk-flow-card" aria-hidden>
-            {m.home.flow.map((f, i) => (
-              <span key={f.tab} className={i < flowIdx ? 'is-done' : i === flowIdx ? 'is-on' : ''}>
-                <b>{i + 1}</b>
-                {f.tab}
-              </span>
-            ))}
-          </div>
+          <HomeFlowPreview key={`preview-${flowIdx}`} step={flowIdx} />
         </div>
       </section>
 
