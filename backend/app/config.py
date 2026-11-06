@@ -185,7 +185,7 @@ class Settings(BaseSettings):
     billing_est_tts_tokens: int = 5_000
     billing_est_seedance_tokens_per_sec: int = 32_000
     # Signup grant (fen)
-    billing_signup_grant_fen: int = 500
+    billing_signup_grant_fen: int = 0
 
     # 用户消费里程碑弹窗（累计扣费每达 interval 分提醒一次；默认 10000 = ¥100）
     billing_user_alert_enabled: bool = True
@@ -239,6 +239,10 @@ class Settings(BaseSettings):
     )
     # Comma-separated emails promoted to admin on startup (existing users only)
     admin_bootstrap_emails: str = ""
+
+    def admin_bootstrap_email_set(self) -> set[str]:
+        """启动提权名单（小写）。"""
+        return {item.strip().lower() for item in (self.admin_bootstrap_emails or "").split(",") if item.strip()}
 
 
 @lru_cache

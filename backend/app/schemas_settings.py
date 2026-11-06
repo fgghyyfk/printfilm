@@ -130,7 +130,7 @@ class AdminModelSettingsOut(BaseModel):
     billing_est_seedream_tokens: int = Field(default=45_000, description="兼容保留的生图估算 Token 数量；当前生图无 usage 时优先按张价格结算")
     billing_est_tts_tokens: int = Field(default=5_000, description="语音合成预扣估算及缺失 usage 时使用的兜底 Token 数量")
     billing_est_seedance_tokens_per_sec: int = Field(default=32_000, description="Seedance 缺失用量时使用的每秒估算 Token 数量")
-    billing_signup_grant_fen: int = Field(default=500, description="新用户注册赠送余额，单位：人民币分")
+    billing_signup_grant_fen: int = Field(default=0, description="新用户注册赠送余额，单位：人民币分")
     quota_enabled: bool = Field(default=False, description="兼容保留的次数额度开关；余额计费使用 billing_enabled")
     new_user_quota: int = Field(default=5, description="新用户注册时分配的初始次数额度")
 
