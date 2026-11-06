@@ -482,7 +482,11 @@ async def update_episode(
     if body.name is not None:
         ep.name = body.name.strip() or ep.name
     if body.params is not None:
-        ep.params = body.params
+        # 规划归属只由服务端写：旧页面带回旧值，会让新任务的结果被当成已取代而丢弃。
+        owner = (ep.params or {}).get("fragment_plan_task_id")
+        ep.params = {k: v for k, v in body.params.items() if k != "fragment_plan_task_id"}
+        if owner is not None:
+            ep.params = {**ep.params, "fragment_plan_task_id": owner}
     await db.commit()
     return await _episode_out_with_tasks(db, user, ep)
 
@@ -504,6 +508,8 @@ async def plan_episode_fragments(
     ep = await get_owned_episode(db, episode_id, user)
     await get_owned_drama_project(db, ep.project_id, user)
 
+    # 锁分集重读：两个标签页同时点时，后到的能看到先到的已在进行中。锁序：分集 → 钱包。
+    await db.refresh(ep, attribute_names=["params"], with_for_update=True)
     params = dict(ep.params or {})
     existing = str(params.get("fragment_plan_status") or "")
     # force 时允许重入队（避免旧任务异常后卡在 generating）
@@ -561,7 +567,11 @@ async def plan_episode_fragments(
                     TaskTargetBind(target_type="episode", target_id=episode_id),
                 ],
             ),
+            commit=False,
         )
+        # 归属和任务同事务提交；旧任务完成时据此判断自己是否已被取代。
+        ep.params = {**params, "fragment_plan_task_id": task.id}
+        await db.commit()
     except ValueError as exc:
         await db.rollback()
         raise http_exception_for_value_error(exc) from exc

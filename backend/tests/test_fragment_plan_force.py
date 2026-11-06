@@ -27,6 +27,7 @@ def test_fragment_plan_handler_passes_force_flag():
 
     fake_run = AsyncMock(return_value={"ok": True})
     task = SimpleNamespace(
+        id=7,
         episode_id=99,
         payload={"force": True, "fallback_rules": False},
     )
@@ -40,4 +41,5 @@ def test_fragment_plan_handler_passes_force_flag():
         fallback_rules=False,
         subtitle_enabled=None,
         force=True,
+        task_id=7,
     )

@@ -960,12 +960,20 @@ async def _run_single_episode_script_job(
 # ---------- episode fragment plan (LLM) ----------
 
 
+async def _fragment_plan_superseded(db: AsyncSession, episode: DramaEpisode, task_id: int | None) -> bool:
+    """锁分集重读归属；发布前已排队的任务没有归属记录，按未被取代处理。"""
+    await db.refresh(episode, attribute_names=["params"], with_for_update=True)
+    owner = (episode.params or {}).get("fragment_plan_task_id")
+    return task_id is not None and owner is not None and int(owner) != int(task_id)
+
+
 async def run_episode_fragment_plan_job(
     episode_id: int,
     *,
     fallback_rules: bool = True,
     subtitle_enabled: bool | None = None,
     force: bool = False,
+    task_id: int | None = None,
 ) -> dict[str, Any]:
     # Worker：LLM 规划本集分镜并落库；失败可选回退规则切分
     from app.services.drama.build_fragments import build_fragments_from_episode_body
@@ -1116,6 +1124,8 @@ async def run_episode_fragment_plan_job(
         except (DramaLlmUnavailableError, RuntimeError, Exception) as exc:  # noqa: BLE001
             logger.exception("LLM 分镜失败 episode_id=%s err=%s", episode_id, exc)
             if not fallback_rules:
+                if await _fragment_plan_superseded(db, episode, task_id):
+                    return {"ok": True, "superseded": True, "kind": "text"}
                 params = dict(episode.params or {})
                 params["fragment_plan_status"] = "failed"
                 params["fragment_plan_error"] = str(exc)[:500]
@@ -1134,6 +1144,17 @@ async def run_episode_fragment_plan_job(
             )
             mode_used = "rules_fallback"
             continuation = False
+
+        # 模型可能等了几分钟：新任务已接管就丢弃本次结果，否则会删掉新任务的分镜。
+        if await _fragment_plan_superseded(db, episode, task_id):
+            logger.info("分镜结果已被新任务取代 episode_id=%s task_id=%s", episode_id, task_id)
+            return {"ok": True, "superseded": True, "kind": "text"}
+        # 重读分镜：等待期间的手改要按最新内容判定保护，不能用等待前的旧快照。
+        await db.execute(
+            select(DramaEpisodeFragment)
+            .where(DramaEpisodeFragment.episode_id == episode_id)
+            .execution_options(populate_existing=True)
+        )
 
         await replace_episode_fragments_with_drafts(
             db,
@@ -2128,8 +2149,12 @@ async def dispatch_episode_fragment_plan(
             "force": bool(force),
             "auto": True,
         },
-        commit=commit,
+        commit=False,
     )
+    # 归属和任务同事务提交；旧任务完成时据此判断自己是否已被取代。
+    episode.params = {**params, "fragment_plan_task_id": task_id}
+    if commit:
+        await db.commit()
     logger.info(
         "自动入队 LLM 分镜 episode_id=%s force=%s task_id=%s",
         episode.id,
