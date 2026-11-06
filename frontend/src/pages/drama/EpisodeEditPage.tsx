@@ -690,6 +690,9 @@ function EpisodeEditInner() {
           const st = readFragmentPlanStatus(cur)
           if (st === 'completed') {
             setEpisode(cur)
+            const nextParams = (cur.params as Record<string, unknown>) || {}
+            setEpisodeParams(nextParams)
+            episodeParamsRef.current = nextParams
             commitServerFragments(cur.fragments || [])
             setSelectedIndex(0)
             setStatus(`分镜完成 · ${(cur.fragments || []).length} 条`)

@@ -346,19 +346,8 @@ async def episode_script(
     params["episode_count"] = total
     params.pop("episode_content_error", None)
     if body.force:
-        existing = _existing_episodes(project.script.episode_content)
-        if existing:
-            project.script.episode_content = {
-                "episodes": [
-                    {
-                        "episodeNumber": int(item.get("episodeNumber") or 0),
-                        "title": str(item.get("title") or f"第 {item.get('episodeNumber')} 集"),
-                        "body": "",
-                    }
-                    for item in existing
-                    if isinstance(item, dict) and int(item.get("episodeNumber") or 0) >= 1
-                ]
-            }
+        # 旧正文留到新稿全部写好才替换，模型或余额失败时不丢稿；上一轮残留的草稿作废。
+        params.pop("episode_regen_draft", None)
         params["episode_content_progress"] = {"done": 0, "total": total}
     project.script.params = params
 
@@ -368,7 +357,8 @@ async def episode_script(
         await db.rollback()
         raise http_exception_for_value_error(exc) from exc
     existing = _existing_episodes(project.script.episode_content)
-    generated = count_completed_episodes(existing, total)
+    # 强制重写时旧稿还在，但新稿进度从 0 开始。
+    generated = 0 if body.force else count_completed_episodes(existing, total)
     logger.info(
         "已入队分集剧本 project_id=%s user_id=%s task_id=%s force=%s target=%s done=%s",
         project.id,

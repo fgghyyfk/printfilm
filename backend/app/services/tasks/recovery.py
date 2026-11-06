@@ -98,16 +98,23 @@ def _mark_provider_cost_unknown(task, provider_id: str) -> None:
 
 
 async def _fail_recovered_task(db, task, message: str) -> None:
-    """先提交标准失败结算释放任务锁，再按当前规划归属收敛分集展示。"""
-    from app.models_drama import DramaEpisode
+    """走标准失败结算；分镜规划任务的分集展示由 _fail_task 一并收敛。"""
     from app.services.tasks.executor import _fail_task
 
-    # 结算会刷新任务并卸载关系；提前保留本次需要的标量快照。
-    task_id, episode_id = int(task.id), task.episode_id
-    is_plan = task.domain == "drama" and task.task_type == "fragment_plan"
     await _fail_task(db, task, RuntimeError(message))
-    if not is_plan or not episode_id:
-        return
+
+
+def fragment_plan_target(task) -> tuple[int, int] | None:
+    """分镜规划任务返回 (任务号, 分集号)；结算会卸载关系，须在结算前取快照。"""
+    if task.domain == "drama" and task.task_type == "fragment_plan" and task.episode_id:
+        return int(task.id), int(task.episode_id)
+    return None
+
+
+async def converge_fragment_plan_status(db, task_id: int, episode_id: int, message: str) -> None:
+    """任务结束但分集仍显示分镜中时转为失败；须在任务结算提交、释放任务锁后调用。"""
+    from app.models_drama import DramaEpisode
+
     params = cast(DramaEpisode.params, JSONB)
     # 强制重新规划可能已建了新任务；旧任务到限不能覆盖新任务的 generating。
     newer = exists(select(TaskRun.id).where(

@@ -18,7 +18,7 @@ export function dramaAssetTypeToKind(type: string | null | undefined): CanvasNod
   if (t === 'character') return 'character'
   if (t === 'scene') return 'scene'
   if (t === 'video') return 'video'
-  if (t === 'audio') return 'audio'
+  if (t === 'audio' || t === 'voice') return 'audio'
   if (t === 'text') return 'text'
   /* prop / material / none / 其他 → 图片卡片 */
   return 'image'

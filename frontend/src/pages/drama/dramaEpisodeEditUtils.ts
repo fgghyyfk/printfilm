@@ -191,9 +191,9 @@ export function resolveFragmentDurationSec(
   durationSec: number | null | undefined,
 ): number {
   const fromTags = sumFragmentContentDuration(content)
-  if (fromTags > 0) return Math.min(15, Math.max(4, fromTags))
+  if (fromTags > 0) return Math.min(30, Math.max(4, fromTags))
   const fallback = durationSec && durationSec > 0 ? durationSec : 8
-  return Math.min(15, Math.max(4, fallback))
+  return Math.min(30, Math.max(4, fallback))
 }
 
 // 格式化片段标签

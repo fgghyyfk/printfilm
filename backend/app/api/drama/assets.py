@@ -10,7 +10,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, Path as APIPath
 from fastapi.concurrency import run_in_threadpool
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -26,6 +26,7 @@ from app.schemas_drama import (
 )
 from app.services.drama.access import get_owned_asset, get_owned_drama_project
 from app.services.drama.asset_reference_views import asset_reference_view
+from app.services.drama.assets_seed_state import assets_seed_in_progress
 from app.services.teams.write_access import workspace_team
 from app.services.billing import run_billed_ephemeral
 from app.services.billing.http import http_exception_for_value_error
@@ -388,9 +389,19 @@ async def delete_asset(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
-    from app.models_drama import DramaProject
+    from app.models_tasks import TaskRun
+    from app.services.tasks.service import ACTIVE_TASK_STATUSES
 
     asset = await get_owned_asset(db, asset_id, user)
+    active_task = await db.scalar(
+        select(TaskRun.id)
+        .where(TaskRun.asset_id == asset_id, TaskRun.status.in_(tuple(ACTIVE_TASK_STATUSES)))
+        .limit(1)
+    )
+    if active_task is not None:
+        raise HTTPException(status_code=409, detail="资产生成中，请稍后再删")
+    # 任务历史保留，只解除外键；否则生成过的资产一删就触发外键错误。
+    await db.execute(update(TaskRun).where(TaskRun.asset_id == asset_id).values(asset_id=None))
     await db.delete(asset)
     await db.commit()
     return {"ok": True}
@@ -419,7 +430,7 @@ async def seed_assets(
         )
     ).scalar_one()
     params = dict(locked.params or {}) if isinstance(locked.params, dict) else {}
-    if str(params.get("assets_seed_status") or "") == "generating":
+    if await assets_seed_in_progress(db, int(locked.id), params):
         existing = list(
             (await db.execute(select(DramaAsset).where(DramaAsset.project_id == locked.id)))
             .scalars()
@@ -502,6 +513,16 @@ async def seed_assets(
         await db.commit()
         raise http_exception_for_value_error(exc) from exc
     except HTTPException:
+        # 校验或占用类拒绝也要收敛状态，否则项目一直显示抽取中；回滚丢弃未入场的任务行。
+        await db.rollback()
+        rejected = await db.get(DramaProject, project_id)
+        if rejected is not None:
+            params = dict(rejected.params or {}) if isinstance(rejected.params, dict) else {}
+            params["assets_seed_status"] = "failed"
+            params["assets_seed_error"] = "资产抽取未完成"
+            params.pop("assets_seed_generating_at", None)
+            rejected.params = params
+            await db.commit()
         raise
     except RuntimeError as exc:
         project = await get_owned_drama_project(db, project_id, user, with_script=True)

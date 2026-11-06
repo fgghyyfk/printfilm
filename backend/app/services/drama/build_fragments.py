@@ -38,6 +38,8 @@ FRAGMENT_DURATION_MAX = 15
 FRAGMENT_SOFT_MAX = 15
 # 单分镜总时长硬上限（短剧节奏；Seedance 仍支持更长，此处刻意收紧）
 FRAGMENT_TOTAL_MAX = 15
+# 手写分镜按 @duration 合计提交，只受 Seedance 单次上限约束（EPISODE_RULES §1、§6）
+MANUAL_FRAGMENT_TOTAL_MAX = 30
 # 整集镜数/时长：0 = 不设上限（完整呈现剧本；单镜仍受 FRAGMENT_TOTAL_MAX 约束）
 # 保留常量名供旧调用方传入显式上限；默认 trim 不再为凑预算丢内容。
 EPISODE_FRAGMENT_MAX = 0
@@ -355,7 +357,7 @@ def prepare_fragment_content(
     text = normalize_duration_lines(content or "")
     if not is_opening:
         text = strip_repeat_opening_cues(text)
-    return repair_fragment_timed_layout(text, duration_sec=duration_sec)
+    return repair_fragment_timed_layout(text, duration_sec=duration_sec, manual=True)
 
 
 def _duration_body_lines(rows: list[str]) -> list[str]:
@@ -395,11 +397,13 @@ def _coalesce_continuation_blocks(
 def _coalesce_timed_blocks_to_budget(
     blocks: list[tuple[int, list[str]]],
     target: int,
+    *,
+    hard_max: int = FRAGMENT_TOTAL_MAX,
 ) -> list[tuple[int, list[str]]]:
-    """拍数过多导致合计超上限时，合并相邻拍并缩放到 target。"""
+    """拍数过多导致合计超上限时，合并相邻拍并缩放到 target（不超过 hard_max）。"""
     if not blocks:
         return blocks
-    target = min(FRAGMENT_TOTAL_MAX, max(FRAGMENT_DURATION_MIN, int(target)))
+    target = min(hard_max, max(FRAGMENT_DURATION_MIN, int(target)))
     max_beats = max(1, target // FRAGMENT_DURATION_MIN)
     packed = list(blocks)
     if len(packed) > max_beats:
@@ -1200,10 +1204,12 @@ def _sum_duration_tags(content: str) -> int:
     return total
 
 
-def repair_fragment_timed_layout(content: str, *, duration_sec: int | None = None) -> str:
+def repair_fragment_timed_layout(content: str, *, duration_sec: int | None = None, manual: bool = False) -> str:
     """
     修正旧稿中 @duration 仅在末尾的问题。
     现代场记（时长标签已在各段之前）保留段内换行，不把每一行拆成 3s。
+    manual=True 用于读取、保存、提交现有分镜：15s 只约束自动拆分，
+    手写时长超过 Seedance 上限才合并；自动规划不传，仍收紧到 15s。
     """
     text = normalize_duration_lines((content or "").replace("\r\n", "\n")).strip()
     if not text:
@@ -1218,7 +1224,12 @@ def repair_fragment_timed_layout(content: str, *, duration_sec: int | None = Non
     if blocks and not header_narrative:
         packed = _coalesce_continuation_blocks(blocks)
         tagged = sum(d for d, _ in packed)
-        if tagged > target:
+        if manual:
+            if tagged > MANUAL_FRAGMENT_TOTAL_MAX:
+                packed = _coalesce_timed_blocks_to_budget(
+                    packed, MANUAL_FRAGMENT_TOTAL_MAX, hard_max=MANUAL_FRAGMENT_TOTAL_MAX,
+                )
+        elif tagged > target:
             packed = _coalesce_timed_blocks_to_budget(packed, target)
         return _join_header_and_blocks(meta, packed)
 
