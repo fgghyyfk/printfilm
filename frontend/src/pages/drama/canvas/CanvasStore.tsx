@@ -16,11 +16,13 @@ import {
   type EdgeChange,
   type Node,
   type NodeChange,
+  type OnBeforeDelete,
   type OnConnect,
   type OnEdgesChange,
   type OnNodesChange,
 } from '@xyflow/react'
 import { dramaApi, resolveDramaMediaUrl } from '../../../api/drama'
+import { dialog } from '../../../lib/dialog'
 import type { DramaAsset } from '../../../api/drama'
 import { enqueueDramaImageGen, resumeDramaImageGensFromAssets } from '../../../lib/dramaImageGenQueue'
 import { enqueueDramaVideoGen, resumeDramaVideoGensFromAssets } from '../../../lib/dramaVideoGenQueue'
@@ -80,6 +82,7 @@ type CanvasStoreValue = {
   setErrorMessage: (msg: string) => void
   toggleSnapToGrid: () => void
   toggleMinimap: () => void
+  onBeforeDelete: OnBeforeDelete<Node<CanvasAssetNodeData>, Edge>
   onNodesChange: OnNodesChange
   onEdgesChange: OnEdgesChange
   onConnect: OnConnect
@@ -152,6 +155,9 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
   const [projectImageStyleId, setProjectImageStyleId] = useState('')
   const [freeCanvasMode, setFreeCanvasMode] = useState(false)
   const readyRef = useRef(false)
+  const deleteConfirmRef = useRef(false)
+  const currentProjectRef = useRef(projectId)
+  currentProjectRef.current = projectId
   const nodesRef = useRef(nodes)
   const edgesRef = useRef(edges)
   const historyRef = useRef(history)
@@ -268,26 +274,7 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
     (changes: NodeChange[]) => {
       const removeChanges = changes.filter((c) => c.type === 'remove')
       const hasRemove = removeChanges.length > 0
-      /*
-       * removedAssetIds 待删后端资产
-       * nextNodes / nextEdges 删除后的布局（立刻落盘，避免刷新复现）
-       */
-      const removedAssetIds: number[] = []
-      if (hasRemove) {
-        setHistory((prev) =>
-          pushHistory(prev, {
-            nodes: nodesRef.current,
-            edges: edgesRef.current,
-          }),
-        )
-        for (const change of removeChanges) {
-          const node = nodesRef.current.find((n) => n.id === change.id)
-          const assetId = node?.data.assetId
-          if (typeof assetId === 'number' && assetId > 0) {
-            removedAssetIds.push(assetId)
-          }
-        }
-      }
+      if (hasRemove) pushSnapshot()
 
       const nextNodes = applyNodeChanges(changes, nodesRef.current) as Node<CanvasAssetNodeData>[]
       nodesRef.current = nextNodes
@@ -312,17 +299,45 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
       if (structural) markDirty()
 
       if (hasRemove && freeCanvasModeRef.current) {
-        for (const assetId of removedAssetIds) {
-          void dramaApi.deleteAsset(assetId).catch(() => undefined)
-        }
         void flushRef.current({
           nodes: nextNodes,
           edges: nextEdges,
-        })
+        }).catch(() => undefined)
       }
     },
-    [markDirty],
+    [markDirty, pushSnapshot],
   )
+
+  // 自由画布仅移除布局节点；单次历史同时保留节点和关联边。
+  const onBeforeDelete: OnBeforeDelete<Node<CanvasAssetNodeData>, Edge> = useCallback(async ({ nodes: removedNodes, edges: removedEdges }) => {
+    if (!freeCanvasModeRef.current) return true
+    if (deleteConfirmRef.current) return false
+    deleteConfirmRef.current = true
+    const targetProject = projectId
+    try {
+      const confirmed = await dialog.confirm({
+        title: '从画布移除',
+        message: `将移除 ${removedNodes.length} 个节点、${removedEdges.length} 条连线。资产库、分镜引用和生成任务保留，可撤销恢复。`,
+        confirmText: '移除', tone: 'danger',
+      })
+      if (!confirmed || currentProjectRef.current !== targetProject) return false
+      const nodeIds = new Set(removedNodes.map((node) => node.id))
+      const edgeIds = new Set(removedEdges.map((edge) => edge.id))
+      pushSnapshot()
+      const nextNodes = nodesRef.current.filter((node) => !nodeIds.has(node.id))
+      const nextEdges = edgesRef.current.filter((edge) => !edgeIds.has(edge.id) && !nodeIds.has(edge.source) && !nodeIds.has(edge.target))
+      nodesRef.current = nextNodes
+      edgesRef.current = nextEdges
+      setNodes(nextNodes)
+      setEdges(nextEdges)
+      markDirty()
+      void flushRef.current({ nodes: nextNodes, edges: nextEdges }).catch(() => undefined)
+      // 已一次性更新受控布局，避免 React Flow 分别移除边/节点压入两次历史。
+      return false
+    } finally {
+      deleteConfirmRef.current = false
+    }
+  }, [projectId, pushSnapshot, markDirty])
 
   const onEdgesChange: OnEdgesChange = useCallback(
     (changes: EdgeChange[]) => {
@@ -456,7 +471,7 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
         void flushRef.current({
           nodes: nextNodes,
           edges: edgesRef.current,
-        })
+        }).catch(() => undefined)
       }
 
       const prev = addNodeChainRef.current
@@ -1048,7 +1063,7 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
   /* 页面关闭前尽量刷一次保存 */
   useEffect(() => {
     const onBeforeUnload = () => {
-      if (dirty) void flush()
+      if (dirty) void flush().catch(() => undefined)
     }
     window.addEventListener('beforeunload', onBeforeUnload)
     return () => window.removeEventListener('beforeunload', onBeforeUnload)
@@ -1096,6 +1111,7 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
       setErrorMessage,
       toggleSnapToGrid: () => setSnapToGrid((v) => !v),
       toggleMinimap: () => setShowMinimap((v) => !v),
+      onBeforeDelete,
       onNodesChange,
       onEdgesChange,
       onConnect,
@@ -1134,6 +1150,7 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
       showMinimap,
       history.past.length,
       history.future.length,
+      onBeforeDelete,
       onNodesChange,
       onEdgesChange,
       onConnect,
