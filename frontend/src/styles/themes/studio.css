@@ -2,24 +2,24 @@
    招牌元素是字幕条（墨黑底 + 字幕黄字）：用于选中态、页面小标题与重点信息。
    页面样式按需懒加载，这里用 body 前缀抬高优先级，避免被后加载的同名规则盖掉。 */
 
-body {
+html[data-theme="studio"] body {
   background: var(--pf-bg);
   -webkit-font-smoothing: antialiased;
 }
 
 /* ---------- 顶栏：演播室控制台 ---------- */
-body .pf-app-topbar {
+html[data-theme="studio"] body .pf-app-topbar {
   border-bottom: 0;
   background: var(--pf-ink);
   color: #f6f1e7;
 }
-body .pf-app-topbar .brand-word { color: #fffdf8; font-weight: 800; }
-body .pf-app-topbar .brand-word small { color: #a79f90; }
-body .pf-topbar-link { color: #b4ac9d; }
-body .pf-topbar-link:hover { color: #fffdf8; }
-body .pf-topbar-link.is-active { color: var(--pf-caption); font-weight: 700; }
+html[data-theme="studio"] body .pf-app-topbar .brand-word { color: #fffdf8; font-weight: 800; }
+html[data-theme="studio"] body .pf-app-topbar .brand-word small { color: #a79f90; }
+html[data-theme="studio"] body .pf-topbar-link { color: #b4ac9d; }
+html[data-theme="studio"] body .pf-topbar-link:hover { color: #fffdf8; }
+html[data-theme="studio"] body .pf-topbar-link.is-active { color: var(--pf-caption); font-weight: 700; }
 /* 当前页：信号灯，像演播室的「录制中」 */
-body .pf-app-topbar .pf-topbar-link.is-active::after {
+html[data-theme="studio"] body .pf-app-topbar .pf-topbar-link.is-active::after {
   right: auto;
   bottom: auto;
   left: -11px;
@@ -30,60 +30,60 @@ body .pf-app-topbar .pf-topbar-link.is-active::after {
   background: #ff5a33;
   box-shadow: 0 0 0 3px rgba(255, 90, 51, 0.22);
 }
-body .pf-app-topbar .pf-topbar-links { gap: clamp(18px, 1.5vw, 28px); }
-body .pf-topbar-help { color: #b4ac9d; }
-body .pf-topbar-help:hover, body .pf-topbar-help.is-active { color: #fffdf8; }
-body .pf-app-topbar .pf-nav-lang { border-color: #4a4338; background: transparent; }
-body .pf-app-topbar .pf-nav-lang button { color: #b4ac9d; }
-body .pf-app-topbar .pf-nav-lang button.active,
-body .pf-app-topbar .pf-nav-lang button.is-active { background: var(--pf-caption); color: var(--pf-ink); }
-body .pf-topbar-account { border-color: #4a4338; background: #2a2419; color: #d8d0c0; }
-body .pf-topbar-account:hover, body .pf-topbar-account.is-active { border-color: var(--pf-caption); box-shadow: none; }
-body .pf-topbar-menu-toggle { border-color: #4a4338; background: transparent; color: #f6f1e7; }
-body .pf-topbar-menu-toggle:hover { background: #2a2419; }
-body .pf-topbar-create {
+html[data-theme="studio"] body .pf-app-topbar .pf-topbar-links { gap: clamp(18px, 1.5vw, 28px); }
+html[data-theme="studio"] body .pf-topbar-help { color: #b4ac9d; }
+html[data-theme="studio"] body .pf-topbar-help:hover, html[data-theme="studio"] body .pf-topbar-help.is-active { color: #fffdf8; }
+html[data-theme="studio"] body .pf-app-topbar .pf-nav-lang { border-color: #4a4338; background: transparent; }
+html[data-theme="studio"] body .pf-app-topbar .pf-nav-lang button { color: #b4ac9d; }
+html[data-theme="studio"] body .pf-app-topbar .pf-nav-lang button.active,
+html[data-theme="studio"] body .pf-app-topbar .pf-nav-lang button.is-active { background: var(--pf-caption); color: var(--pf-ink); }
+html[data-theme="studio"] body .pf-topbar-account { border-color: #4a4338; background: #2a2419; color: #d8d0c0; }
+html[data-theme="studio"] body .pf-topbar-account:hover, html[data-theme="studio"] body .pf-topbar-account.is-active { border-color: var(--pf-caption); box-shadow: none; }
+html[data-theme="studio"] body .pf-topbar-menu-toggle { border-color: #4a4338; background: transparent; color: #f6f1e7; }
+html[data-theme="studio"] body .pf-topbar-menu-toggle:hover { background: #2a2419; }
+html[data-theme="studio"] body .pf-topbar-create {
   border-color: var(--pf-caption);
   border-radius: var(--pf-radius-sm);
   background: var(--pf-caption);
   color: var(--pf-ink);
   font-weight: 800;
 }
-body .pf-topbar-create:hover { border-color: #fff; background: var(--pf-card); color: var(--pf-ink); }
-body .pf-app-topbar :focus-visible { outline-color: var(--pf-caption); }
-body .pf-topbar-menu { border-radius: var(--pf-radius-lg); background: var(--pf-card); }
-body .pf-topbar-menu-link.is-active { border-color: var(--pf-ink); background: var(--pf-ink); color: var(--pf-caption); }
+html[data-theme="studio"] body .pf-topbar-create:hover { border-color: #fff; background: var(--pf-card); color: var(--pf-ink); }
+html[data-theme="studio"] body .pf-app-topbar :focus-visible { outline-color: var(--pf-caption); }
+html[data-theme="studio"] body .pf-topbar-menu { border-radius: var(--pf-radius-lg); background: var(--pf-card); }
+html[data-theme="studio"] body .pf-topbar-menu-link.is-active { border-color: var(--pf-ink); background: var(--pf-ink); color: var(--pf-caption); }
 
 /* ---------- 按钮：主按钮带硬投影，按下时压实 ---------- */
-body .pf-btn {
+html[data-theme="studio"] body .pf-btn {
   border-radius: var(--pf-radius-sm);
   font-weight: 700;
   transition: transform 0.1s ease, box-shadow 0.1s ease, background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
 }
-body .pf-btn-lime {
+html[data-theme="studio"] body .pf-btn-lime {
   border: 1.5px solid var(--pf-ink);
   background: var(--pf-lime);
   color: #fff;
   box-shadow: var(--pf-hard);
 }
-body .pf-btn-lime:hover:not(:disabled):not(.is-disabled) {
+html[data-theme="studio"] body .pf-btn-lime:hover:not(:disabled):not(.is-disabled) {
   background: var(--pf-lime);
   box-shadow: 4px 4px 0 var(--pf-ink);
   transform: translate(-1px, -1px);
 }
-body .pf-btn-lime:active:not(:disabled):not(.is-disabled) {
+html[data-theme="studio"] body .pf-btn-lime:active:not(:disabled):not(.is-disabled) {
   box-shadow: 0 0 0 var(--pf-ink);
   transform: translate(3px, 3px);
 }
-body .pf-btn-dark { border-radius: var(--pf-radius-sm); background: var(--pf-ink); color: #fffdf8; }
-body .pf-btn-dark:hover:not(:disabled):not(.is-disabled) { background: var(--pf-ink); color: var(--pf-caption); }
-body .pf-btn-ghost, body .pf-btn-outline {
+html[data-theme="studio"] body .pf-btn-dark { border-radius: var(--pf-radius-sm); background: var(--pf-ink); color: #fffdf8; }
+html[data-theme="studio"] body .pf-btn-dark:hover:not(:disabled):not(.is-disabled) { background: var(--pf-ink); color: var(--pf-caption); }
+html[data-theme="studio"] body .pf-btn-ghost, html[data-theme="studio"] body .pf-btn-outline {
   border: 1.5px solid var(--pf-ink);
   border-radius: var(--pf-radius-sm);
   background: transparent;
   color: var(--pf-ink);
 }
-body .pf-btn-ghost:hover:not(:disabled):not(.is-disabled),
-body .pf-btn-outline:hover:not(:disabled):not(.is-disabled) {
+html[data-theme="studio"] body .pf-btn-ghost:hover:not(:disabled):not(.is-disabled),
+html[data-theme="studio"] body .pf-btn-outline:hover:not(:disabled):not(.is-disabled) {
   border-color: var(--pf-ink);
   background: var(--pf-ink);
   color: #fffdf8;
@@ -91,7 +91,7 @@ body .pf-btn-outline:hover:not(:disabled):not(.is-disabled) {
 }
 
 /* ---------- 选中态：字幕条（全站统一） ---------- */
-body :is(
+html[data-theme="studio"] body :is(
   .pf-pill.active, .pf-pill.lime.active, .pf-project-list-toolbar .pf-pill.lime.active,
   .pf-tool-chips button.active, .pf-panel-tabs button.active, .pf-help-tabs button.active,
   .pf-library-pill.is-active, .pf-team-pill.is-active, .pf-team-project-filters .pf-team-pill.is-active,
@@ -104,21 +104,21 @@ body :is(
   color: var(--pf-caption);
   box-shadow: none;
 }
-body .gen-status-tabs button.is-active > span { background: var(--pf-caption); color: var(--pf-ink); }
+html[data-theme="studio"] body .gen-status-tabs button.is-active > span { background: var(--pf-caption); color: var(--pf-ink); }
 
 /* 可选卡片的选中：墨线加硬投影 */
-body :is(.pf-model-opt.selected, .pf-style-opt.selected, .pf-ecom-model.active, .pf-create-choice-card:hover) {
+html[data-theme="studio"] body :is(.pf-model-opt.selected, .pf-style-opt.selected, .pf-ecom-model.active, .pf-create-choice-card:hover) {
   border-color: var(--pf-ink);
   box-shadow: var(--pf-hard);
 }
 
 /* ---------- 页面标题：粗黑标题 + 字幕条小标 ---------- */
-body :is(.pf-page-title, .pf-project-page-header h1) {
+html[data-theme="studio"] body :is(.pf-page-title, .pf-project-page-header h1) {
   color: var(--pf-ink);
   font-weight: 900;
   letter-spacing: -0.01em;
 }
-body :is(.pf-project-page-eyebrow, .pf-market-kicker, .pf-is-eyebrow, .pf-team-eyebrow, .pf-team-overview-eyebrow) {
+html[data-theme="studio"] body :is(.pf-project-page-eyebrow, .pf-market-kicker, .pf-is-eyebrow, .pf-team-eyebrow, .pf-team-overview-eyebrow) {
   display: inline-flex;
   align-items: center;
   width: fit-content;
@@ -132,23 +132,23 @@ body :is(.pf-project-page-eyebrow, .pf-market-kicker, .pf-is-eyebrow, .pf-team-e
   font-weight: 700;
   letter-spacing: 0.08em;
 }
-body .pf-project-page-header p { color: var(--pf-muted); }
+html[data-theme="studio"] body .pf-project-page-header p { color: var(--pf-muted); }
 
 /* ---------- 表单：聚焦时墨线，不用发光 ---------- */
-body :is(.pf-shell, .pf-dialog-root, .modal-backdrop) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]), textarea, select):focus {
+html[data-theme="studio"] body :is(.pf-shell, .pf-dialog-root, .modal-backdrop) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]), textarea, select):focus {
   border-color: var(--pf-ink);
   outline: none;
   box-shadow: 0 0 0 1px var(--pf-ink);
 }
-::selection { background: var(--pf-caption); color: var(--pf-ink); }
+html[data-theme="studio"] ::selection { background: var(--pf-caption); color: var(--pf-ink); }
 
 @media (prefers-reduced-motion: reduce) {
-  body .pf-btn { transition: none; }
+  html[data-theme="studio"] body .pf-btn { transition: none; }
 }
 
 /* ---------- 工具页标题 ---------- */
-body .gen-hero h1 { color: var(--pf-ink); font-weight: 900; letter-spacing: -0.015em; }
-body .gen-hero h1 span {
+html[data-theme="studio"] body .gen-hero h1 { color: var(--pf-ink); font-weight: 900; letter-spacing: -0.015em; }
+html[data-theme="studio"] body .gen-hero h1 span {
   display: inline-block;
   margin-left: 10px;
   padding: 0.04em 0.26em 0.08em;
@@ -156,10 +156,10 @@ body .gen-hero h1 span {
   background: var(--pf-ink);
   color: var(--pf-caption);
 }
-body .gen-hero-art { display: none; }
+html[data-theme="studio"] body .gen-hero-art { display: none; }
 
 /* ---------- 登录页右侧：品牌主张 ---------- */
-body .auth-shell .btn.primary {
+html[data-theme="studio"] body .auth-shell .btn.primary {
   border: 1.5px solid var(--pf-ink);
   border-radius: var(--pf-radius-sm);
   background: var(--pf-lime);
@@ -167,9 +167,9 @@ body .auth-shell .btn.primary {
   font-weight: 800;
   box-shadow: var(--pf-hard);
 }
-body .auth-shell .btn.primary:hover:not(:disabled) { box-shadow: 4px 4px 0 var(--pf-ink); transform: translate(-1px, -1px); }
-body .auth-shell .btn.primary:active:not(:disabled) { box-shadow: none; transform: translate(3px, 3px); }
-body .auth-visual {
+html[data-theme="studio"] body .auth-shell .btn.primary:hover:not(:disabled) { box-shadow: 4px 4px 0 var(--pf-ink); transform: translate(-1px, -1px); }
+html[data-theme="studio"] body .auth-shell .btn.primary:active:not(:disabled) { box-shadow: none; transform: translate(3px, 3px); }
+html[data-theme="studio"] body .auth-visual {
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -178,13 +178,13 @@ body .auth-visual {
   background: var(--pf-ink);
   color: #fffdf8;
 }
-body .auth-visual::before, body .auth-visual::after { display: none; }
-.auth-visual-head { display: flex; flex-direction: column; align-items: flex-start; gap: 0.2em; font-size: clamp(2.2rem, 4.4vw, 4rem); font-weight: 900; line-height: 1.14; }
-.auth-visual-head b { padding: 0.04em 0.26em 0.08em; border-radius: 4px; background: var(--pf-caption); color: var(--pf-ink); font-weight: 900; }
-.auth-visual-sub { margin: 0; color: #c9c1b1; font-size: 1.02rem; line-height: 1.75; }
-.auth-visual-wave { display: flex; align-items: center; gap: 4px; height: 56px; }
-.auth-visual-wave i { width: 6px; border-radius: 1px; background: var(--pf-lime); }
+html[data-theme="studio"] body .auth-visual::before, html[data-theme="studio"] body .auth-visual::after { display: none; }
+html[data-theme="studio"] .auth-visual-head { display: flex; flex-direction: column; align-items: flex-start; gap: 0.2em; font-size: clamp(2.2rem, 4.4vw, 4rem); font-weight: 900; line-height: 1.14; }
+html[data-theme="studio"] .auth-visual-head b { padding: 0.04em 0.26em 0.08em; border-radius: 4px; background: var(--pf-caption); color: var(--pf-ink); font-weight: 900; }
+html[data-theme="studio"] .auth-visual-sub { margin: 0; color: #c9c1b1; font-size: 1.02rem; line-height: 1.75; }
+html[data-theme="studio"] .auth-visual-wave { display: flex; align-items: center; gap: 4px; height: 56px; }
+html[data-theme="studio"] .auth-visual-wave i { width: 6px; border-radius: 1px; background: var(--pf-lime); }
 
 /* 顶栏头像按钮：内外统一切角，不露底色 */
-body .pf-topbar-account { overflow: hidden; border-radius: var(--pf-radius-sm); }
-body .pf-topbar-account .pf-user-avatar { border-radius: 0; }
+html[data-theme="studio"] body .pf-topbar-account { overflow: hidden; border-radius: var(--pf-radius-sm); }
+html[data-theme="studio"] body .pf-topbar-account .pf-user-avatar { border-radius: 0; }

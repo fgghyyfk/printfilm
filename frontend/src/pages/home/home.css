@@ -38,7 +38,7 @@
   height: 8px;
   border-radius: 50%;
   background: var(--pf-lime);
-  box-shadow: 0 0 0 3px rgba(220, 58, 20, 0.18);
+  box-shadow: 0 0 0 3px rgb(var(--pf-accent-rgb) / 0.18);
 }
 
 .kk-hero h1 {

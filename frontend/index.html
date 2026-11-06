@@ -5,13 +5,26 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>开口播 · 一张照片，开口讲科普</title>
+    <script>
+      (function () {
+        var themes = ['daylight', 'studio']
+        var theme = 'daylight'
+        try {
+          var saved = localStorage.getItem('kk-site-theme')
+          if (themes.indexOf(saved) >= 0) theme = saved
+        } catch (e) {}
+        var preview = new URLSearchParams(location.search).get('preview_theme')
+        if (themes.indexOf(preview) >= 0) theme = preview
+        document.documentElement.dataset.theme = theme
+      })()
+    </script>
     <meta name="description" content="开口播：上传一张半身照，自动配音、对口型、加标题条，生成竖屏口播视频。" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="开口播 KaiKou" />
     <meta property="og:title" content="开口播 · 一张照片，开口讲科普" />
     <meta property="og:description" content="上传一张半身照，自动配音、对口型、加标题条，生成竖屏口播视频。" />
     <meta property="og:url" content="https://kaikou.haituike.com/" />
-    <meta name="theme-color" content="#17130e" />
+    <meta name="theme-color" content="#f8f7f3" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link

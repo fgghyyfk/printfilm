@@ -7,7 +7,7 @@
   --drama-ink: var(--pf-ink, var(--pf-ink));
   --drama-muted: var(--pf-muted, var(--pf-muted));
   --drama-line: var(--pf-line, var(--pf-line-solid));
-  --drama-bg: var(--pf-bg, #f7f7f5);
+  --drama-bg: var(--pf-bg, var(--pf-sunken));
   max-width: 1100px;
   margin: 0 auto;
   padding: 28px 20px 64px;
@@ -35,7 +35,7 @@
   width: 44px;
   height: 44px;
   border-radius: var(--pf-radius);
-  background: linear-gradient(145deg, var(--pf-lime-soft) 0%, #ffe3d6 100%);
+  background: linear-gradient(145deg, var(--pf-lime-soft) 0%, var(--pf-lime-soft) 100%);
   color: var(--pf-accent-deep);
   display: grid;
   place-items: center;
@@ -172,7 +172,7 @@
   position: relative;
   border-radius: var(--pf-radius-lg);
   background:
-    linear-gradient(180deg, #fbfbfa 0%, #f7f7f5 100%);
+    linear-gradient(180deg, #fbfbfa 0%, var(--pf-sunken) 100%);
   border: 1px solid rgba(23, 19, 14, 0.08);
   box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.03);
   transition:
@@ -284,7 +284,7 @@
 }
 
 .drama-agent-char-count.is-ok {
-  color: #7c2d12;
+  color: var(--pf-lime);
   border-color: color-mix(in srgb, var(--drama-lime) 40%, transparent);
   background: color-mix(in srgb, var(--drama-lime) 18%, #fff);
   font-weight: 600;
@@ -293,7 +293,7 @@
 .drama-agent-char-count.is-over {
   color: #b42318;
   border-color: rgba(180, 35, 24, 0.22);
-  background: #fff5f4;
+  background: var(--pf-lime-soft);
   font-weight: 600;
 }
 
@@ -743,7 +743,7 @@
   height: 100%;
   display: grid;
   place-items: center;
-  background: linear-gradient(145deg, #eef2f7 0%, var(--pf-line-solid) 100%);
+  background: linear-gradient(145deg, var(--pf-sunken) 0%, var(--pf-line-solid) 100%);
 }
 
 .drama-project-row-poster-vertical {
@@ -963,7 +963,7 @@
   gap: 6px;
   border: none;
   border-radius: var(--pf-radius-pill);
-  background: #ff6b6b;
+  background: var(--pf-lime);
   color: #fff;
   padding: 6px 16px;
   font: inherit;
@@ -1046,7 +1046,7 @@
 
 .drama-style-picker-trigger:hover:not(:disabled) {
   border-color: color-mix(in srgb, var(--drama-lime) 55%, var(--drama-line));
-  background: #faf6f5;
+  background: var(--pf-sunken);
 }
 
 .drama-style-picker-trigger.is-active {
@@ -1069,7 +1069,7 @@
   height: 32px;
   border-radius: 8px;
   overflow: hidden;
-  background: #eef2f7;
+  background: var(--pf-sunken);
   border: 1px solid rgba(23, 19, 14, 0.06);
 }
 
@@ -1096,7 +1096,7 @@
 }
 
 .drama-hero {
-  background: linear-gradient(135deg, #fff3ec 0%, #ffffff 55%, #f7f7f5 100%);
+  background: linear-gradient(135deg, var(--pf-lime-soft) 0%, #ffffff 55%, var(--pf-sunken) 100%);
   border: 1px solid var(--drama-line);
   border-radius: var(--drama-radius);
   padding: 36px 32px;
@@ -1682,7 +1682,7 @@
 .drama-step-bar button.active .drama-step-num {
   background: var(--drama-lime);
   color: var(--pf-ink);
-  box-shadow: 0 0 0 2px rgba(220, 58, 20, 0.35);
+  box-shadow: 0 0 0 2px rgb(var(--pf-accent-rgb) / 0.35);
 }
 
 .drama-step-bar button.done .drama-step-num {
@@ -1755,7 +1755,7 @@
   width: 44px;
   height: 44px;
   border-radius: var(--pf-radius);
-  background: linear-gradient(145deg, var(--pf-lime-soft) 0%, #ffe3d6 100%);
+  background: linear-gradient(145deg, var(--pf-lime-soft) 0%, var(--pf-lime-soft) 100%);
   color: var(--pf-accent-deep);
   display: grid;
   place-items: center;
@@ -1839,7 +1839,7 @@
   max-width: none;
   margin: 0;
   min-height: calc(100vh - 72px);
-  background: #f4f5f7;
+  background: var(--pf-sunken);
   box-sizing: border-box;
 }
 
@@ -1911,7 +1911,7 @@
   display: block;
   font-size: 14px;
   font-weight: 700;
-  color: #854d0e;
+  color: var(--pf-lime);
 }
 
 .drama-outline-pipeline-main p {
@@ -2445,7 +2445,7 @@
   padding: 8px 10px;
   border-radius: var(--pf-radius-sm);
   background: var(--pf-sunken);
-  border: 1px solid #eef2f7;
+  border: 1px solid var(--pf-sunken);
   font-size: 12px;
   font-weight: 600;
   color: var(--pf-ink-soft);
@@ -2672,7 +2672,7 @@
   display: flex;
   gap: 0;
   min-height: calc(100vh - 72px);
-  background: #f4f5f7;
+  background: var(--pf-sunken);
 }
 
 .drama-episodes-page > .drama-episode-dir {
@@ -3362,7 +3362,7 @@
 .drama-ep-card-progress-bar {
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #ffb08f 0%, #ff8a5c 100%);
+  background: linear-gradient(90deg, var(--pf-line-strong) 0%, var(--pf-lime) 100%);
   transition: width 0.35s ease;
 }
 
@@ -3970,7 +3970,7 @@
 }
 
 .drama-ep-script-issue.is-error {
-  color: #9f1239;
+  color: var(--pf-lime);
   background: rgba(244, 63, 94, 0.08);
   border: 1px solid rgba(244, 63, 94, 0.22);
 }
@@ -4110,7 +4110,7 @@
 
 .drama-ep-ref-voice-badge.bound {
   background: rgba(17, 17, 17, 0.82);
-  color: #ff8a5c;
+  color: var(--pf-lime);
 }
 
 .drama-ep-voice-row {
@@ -5879,7 +5879,7 @@
 .drama-gen-fab-item {
   padding: 12px;
   border-radius: var(--pf-radius);
-  background: #f7f7f5;
+  background: var(--pf-sunken);
   border: 1px solid transparent;
   width: 100%;
   text-align: left;
@@ -5900,7 +5900,7 @@
 
 .drama-gen-fab-item.is-running {
   border-color: var(--pf-lime);
-  background: linear-gradient(180deg, var(--pf-lime-soft) 0%, #f7f7f5 100%);
+  background: linear-gradient(180deg, var(--pf-lime-soft) 0%, var(--pf-sunken) 100%);
 }
 
 .drama-gen-fab-item.is-failed {
@@ -6022,7 +6022,7 @@
 .drama-gen-detail-card {
   padding: 12px;
   border-radius: var(--pf-radius);
-  background: #f7f7f5;
+  background: var(--pf-sunken);
   border: 1px solid #ecece8;
 }
 
@@ -6149,7 +6149,7 @@
   margin-top: 10px;
   height: 3px;
   border-radius: var(--pf-radius-pill);
-  background: linear-gradient(90deg, var(--pf-lime), #ffc7ae, var(--pf-lime));
+  background: linear-gradient(90deg, var(--pf-lime), var(--pf-line-strong), var(--pf-lime));
   background-size: 200% 100%;
   animation: drama-gen-queue-slide 1.2s linear infinite;
 }

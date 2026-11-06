@@ -4,8 +4,8 @@
 .gen-layout :is(button, a):focus-visible, .gen-floating button:focus-visible { outline: 2px solid var(--gen-focus); outline-offset: 3px; }
 .gen-select { position: relative; min-width: 0; }
 .gen-select-trigger { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 52px; padding: 9px 12px; border: 1px solid var(--gen-line); border-radius: var(--pf-radius-sm); background: var(--pf-card); color: var(--pf-ink); text-align: left; cursor: pointer; box-shadow: 0 1px 2px #11131803; transition: border-color .15s, box-shadow .15s, background .15s; }
-.gen-select-trigger:hover { border-color: #cca99e; background: var(--pf-sunken); }
-.gen-select-trigger.is-open { border-color: #b47d6b; box-shadow: 0 0 0 3px #cae88d33; }
+.gen-select-trigger:hover { border-color: var(--pf-line-strong); background: var(--pf-sunken); }
+.gen-select-trigger.is-open { border-color: var(--pf-accent-deep); box-shadow: 0 0 0 3px #cae88d33; }
 .gen-select-icon { display: inline-grid; place-items: center; color: var(--gen-muted); flex-shrink: 0; }
 .gen-select-value { display: block; flex: 1; min-width: 0; }
 .gen-select-value small { display: block; margin-bottom: 3px; color: var(--gen-muted); font-size: 10px; line-height: 1.3; font-weight: 400; }
@@ -22,15 +22,15 @@
 .gen-select-option.is-highlighted { background: var(--pf-bg); }
 .gen-select-option.is-selected { background: var(--gen-accent-soft); color: var(--gen-accent-ink); }
 .gen-option-icon { display: grid; place-items: center; width: 32px; height: 32px; color: var(--gen-muted); background: var(--pf-bg); border: 1px solid var(--gen-line); border-radius: 8px; flex-shrink: 0; }
-.gen-select-option.is-selected .gen-option-icon { color: var(--gen-accent-ink); background: #eec5b8; border-color: #e5c2b7; }
+.gen-select-option.is-selected .gen-option-icon { color: var(--gen-accent-ink); background: var(--pf-line-strong); border-color: var(--pf-line-strong); }
 .gen-option-check { margin-left: auto; color: var(--gen-accent-ink); flex-shrink: 0; }
 .gen-date-control { position: relative; min-width: 188px; }
 .gen-date-trigger { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 42px; padding: 10px 13px; border: 1px solid var(--gen-line); border-radius: var(--pf-radius-sm); background: var(--pf-card); color: var(--gen-muted); font-size: 12px; cursor: pointer; white-space: nowrap; transition: border-color .15s, box-shadow .15s; }
 .gen-date-trigger > span { flex: 1; text-align: left; }
 .gen-date-trigger > svg:first-child { color: var(--gen-muted); }
-.gen-date-trigger:hover { border-color: #cca99e; }
-.gen-date-trigger.is-open { border-color: #b47d6b; box-shadow: 0 0 0 3px #cae88d33; }
-.has-value .gen-date-trigger { padding-right: 35px; color: var(--gen-accent-ink); border-color: #e5c2b7; background: #f9f0ed; }
+.gen-date-trigger:hover { border-color: var(--pf-line-strong); }
+.gen-date-trigger.is-open { border-color: var(--pf-accent-deep); box-shadow: 0 0 0 3px #cae88d33; }
+.has-value .gen-date-trigger { padding-right: 35px; color: var(--gen-accent-ink); border-color: var(--pf-line-strong); background: var(--pf-sunken); }
 .has-value .gen-date-trigger > svg:last-child { display: none; }
 .gen-date-clear { position: absolute; right: 8px; top: 50%; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 6px; background: var(--gen-accent-soft); color: var(--gen-accent-ink); transform: translateY(-50%); cursor: pointer; }
 .gen-calendar-header { display: flex; align-items: center; justify-content: space-between; padding: 13px 16px 10px; }
@@ -41,7 +41,7 @@
 .gen-calendar-presets { display: flex; gap: 7px; padding: 0 16px 15px; border-bottom: 1px solid var(--gen-line); }
 .gen-calendar-presets button { display: flex; align-items: center; justify-content: center; gap: 5px; min-height: 29px; padding: 5px 10px; border: 1px solid var(--gen-line); border-radius: 7px; color: var(--gen-muted); background: var(--pf-card); font-size: 11px; cursor: pointer; }
 .gen-calendar-presets button:hover { background: var(--pf-bg); }
-.gen-calendar-presets button.is-active { background: var(--gen-accent-soft); border-color: #e5c2b7; color: var(--gen-accent-ink); }
+.gen-calendar-presets button.is-active { background: var(--gen-accent-soft); border-color: var(--pf-line-strong); color: var(--gen-accent-ink); }
 .gen-calendars { position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: 22px; padding: 13px 18px 18px; }
 .gen-calendar-month { min-width: 0; }
 .gen-calendar-month-label { margin: 8px 28px 17px; text-align: center; color: var(--pf-ink); font-size: 12px; font-weight: 600; }
@@ -50,7 +50,7 @@
 .gen-calendar-grid > button { position: relative; min-width: 0; height: 31px; border: 0; border-radius: 7px; background: transparent; color: var(--pf-ink); font-size: 11px; font-variant-numeric: tabular-nums; cursor: pointer; }
 .gen-calendar-grid > button:hover { background: var(--gen-accent-soft); color: var(--gen-accent-ink); }
 .gen-calendar-grid > button.is-in-range { background: var(--gen-accent-soft); border-radius: 2px; color: var(--gen-accent-ink); }
-.gen-calendar-grid > button.is-range-edge { border-radius: 7px; background: var(--gen-accent); color: #230800; box-shadow: 0 2px 4px #1113180a; }
+.gen-calendar-grid > button.is-range-edge { border-radius: 7px; background: var(--gen-accent); color: var(--pf-ink); box-shadow: 0 2px 4px #1113180a; }
 .gen-calendar-grid > button.is-today:not(.is-range-edge)::after { content: ''; position: absolute; bottom: 3px; left: calc(50% - 1.5px); width: 3px; height: 3px; border-radius: 50%; background: var(--gen-accent-ink); }
 .gen-calendar-prev, .gen-calendar-next { position: absolute; top: 13px; color: var(--gen-muted); }
 .gen-calendar-prev { left: 15px; }

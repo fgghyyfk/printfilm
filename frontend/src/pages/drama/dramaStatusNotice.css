@@ -32,10 +32,10 @@
 }
 
 .drama-status-notice.is-error {
-  --notice-ink: #b04444;
-  --notice-bg: #fff7f7;
-  --notice-line: #f4dddd;
-  --notice-icon-bg: #fbe8e8;
+  --notice-ink: var(--pf-accent-deep);
+  --notice-bg: var(--pf-lime-soft);
+  --notice-line: var(--pf-lime-soft);
+  --notice-icon-bg: var(--pf-lime-soft);
 }
 
 .drama-status-notice-icon {

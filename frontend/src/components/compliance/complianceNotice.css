@@ -120,7 +120,7 @@
 }
 
 .pf-compliance-tag.is-block {
-  background: #ffe8e5;
+  background: var(--pf-lime-soft);
   color: #a1261a;
 }
 

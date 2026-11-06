@@ -549,7 +549,7 @@
   max-width: 160px;
   height: 22px;
   padding: 0 6px;
-  border: 1px solid rgba(220, 58, 20, 0.75);
+  border: 1px solid rgb(var(--pf-accent-rgb) / 0.75);
   border-radius: 6px;
   background: var(--pf-card);
   color: var(--fc-ink);
@@ -557,7 +557,7 @@
   font-size: 12px;
   font-weight: 600;
   outline: none;
-  box-shadow: 0 0 0 2px rgba(220, 58, 20, 0.18);
+  box-shadow: 0 0 0 2px rgb(var(--pf-accent-rgb) / 0.18);
 }
 
 .fc-asset-card {
@@ -569,7 +569,7 @@
 }
 
 .fc-asset-node.is-selected .fc-asset-card {
-  border-color: #bb6f57;
+  border-color: var(--pf-accent-deep);
   box-shadow: 0 0 0 2px #c5df8b60;
 }
 
@@ -577,14 +577,14 @@
   width: min(440px, calc(100vw - 32px));
   box-sizing: border-box;
   padding: 16px;
-  border: 1px solid #e6e0de;
+  border: 1px solid var(--pf-line-solid);
   border-radius: var(--pf-radius-lg);
   background: var(--pf-card);
   box-shadow: 0 4px 12px rgba(39, 26, 22, 0.04), 0 16px 40px rgba(39, 26, 22, 0.1);
 }
 
 .fc-generate-panel.has-media {
-  border-color: rgba(220, 58, 20, 0.45);
+  border-color: rgb(var(--pf-accent-rgb) / 0.45);
 }
 
 .fc-generate-head {
@@ -604,8 +604,8 @@
   height: 28px;
   flex-shrink: 0;
   border-radius: var(--pf-radius-sm);
-  background: #f6ebe8;
-  color: #814c3b;
+  background: var(--pf-sunken);
+  color: var(--pf-ink-soft);
 }
 
 .fc-generate-help {
@@ -624,7 +624,7 @@
 
 .fc-generate-help:hover:not(:disabled) {
   color: var(--pf-accent-deep);
-  background: rgba(220, 58, 20, 0.28);
+  background: rgb(var(--pf-accent-rgb) / 0.28);
 }
 
 .fc-generate-help:disabled {
@@ -636,7 +636,7 @@
   margin-left: auto;
   padding: 3px 8px;
   border-radius: var(--pf-radius-pill);
-  background: rgba(220, 58, 20, 0.35);
+  background: rgb(var(--pf-accent-rgb) / 0.35);
   color: var(--pf-accent-deep);
   font-style: normal;
   font-size: 10px;
@@ -679,13 +679,13 @@
   box-sizing: border-box;
   min-height: 112px;
   padding: 12px 14px;
-  border: 1px solid #ece7e6;
+  border: 1px solid var(--pf-line-solid);
   border-radius: var(--pf-radius);
   font: inherit;
   font-size: 13px;
   line-height: 1.8;
   color: var(--fc-ink);
-  background: #faf8f7;
+  background: var(--pf-sunken);
   transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
 }
 
@@ -694,7 +694,7 @@
   min-height: 112px;
   max-height: 220px;
   scrollbar-width: thin;
-  scrollbar-color: #d4c9c5 transparent;
+  scrollbar-color: var(--pf-line-strong) transparent;
   overscroll-behavior: contain;
   white-space: pre-wrap;
   word-break: break-word;
@@ -709,14 +709,14 @@
 
 .fc-generate-input:focus {
   outline: none;
-  border-color: rgba(220, 58, 20, 0.75);
-  box-shadow: 0 0 0 3px rgba(220, 58, 20, 0.18);
+  border-color: rgb(var(--pf-accent-rgb) / 0.75);
+  box-shadow: 0 0 0 3px rgb(var(--pf-accent-rgb) / 0.18);
   background: var(--pf-card);
 }
 
 .fc-generate-editor[aria-disabled="true"] {
   color: #89918a;
-  background: #f6f3f2;
+  background: var(--pf-sunken);
   cursor: wait;
 }
 
@@ -741,9 +741,9 @@
   height: 30px;
   max-width: 190px;
   padding: 0 9px;
-  border: 1px solid #ebe5e3;
+  border: 1px solid var(--pf-line-solid);
   border-radius: 8px;
-  background: #fbf9f9;
+  background: var(--pf-card);
   color: #616c60;
   font-size: 11px;
   transition: border-color 0.15s ease, background 0.15s ease;
@@ -754,14 +754,14 @@
 }
 
 .fc-generate-settings .fc-gen-opt-btn:hover:not(:disabled) {
-  border-color: #d7beb6;
-  background: #f7eeeb;
+  border-color: var(--pf-line-strong);
+  background: var(--pf-sunken);
 }
 
 .fc-generate-settings .fc-gen-opt-btn.active {
-  border-color: #e5cdc5;
-  background: #f6ebe7;
-  color: #784332;
+  border-color: var(--pf-line-strong);
+  background: var(--pf-sunken);
+  color: var(--pf-ink-soft);
 }
 
 .fc-generate-settings .fc-gen-skill-opts .fc-gen-opt-btn {
@@ -903,7 +903,7 @@
 
 .fc-mention-item.is-active,
 .fc-mention-item:hover {
-  background: rgba(220, 58, 20, 0.22);
+  background: rgb(var(--pf-accent-rgb) / 0.22);
 }
 
 .fc-mention-thumb {
@@ -953,7 +953,7 @@
   flex-wrap: wrap;
   gap: 10px;
   padding-top: 12px;
-  border-top: 1px solid #f1eceb;
+  border-top: 1px solid var(--pf-sunken);
 }
 
 .fc-generate-action-btns {
@@ -970,7 +970,7 @@
   gap: 5px;
   height: 34px;
   padding: 0 10px;
-  border: 1px solid #e9e3e1;
+  border: 1px solid var(--pf-line-solid);
   border-radius: var(--pf-radius-sm);
   background: var(--pf-card);
   color: #65705f;
@@ -981,8 +981,8 @@
 }
 
 .fc-generate-optimize:hover:not(:disabled) {
-  border-color: rgba(220, 58, 20, 0.9);
-  background: rgba(220, 58, 20, 0.22);
+  border-color: rgb(var(--pf-accent-rgb) / 0.9);
+  background: rgb(var(--pf-accent-rgb) / 0.22);
   color: var(--pf-accent-deep);
 }
 
@@ -1003,7 +1003,7 @@
 .fc-generate-hint kbd {
   display: inline-block;
   padding: 1px 4px;
-  border: 1px solid #ece6e4;
+  border: 1px solid var(--pf-line-solid);
   border-radius: 4px;
   background: var(--pf-sunken);
   color: #7d8677;
@@ -1017,8 +1017,8 @@
   padding: 0 13px;
   border: none;
   border-radius: var(--pf-radius-sm);
-  background: #f3754d;
-  color: #381d14;
+  background: var(--pf-lime);
+  color: var(--pf-ink);
   align-items: center;
   justify-content: center;
   font: inherit;
@@ -1031,18 +1031,18 @@
 }
 
 .fc-generate-submit:disabled {
-  background: #f1eae8;
+  background: var(--pf-line-solid);
   color: #a0aa94;
   cursor: not-allowed;
 }
 
 .fc-generate-submit:hover:not(:disabled) {
-  background: #e56841;
+  background: var(--pf-lime);
   box-shadow: 0 2px 6px rgba(143, 65, 40, 0.16);
 }
 
 .fc-generate-panel button:focus-visible {
-  outline: 2px solid #ae705c;
+  outline: 2px solid var(--pf-accent-deep);
   outline-offset: 3px;
 }
 
@@ -1283,7 +1283,7 @@
 }
 
 .fc-gen-opt-btn.active {
-  background: rgba(220, 58, 20, 0.28);
+  background: rgb(var(--pf-accent-rgb) / 0.28);
   color: var(--pf-accent-deep);
 }
 
@@ -1416,8 +1416,8 @@
 }
 
 .fc-gen-chip.selected {
-  border-color: rgba(220, 58, 20, 0.85);
-  background: rgba(220, 58, 20, 0.22);
+  border-color: rgb(var(--pf-accent-rgb) / 0.85);
+  background: rgb(var(--pf-accent-rgb) / 0.22);
   color: var(--pf-accent-deep);
 }
 

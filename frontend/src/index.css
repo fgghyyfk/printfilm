@@ -2,6 +2,7 @@
   /* 开口播「演播室字幕」设计语言：暖纸底、墨黑、广播朱红、字幕黄，切角硬朗。
      --pf-lime 是历史变量名，实际为品牌朱红。 */
   --pf-lime: #dc3a14;
+  --pf-accent-rgb: 220 58 20;
   --pf-lime-soft: #fbe5dc;
   --pf-accent-deep: #a82a0c;
   --pf-caption: #ffd21f;

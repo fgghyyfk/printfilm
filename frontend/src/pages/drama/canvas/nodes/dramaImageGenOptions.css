@@ -31,7 +31,7 @@
 }
 
 .fc-gen-opt-btn.active {
-  background: rgba(220, 58, 20, 0.28);
+  background: rgb(var(--pf-accent-rgb) / 0.28);
   color: var(--pf-accent-deep);
 }
 
@@ -318,8 +318,8 @@
 }
 
 .fc-gen-chip.selected {
-  border-color: rgba(220, 58, 20, 0.9);
-  background: rgba(220, 58, 20, 0.28);
+  border-color: rgb(var(--pf-accent-rgb) / 0.9);
+  background: rgb(var(--pf-accent-rgb) / 0.28);
   color: var(--pf-accent-deep);
 }
 
@@ -408,7 +408,7 @@
 .fc-skill-picker-item input,
 .pf-skill-picker-item input {
   margin-top: 2px;
-  accent-color: #ea580c;
+  accent-color: var(--pf-lime);
 }
 
 .fc-skill-picker-item span,
@@ -439,8 +439,8 @@
 
 .fc-skill-picker-item.is-checked,
 .pf-skill-picker-item.is-checked {
-  border-color: rgba(220, 58, 20, 0.9);
-  background: rgba(220, 58, 20, 0.18);
+  border-color: rgb(var(--pf-accent-rgb) / 0.9);
+  background: rgb(var(--pf-accent-rgb) / 0.18);
 }
 
 .fc-skill-picker-row,
