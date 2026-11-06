@@ -42,7 +42,6 @@ import {
   collectDramaGenerateGateIssues,
   formatDramaGateMessage,
 } from '../../lib/dramaEpisodeScriptValidate'
-import { isMinimaxH3Model } from '../../lib/dramaMediaModelMeta'
 import { DRAMA_VOICE_BINDING_ENABLED } from '../../lib/dramaVoiceBinding'
 import BillingErrorNotice from '../../components/billing/BillingErrorNotice'
 import ComplianceNotice from '../../components/compliance/ComplianceNotice'
@@ -1557,17 +1556,14 @@ function EpisodeEditInner() {
               ? 'AI 分镜中…'
               : 'AI 重新分镜'}
           </button>
-          {/* MiniMax-H3 支持一次入队本集剩余分镜；其它视频模型仍只走单镜生成 */}
-          {isMinimaxH3Model(modelId) ? (
-            <button
-              type="button"
-              className="drama-ep-btn-dark drama-ep-header-gen-all"
-              disabled={generateAllLocked || fragments.length === 0}
-              onClick={() => void generateAll()}
-            >
-              {busy && !planning ? '入队中…' : '批量生成'}
-            </button>
-          ) : null}
+          <button
+            type="button"
+            className="drama-ep-btn-dark drama-ep-header-gen-all"
+            disabled={generateAllLocked || fragments.length === 0}
+            onClick={() => void generateAll()}
+          >
+            {busy && !planning ? '入队中…' : '批量生成'}
+          </button>
         </div>
       </header>
 
