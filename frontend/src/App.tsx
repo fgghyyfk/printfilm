@@ -1,4 +1,4 @@
-import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { createBrowserRouter, RouterProvider, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { lazy, Suspense, useLayoutEffect, useSyncExternalStore } from 'react'
 import DialogHost from './components/ui/DialogHost'
 import BillingAlertHost from './components/billing/BillingAlertHost'
@@ -65,9 +65,9 @@ function ToDaihuo() {
   return <Navigate to={`/daihuo${search}`} replace />
 }
 
-export default function App() {
+function AppRoutes() {
   return (
-    <TeamPreviewProvider><BrowserRouter>
+    <>
       <Suspense fallback={<PageFallback />}>
       <Routes>
         <Route path="/marketplace/*" element={<Suspense fallback={<p>正在加载作品与招募…</p>}><Marketplace /></Suspense>} />
@@ -118,6 +118,13 @@ export default function App() {
       <PersonalBusinessOverlays />
       <DocumentTitle />
       <DialogHost />
-    </BrowserRouter></TeamPreviewProvider>
+    </>
   )
+}
+
+// 数据路由才能拦截站内跳转；实例放在模块级，避免重渲染时重建浏览器历史。
+const router = createBrowserRouter([{ path: '*', element: <AppRoutes /> }])
+
+export default function App() {
+  return <TeamPreviewProvider><RouterProvider router={router} /></TeamPreviewProvider>
 }

@@ -2,6 +2,8 @@ import { useTeamReadOnly } from '../../features/teams/readOnlyContext'
 import { TeamEpisodeEditingBoundary } from '../../features/teams/TeamEditingBoundary'
 /** 分集编辑：复刻原项目四栏布局（资产 / 脚本 / 预览 / 故事板） */
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useUnsavedChangesGuard } from '../../hooks/useUnsavedChangesGuard'
+import { fragmentDraftSignature, mergeServerFragmentsIntoDraft } from '../../lib/dramaFragmentDraft'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   dramaApi,
@@ -200,6 +202,11 @@ function EpisodeEditInner() {
     ReturnType<typeof dramaApi.generateStatus>
   >>(() => ({ episode_id: 0, done: 0, failed: 0, running: 0, total: 0, tasks: [], fragments: [] }))
   const reloadRef = useRef<() => Promise<void>>(async () => {})
+  /* 未保存判定：最近一次服务端内容的指纹与分镜 id、草稿所属分集 */
+  const [savedSignature, setSavedSignature] = useState(() => fragmentDraftSignature([]))
+  const savedIdsRef = useRef<number[]>([])
+  const draftEpisodeRef = useRef<number | null>(null)
+  const dirtyRef = useRef(false)
   const projectParamsRef = useRef<Record<string, unknown>>({})
   const episodeParamsRef = useRef<Record<string, unknown>>({})
 
@@ -359,7 +366,7 @@ function EpisodeEditInner() {
       try {
         const ep = await dramaApi.getEpisode(eid)
         setEpisode(ep)
-        if (Array.isArray(ep.fragments)) setFragments(ep.fragments)
+        if (Array.isArray(ep.fragments)) syncServerFragments(ep.fragments)
       } catch {
         /* ignore refresh errors */
       }
@@ -493,7 +500,7 @@ function EpisodeEditInner() {
           }),
         )
         setEpisode(ep)
-        setFragments(ep.fragments || nextFragments)
+        commitServerFragments(ep.fragments || nextFragments)
       }
       setStatus(
         mode === 'model'
@@ -560,7 +567,7 @@ function EpisodeEditInner() {
           }),
         )
         setEpisode(ep)
-        setFragments(ep.fragments || nextFragments)
+        commitServerFragments(ep.fragments || nextFragments)
       }
       setStatus(
         mode === 'model'
@@ -683,7 +690,7 @@ function EpisodeEditInner() {
           const st = readFragmentPlanStatus(cur)
           if (st === 'completed') {
             setEpisode(cur)
-            setFragments(cur.fragments || [])
+            commitServerFragments(cur.fragments || [])
             setSelectedIndex(0)
             setStatus(`分镜完成 · ${(cur.fragments || []).length} 条`)
             setBusy(false)
@@ -708,13 +715,36 @@ function EpisodeEditInner() {
     }
   }
 
+  // 服务端内容已包含全部修改（保存成功或重新分镜完成）：直接替换并更新基准。
+  function commitServerFragments(list: DramaFragment[]) {
+    savedIdsRef.current = list.map((f) => f.id)
+    setSavedSignature(fragmentDraftSignature(list))
+    setFragments(list)
+  }
+
+  // 后台刷新：有未保存内容时只并入成片和运行态，不覆盖用户的稿子。
+  function syncServerFragments(list: DramaFragment[]) {
+    if (!dirtyRef.current) {
+      commitServerFragments(list)
+      return
+    }
+    const previousIds = savedIdsRef.current
+    savedIdsRef.current = list.map((f) => f.id)
+    setSavedSignature(fragmentDraftSignature(list))
+    setFragments((draft) => {
+      const draftIds = new Set(draft.map((f) => f.id))
+      const deleted = new Set(previousIds.filter((id) => !draftIds.has(id)))
+      return mergeServerFragmentsIntoDraft(draft, list, deleted)
+    })
+  }
+
   // 打开全屏分镜故事板画布
   function openEpisodeStoryboard() {
     navigate(`/drama/projects/${pid}/episodes/${eid}/canvas`)
   }
 
   // 重新加载分集
-  async function reload() {
+  async function reload({ discardDraft = false }: { discardDraft?: boolean } = {}) {
     const ep = await dramaApi.getEpisode(eid)
     setEpisode(ep)
     const epParams =
@@ -726,8 +756,12 @@ function EpisodeEditInner() {
     setSubtitleMode(readEffectiveSubtitleMode(epParams, projectParamsRef.current))
     setCharacterIntroMode(readEffectiveCharacterIntroMode(epParams, projectParamsRef.current))
     setAspectRatio(readEpisodeAspectRatio(epParams, projectParamsRef.current))
-    setFragments(ep.fragments || [])
-    if ((ep.fragments || []).length === 0) {
+    // 同一集有未保存内容时只并入成片和运行态；切集或用户点“取消”才用服务端内容替换。
+    const keepDraft = !discardDraft && draftEpisodeRef.current === eid && dirtyRef.current
+    draftEpisodeRef.current = eid
+    if (keepDraft) syncServerFragments(ep.fragments || [])
+    else commitServerFragments(ep.fragments || [])
+    if (!keepDraft && (ep.fragments || []).length === 0) {
       setFragments([
         {
           id: 0,
@@ -745,6 +779,10 @@ function EpisodeEditInner() {
   }
 
   reloadRef.current = reload
+
+  const hasUnsavedDraft = !readOnly && fragmentDraftSignature(fragments) !== savedSignature
+  dirtyRef.current = hasUnsavedDraft
+  useUnsavedChangesGuard(hasUnsavedDraft, '分镜有未保存的修改，离开后这些修改会丢失。')
 
   // 复用全局 generate_status 轮询，避免与 dramaGenQueue 重复请求
   useEffect(() => {
@@ -883,7 +921,7 @@ function EpisodeEditInner() {
         }),
       )
       setEpisode(ep)
-      setFragments(ep.fragments || [])
+      commitServerFragments(ep.fragments || [])
       setStatus('已保存')
       setEditing(false)
       return ep
@@ -1212,7 +1250,7 @@ function EpisodeEditInner() {
           const nextParams = (ep.params as Record<string, unknown>) || {}
           setEpisodeParams(nextParams)
           episodeParamsRef.current = nextParams
-          setFragments(ep.fragments || [])
+          commitServerFragments(ep.fragments || [])
           setSelectedIndex(0)
           setEditing(false)
           const mode = String(ep.params?.fragment_plan_mode || 'llm')
@@ -1672,7 +1710,7 @@ function EpisodeEditInner() {
                   disabled={readOnly || busy}
                   onClick={() => {
                     setEditing(false)
-                    void reload()
+                    void reload({ discardDraft: true })
                   }}
                 >
                   取消

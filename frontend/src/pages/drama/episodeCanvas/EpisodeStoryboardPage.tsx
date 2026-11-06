@@ -2,6 +2,7 @@ import { TeamEpisodeEditingBoundary } from '../../../features/teams/TeamEditingB
 import { useTeamReadOnly } from '../../../features/teams/readOnlyContext'
 /** 分集分镜故事板全屏画布：按分镜连线，节点含视频 / 出境资产 / 提示词 */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createSerialSaver, fragmentDraftSignature, mergeServerFragmentsIntoDraft } from '../../../lib/dramaFragmentDraft'
 import {
   Background,
   Controls,
@@ -156,7 +157,6 @@ function EpisodeStoryboardInner() {
       })
     return () => {
       cancelled = true
-      if (saveTimer.current) window.clearTimeout(saveTimer.current)
     }
   }, [eid, pid])
 
@@ -187,9 +187,15 @@ function EpisodeStoryboardInner() {
           }),
         )
         setEpisode(saved)
-        setFragments(saved.fragments || [])
-        setDirty(false)
-        setStatus('已保存')
+        const latest = saved.fragments || []
+        // 请求在途时用户又改了内容：保留新内容，只取服务端的成片和运行态，稍后再存一次。
+        if (fragmentDraftSignature(fragmentsRef.current) === fragmentDraftSignature(next)) {
+          setFragments(latest)
+          setDirty(false)
+          setStatus('已保存')
+        } else {
+          setFragments(mergeServerFragmentsIntoDraft(fragmentsRef.current, latest))
+        }
         window.setTimeout(() => setStatus(''), 1600)
       } catch (err) {
         setError(err instanceof Error ? err.message : '保存失败')
@@ -200,15 +206,42 @@ function EpisodeStoryboardInner() {
     [eid],
   )
 
+  // 串行保存：同一时间只发一个请求，等上一个结束后再发最新内容，避免旧响应盖掉新稿。
+  const saverRef = useRef(createSerialSaver<DramaFragment[]>(async () => undefined))
+  useEffect(() => {
+    saverRef.current = createSerialSaver<DramaFragment[]>(persistFragments)
+  }, [persistFragments])
+
   // 防抖保存
   const scheduleSave = useCallback(() => {
     if (readOnlyRef.current) return
     setDirty(true)
     if (saveTimer.current) window.clearTimeout(saveTimer.current)
     saveTimer.current = window.setTimeout(() => {
-      void persistFragments(fragmentsRef.current)
+      saveTimer.current = null
+      void saverRef.current.save(fragmentsRef.current)
     }, SAVE_DEBOUNCE_MS)
-  }, [persistFragments])
+  }, [])
+
+  // 离开页面时立刻保存还在防抖中的修改，不能丢；刷新或关闭标签页前提示。
+  useEffect(() => {
+    return () => {
+      if (saveTimer.current === null) return
+      window.clearTimeout(saveTimer.current)
+      saveTimer.current = null
+      void saverRef.current.save(fragmentsRef.current)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!dirty) return
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [dirty])
 
   // 刷新单个分镜节点提示词（关联资产变化靠 structureKey 重建）
   const patchFragmentPrompt = useCallback(
@@ -344,7 +377,13 @@ function EpisodeStoryboardInner() {
             type="button"
             className="ep-storyboard-btn dark"
             disabled={readOnly || busy || !dirty}
-            onClick={() => void persistFragments(fragments)}
+            onClick={() => {
+              if (saveTimer.current !== null) {
+                window.clearTimeout(saveTimer.current)
+                saveTimer.current = null
+              }
+              void saverRef.current.save(fragments)
+            }}
           >
             {busy ? '保存中…' : '保存'}
           </button>
