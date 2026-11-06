@@ -309,32 +309,50 @@ export function insertMentionChipAtRange(range: Range, chip: DramaMentionChipDat
   selection.addRange(caretRange)
 }
 
-// 将编辑器 DOM 序列化为 content 字符串
+// 将编辑器 DOM 序列化为 content 字符串；时长标签独占一行，后面的内容从下一行开始
 export function serializePromptEditorContent(root: HTMLElement) {
   let result = ''
+  // 刚写完时长标签：后面若还有内容要先换行，否则服务端会把这行当成坏标签
+  let afterDuration = false
+
+  // 追加内容；紧跟时长标签时去掉行首空白（插入标签会自带一个空格）并换行
+  const append = (text: string) => {
+    let next = text
+    if (afterDuration) {
+      next = next.replace(/^[ \t\u00a0]+/, '')
+      if (!next) return
+      if (!next.startsWith('\n')) result += '\n'
+      afterDuration = false
+    }
+    result += next
+  }
 
   const walk = (node: Node) => {
     if (node.nodeType === Node.TEXT_NODE) {
       if (isInsideMentionChip(node)) return
-      result += node.textContent ?? ''
+      append(node.textContent ?? '')
       return
     }
     if (node.nodeType !== Node.ELEMENT_NODE) return
     const element = node as HTMLElement
     if (element.tagName === 'BR') {
-      result += '\n'
+      append('\n')
       return
     }
     if (element.dataset.mention === 'true' && element.dataset.durationSec) {
-      result += `@duration:${element.dataset.durationSec}`
+      append(`@duration:${element.dataset.durationSec}`)
+      afterDuration = true
       return
     }
     if (element.dataset.mention === 'true' && element.dataset.assetId) {
-      result += `@asset:${element.dataset.assetId}`
+      append(`@asset:${element.dataset.assetId}`)
       return
     }
     if (BLOCK_ELEMENT_TAGS.has(element.tagName) && element !== root) {
-      if (result.length > 0 && !result.endsWith('\n')) result += '\n'
+      if (result.length > 0 && !result.endsWith('\n')) {
+        result += '\n'
+        afterDuration = false
+      }
       element.childNodes.forEach((child) => walk(child))
       return
     }
