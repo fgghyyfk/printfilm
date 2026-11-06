@@ -19,6 +19,7 @@ import PricingWalletCard from '../components/billing/PricingWalletCard'
 import TopupHistoryModal from '../components/billing/TopupHistoryModal'
 import { api, type BillingSku, type UsageSummary, type Wallet } from '../api'
 import { useI18n } from '../i18n'
+import { brandFullName, brandName } from '../lib/siteLinks'
 import './pricing.css'
 
 type PayType = 'alipay' | 'wxpay'
@@ -47,7 +48,7 @@ function yuanShort(fen: number) {
 export default function PricingPage() {
   /* 路由与语言、账户数据、充值配置及支付弹窗的展示状态。 */
   const nav = useNavigate()
-  const { t, m } = useI18n()
+  const { t, m, locale } = useI18n()
   const [params] = useSearchParams()
   const [wallet, setWallet] = useState<Wallet | null>(null)
   const [usage, setUsage] = useState<UsageSummary | null>(null)
@@ -389,7 +390,7 @@ export default function PricingPage() {
 
           <footer className="pf-pricing-site-foot">
             <p className="pf-pricing-site-brand">
-              <Link to="/">开口播</Link>
+              <Link to="/">{brandName(locale)}</Link>
               <span> · {t('pricing.footBrand')}</span>
             </p>
             <nav className="pf-pricing-site-links" aria-label={t('footer.links')}>
@@ -397,7 +398,7 @@ export default function PricingPage() {
               <Link to="/privacy">{t('footer.privacy')}</Link>
               <Link to="/contact">{t('footer.contact')}</Link>
             </nav>
-            <p className="pf-pricing-site-copy">© {new Date().getFullYear()} 开口播 KaiKou</p>
+            <p className="pf-pricing-site-copy">© {new Date().getFullYear()} {brandFullName(locale)}</p>
           </footer>
         </div>
       </div>

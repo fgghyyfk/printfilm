@@ -6,7 +6,7 @@ import AppShell from '../components/layout/AppShell'
 import BrandMark from '../components/BrandMark'
 import HomeFlowPreview from './home/HomeFlowPreview'
 import { useI18n } from '../i18n'
-import { BRAND_NAME, BRAND_NAME_EN } from '../lib/siteLinks'
+import { brandFullName, brandName } from '../lib/siteLinks'
 import './home/home.css'
 
 const AVATAR_PATH = '/studio/new?mode=avatar'
@@ -20,7 +20,7 @@ const MORE_LINKS = [
 /** 首页：未登录的创作入口先去登录，登录后回跳到原目标。 */
 export default function HomePage() {
   const nav = useNavigate()
-  const { t, m } = useI18n()
+  const { t, m, locale } = useI18n()
   const loggedIn = Boolean(localStorage.getItem('token'))
   /* flowIdx 流程标签页当前项 */
   const [flowIdx, setFlowIdx] = useState(0)
@@ -48,7 +48,7 @@ export default function HomePage() {
         <p className="kk-eyebrow">{t('home.eyebrow')}</p>
         <h1>
           <span className="kk-brand">
-            {BRAND_NAME}
+            {brandName(locale)}
             <i className="kk-cursor" aria-hidden />
           </span>{' '}
           {t('home.headline')}
@@ -135,7 +135,7 @@ export default function HomePage() {
 
       <section className="kk-flow" id="how">
         <h2>
-          <span className="kk-brand-sm">{BRAND_NAME}.</span> {t('home.flowTitle')}
+          <span className="kk-brand-sm">{brandName(locale)}.</span> {t('home.flowTitle')}
         </h2>
         <p className="kk-sub">{t('home.flowSub')}</p>
         <div className="kk-tabs" role="tablist" aria-label={t('home.flowTitle')} onKeyDown={onFlowKeyDown}>
@@ -203,7 +203,7 @@ export default function HomePage() {
           <Link to="/privacy">{t('footer.privacy')}</Link>
         </nav>
         <p>
-          © {new Date().getFullYear()} {BRAND_NAME} {BRAND_NAME_EN}
+          © {new Date().getFullYear()} {brandFullName(locale)}
         </p>
       </footer>
     </AppShell>
