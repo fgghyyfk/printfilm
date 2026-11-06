@@ -10,6 +10,7 @@ from app.database import AsyncSessionLocal
 from app.services.billing.context import billing_scope
 from app.services.billing.settlement import freeze_for_task, settle_task
 from app.services.tasks.handlers import get_task_handler
+from app.services.billing.cancel_charge import CANCEL_CHARGE_MESSAGE, record_accepted_upstream_charge
 from app.services.tasks.recovery import converge_fragment_plan_status, fragment_plan_target
 from app.services.tasks.service import append_task_event, get_task_for_runtime, set_task_step_state
 
@@ -314,6 +315,11 @@ async def _mark_cancelled(db, task) -> None:
     )
     plan_target = fragment_plan_target(task)
     try:
+        if await record_accepted_upstream_charge(db, task):
+            await append_task_event(
+                db, task.id, event_type="task.cancel_charged", status=task.status,
+                phase=task.current_step_key, message=CANCEL_CHARGE_MESSAGE,
+            )
         await settle_task(db, task.id)
     except Exception:  # noqa: BLE001
         logger.exception("settle_task failed task_id=%s", task.id)

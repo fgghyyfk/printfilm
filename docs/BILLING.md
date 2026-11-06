@@ -275,3 +275,9 @@ EPAY_RETURN_URL=https://your-site.example.com/pricing?paid=1
 ### 电商图（/ecom）补充
 - 生成模特（`/api/tools/models/generate`）：`run_billed_ephemeral(domain=studio, tool_image)`，按 2K 张价收一次
 - 同款换色（`/{id}/recolor`）沿用原方案，不收规划费；生成时按张收费
+
+## 取消与注册赠金
+
+- 上游尚未受理的任务取消后全额退回预扣。
+- 上游已受理（已有 `provider_task_id`）的任务停不下来，平台仍要付费：用户取消、批量取消、删除项目或改分镜作废时，都按预扣额计费（`billing/cancel_charge.py`），用量行 `provider=cancel_after_accept`。管理端可从任务详情追溯。
+- `BILLING_SIGNUP_GRANT_FEN` 默认 0。开启后同一 IP 每天最多 2 个账号可领，同一 IP 每小时最多注册 10 个账号（`services/register_limit.py`）。

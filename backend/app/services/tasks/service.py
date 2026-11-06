@@ -418,9 +418,12 @@ async def _mark_task_cancelled_stale(db: AsyncSession, task: TaskRun, reason: st
     )
     # 作废终态必须结算预扣，否则 frozen 余额悬挂（如 #3328）
     if str(task.billing_status or "") in {"frozen", "reserved"}:
+        from app.services.billing.cancel_charge import record_accepted_upstream_charge
         from app.services.billing.settlement import settle_task
 
         try:
+            # 分镜改动作废的任务若上游已受理，同样不能全额退款，否则“提交再改”可免费消耗上游。
+            await record_accepted_upstream_charge(db, task)
             await settle_task(db, int(task.id))
         except Exception:  # noqa: BLE001
             logger.exception("settle_task after stale cancel failed task_id=%s", task.id)
