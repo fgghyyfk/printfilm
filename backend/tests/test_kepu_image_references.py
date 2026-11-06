@@ -201,7 +201,7 @@ async def test_image_generation_receives_fixed_style_and_previous_subject(real_r
         calls = generate.await_args_list
         assert len(calls) == 2
         assert calls[0].args[2] == [project.ref_image_url]
-        assert calls[1].args[2] == ["https://media.example.com/static/generated/p991/shot_1.png", project.ref_image_url]
+        assert calls[1].args[2] == [f"https://media.example.com/static/generated/{storage.project_dir(project.id).name}/shot_1.png", project.ref_image_url]
     for call in calls:
         assert call.kwargs["style_ref_urls"] == ["https://media.example.com/static/templates/covers/anim_3d.png"]
         assert call.kwargs["model"] == project.image_model

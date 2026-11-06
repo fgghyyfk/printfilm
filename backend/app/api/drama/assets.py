@@ -42,6 +42,13 @@ from app.services.drama.seed import (
 router = APIRouter()
 
 
+def _project_media_dirname(project_id: int) -> str:
+    """OSS 对象键用的项目目录名，与本地目录一致，不可枚举。"""
+    from app.services import storage
+
+    return storage.project_dir(project_id).name
+
+
 @router.get(
     "/assets", response_model=list[DramaAssetOut],
     summary="查询项目或当前空间资产",
@@ -307,7 +314,7 @@ async def upload_asset_media(
         )
 
     object_key = (
-        f"{oss_svc.folder_prefix()}/generated/p{asset.project_id}/"
+        f"{oss_svc.folder_prefix()}/generated/{_project_media_dirname(asset.project_id)}/"
         f"asset_{asset.id}_{uuid.uuid4().hex[:10]}{ext}"
     )
     try:

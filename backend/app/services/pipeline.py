@@ -689,8 +689,7 @@ async def run_pipeline(project_id: int, *, phase: str | None = None, restart: bo
 
 
 async def delete_project_assets(project_id: int) -> None:
-    pdir = storage.GENERATED_ROOT / f"p{project_id}"
-    if pdir.exists():
+    for pdir in storage.existing_project_dirs(project_id):
         shutil.rmtree(pdir, ignore_errors=True)
 
 

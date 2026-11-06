@@ -30,9 +30,9 @@ class MediaCopier:
 
     def cleanup(self) -> None:
         """仅移除本次创建且仍位于目标项目目录中的具体文件。"""
-        root = (storage.GENERATED_ROOT / f"p{self.target_id}").resolve()
+        roots = [item.resolve() for item in storage.existing_project_dirs(self.target_id)]
         for path in self.created:
-            if path.resolve().is_relative_to(root):
+            if any(path.resolve().is_relative_to(root) for root in roots):
                 path.unlink(missing_ok=True)
 
     async def rewrite(self, value, *, clean: bool = False):
@@ -60,7 +60,7 @@ class MediaCopier:
             if not candidate.is_relative_to(root):
                 raise HTTPException(409, "媒体文件路径无效，无法复制")
             relative = candidate.relative_to(root)
-            match = re.fullmatch(r"p(\d+)", relative.parts[0]) if relative.parts else None
+            match = re.fullmatch(r"p(\d+)(?:_[0-9a-f]+)?", relative.parts[0]) if relative.parts else None
             if not match or int(match[1]) not in self.allowed_ids:
                 raise HTTPException(409, "媒体引用了无权访问的项目文件")
             if self.transfer and int(match[1]) == self.target_id:

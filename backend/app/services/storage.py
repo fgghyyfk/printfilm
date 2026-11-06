@@ -10,6 +10,8 @@ FFmpeg always reads local files.
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
 import logging
 import mimetypes
 import os
@@ -35,8 +37,29 @@ STATIC_ROOT = Path(__file__).resolve().parents[2] / "static"
 GENERATED_ROOT = STATIC_ROOT / "generated"
 
 
+def _project_dir_token(project_id: int) -> str:
+    """由 SECRET_KEY 派生目录随机段：静态目录无需登录，路径不能被枚举。"""
+    secret = get_settings().secret_key.encode("utf-8")
+    return hmac.new(secret, f"project-media:{project_id}".encode("utf-8"), hashlib.sha256).hexdigest()[:16]
+
+
+def existing_project_dirs(project_id: int) -> list[Path]:
+    """项目已有的全部媒体目录：历史 p{id}，以及带随机段的目录（含 SECRET_KEY 轮换前的）。"""
+    legacy = GENERATED_ROOT / f"p{project_id}"
+    return ([legacy] if legacy.is_dir() else []) + sorted(GENERATED_ROOT.glob(f"p{project_id}_*"))
+
+
 def project_dir(project_id: int) -> Path:
-    path = GENERATED_ROOT / f"p{project_id}"
+    """项目媒体目录：新项目用不可猜的目录名，历史项目沿用原目录，已入库的 URL 不失效。"""
+    if int(project_id) <= 0:
+        # p0 是电商公共目录，文件名本身带 uuid
+        path = GENERATED_ROOT / f"p{project_id}"
+    else:
+        path = GENERATED_ROOT / f"p{project_id}_{_project_dir_token(project_id)}"
+        if not path.is_dir():
+            existing = existing_project_dirs(project_id)
+            if existing:
+                return existing[0]
     path.mkdir(parents=True, exist_ok=True)
     return path
 
