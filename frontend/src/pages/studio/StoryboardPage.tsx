@@ -30,7 +30,7 @@ import { useI18n } from '../../i18n'
 import {
   effectiveStatus,
   formatMmSs,
-  isRunning,
+  isProjectBusy,
   kepuBillingPhase,
   kepuPhaseHint,
   kepuStepIndex,
@@ -44,6 +44,7 @@ import {
   shotDisplayLabel,
   statusLabel,
 } from '../../lib/status'
+import { batchRegenAudioPlan, canRegenShotAudio, shotImageAction } from '../../lib/kepuShotActions'
 import {
   SEGMENT_SCRIPT_PLACEHOLDER,
   SHOT_DURATION_MAX,
@@ -110,25 +111,6 @@ function shotCaption(shot: Shot) {
     }${shot.narration ? `｜旁白：${shot.narration}` : ''}`
   }
   return shot.narration
-}
-
-function hasActiveUnifiedTasks(project: Project | null): boolean {
-  const activeStatuses = ['pending', 'leased', 'running', 'awaiting_poll', 'awaiting_review', 'cancel_requested']
-  return Boolean(
-    project?.active_tasks?.some(
-      (task) => activeStatuses.includes(task.status),
-    ),
-  )
-}
-
-/** 有任务平台数据时以 active_tasks 为准；COMPOSING 无任务视为拼接失败残留，可重试 */
-function isProjectBusy(project: Project | null): boolean {
-  if (!project) return false
-  if (hasActiveUnifiedTasks(project)) return true
-  if (Array.isArray(project.active_tasks) && project.active_tasks.length === 0) {
-    return false
-  }
-  return isRunning(project.status)
 }
 
 export default function StoryboardPage() {
@@ -498,13 +480,15 @@ export default function StoryboardPage() {
     setBusy(true)
     setError('')
     try {
-      for (const shotId of batchSelected) {
-        if (durationVal != null) {
+      // 先改完时长：配音任务一旦开始，整片级占用会挡住后续保存
+      if (durationVal != null) {
+        for (const shotId of batchSelected) {
           await api.updateShot(project.id, shotId, { duration: durationVal })
         }
-        if (batchRegenAudio) {
-          await api.regenAudio(project.id, shotId)
-        }
+      }
+      const audioPlan = batchRegenAudio ? batchRegenAudioPlan(project, batchSelected) : null
+      if (audioPlan) {
+        await api.regenAudio(project.id, audioPlan.shotId, audioPlan.extraShotIds)
       }
       setProject(await api.getProject(project.id))
       setBatchOpen(false)
@@ -553,7 +537,7 @@ export default function StoryboardPage() {
     try {
       // 数字人：按该段场景描述重画「同一个人 + 场景」
       setProject(
-        project.pipeline_mode === 'avatar'
+        shotImageAction(project.pipeline_mode) === 'avatar_scene'
           ? await api.regenAvatarScene(project.id, shot.id)
           : await api.regenImage(project.id, shot.id),
       )
@@ -1301,19 +1285,22 @@ title="用当前镜头重新拼接"
                                   预览视频
                                 </button>
                               ) : null}
-                              <button
-                                type="button"
-                                className="more"
-                                aria-label="更多操作"
-                                disabled={rowBusy}
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setMenuShotId((id) => (id === shot.id ? null : shot.id))
-                                }}
-                              >
-                                ⋮
-                              </button>
-                              {menuShotId === shot.id ? (
+                              {/* 菜单目前只有重配音，内置口播时没有可用项 */}
+                              {canRegenShotAudio(project) ? (
+                                <button
+                                  type="button"
+                                  className="more"
+                                  aria-label="更多操作"
+                                  disabled={rowBusy}
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setMenuShotId((id) => (id === shot.id ? null : shot.id))
+                                  }}
+                                >
+                                  ⋮
+                                </button>
+                              ) : null}
+                              {menuShotId === shot.id && canRegenShotAudio(project) ? (
                                 <div className="pf-shot-menu" onClick={(e) => e.stopPropagation()}>
                                   <button
                                     type="button"
@@ -1453,14 +1440,16 @@ title="用当前镜头重新拼接"
                 onChange={(e) => setBatchDuration(e.target.value)}
               />
             </label>
-            <label style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <input
-                type="checkbox"
-                checked={batchRegenAudio}
-                onChange={(e) => setBatchRegenAudio(e.target.checked)}
-              />
-              对所选镜头重新配音
-            </label>
+            {canRegenShotAudio(project) ? (
+              <label style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={batchRegenAudio}
+                  onChange={(e) => setBatchRegenAudio(e.target.checked)}
+                />
+                对所选镜头重新配音
+              </label>
+            ) : null}
             <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
               <button
                 type="button"

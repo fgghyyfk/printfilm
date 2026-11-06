@@ -128,6 +128,12 @@ class ShotReorderIn(BaseModel):
     shot_ids: list[int] = Field(min_length=1)
 
 
+class ShotRegenAudioIn(BaseModel):
+    """重配音可选参数：数字人批量重配音时一并重做的其它分镜。"""
+
+    extra_shot_ids: list[int] = Field(default_factory=list, max_length=200)
+
+
 class ShotUpdate(BaseModel):
     narration: str | None = None
     overlay_title: str | None = None
@@ -242,6 +248,8 @@ class ProjectOut(BaseModel):
     avatar_script_style: str = "kepu"
     avatar_title2: str = ""
     avatar_resolution: str = ""
+    # 声音是否由视频模型内置生成（此时没有可单独重配的外部配音）
+    native_video_audio: bool = False
     created_at: datetime
     updated_at: datetime
     shots: list[ShotOut] = []

@@ -1875,12 +1875,15 @@ async def regen_shot_video(project_id: int, shot_id: int) -> None:
 
 
 @storage.without_intermediate_oss
-async def regen_shot_audio(project_id: int, shot_id: int) -> None:
-    """Re-TTS uses continuous full-film narration (editing one shot re-voices the whole track)."""
+async def regen_shot_audio(project_id: int, shot_id: int, *, extra_shot_ids: list[int] | None = None) -> None:
+    """Re-TTS uses continuous full-film narration (editing one shot re-voices the whole track).
+
+    extra_shot_ids：数字人批量重配音时一并重做的段；整片配音本来就覆盖全部镜头，无需使用。
+    """
     if await _project_is_avatar(project_id):
         from app.services.kepu_avatar import regen_segment_audio
 
-        await regen_segment_audio(project_id, shot_id)
+        await regen_segment_audio(project_id, shot_id, extra_shot_ids=extra_shot_ids)
         return
     async with AsyncSessionLocal() as db:
         result = await db.execute(

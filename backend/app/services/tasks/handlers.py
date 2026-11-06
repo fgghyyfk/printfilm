@@ -154,8 +154,16 @@ async def _run_drama_seed_assets(task: TaskRun) -> dict[str, Any] | None:
 # 执行科普可取消子流程：项目已被用户请求取消时，PipelineCancelled 收敛为
 # {"cancelled": True}（executor 据此落取消态并退回冻结）；其余异常照常抛出。
 async def _await_kepu(task: TaskRun, aw: Awaitable[Any], **extra: Any) -> dict[str, Any]:
-    from app.services.pipeline import PipelineCancelled
+    from app.services.pipeline import PipelineCancelled, clear_pipeline_cancellation
 
+    if task.cancel_requested:
+        # 本任务已请求取消：不执行，关闭尚未启动的协程。
+        close = getattr(aw, "close", None)
+        if close:
+            close()
+        return {"cancelled": True, "project_id": task.project_id, **extra}
+    # 上一个任务取消时可能留下进程内标记（单镜流程不会自行清理）；持久化的 CANCELLED 仍会拦截真取消。
+    clear_pipeline_cancellation(task.project_id)
     try:
         await aw
     except PipelineCancelled:
@@ -287,11 +295,14 @@ async def _run_kepu_shot_video(task: TaskRun) -> dict[str, Any] | None:
 async def _run_kepu_shot_audio(task: TaskRun) -> dict[str, Any] | None:
     from app.services.pipeline import regen_shot_audio
 
+    payload = task.payload if isinstance(task.payload, dict) else {}
+    extra_shot_ids = [int(sid) for sid in payload.get("extra_shot_ids") or []]
     return await _await_kepu(
         task,
         regen_shot_audio(
             _require_int(task.project_id, "project_id"),
             _require_int(task.shot_id, "shot_id"),
+            **({"extra_shot_ids": extra_shot_ids} if extra_shot_ids else {}),
         ),
         shot_id=task.shot_id,
     )

@@ -9,6 +9,7 @@ GPU 任务 id 记在 shots.avatar_job_id：流水线中断重启后继续等同�
 from __future__ import annotations
 
 import logging
+import shutil
 import time
 from pathlib import Path
 
@@ -61,8 +62,29 @@ async def shot_image_path(project: Project, shot: Shot) -> Path:
     return await portrait_path(project)
 
 
-async def prepare_assets(project_id: int) -> None:
-    """逐段配音并把半身照设为每段分镜图；已有可用配音的段跳过。"""
+async def _tts_keeping_old(ark, text: str, voice: str, *, project_id: int, shot_no: int, shot_id: int) -> str:
+    """重做已有配音的段：上游写同一路径，失败或无声时恢复旧音频文件。返回新配音地址。"""
+    dest = storage.project_dir(project_id) / f"shot_{shot_no:03d}_tts.mp3"
+    backup = dest.with_name(dest.name + ".bak")
+    if dest.exists():
+        shutil.copy2(dest, backup)
+    try:
+        url = await ark.tts(text, voice, project_id=project_id, shot_no=shot_no,
+                            duration_hint=max(3.0, len(text) / 4.5), billing_shot_id=shot_id)
+        path = storage.local_path_from_url(url)
+        if not path or not path.exists() or is_near_silent_audio(path):
+            raise RuntimeError(f"第 {shot_no} 段配音失败（无声音），请稍后重试")
+        return url
+    except BaseException:
+        if backup.exists():
+            shutil.copy2(backup, dest)
+        raise
+    finally:
+        backup.unlink(missing_ok=True)
+
+
+async def prepare_assets(project_id: int, *, force_shot_ids: set[int] | None = None) -> None:
+    """逐段配音并把半身照设为每段分镜图；已有可用配音的段跳过，force_shot_ids 中的段强制重配。"""
     from app.services.pipeline import _ensure_not_cancelled, _project_voice, _set_status
     from app.services.kepu_stages import shot_audio_file_ok
 
@@ -76,7 +98,9 @@ async def prepare_assets(project_id: int) -> None:
         voice = _project_voice(project)
         portrait_url = project.avatar_image_url
         shots = sorted(project.shots, key=lambda s: s.shot_no)
-        todo = [(s.id, s.shot_no, (s.narration or "").strip()) for s in shots if not shot_audio_file_ok(s)]
+        forced = force_shot_ids or set()
+        todo = [(s.id, s.shot_no, (s.narration or "").strip()) for s in shots
+                if s.id in forced or not shot_audio_file_ok(s)]
         for s in shots:
             # 没有场景图的段先用定妆照占位（配了改图服务时下面会逐段重画）
             if not (s.image_url or "").strip():
@@ -106,12 +130,8 @@ async def prepare_assets(project_id: int) -> None:
         await publish_progress(project_id, {"event": "progress", "stage": "AVATAR_TTS",
                                             "percent": 33 + int(15 * i / max(1, len(todo))),
                                             "message": f"配音第 {shot_no} 段（{i}/{len(todo)}）"})
-        url = await ark.tts(text, voice, project_id=project_id, shot_no=shot_no,
-                            duration_hint=max(3.0, len(text) / 4.5), billing_shot_id=shot_id)
-        path = storage.local_path_from_url(url)
-        if not path or not path.exists() or is_near_silent_audio(path):
-            raise RuntimeError(f"第 {shot_no} 段配音失败（无声音），请稍后重试")
-        seconds = probe_duration(path) or 0.0
+        url = await _tts_keeping_old(ark, text, voice, project_id=project_id, shot_no=shot_no, shot_id=shot_id)
+        seconds = probe_duration(storage.local_path_from_url(url)) or 0.0
         async with AsyncSessionLocal() as db:
             row = await db.get(Shot, shot_id)
             if row:
@@ -241,31 +261,30 @@ async def _one_segment(project_id: int, shot_id: int, *, engine: str, index: int
 
 
 async def regen_segment_video(project_id: int, shot_id: int) -> None:
-    """单段重新生成对口型视频（沿用该段现有配音）。"""
+    """单段重新生成对口型视频（沿用该段现有配音）；新视频写回前旧视频保留，失败不丢。"""
     async with AsyncSessionLocal() as db:
         project = await _load_project(db, project_id)
         engine = avatar_video.resolve_engine(project.avatar_engine)
         shot = next((s for s in project.shots if s.id == shot_id), None)
         if not shot:
             raise ValueError("分镜不存在")
-        shot.video_url = None
         shot.avatar_job_id = None
         await db.commit()
     await _one_segment(project_id, shot_id, engine=engine, index=1, total=1)
     await _after_regen(project_id)
 
 
-async def regen_segment_audio(project_id: int, shot_id: int) -> None:
-    """单段重新配音；该段旧视频作废，需再生成视频后才能合成。"""
+async def regen_segment_audio(project_id: int, shot_id: int, *, extra_shot_ids: list[int] | None = None) -> None:
+    """单段（或批量所选段）重新配音；新配音成功后旧视频才作废，失败时旧配音和视频都保留。"""
+    target_ids = {shot_id, *(extra_shot_ids or [])}
     async with AsyncSessionLocal() as db:
-        shot = await db.get(Shot, shot_id)
-        if not shot or shot.project_id != project_id:
-            raise ValueError("分镜不存在")
-        if not (shot.narration or "").strip():
-            raise ValueError("该段口播为空，无法配音")
-        shot.audio_url = None
-        await db.commit()
-    await prepare_assets(project_id)
+        for target_id in sorted(target_ids):
+            shot = await db.get(Shot, target_id)
+            if not shot or shot.project_id != project_id:
+                raise ValueError("分镜不存在")
+            if not (shot.narration or "").strip():
+                raise ValueError(f"第 {shot.shot_no} 段口播为空，无法配音")
+    await prepare_assets(project_id, force_shot_ids=target_ids)
     await _after_regen(project_id)
 
 

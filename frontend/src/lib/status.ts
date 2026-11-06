@@ -1,6 +1,8 @@
 import { getActiveLocale } from '../i18n/detect'
 import { messages } from '../i18n/messages'
 import { IMAGE_TEXT_STEPS, imageTextBoardStep } from './imageTextStoryboard'
+import { kepuBillingPhase } from './kepuShotActions'
+import type { KepuBillingPhase } from './kepuShotActions'
 
 export const RUNNING = new Set([
   'SCRIPTING',
@@ -174,6 +176,15 @@ type TaskLike = {
   cancel_requested?: boolean | null
 }
 
+/** 项目是否有进行中的工作：有任务平台数据时以 active_tasks 为准；无任务的运行状态视为失败残留，可重试。 */
+export function isProjectBusy(project: { status: string; active_tasks?: TaskLike[] | null } | null): boolean {
+  if (!project) return false
+  const activeStatuses = ['pending', 'leased', 'running', 'awaiting_poll', 'awaiting_review', 'cancel_requested']
+  if (project.active_tasks?.some((task) => activeStatuses.includes(task.status))) return true
+  if (Array.isArray(project.active_tasks) && project.active_tasks.length === 0) return false
+  return isRunning(project.status)
+}
+
 /** 整片流水线 / 合成 / 整片配音进行中 */
 export function isProjectWideBusy(project: {
   status?: string
@@ -243,24 +254,8 @@ export function kepuSteps(pipelineMode?: string | null) {
 
 export type KepuWizardPage = 'create' | 'style' | 'board'
 
-export type KepuBillingPhase = 'script' | 'assets' | 'videos' | 'compose'
-
-/** 与后端 resolve_kepu_billing_phase 对齐（前端不做近静音文件检测）。 */
-export function kepuBillingPhase(project: {
-  pipeline_mode?: string | null
-  shots?: Array<{ image_url?: string | null; audio_url?: string | null; video_url?: string | null }>
-}): KepuBillingPhase {
-  const shots = project.shots || []
-  if (!shots.length) return 'script'
-  const full = project.pipeline_mode !== 'image_text'
-  // 数字人：每段都要有自己的配音（视频内置口播只在 AI 视频模式）
-  const separateAudio = !full || project.pipeline_mode === 'avatar'
-  const needImages = shots.some((s) => !s.image_url)
-  const needAudio = separateAudio && shots.some((s) => !s.audio_url)
-  if (needImages || needAudio) return 'assets'
-  if (full && shots.some((s) => !s.video_url)) return 'videos'
-  return 'compose'
-}
+export { kepuBillingPhase }
+export type { KepuBillingPhase }
 
 export function shotsByNo<T extends { shot_no: number }>(shots: T[] | null | undefined): T[] {
   return [...(shots || [])].sort((a, b) => a.shot_no - b.shot_no)

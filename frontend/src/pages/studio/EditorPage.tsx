@@ -5,7 +5,8 @@ import type { Project, Shot } from '../../api'
 import BillingErrorNotice from '../../components/billing/BillingErrorNotice'
 import AppShell from '../../components/layout/AppShell'
 import ComingSoon from '../../components/ui/ComingSoon'
-import { STATUS_CN, shotsByNo } from '../../lib/status'
+import { STATUS_CN, isProjectBusy, isProjectWideBusy, isShotGenerating, shotsByNo } from '../../lib/status'
+import { canRegenShotAudio, shotImageAction } from '../../lib/kepuShotActions'
 import { downloadSingleVideo } from '../../lib/clientDownload'
 import { withReturn } from '../../features/marketplace/ui'
 
@@ -50,6 +51,18 @@ export default function EditorPage() {
       .catch((err) => setError(err instanceof Error ? err.message : '加载失败'))
   }, [nav, projectId])
 
+  // 任务进行中轮询，后台生成完成后画面、配音和状态才会更新（只换 project，不动编辑中的文案）
+  useEffect(() => {
+    if (!project || !isProjectBusy(project)) return
+    const timer = setInterval(() => {
+      api
+        .getProject(project.id)
+        .then(setProject)
+        .catch(() => undefined)
+    }, 1500)
+    return () => clearInterval(timer)
+  }, [project])
+
   const orderedShots = useMemo(() => shotsByNo(project?.shots), [project?.shots])
   const shot: Shot | undefined = useMemo(
     () => orderedShots.find((s) => s.id === activeShotId),
@@ -84,9 +97,15 @@ export default function EditorPage() {
   async function regenImage() {
     if (!project || !shot) return
     setBusy(true)
+    setError('')
     try {
-      await api.regenImage(project.id, shot.id)
-      setProject(await api.getProject(project.id))
+      // 数字人重画场景保留同一个人；接口同步返回最新项目
+      if (shotImageAction(project.pipeline_mode) === 'avatar_scene') {
+        setProject(await api.regenAvatarScene(project.id, shot.id))
+      } else {
+        await api.regenImage(project.id, shot.id)
+        setProject(await api.getProject(project.id))
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : '重生成失败')
     } finally {
@@ -200,6 +219,10 @@ export default function EditorPage() {
   // Prefer current shot media; final film is for dedicated preview, not shot editing.
   const shotVideo = shot?.video_url ? api.assetUrl(shot.video_url, shot.version) : null
   const shotImage = shot?.image_url ? api.assetUrl(shot.image_url, shot.version) : null
+  // shotLocked 当前镜或整片任务进行中，不能再提交，避免重复扣费和结果互相覆盖
+  const shotLocked = busy || !shot || isShotGenerating(project, shot.id) || isProjectWideBusy(project)
+  // 失败发生在后台任务里时，把项目记录的原因展示出来
+  const shownError = error || (project.status === 'FAILED' ? project.error_msg || '' : '')
 
   return (
     <AppShell active="studio" flush>
@@ -270,8 +293,8 @@ export default function EditorPage() {
         </div>
       </div>
 
-      {error ? (
-        <BillingErrorNotice message={error} style={{ padding: '0.5rem 1.25rem' }} />
+      {shownError ? (
+        <BillingErrorNotice message={shownError} style={{ padding: '0.5rem 1.25rem' }} />
       ) : null}
 
       <div className="pf-editor">
@@ -350,12 +373,12 @@ export default function EditorPage() {
               <button
                 type="button"
                 className="pf-btn pf-btn-ghost pf-btn-sm"
-                disabled={busy || !shot}
+                disabled={shotLocked}
                 onClick={() => shotFileRef.current?.click()}
               >
                 上传画面
               </button>
-              <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm" disabled={busy} onClick={regenImage}>
+              <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm" disabled={shotLocked} onClick={regenImage}>
                 AI 重绘
               </button>
             </div>
@@ -513,7 +536,7 @@ export default function EditorPage() {
               <button
                 type="button"
                 className="pf-btn pf-btn-lime pf-btn-block"
-                disabled={busy}
+                disabled={shotLocked}
                 onClick={regenImage}
               >
                 重新生成当前镜头
@@ -523,17 +546,25 @@ export default function EditorPage() {
 
           {tab === '配音' ? (
             <>
-              <p className="pf-muted" style={{ fontSize: '0.88rem' }}>
-                替换当前镜头配音（沿用项目音色）。
-              </p>
-              <button
-                type="button"
-                className="pf-btn pf-btn-lime pf-btn-block"
-                disabled={busy}
-                onClick={regenAudio}
-              >
-                替换配音
-              </button>
+              {canRegenShotAudio(project) ? (
+                <>
+                  <p className="pf-muted" style={{ fontSize: '0.88rem' }}>
+                    替换当前镜头配音（沿用项目音色）。
+                  </p>
+                  <button
+                    type="button"
+                    className="pf-btn pf-btn-lime pf-btn-block"
+                    disabled={shotLocked}
+                    onClick={regenAudio}
+                  >
+                    替换配音
+                  </button>
+                </>
+              ) : (
+                <p className="pf-muted" style={{ fontSize: '0.88rem' }}>
+                  当前为视频内置配音，请在分镜台重绘该镜视频以更新口播。
+                </p>
+              )}
             </>
           ) : null}
 
