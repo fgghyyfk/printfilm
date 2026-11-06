@@ -162,7 +162,13 @@ async def materialize_image_assets(db, user, asset_ids: list[int]) -> list[Path]
             elif url.startswith(("http://", "https://")):
                 tmp = storage.project_dir(0) / "tools" / f"u{user.id}" / f"asset_dl_{Path(url.split('?')[0]).name or 'ref.png'}"
                 tmp.parent.mkdir(parents=True, exist_ok=True)
-                await storage.ensure_local_media(url, tmp)
+                try:
+                    await storage.ensure_local_media(url, tmp)
+                except ValueError:
+                    raise  # 地址被下载校验拒绝，保留中文原因
+                except Exception as exc:
+                    # 不把上游状态码透出成不同响应，避免被当作内网探测信号
+                    raise ValueError("references: 资产图片下载失败，请重新上传") from exc
                 raw, name = tmp.read_bytes(), tmp.name
                 tmp.unlink(missing_ok=True)
             else:

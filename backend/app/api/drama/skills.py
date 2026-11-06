@@ -171,7 +171,7 @@ async def upload_skill_file(
 @router.patch(
     "/skills/{skill_id}", response_model=AgentSkillOut,
     summary="修改技能内容或启用状态",
-    description="按技能编号 skill_id 更新当前用户的技能正文或启用状态；系统内置技能只允许修改启用开关，不能修改正文。不可见技能返回 404，Markdown 解析失败返回 400。",
+    description="按技能编号 skill_id 更新当前用户的技能正文或启用状态；系统内置技能的启用开关全站共享，仅管理员可修改，其他用户返回 403，正文不可修改。不可见技能返回 404，Markdown 解析失败返回 400。",
     response_description="更新后的技能详情",
 )
 async def patch_skill(
@@ -183,7 +183,11 @@ async def patch_skill(
     row = await get_visible_skill(db, user.id, skill_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Skill 不存在")
-    if not row.is_builtin and row.user_id != user.id:
+    if row.is_builtin:
+        # 内置 Skill 的启用开关是全站共享的一行数据，只有管理员能改
+        if (user.role or "user") != "admin":
+            raise HTTPException(status_code=403, detail="系统内置 Skill 仅管理员可修改")
+    elif row.user_id != user.id:
         raise HTTPException(status_code=403, detail="不能修改他人 Skill")
     try:
         row = await update_user_skill(db, row, markdown=body.markdown, is_active=body.is_active)

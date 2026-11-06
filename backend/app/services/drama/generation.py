@@ -142,8 +142,9 @@ async def ensure_fragment_last_frame_url(
 
     video_path = storage_svc.local_path_from_url(video)
     if video_path is None and not video.startswith("http"):
+        # 历史数据可能存绝对路径；只接受 static 内的文件，分镜字段不能指向任意本机路径。
         candidate = Path(video)
-        if candidate.exists():
+        if candidate.exists() and storage_svc.is_within_static(candidate):
             video_path = candidate
     if video_path is None or not video_path.exists():
         if video.startswith("http"):
@@ -408,7 +409,10 @@ def _snapshot_version_media_url(url: str, *, label: str) -> str:
 
             dest.parent.mkdir(parents=True, exist_ok=True)
             if not dest.exists():
-                with httpx.Client(timeout=60.0, follow_redirects=True) as client:
+                from app.services.url_guard import guard_request_sync
+
+                with httpx.Client(timeout=60.0, follow_redirects=True,
+                                  event_hooks={"request": [guard_request_sync]}) as client:
                     resp = client.get(raw)
                     resp.raise_for_status()
                     dest.write_bytes(resp.content)

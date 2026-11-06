@@ -33,7 +33,17 @@ def sign(params: dict[str, Any]) -> str:
     return _sign_pairs(params, s.epay_key)
 
 
+def payment_configured() -> bool:
+    """易支付商户号与密钥是否都已配置。"""
+    s = get_settings()
+    return bool(str(s.epay_pid or "").strip() and str(s.epay_key or "").strip())
+
+
 def verify(params: dict[str, Any]) -> bool:
+    """校验回调签名；未配置密钥时一律不通过，否则任何人都能用空密钥算出合法签名。"""
+    if not str(get_settings().epay_key or "").strip():
+        logger.warning("epay verify rejected: EPAY_KEY 未配置")
+        return False
     got = str(params.get("sign") or "").lower()
     if not got:
         return False

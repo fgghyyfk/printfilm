@@ -200,6 +200,39 @@ async def test_review_rejects_charge_above_freeze_and_non_pending(db_session):
         await resolve_billing_review(db_session, task.id, admin_id=1, cost_fen=0, charge_fen=0, note="x")
 
 
+def _prior_usage(task, charge_fen):
+    """核对前已记录、尚未结算的用量行。"""
+    return UsageEvent(user_id=task.requested_by, task_run_id=task.id, charge_fen=charge_fen, cost_fen=charge_fen,
+                      billing_key="llm_chat", domain=task.domain, provider="ark", model="", capability="llm",
+                      estimated=False, settled=False, prompt_tokens=0, completion_tokens=0, total_tokens=0)
+
+
+async def test_review_cap_counts_existing_unsettled_usage(db_session):
+    """已有用量 + 本次收费合计不能超预扣，否则结算会多扣钱包。"""
+    user, task = await _pending(db_session)
+    db_session.add(_prior_usage(task, 60))
+    await db_session.flush()
+    with pytest.raises(ValueError, match="预扣额"):
+        await resolve_billing_review(db_session, task.id, admin_id=1, cost_fen=0, charge_fen=41, note="x")
+    await resolve_billing_review(db_session, task.id, admin_id=1, cost_fen=0, charge_fen=40, note="x")
+    await db_session.refresh(user)
+    await db_session.refresh(task)
+    assert task.billing_charged_fen == FROZEN
+    assert int(user.balance_fen) == BALANCE and int(user.frozen_fen) == 0
+
+
+async def test_review_zero_charge_allowed_when_usage_already_exceeds_freeze(db_session):
+    """已有用量已超预扣时仍能收费 0 结束待核对，不把任务卡死。"""
+    _, task = await _pending(db_session)
+    db_session.add(_prior_usage(task, FROZEN + 5))
+    await db_session.flush()
+    with pytest.raises(ValueError, match="预扣额"):
+        await resolve_billing_review(db_session, task.id, admin_id=1, cost_fen=0, charge_fen=1, note="x")
+    await resolve_billing_review(db_session, task.id, admin_id=1, cost_fen=0, charge_fen=0, note="x")
+    await db_session.refresh(task)
+    assert task.billing_status == "settled" and task.billing_charged_fen == FROZEN + 5
+
+
 async def test_review_note_stays_out_of_user_visible_events(db_session):
     """用户能读任务事件，核对依据只能留在管理员可见的用量行。"""
     _, task = await _pending(db_session)

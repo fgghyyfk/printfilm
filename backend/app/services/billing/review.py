@@ -5,7 +5,7 @@ import json
 import logging
 from datetime import UTC, datetime
 
-from sqlalchemy import update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import UsageEvent
@@ -27,7 +27,7 @@ async def resolve_billing_review(
 ) -> TaskRun:
     """记录核定的上游成本和用户收费后结算，退回其余冻结金额。
 
-    cost_fen 只进平台账；charge_fen 才向用户收取，且不得超过本任务预扣额。
+    cost_fen 只进平台账；charge_fen 才向用户收取，与已记录未结算用量合计不得超过预扣额。
     核对依据存在管理员可见的用量行里，用户可见的任务事件不带这些内容。
     """
     from app.services.tasks import scheduler
@@ -39,8 +39,13 @@ async def resolve_billing_review(
         raise ValueError("只能处理待核对状态的任务")
     if scheduler._job_alive(int(task_id)):
         raise ValueError("任务仍在本地执行，请等待其退出后再核对")
-    if charge_fen > int(task.billing_estimate_fen or 0):
-        raise ValueError("向用户收取的金额不能超过本任务的预扣额")
+    # 结算按全部未结算用量行求和，已记录的用量也占预扣额，否则超出部分会继续扣钱包。
+    recorded = int(await db.scalar(
+        select(func.coalesce(func.sum(UsageEvent.charge_fen), 0))
+        .where(UsageEvent.task_run_id == task.id, UsageEvent.settled.is_(False))
+    ) or 0)
+    if charge_fen > max(0, int(task.billing_estimate_fen or 0) - recorded):
+        raise ValueError("本次收费加已记录用量不能超过本任务的预扣额")
 
     now = datetime.now(UTC)
     # 不论金额是否为零都留一行，保证每次核对都有据可查。
