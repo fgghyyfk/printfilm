@@ -88,6 +88,7 @@ async def create_styled_plan(
     size: str | None, material: str | None, model_asset_id: int | None, frame: str | None,
     slots_picked: list[str] | None, product_id: int | None, color_index: int,
     data: bytes | None, filename: str, fabric: tuple[bytes, str] | None, scene_key: str | None = None,
+    image_engine: str | None = None,
 ) -> int:
     """规划一套「模特上身」图，返回套图 id。商品库里的款名/尺寸/材质/卖点会作为默认值。"""
     from app.services.ecom_set.service import _record_plan_charge
@@ -112,6 +113,7 @@ async def create_styled_plan(
     slots, skipped = _filter_info_slots(slots, know, variants)
     model = await _pick_model(db, user, model_asset_id, required=any(s.ref == "model" for s in slots))
     scene = await _pick_scene(db, user, scene_key)
+    engine = _pick_engine(image_engine)
     color_note = f"本款颜色：{images['color_name']}" if images.get("color_name") else ""
     plan_text = categories.plan_notes(category, size=size, material=material,
                                       notes="；".join(x for x in (notes.strip(), color_note, _scene_note(scene)) if x))
@@ -134,6 +136,7 @@ async def create_styled_plan(
     if scene:
         styled["scene"] = scene
     styled["type_style"] = typo.default_type_style(category, scene)
+    styled["image_engine"] = engine
     if any(s.ref == "info" for s in slots):
         styled.update(knowledge=know, variants=variants, product_path=str(path), product_name=name,
                       material_label=categories.material_label(category, material))
@@ -155,6 +158,17 @@ async def create_styled_plan(
                            status="planned", copy_json=copy))
     await db.commit()
     return ecom.id
+
+
+def _pick_engine(value: str | None) -> str:
+    """出图模型：选了 GPT Image 2 但后台没开通生图渠道时报错。"""
+    from app.services.ecom_set.service import normalize_engine
+    from app.services.openai_image import openai_image_configured
+
+    engine = normalize_engine(value)
+    if engine == "gpt-image-2" and not openai_image_configured():
+        raise ValueError("GPT Image 2 未开通：请管理员在后台「系统设置 → 生图」启用并填写 Key，或改用 Seedream")
+    return engine
 
 
 def _knowledge_of(product) -> tuple[dict, list[dict]]:
@@ -253,6 +267,7 @@ def styled_out(ecom: EcomSet) -> dict | None:
         "color_index": info.get("color_index") or 0, "color_name": info.get("color_name") or "",
         "fabric_url": info.get("fabric_url") or "", "real_url": info.get("real_url") or "",
         "scene_key": (info.get("scene") or {}).get("key") or "", "scene_name": (info.get("scene") or {}).get("name") or "",
+        "image_engine": info.get("image_engine") or "seedream",
         "type_style": typo.normalize_type_style(info.get("type_style"),
                                                 typo.default_type_style(cat, info.get("scene"))),
     }

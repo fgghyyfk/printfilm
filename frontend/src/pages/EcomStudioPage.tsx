@@ -46,6 +46,7 @@ export default function EcomStudioPage() {
   const [frame, setFrame] = useState('taobao_34')
   const [slots, setSlots] = useState<string[]>([])
   const [notes, setNotes] = useState('')
+  const [engine, setEngine] = useState('seedream')
   /* 场景：行业标签与所选场景（空 key = 不指定场景） */
   const [industry, setIndustry] = useState('')
   const [scene, setScene] = useState<{ key: string; name: string } | null>(null)
@@ -64,7 +65,9 @@ export default function EcomStudioPage() {
   const isGoods = category?.id === 'goods'
   const industries = useMemo(() => options?.industries || [], [options])
   const billable = slots.filter((k) => !category?.slots.find((s) => s.key === k)?.free).length
-  const total = (options?.plan_fen || 0) + billable * (options?.image_fen || 0)
+  const engines = options?.image_engines || []
+  const unitFen = engines.find((e) => e.id === engine)?.image_fen ?? options?.image_fen ?? 0
+  const total = (options?.plan_fen || 0) + billable * unitFen
 
   // 选商品：换品类时默认勾上该品类的默认整套，并恢复该品类上次的行业与场景
   function pickProduct(p: EcomProduct, ci: number) {
@@ -139,7 +142,7 @@ export default function EcomStudioPage() {
       const set = await planEcomSet({
         name: product.name, platform: '', style: 'minimal', count: slots.length, notes: notes.trim(),
         category: product.category, productId: product.id, colorIndex, modelAssetId: needsModel ? modelId : null,
-        frame, slots, sceneKey: scene?.key || '',
+        frame, slots, sceneKey: scene?.key || '', imageEngine: engine,
       })
       nav(`/daihuo?id=${set.id}`)
     } catch (err) { setError(err instanceof Error ? err.message : text('生成方案失败', 'Planning failed')) }
@@ -176,7 +179,8 @@ export default function EcomStudioPage() {
               {stepKey === 'scene' && product ? <SceneStep industries={industries} industry={industry || industries[0]?.id || 'daily'}
                 onIndustry={pickIndustry} sceneKey={scene?.key || ''} onPick={pickScene} /> : null}
               {stepKey === 'model' ? <ModelStep modelId={modelId} onPick={setModelId} imageFen={options.image_fen} billing={options.billing_enabled} /> : null}
-              {stepKey === 'slots' && category ? <SlotStep category={category} frames={options.frames || []} frame={frame} slots={slots} onFrame={setFrame} onSlots={setSlots} /> : null}
+              {stepKey === 'slots' && category ? <SlotStep category={category} frames={options.frames || []} frame={frame} slots={slots} onFrame={setFrame} onSlots={setSlots}
+                engines={engines} engine={engine} onEngine={setEngine} /> : null}
               {stepKey === 'confirm' && product && category ? <div className="pf-tool-panel pf-es-confirm">
                 <div className="pf-es-summary">
                   <img src={resolveToolMediaUrl(product.colors[colorIndex]?.image_url)} alt="" />
@@ -208,7 +212,7 @@ export default function EcomStudioPage() {
                 <label className="pf-tool-field"><span>{text('这次想强调的卖点（选填）', 'Extra notes (optional)')}</span>
                   <textarea rows={2} maxLength={300} value={notes} placeholder={text('留空则用商品资料里的成分与卖点', 'Defaults to product notes')} onChange={(e) => setNotes(e.target.value)} />
                 </label>
-                {options.billing_enabled ? <p className="pf-ecom-price">{text(`预计 ${formatFen(total)}（方案 ${formatFen(options.plan_fen)} + ${billable} 张 × ${formatFen(options.image_fen)}）`, `~${formatFen(total)}`)}</p> : null}
+                {options.billing_enabled ? <p className="pf-ecom-price">{text(`预计 ${formatFen(total)}（方案 ${formatFen(options.plan_fen)} + ${billable} 张 × ${formatFen(unitFen)}）`, `~${formatFen(total)}`)}</p> : null}
                 <p className="pf-muted">{text('下一步会先出方案：每张图的画面与文案都可以改，确认后才开始生成。', 'You can edit the plan before generating.')}</p>
                 {error ? <BillingErrorNotice message={error} className="pf-tool-error" /> : null}
               </div> : null}

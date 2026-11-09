@@ -84,6 +84,22 @@ async def reconcile_stuck_items(db: AsyncSession, ecom: EcomSet) -> bool:
     return changed
 
 
+# 出图模型对应的生图参数：GPT Image 2 走后台「生图」渠道（OpenAI 官方或 Promptoll）
+def engine_kwargs(ecom: EcomSet, ratio: str) -> dict:
+    from app.services.ecom_set.service import engine_of
+
+    if engine_of(ecom) == "gpt-image-2":
+        return {"image_provider": "openai", "model": "gpt-image-2", "ratio_hint": ratio}
+    return {}
+
+
+def usage_model(ecom: EcomSet) -> str:
+    """写用量行用的模型名。"""
+    from app.services.ecom_set.service import engine_of
+
+    return "gpt-image-2" if engine_of(ecom) == "gpt-image-2" else get_settings().model_image
+
+
 # 生成无字底图并落到本地，返回本地路径
 async def generate_base(db: AsyncSession, ecom: EcomSet, item: EcomSetItem) -> Path:
     settings = get_settings()
@@ -125,11 +141,12 @@ async def generate_base(db: AsyncSession, ecom: EcomSet, item: EcomSetItem) -> P
         project_id=0,
         shot_no=ecom.user_id,
         size=GEN_SIZE.get(item.ratio, GEN_SIZE["1:1"]),
+        **engine_kwargs(ecom, item.ratio),
     )
     await record_seedream_image_usage(
         db,
         user_id=ecom.user_id,
-        model=settings.model_image,
+        model=usage_model(ecom),
         domain="studio",
         image_result=result,
         extra_raw={"tool_id": "ecomset", "set_id": ecom.id, "idx": item.idx},
@@ -177,9 +194,9 @@ async def generate_goods_base(db: AsyncSession, ecom: EcomSet, item: EcomSetItem
         # 没有透明抠图：退回「商品参考图」直接生图（商品可能被重绘，前端已提示上传透明底 PNG）
         refs = [ecom.product_image_url]
     result = await get_ark().gen_image(prompt, NEGATIVE_PROMPT, refs or None, project_id=0, shot_no=ecom.user_id,
-                                       size=f"{w}x{h}")
+                                       size=f"{w}x{h}", **engine_kwargs(ecom, item.ratio))
     await record_seedream_image_usage(
-        db, user_id=ecom.user_id, model=settings.model_image, domain="studio", image_result=result,
+        db, user_id=ecom.user_id, model=usage_model(ecom), domain="studio", image_result=result,
         extra_raw={"tool_id": "ecomset", "set_id": ecom.id, "idx": item.idx, "mode": "composite" if use_composite else slot.ref},
     )
     url = result.local_url or result.remote_url or ""

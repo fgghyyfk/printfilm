@@ -70,6 +70,8 @@ export interface EcomSetOptions {
   category_industry?: Record<string, string>
   /** 字体风格：serif 典雅衬线 / sans 简约黑体 / bold 促销醒目 */
   type_styles?: { id: string; name: string; hint: string }[]
+  /** 出图模型（GPT Image 2 仅在后台开通后出现），带各自单价（分） */
+  image_engines?: { id: string; name: string; hint: string; image_fen: number }[]
   plan_fen: number
   image_fen: number
   billing_enabled: boolean
@@ -104,6 +106,8 @@ export type EcomStyledInfo = {
   scene_name?: string | null
   /** 当前字体风格 */
   type_style?: string
+  /** 出图模型 */
+  image_engine?: string
 }
 
 /** 品类选项（来自 /options 的 styled） */
@@ -142,6 +146,8 @@ export type EcomSetPlanPayload = {
   productId?: number | null
   colorIndex?: number
   fabric?: File | null
+  /** 出图模型：seedream（默认）| gpt-image-2 */
+  imageEngine?: string
   /** 场景库场景 key；留空 = 按品类默认画面 */
   sceneKey?: string
 }
@@ -200,6 +206,7 @@ export function planEcomSet(payload: EcomSetPlanPayload): Promise<EcomSet> {
   }
   if (payload.fabric) body.append('fabric', payload.fabric)
   if (payload.sceneKey) body.append('scene_key', payload.sceneKey)
+  if (payload.imageEngine) body.append('image_engine', payload.imageEngine)
   return requestEcom('/plan', '方案生成失败', { method: 'POST', body }, true)
 }
 

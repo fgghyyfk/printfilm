@@ -49,7 +49,7 @@ async def _guard(db: AsyncSession, coro):
 
 # 序列化套图
 async def _out(db: AsyncSession, ecom) -> EcomSetOut:
-    return EcomSetOut(**svc.to_out(ecom, image_fen=await svc.image_unit_fen(db)))
+    return EcomSetOut(**svc.to_out(ecom, image_fen=await svc.image_unit_fen(db, svc.engine_of(ecom))))
 
 
 # 表单选项与价格
@@ -77,6 +77,7 @@ async def create_plan(
     color_index: int = Form(0, ge=0, le=20, description="颜色款序号（从 0 开始）"),
     fabric: UploadFile | None = File(default=None, description="面料/材质实拍图（可选，作为质感参考）"),
     scene_key: str = Form("", max_length=64, description="场景库里的场景 key；留空用品类默认场景"),
+    image_engine: str = Form("seedream", max_length=32, description="出图模型：seedream | gpt-image-2"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -89,6 +90,7 @@ async def create_plan(
         category=category, scarf_size=scarf_size or None, model_asset_id=model_asset_id,
         scarf_material=scarf_material or None, frame=frame or None, slots_picked=picked,
         product_id=product_id, color_index=color_index, fabric=fabric_upload, scene_key=scene_key or None,
+        image_engine=image_engine,
     ))
     return await _out(db, ecom)
 
@@ -102,9 +104,13 @@ async def list_sets(
     user: User = Depends(get_current_user),
 ):
     rows, total = await svc.list_sets(db, user, page=page, page_size=page_size)
-    unit = await svc.image_unit_fen(db)
+    units: dict[str, int] = {}
+    for r in rows:
+        e = svc.engine_of(r)
+        if e not in units:
+            units[e] = await svc.image_unit_fen(db, e)
     return EcomSetListOut(
-        items=[EcomSetOut(**svc.to_out(r, image_fen=unit)) for r in rows],
+        items=[EcomSetOut(**svc.to_out(r, image_fen=units[svc.engine_of(r)])) for r in rows],
         total=total, page=page, page_size=page_size,
     )
 

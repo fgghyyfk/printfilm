@@ -298,7 +298,13 @@
 - **前端**：「我的商品」每款下新增「商品资料」面板（上传自己的/竞品详情、AI 整理、按「字段｜字段」逐行编辑）；结果页新增字体风格切换；文案编辑新增英文小标；选图新增「免费·信息屏」标签。
 - **迁移**：`ALTER TABLE ecom_products ADD COLUMN ref_images JSON` / `knowledge JSON`（已写入 `_apply_schema_patches`；关闭启动建库的部署需发布前手动执行）。
 
-## 14. 待确认
+## 14. 出图模型：GPT Image 2（经 Promptoll）
+
+- 后台「系统设置 → 生图」新增「生图渠道」：Promptoll（自有网关 `https://api.promptoll.com/v1`，独立 Key `zai_…`）或 OpenAI 官方。Promptoll 的 edits 默认回 URL，代码显式要 `b64_json`，回 URL 也能下载；响应头 `X-Price-Microcents` 的实际成本写进用量（`upstream_cost_fen`）。
+- Promptoll 默认路由不支持 gpt-image-2 的 `quality=high`（会被记成 `gpt-image-2-hd` 报 400）；要高画质需给 Key 开通官方 OpenAI 路由（`key_upstream:<id>`），否则把画质设为「中」。edits 不转发 `input_fidelity` 等字段。
+- 电商图「选图」步骤新增「出图模型」：Seedream 5.0 Pro（默认）/ GPT Image 2（后台开通生图渠道后才出现）。所选模型存 `plan.styled.image_engine`，任务计价参数带 `model_id=gpt-image-2`，按价目表里 gpt-image-2 的张价预扣与结算；合成槽位仍会把品牌原图贴回。
+
+## 15. 待确认
 
 1. **品牌场景包的「品牌」怎么划分**：现在系统只有个人账号，没有团队/品牌概念。P3 是否需要先做团队账号？还是先按「一个账号 = 一个品牌」处理？
 2. **首批行业的优先级**：建议先做日化、美妆、食品、茶叶、酒类、3C、珠宝，是否符合当前客户结构？

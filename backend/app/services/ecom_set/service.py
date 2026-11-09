@@ -81,11 +81,39 @@ def save_product_image(user_id: int, data: bytes, filename: str) -> Path:
     return dest
 
 
+# 出图模型：seedream 默认（主渠道）| gpt-image-2（后台「生图」渠道：OpenAI 官方或 Promptoll）
+IMAGE_ENGINES = ("seedream", "gpt-image-2")
+
+
+def normalize_engine(value: str | None) -> str:
+    """规整出图模型，未知回落 seedream。"""
+    v = (value or "").strip()
+    return v if v in IMAGE_ENGINES else "seedream"
+
+
+def engine_of(ecom: EcomSet) -> str:
+    """套图选的出图模型（旧套图为 seedream）。"""
+    plan = ecom.plan or {}
+    info = plan.get("styled") if isinstance(plan.get("styled"), dict) else plan
+    return normalize_engine((info or {}).get("image_engine"))
+
+
+def engine_options() -> list[dict]:
+    """前台可选的出图模型：GPT Image 2 只在后台开通了生图渠道时出现。"""
+    from app.services.openai_image import openai_image_configured, provider_label
+
+    out = [{"id": "seedream", "name": "Seedream 5.0 Pro", "hint": "默认，出图稳定、性价比高"}]
+    if openai_image_configured():
+        out.append({"id": "gpt-image-2", "name": f"GPT Image 2（{provider_label()}）",
+                    "hint": "画面质感与排版感更强，单价更高"})
+    return out
+
+
 # 单张生图预估价（分）
-async def image_unit_fen(db: AsyncSession) -> int:
+async def image_unit_fen(db: AsyncSession, engine: str = "seedream") -> int:
     from app.services.media_models.planning import prepare_task_media
 
-    probe = TaskRun(domain="studio", task_type="ecom_set_image", payload=image_task_payload("3:4"))
+    probe = TaskRun(domain="studio", task_type="ecom_set_image", payload=image_task_payload("3:4", engine))
     try:
         await prepare_task_media(db, probe)
     except ValueError as exc:
@@ -96,8 +124,11 @@ async def image_unit_fen(db: AsyncSession) -> int:
 
 
 # 套图单张生图任务的计价参数（与图片生成页同一张价目表：2K）
-def image_task_payload(ratio: str) -> dict:
-    return {"aspect_ratio": ratio or "3:4", "resolution": "2K"}
+def image_task_payload(ratio: str, engine: str = "seedream") -> dict:
+    body = {"aspect_ratio": ratio or "3:4", "resolution": "2K"}
+    if normalize_engine(engine) == "gpt-image-2":
+        body["model_id"] = "gpt-image-2"
+    return body
 
 
 # 前端选项：平台/风格/张数/价格
@@ -113,6 +144,7 @@ async def get_options(db: AsyncSession) -> dict:
         "industries": scenes_mod.industries_out(),
         "category_industry": dict(scenes_mod.CATEGORY_INDUSTRY),
         "type_styles": typo_mod.options(),
+        "image_engines": [{**e, "image_fen": await image_unit_fen(db, e["id"])} for e in engine_options()],
         "scarf_sizes": next(c["sizes"] for c in categories.options() if c["id"] == "scarf"),
         "scarf_counts": next(c["counts"] for c in categories.options() if c["id"] == "scarf"),
         "scarf_materials": next(c["materials"] for c in categories.options() if c["id"] == "scarf"),
@@ -147,7 +179,7 @@ async def create_plan(
     category: str = "general", scarf_size: str | None = None, model_asset_id: int | None = None,
     scarf_material: str | None = None, frame: str | None = None, slots_picked: list[str] | None = None,
     product_id: int | None = None, color_index: int = 0, fabric: tuple[bytes, str] | None = None,
-    scene_key: str | None = None,
+    scene_key: str | None = None, image_engine: str | None = None,
 ) -> EcomSet:
     """上传商品图（或从商品库选）→ 计费规划 → 落库套图与各张方案（status=planned）。
 
@@ -159,7 +191,7 @@ async def create_plan(
             db, user, category=category, name=name, notes=notes, count=count, size=scarf_size,
             material=scarf_material, model_asset_id=model_asset_id, frame=frame, slots_picked=slots_picked,
             product_id=product_id, color_index=color_index, data=data, filename=filename, fabric=fabric,
-            scene_key=scene_key,
+            scene_key=scene_key, image_engine=image_engine,
         )
         return await get_set(db, user, set_id)
     name = clip(name, 60)
@@ -274,7 +306,7 @@ async def _enqueue_items(db: AsyncSession, user: User, ecom: EcomSet, items: lis
     from app.services.tasks.service import create_task
 
     probe = TaskRun(domain="studio", task_type="ecom_set_image", requested_by=user.id,
-                    payload=image_task_payload(items[0].ratio if items else "3:4"))
+                    payload=image_task_payload(items[0].ratio if items else "3:4", engine_of(ecom)))
     await ensure_balance_for_task_batch(db, user, probe, len(items))
     for it in items:
         task = await create_task(
@@ -282,7 +314,7 @@ async def _enqueue_items(db: AsyncSession, user: User, ecom: EcomSet, items: lis
             TaskCreateRequest(
                 domain="studio", task_type="ecom_set_image",
                 payload={"set_id": ecom.id, "idx": it.idx, "slot": it.slot, "ratio": it.ratio,
-                         **image_task_payload(it.ratio)},
+                         **image_task_payload(it.ratio, engine_of(ecom))},
                 dedupe_key=f"ecomset:{ecom.id}:{it.idx}:{uuid.uuid4().hex[:6]}",
             ),
             commit=False,

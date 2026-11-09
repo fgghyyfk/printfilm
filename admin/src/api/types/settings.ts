@@ -63,6 +63,10 @@ export type AdminModelSettings = {
   openai_image_model: string;
   openai_image_quality: string;
   openai_image_scope: string;
+  /** 生图渠道：openai 官方 | promptoll 自有网关 */
+  openai_image_provider: string;
+  promptoll_api_key: string;
+  has_promptoll_api_key: boolean;
   volc_tts_resource_id: string;
   volc_tts_speech_rate: number;
   volc_tts_instruction: string;

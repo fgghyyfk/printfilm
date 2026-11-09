@@ -45,6 +45,7 @@ class EcomScarfOut(BaseModel):
     scene_key: str = ""
     scene_name: str = ""
     type_style: str = "bold"
+    image_engine: str = "seedream"
 
 
 class EcomProductOut(BaseModel):
@@ -109,6 +110,7 @@ class EcomSetOptionsOut(BaseModel):
     industries: list[EcomOptionOut] = []
     category_industry: dict[str, str] = {}
     type_styles: list[dict] = []
+    image_engines: list[dict] = []
     plan_fen: int
     image_fen: int
     billing_enabled: bool

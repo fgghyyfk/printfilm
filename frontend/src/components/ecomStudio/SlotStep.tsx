@@ -1,5 +1,6 @@
 import { Check, Droplet, FileText, ImageIcon, Layers, Shirt, UserRound } from 'lucide-react'
 import type { EcomStyledCategory } from '../../api/ecomSet'
+import { formatFen } from '../../lib/ecomSet'
 import { useGenerationText } from '../../lib/generationMedia'
 
 type Props = {
@@ -9,6 +10,10 @@ type Props = {
   slots: string[]
   onFrame: (id: string) => void
   onSlots: (keys: string[]) => void
+  /** 出图模型（只有一个时不显示） */
+  engines?: { id: string; name: string; hint: string; image_fen: number }[]
+  engine?: string
+  onEngine?: (id: string) => void
 }
 
 /** 有示例图的槽位（public/ecom-examples/{key}.jpg） */
@@ -16,7 +21,7 @@ const EXAMPLES = new Set(['scarf_cover', 'scarf_hold', 'scarf_texture', 'scarf_k
   'scarf_closeup', 'scarf_long', 'scarf_back', 'scarf_street', 'scarf_flat'])
 
 /** 第③步：选画幅 + 勾选要生成的图（整套快捷选择，或只挑一两张） */
-export default function SlotStep({ category, frames, frame, slots, onFrame, onSlots }: Props) {
+export default function SlotStep({ category, frames, frame, slots, onFrame, onSlots, engines = [], engine, onEngine }: Props) {
   const text = useGenerationText()
 
   // 勾选 / 取消一张，保持注册表里的顺序
@@ -35,6 +40,10 @@ export default function SlotStep({ category, frames, frame, slots, onFrame, onSl
     <div className="pf-tool-field"><span>{text('画幅', 'Format')}</span>
       <div className="pf-tool-chips">{frames.map((f) => <button key={f.id} type="button" className={frame === f.id ? 'active' : ''} onClick={() => onFrame(f.id)}>{f.name}</button>)}</div>
     </div>
+    {engines.length > 1 ? <div className="pf-tool-field"><span>{text('出图模型', 'Image model')}</span>
+      <div className="pf-tool-chips">{engines.map((e) => <button key={e.id} type="button" title={e.hint} className={engine === e.id ? 'active' : ''}
+        onClick={() => onEngine?.(e.id)}>{e.name}{e.image_fen ? ` · ${formatFen(e.image_fen)}/${text('张', 'img')}` : ''}</button>)}</div>
+    </div> : null}
     <div className="pf-tool-field"><span>{text('快速选择', 'Presets')}</span>
       <div className="pf-tool-chips">
         {category.counts.map((n) => <button key={n} type="button" className={slots.join() === (category.compositions[String(n)] || []).join() ? 'active' : ''}

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import math
 import logging
 import re
 import time
@@ -1081,9 +1082,14 @@ class ArkGateway:
                                           size=size, ratio_hint=ratio_hint, settings=self.settings)
         usage = dict(out.get("usage") or {})
         usage.setdefault("size", out["size"])
-        usage["provider"] = "openai"
+        usage["provider"] = out.get("provider") or "openai"
         usage["model"] = out["model"]
+        cost_fen = None
+        if usage.get("cost_usd") is not None:
+            # Promptoll 回传的实际成本（美元）→ 分，向上取整
+            cost_fen = math.ceil(float(usage["cost_usd"]) * float(self.settings.billing_usd_cny) * 100)
         return ImageResult(
+            upstream_cost_fen=cost_fen,
             local_url=openai_image.save_path_url(out["local_path"]),
             remote_url=None,
             total_tokens=int(usage.get("total_tokens") or 0),

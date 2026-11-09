@@ -83,6 +83,9 @@ class AdminModelSettingsOut(BaseModel):
     openai_image_model: str = "gpt-image-2"
     openai_image_quality: str = "high"
     openai_image_scope: str = "tools"
+    openai_image_provider: str = "openai"
+    promptoll_api_key: str = ""
+    has_promptoll_api_key: bool = False
 
     # Aliyun OSS
     oss_enabled: bool = Field(default=False, description="是否启用阿里云 OSS 媒体上传")
@@ -233,6 +236,9 @@ class AdminModelSettingsPatch(BaseModel):
     openai_image_model: str | None = Field(default=None, pattern=r"^[A-Za-z0-9._\-]{1,64}$")
     openai_image_quality: str | None = Field(default=None, pattern=r"^(low|medium|high|auto)$")
     openai_image_scope: str | None = Field(default=None, pattern=r"^(tools|all)$")
+    openai_image_provider: str | None = Field(default=None, pattern=r"^(openai|promptoll)$")
+    promptoll_api_key: str | None = None
+    clear_promptoll_api_key: bool = False
 
     oss_enabled: bool | None = Field(default=None, description="是否启用阿里云 OSS 媒体上传；省略或 null 时不修改")
     oss_endpoint: str | None = Field(default=None, description="阿里云 OSS 服务域名；省略或 null 时不修改")
@@ -374,6 +380,8 @@ def model_config_field_names() -> tuple[str, ...]:
         "openai_image_model",
         "openai_image_quality",
         "openai_image_scope",
+        "openai_image_provider",
+        "promptoll_api_key",
         "oss_enabled",
         "oss_endpoint",
         "oss_region",
@@ -437,6 +445,7 @@ SECRET_FIELD_FLAGS: dict[str, str] = {
     "avatar_ai_api_key": "has_avatar_ai_api_key",
     "volc_tts_api_key": "has_volc_tts_api_key",
     "openai_image_api_key": "has_openai_image_api_key",
+    "promptoll_api_key": "has_promptoll_api_key",
     "oss_access_key_id": "has_oss_access_key_id",
     "oss_access_key_secret": "has_oss_access_key_secret",
     "tos_access_key": "has_tos_access_key",
