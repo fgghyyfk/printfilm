@@ -18,6 +18,11 @@ export type EcomSetStep = 'form' | 'plan' | 'generating' | 'done'
 /** 文案字数上限（与后端约定一致） */
 export const ECOM_COPY_LIMITS = { title: 10, subtitle: 16, bullet: 12, bullets: 3 } as const
 
+/** 某张图的主标题字数上限：日化封面版式会自动换行，放宽到 16 字（与后端 title_limit 一致） */
+export function titleLimitOf(slot: string): number {
+  return slot === 'goods_cover' ? 16 : ECOM_COPY_LIMITS.title
+}
+
 /** 生成中轮询间隔 */
 export const ECOM_POLL_MS = 3000
 

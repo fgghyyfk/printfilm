@@ -6,10 +6,12 @@ type Props = {
   value: EcomSetCopyPatch
   onChange: (next: EcomSetCopyPatch) => void
   disabled?: boolean
+  /** 主标题字数上限（默认 ECOM_COPY_LIMITS.title） */
+  titleMax?: number
 }
 
 /** 文案编辑字段：主标题 / 副标题 / 最多 3 条卖点（方案卡片与改文案弹层共用） */
-export default function EcomSetCopyFields({ value, onChange, disabled }: Props) {
+export default function EcomSetCopyFields({ value, onChange, disabled, titleMax = ECOM_COPY_LIMITS.title }: Props) {
   const { t } = useI18n()
   const bullets = padBullets(value.bullets)
 
@@ -26,13 +28,13 @@ export default function EcomSetCopyFields({ value, onChange, disabled }: Props) 
         <span className="pf-ecom-field-label">
           {t('ecomSet.plan.copyTitle')}
           <em>
-            {value.title.length}/{ECOM_COPY_LIMITS.title}
+            {value.title.length}/{titleMax}
           </em>
         </span>
         <input
           className="pf-ecom-input"
           type="text"
-          maxLength={ECOM_COPY_LIMITS.title}
+          maxLength={titleMax}
           value={value.title}
           disabled={disabled}
           onChange={(e) => onChange({ ...value, title: e.target.value })}

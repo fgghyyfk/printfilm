@@ -93,7 +93,12 @@ def clip(text: str, limit: int) -> str:
 
 
 # 规整一组文案：截断 + 过滤极限词，返回 (copy dict, 命中词)
-def normalize_copy(raw: dict | None, *, layout: str) -> tuple[dict, list[Hit]]:
+def title_limit(slot_key: str) -> int:
+    """某张图的主标题字数上限：日化封面版式会自动换行，放宽到 16 字。"""
+    return 16 if slot_key == "goods_cover" else TITLE_MAX
+
+
+def normalize_copy(raw: dict | None, *, layout: str, title_max: int = TITLE_MAX) -> tuple[dict, list[Hit]]:
     if layout == "none":
         return {"title": "", "subtitle": "", "bullets": []}, []
     body = raw if isinstance(raw, dict) else {}
@@ -108,7 +113,7 @@ def normalize_copy(raw: dict | None, *, layout: str) -> tuple[dict, list[Hit]]:
         if text:
             bullets.append(clip(text, BULLET_MAX))
     return {
-        "title": clip(title, TITLE_MAX),
+        "title": clip(title, title_max),
         "subtitle": clip(subtitle, SUBTITLE_MAX),
         "bullets": bullets,
     }, hits

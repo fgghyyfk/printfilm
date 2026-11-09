@@ -3,7 +3,7 @@ import { Loader2 } from 'lucide-react'
 import type { EcomSetCopyPatch, EcomSetItem } from '../../api/ecomSet'
 import { resolveToolMediaUrl } from '../../api/tools'
 import { useI18n } from '../../i18n'
-import { formatFen } from '../../lib/ecomSet'
+import { formatFen, titleLimitOf } from '../../lib/ecomSet'
 import BillingErrorNotice from '../billing/BillingErrorNotice'
 import Button from '../ui/Button'
 import Modal from '../ui/Modal'
@@ -46,7 +46,7 @@ export function EcomSetCopyModal({ item, busy, error, onClose, onSave }: CopyPro
     >
       <p className="pf-muted pf-ecom-modal-hint">{t('ecomSet.copyModal.hint')}</p>
       <div className="pf-ecom-modal-fields">
-        <EcomSetCopyFields value={copy} onChange={setCopy} disabled={busy} />
+        <EcomSetCopyFields value={copy} onChange={setCopy} disabled={busy} titleMax={titleLimitOf(item.slot)} />
       </div>
       {error ? <BillingErrorNotice message={error} className="pf-tool-error" /> : null}
     </Modal>

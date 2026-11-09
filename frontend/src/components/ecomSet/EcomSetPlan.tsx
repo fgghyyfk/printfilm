@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import type { EcomSet, EcomSetItem } from '../../api/ecomSet'
 import { useI18n } from '../../i18n'
-import { ecomSetTotalFen, formatFen, hasCopy, isPlanDirty } from '../../lib/ecomSet'
+import { ecomSetTotalFen, formatFen, hasCopy, isPlanDirty, titleLimitOf } from '../../lib/ecomSet'
 import BillingErrorNotice from '../billing/BillingErrorNotice'
 import Button from '../ui/Button'
 import EcomSetCopyFields from './EcomSetCopyFields'
@@ -107,6 +107,7 @@ export default function EcomSetPlan({ set, billingEnabled, busy, error, onSave, 
               <EcomSetCopyFields
                 value={{ title: item.title, subtitle: item.subtitle, bullets: item.bullets }}
                 disabled={Boolean(busy)}
+                titleMax={titleLimitOf(item.slot)}
                 onChange={(copy) => patchItem(item.idx, copy)}
               />
             ) : (

@@ -197,3 +197,13 @@ def test_goods_cover_copy():
     assert c2["title"] == "身体乳" and c2["subtitle"] == "250ml"
     long = categories.cover_copy("goods", name="Van Reed Paris Fragrance Hand Cream Gift", size="", material="tube")
     assert len(long["title"]) <= 16 and not long["title"].endswith(" ")
+
+
+# 日化封面改文案也允许 16 字；其它图仍是 10 字
+def test_title_limit_by_slot():
+    from app.services.ecom_set.prompts import normalize_copy, title_limit
+
+    c, _ = normalize_copy({"title": "Van Reed 香氛护手霜"}, layout="title_sub", title_max=title_limit("goods_cover"))
+    assert c["title"] == "Van Reed 香氛护手霜"
+    d, _ = normalize_copy({"title": "Van Reed 香氛护手霜"}, layout="title_sub", title_max=title_limit("goods_scene"))
+    assert len(d["title"]) == 10

@@ -49,7 +49,7 @@ from app.services.ecom_set.presets import (
     slot_label,
 )
 from app.services.compliance.ad_words import Hit, summarize
-from app.services.ecom_set.prompts import clip, normalize_copy, sanitize_scene
+from app.services.ecom_set.prompts import clip, normalize_copy, sanitize_scene, title_limit
 
 logger = logging.getLogger(__name__)
 
@@ -258,7 +258,7 @@ async def update_plan(db: AsyncSession, user: User, set_id: int, items: list[dic
             scene, sh = sanitize_scene(str(body.get("scene") or ""))
             it.scene = clip(scene, 300)
             hits += sh
-        copy, ch = normalize_copy(body, layout=it.layout)
+        copy, ch = normalize_copy(body, layout=it.layout, title_max=title_limit(it.slot))
         it.copy_json = copy
         hits += ch
     _set_edit_warnings(ecom, hits)
@@ -330,7 +330,7 @@ async def update_copy(db: AsyncSession, user: User, set_id: int, idx: int, body:
     it = _item(ecom, idx)
     if not it.base_path or not Path(it.base_path).exists():
         raise ValueError("这张图还没有底图，请先生成")
-    copy, hits = normalize_copy(body, layout=it.layout)
+    copy, hits = normalize_copy(body, layout=it.layout, title_max=title_limit(it.slot))
     it.copy_json = copy
     _set_edit_warnings(ecom, hits)
     _, it.final_url = await render_final(ecom, it, Path(it.base_path))
