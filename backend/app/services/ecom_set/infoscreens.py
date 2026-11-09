@@ -124,6 +124,20 @@ def _para(d: ImageDraw.ImageDraw, text: str, f, *, x: int, y: int, width: int, f
 
 
 # ---------- 各类信息屏 ----------
+def display_name(name: str, variants: list[dict]) -> str:
+    """款名显示：资料里只有英文名时用商品库里同编号的中文款名；中文名后面拖的英文去掉。"""
+    has_cjk = any("\u4e00" <= ch <= "\u9fff" for ch in name)
+    if not has_cjk:
+        num = re.search(r"No\.?\s*(\d+)", name, re.I)
+        for v in variants:
+            vn = str(v.get("name") or "")
+            if num and re.search(rf"No\.?\s*0*{int(num.group(1))}\b", vn, re.I) and any("\u4e00" <= c <= "\u9fff" for c in vn):
+                return vn
+        return name
+    m = re.match(r"^(.*?[\u4e00-\u9fff]+)\s+[A-Za-z].*$", name)
+    return m.group(1) if m else name
+
+
 def _match_image(name: str, variants: list[dict]) -> str:
     """按编号或名称把资料里的款式对应到商品库颜色款的图片。"""
     num = re.search(r"No\.?\s*(\d+)", name, re.I)
@@ -143,6 +157,7 @@ def _variants(img: Image.Image, y: int, k: dict, variants: list[dict], style: ty
         rows = [{"name": v.get("name") or "", "top": "", "middle": "", "base": "", "desc": ""} for v in variants]
     for r in rows:
         r["image"] = _match_image(r["name"], variants)
+        r["name"] = display_name(r["name"], variants)
     if not any(r["image"] for r in rows) and len(rows) == len(variants):
         for r, v in zip(rows, variants, strict=True):
             r["image"] = str(v.get("image_path") or "")
@@ -283,11 +298,19 @@ def render_info(slot_key: str, out: Path, *, size: tuple[int, int], copy: dict |
 def spec_rows(styled: dict) -> list[tuple[str, str]]:
     """产品信息表：资料里的规格优先，缺的用品名、规格、包装形态补。"""
     k = styled.get("knowledge") or {}
-    rows = [(r["label"], r["value"]) for r in k.get("specs") or [] if r.get("value")]
+    rows: list[tuple[str, str]] = []
+    seen_vals: set[str] = set()
+    for r in k.get("specs") or []:
+        value = str(r.get("value") or "")
+        lead = re.match(r"^\s*([\d.]+\s*[A-Za-z\u4e00-\u9fff]{0,3})", value)
+        key = lead.group(1).replace(" ", "").lower() if lead else value
+        if value and key not in seen_vals:
+            seen_vals.add(key)
+            rows.append((r["label"], value))
     have = {label for label, _ in rows}
     extra = [("品名", styled.get("product_name") or ""), ("规格", styled.get("size") or ""),
              ("包装", styled.get("material_label") or "")]
-    values = {v for _, v in rows}
+    values = {v for _, v in rows} | seen_vals
     for label, value in extra:
         if value and value not in values and label not in have and not any(label in h for h in have):
             rows.append((label, value))

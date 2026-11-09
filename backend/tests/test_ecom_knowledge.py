@@ -187,3 +187,25 @@ async def test_knowledge_flow(db_session, monkeypatch, tmp_path):
     await db_session.flush()
     edited = await svc.update_copy(db_session, user, ecom.id, it.idx, {"title": "新标题", "subtitle": "", "bullets": []})
     assert next(x for x in edited.items if x.idx == it.idx).copy_json["en"] == "Highlights"
+
+
+# 回归：多批读图里同一款香型写法不同（中文名 / 中英混合 / 只有英文）要合并成一款，字段互补，名称优先中文
+def test_variants_merge_by_number():
+    parts = [{"variants": [{"name": "No.03 伯爵红茶", "desc": "红茶香"}, {"name": "No.04 Bois de Balinc"}]},
+             {"variants": [{"name": "No.03 伯爵红茶 The Earl", "top": "红茶", "middle": "茶叶", "base": "麝香"}]}]
+    v = kn.merge(parts)["variants"]
+    assert len(v) == 2
+    assert v[0] == {"name": "No.03 伯爵红茶", "top": "红茶", "middle": "茶叶", "base": "麝香", "desc": "红茶香"}
+    variants = [{"name": "No.04 秘密森林", "image_path": ""}]
+    assert infoscreens.display_name("No.04 Bois de Balinc", variants) == "No.04 秘密森林"
+    assert infoscreens.display_name("No.02 高山树林 Le Long F", variants) == "No.02 高山树林"
+
+
+# 产品信息表：同一个值（60g / 60g（2.0 fl.oz.））只保留一行
+def test_spec_rows_dedupe():
+    styled = {"knowledge": kn.normalize({"specs": [{"label": "净含量", "value": "60g（2.0 fl.oz.）"},
+                                                   {"label": "单支净含量", "value": "60g"},
+                                                   {"label": "保质期", "value": "3年"}]}),
+              "product_name": "护手霜", "size": "60g"}
+    rows = infoscreens.spec_rows(styled)
+    assert [r[0] for r in rows] == ["净含量", "保质期", "品名"]

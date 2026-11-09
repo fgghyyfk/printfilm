@@ -318,6 +318,8 @@ async def regenerate_item(db: AsyncSession, user: User, set_id: int, idx: int, s
         it.scene = clip(clean, 300)
         _set_edit_warnings(ecom, hits)
     if _is_flat(it):
+        if SLOTS[it.slot].ref == "info":
+            await _refresh_knowledge(db, user, ecom)
         await _render_flat_items(ecom, [it])
         await refresh_set_status(db, ecom.id)
     else:
@@ -325,6 +327,23 @@ async def regenerate_item(db: AsyncSession, user: User, set_id: int, idx: int, s
         ecom.status = "generating"
     await db.commit()
     return await get_set(db, user, set_id)
+
+
+async def _refresh_knowledge(db: AsyncSession, user: User, ecom: EcomSet) -> None:
+    """信息屏重新生成前，用商品库里最新的资料与颜色款刷新套图快照（用户改了资料后点重新生成即生效）。"""
+    from app.services.ecom_set import products
+    from app.services.ecom_set.styled import _knowledge_of
+
+    styled = dict((ecom.plan or {}).get("styled") or {})
+    if not styled.get("product_id"):
+        return
+    try:
+        row = await products.get_product(db, user, int(styled["product_id"]))
+    except LookupError:
+        return
+    know, variants = _knowledge_of(row)
+    styled.update(knowledge=know, variants=variants)
+    ecom.plan = {**(ecom.plan or {}), "styled": styled}
 
 
 async def update_copy(db: AsyncSession, user: User, set_id: int, idx: int, body: dict) -> EcomSet:

@@ -10,6 +10,7 @@ import base64
 import io
 import json
 import logging
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -30,7 +31,7 @@ MAX_REFERENCES = 20
 LIST_FIELDS: dict[str, tuple[tuple[str, int], ...] | int] = {
     "selling_points": (("title", 12), ("desc", 40)),
     "ingredients": (("name", 16), ("desc", 40)),
-    "variants": (("name", 20), ("top", 30), ("middle", 30), ("base", 30), ("desc", 30)),
+    "variants": (("name", 30), ("top", 30), ("middle", 30), ("base", 30), ("desc", 30)),
     "specs": (("label", 8), ("value", 30)),
     "faq": (("q", 30), ("a", 60)),
     "usage": 40,
@@ -76,6 +77,30 @@ def _clip(v: Any, n: int) -> str:
     return str(v or "").strip()[:n]
 
 
+def _row_key(field: str, row: dict) -> str:
+    """去重键：款式按编号（No.03 与「No.03 伯爵红茶 The Earl」算同一款），其它按主字段。"""
+    name = str(row.get(LIST_KEY.get(field, ""), "") or "")
+    if field == "variants":
+        m = re.search(r"No\.?\s*0*(\d+)", name, re.I)
+        if m:
+            return f"no{int(m.group(1))}"
+    return name.strip().lower()
+
+
+def _has_cjk(text: str) -> bool:
+    return any("\u4e00" <= ch <= "\u9fff" for ch in text)
+
+
+def _merge_variant(base: dict, other: dict) -> None:
+    """同一款的两条记录合并：空字段互补，名称优先用带中文、较短的那个。"""
+    for k, v in other.items():
+        if k != "name" and v and not base.get(k):
+            base[k] = v
+    a, b = base["name"], other["name"]
+    if (_has_cjk(b) and not _has_cjk(a)) or (_has_cjk(a) == _has_cjk(b) and _has_cjk(b) and len(b) < len(a)):
+        base["name"] = b
+
+
 def normalize(raw: Any) -> dict:
     """规整一份商品资料（模型输出或用户编辑都走这里）：裁字数、限条数、去空项。"""
     body = raw if isinstance(raw, dict) else {}
@@ -91,8 +116,13 @@ def normalize(raw: Any) -> dict:
             elif isinstance(it, dict):
                 row = {k: _clip(it.get(k), n) for k, n in spec}
                 key = spec[0][0]
-                if row.get(key) and all(r[key] != row[key] for r in clean):
+                if not row.get(key):
+                    continue
+                same = next((r for r in clean if _row_key(field, r) == _row_key(field, row)), None)
+                if same is None:
                     clean.append(row)
+                elif field == "variants":
+                    _merge_variant(same, row)
             if len(clean) >= LIST_MAX[field]:
                 break
         out[field] = clean
@@ -107,22 +137,18 @@ def is_empty(k: dict | None) -> bool:
 
 
 def merge(parts: list[dict]) -> dict:
-    """合并多批整理结果：文本取最长，列表按主键去重保序。"""
-    out = normalize({})
+    """合并多批整理结果：文本取最长，列表拼接后统一去重（同一款式字段互补）。"""
+    combined: dict[str, Any] = {f: "" for f in TEXT_FIELDS}
+    for f in LIST_FIELDS:
+        combined[f] = []
     for p in parts:
         p = normalize(p)
         for f in TEXT_FIELDS:
-            if len(p[f]) > len(out[f]):
-                out[f] = p[f]
+            if len(p[f]) > len(combined[f]):
+                combined[f] = p[f]
         for f in LIST_FIELDS:
-            key = LIST_KEY.get(f)
-            seen = {(r[key] if key else r) for r in out[f]}
-            for r in p[f]:
-                k = r[key] if key else r
-                if k not in seen and len(out[f]) < LIST_MAX[f]:
-                    out[f].append(r)
-                    seen.add(k)
-    return out
+            combined[f] += p[f]
+    return normalize(combined)
 
 
 def compliance_warnings(k: dict) -> list[str]:
