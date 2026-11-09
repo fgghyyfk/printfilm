@@ -98,6 +98,15 @@ def engine_of(ecom: EcomSet) -> str:
     return normalize_engine((info or {}).get("image_engine"))
 
 
+def item_engine(ecom: EcomSet, item: EcomSetItem) -> str:
+    """单张实际用的出图模型：质地特写不带商品参考图，GPT 会画出无品牌的包装，固定用 Seedream。"""
+    engine = engine_of(ecom)
+    slot = SLOTS.get(item.slot)
+    if engine == "gpt-image-2" and slot is not None and slot.ref == "texture":
+        return "seedream"
+    return engine
+
+
 def engine_options() -> list[dict]:
     """前台可选的出图模型：GPT Image 2 只在后台开通了生图渠道时出现。"""
     from app.services.openai_image import openai_image_configured, provider_label
@@ -306,7 +315,7 @@ async def _enqueue_items(db: AsyncSession, user: User, ecom: EcomSet, items: lis
     from app.services.tasks.service import create_task
 
     probe = TaskRun(domain="studio", task_type="ecom_set_image", requested_by=user.id,
-                    payload=image_task_payload(items[0].ratio if items else "3:4", engine_of(ecom)))
+                    payload=image_task_payload(items[0].ratio if items else "3:4", item_engine(ecom, items[0]) if items else "seedream"))
     await ensure_balance_for_task_batch(db, user, probe, len(items))
     for it in items:
         task = await create_task(
@@ -314,7 +323,7 @@ async def _enqueue_items(db: AsyncSession, user: User, ecom: EcomSet, items: lis
             TaskCreateRequest(
                 domain="studio", task_type="ecom_set_image",
                 payload={"set_id": ecom.id, "idx": it.idx, "slot": it.slot, "ratio": it.ratio,
-                         **image_task_payload(it.ratio, engine_of(ecom))},
+                         **image_task_payload(it.ratio, item_engine(ecom, it))},
                 dedupe_key=f"ecomset:{ecom.id}:{it.idx}:{uuid.uuid4().hex[:6]}",
             ),
             commit=False,

@@ -219,3 +219,29 @@ def test_split_step():
     assert infoscreens.split_step("干燥粗糙倒刺区域可沿甲缘涂抹一层后轻轻按揉") == ("", "干燥粗糙倒刺区域可沿甲缘涂抹一层后轻轻按揉")
     v = [{"name": "No.12 布斯瓦勒", "image_path": ""}]
     assert infoscreens.display_name("No.12 Bousval 布斯瓦勒", v) == "No.12 布斯瓦勒"
+
+
+# 贴合度：AI 画的商品与原图同角度时高，画歪（旋转）时低于阈值、不贴回
+def test_match_score_detects_tilt():
+    cut = _tube(4)
+    stage, boxes = composite.place_products([cut], composite.lineup_placements(1, height=0.5), (600, 800), (216, 195, 168))
+    W, H = stage.size
+    good = Image.new("RGBA", (W, H), (200, 185, 160, 255))
+    x, y, w, h = boxes[0]
+    good.alpha_composite(cut.resize((w, h)), (x, y))
+    tilted = Image.new("RGBA", (W, H), (200, 185, 160, 255))
+    rot = cut.resize((w, h)).rotate(14, expand=True)
+    tilted.alpha_composite(rot, (x - (rot.width - w) // 2, y - (rot.height - h) // 2))
+    assert composite.match_score(good.convert("RGB"), cut, boxes[0]) > 0.6
+    assert composite.match_score(tilted.convert("RGB"), cut, boxes[0]) < composite.MATCH_MIN
+
+
+# GPT 套图里质地特写固定走 Seedream
+def test_texture_uses_seedream_in_gpt_set():
+    from app.models_ecom import EcomSet, EcomSetItem
+    from app.services.ecom_set import service
+
+    ecom = EcomSet(plan={"styled": {"image_engine": "gpt-image-2"}})
+    assert service.item_engine(ecom, EcomSetItem(slot="goods_texture")) == "seedream"
+    assert service.item_engine(ecom, EcomSetItem(slot="goods_scene")) == "gpt-image-2"
+    assert service.item_engine(EcomSet(plan={}), EcomSetItem(slot="goods_scene")) == "seedream"

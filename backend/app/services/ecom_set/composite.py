@@ -339,6 +339,25 @@ def plausible(found: list[tuple[int, int, int, int]], boxes: list[tuple[int, int
     return True
 
 
+MATCH_MIN = 0.25  # 线上 22 张实测：正确贴合 ≥0.43，AI 把商品画歪时约 0.11
+
+
+def match_score(ai: Image.Image, cut: Image.Image, box: tuple[int, int, int, int]) -> float:
+    """原图贴到 box 后与 AI 所画商品的边缘相关度（-1~1）：AI 把商品画歪、换了角度时很低，此时不该贴回。"""
+    x, y, w, h = box
+    if w < 8 or h < 8:
+        return 0.0
+    patch = ai.crop((x, y, x + w, y + h)).convert("RGB")
+    c = cut.resize((w, h), Image.Resampling.BILINEAR)
+    e_ai, e_c = _edges(patch), _edges(c.convert("RGB"))
+    alpha = c.getchannel("A").point(lambda v: 255 if v > 20 else 0).filter(ImageFilter.MaxFilter(9))
+    m = np.asarray(alpha, dtype=np.float32) > 0
+    if m.sum() < 50:
+        return 0.0
+    a, b = e_ai[m] - e_ai[m].mean(), e_c[m] - e_c[m].mean()
+    return float((a * b).sum() / (np.sqrt((a * a).sum() * (b * b).sum()) + 1e-6))
+
+
 def restore(ai: Image.Image, cutouts: list[Image.Image], found: list[tuple[int, int, int, int]]) -> Image.Image:
     """把原抠图按找到的位置贴回 AI 图：细节移植 + 边缘内收 1px 再柔化，让 AI 画的轮廓光与接地阴影自然衔接。"""
     canvas = ai.convert("RGBA")
