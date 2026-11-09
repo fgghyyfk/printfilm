@@ -171,10 +171,20 @@ def _variants(img: Image.Image, y: int, k: dict, variants: list[dict], style: ty
     d = ImageDraw.Draw(img)
     name_f = typo.font(style.title_family if style.id != "bold" else "sans", False, int(W * (0.03 if cols == 2 else 0.026)))
     note_f = typo.font("sans", False, int(W * (0.021 if cols == 2 else 0.018)))
+    last_n = len(rows) - (n_rows - 1) * cols
+
+    # 先算每格文字占多高，全部格子用同一个商品图高度（按最高的文字算），避免与下一行重叠、同行高低不齐
+    def text_h(r: dict) -> int:
+        name_lines = len(typo.wrap(_clean(r["name"]), name_f, 0.02, cell_w, 2))
+        notes = sum(1 for x in ("top", "middle", "base") if r.get(x)) or (2 if r.get("desc") else 0)
+        return (name_lines * typo.line_h(name_f, 0.3) + notes * typo.line_h(note_f, 0.45)
+                + int(cell_h * 0.04) + int(cell_h * 0.08))
+    img_h = max(int(cell_h * 0.25), cell_h - max(text_h(r) for r in rows))
     for i, r in enumerate(rows):
-        cx, cy = margin + (i % cols) * cell_w, y + (i // cols) * cell_h
-        has_notes = any(r.get(x) for x in ("top", "middle", "base", "desc"))
-        img_h = int(cell_h * (0.56 if has_notes else 0.7))
+        row_i = i // cols
+        # 最后一行不满时居中
+        shift = (cols - last_n) * cell_w // 2 if row_i == n_rows - 1 else 0
+        cx, cy = margin + shift + (i % cols) * cell_w, y + row_i * cell_h
         if r["image"]:
             _paste_cutout(img, r["image"], (cx + int(cell_w * 0.1), cy, cx + int(cell_w * 0.9), cy + img_h))
             d = ImageDraw.Draw(img)
@@ -202,13 +212,27 @@ def _list(img: Image.Image, y: int, rows: list[tuple[str, str]], style: typo.Typ
     avail = int(H * 0.95 - y)
     each = avail / max(1, len(rows))
     big = min(0.038, each / W * 0.42)
+    text_x = margin + int(W * 0.12) if numbered else margin
+    width = W - text_x - margin
+    # 放不下就缩小字号重排，直到整块装进剩余空间
+    for _ in range(8):
+        layer, ly = _draw_list_rows(rows, style, W=W, avail=avail, each=each, big=big, numbered=numbered,
+                                    margin=margin, text_x=text_x, width=width)
+        if ly <= avail:
+            break
+        big *= 0.88
+    used = min(ly, avail)
+    img.alpha_composite(layer.crop((0, 0, W, max(1, used))), (0, y + max(0, (avail - used) // 2)))
+
+
+def _draw_list_rows(rows: list[tuple[str, str]], style: typo.TypeStyle, *, W: int, avail: int, each: float, big: float,
+                    numbered: bool, margin: int, text_x: int, width: int) -> tuple[Image.Image, int]:
+    """把列表画到透明图层上，返回 (图层, 实际用掉的高度)；图层留两倍高度以便量出是否超出。"""
     num_f = typo.font("serif", False, int(W * big * 1.25))
     t_f = typo.font(style.title_family if style.id != "bold" else "sans", style.id == "bold", int(W * big))
     s_f = typo.font("sans", False, int(W * big * 0.72))
-    text_x = margin + int(W * 0.12) if numbered else margin
-    width = W - text_x - margin
-    row_gap = int(min(each * 0.18, W * 0.05))
-    layer = Image.new("RGBA", (W, max(1, avail)), (0, 0, 0, 0))
+    row_gap = int(min(each * 0.18, W * 0.05, W * big * 1.1))
+    layer = Image.new("RGBA", (W, max(1, avail * 2)), (0, 0, 0, 0))
     d = ImageDraw.Draw(layer)
     ly = 0
     for i, (title, desc) in enumerate(rows):
@@ -223,8 +247,7 @@ def _list(img: Image.Image, y: int, rows: list[tuple[str, str]], style: typo.Typ
         if i < len(rows) - 1:
             d.line([(text_x, ly - row_gap // 2), (W - margin, ly - row_gap // 2)], fill=(214, 207, 198), width=1)
             ly += row_gap // 2
-    used = min(ly, avail)
-    img.alpha_composite(layer.crop((0, 0, W, max(1, used))), (0, y + max(0, (avail - used) // 2)))
+    return layer, ly
 
 
 def _specs(img: Image.Image, y: int, rows: list[tuple[str, str]], style: typo.TypeStyle, product: str) -> None:
