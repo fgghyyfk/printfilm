@@ -30,6 +30,7 @@ from app.services.ecom_set.jobs import (
 )
 from app.services.ecom_set.planner import plan_set
 from app.services.ecom_set import categories
+from app.services.ecom_set import scenes as scenes_mod
 from app.services.ecom_set.categories import is_styled
 from app.services.ecom_set.styled import build_long_image, create_styled_plan, recolor_set, styled_out
 from app.services.ecom_set.presets import (
@@ -99,6 +100,8 @@ async def get_options(db: AsyncSession) -> dict:
         "categories": [{"id": k, "name": v} for k, v in CATEGORIES.items()],
         "styled": categories.options(),
         "frames": [{"id": k, "name": v[0]} for k, v in categories.FRAMES.items()],
+        "industries": scenes_mod.industries_out(),
+        "category_industry": dict(scenes_mod.CATEGORY_INDUSTRY),
         "scarf_sizes": next(c["sizes"] for c in categories.options() if c["id"] == "scarf"),
         "scarf_counts": next(c["counts"] for c in categories.options() if c["id"] == "scarf"),
         "scarf_materials": next(c["materials"] for c in categories.options() if c["id"] == "scarf"),
@@ -133,6 +136,7 @@ async def create_plan(
     category: str = "general", scarf_size: str | None = None, model_asset_id: int | None = None,
     scarf_material: str | None = None, frame: str | None = None, slots_picked: list[str] | None = None,
     product_id: int | None = None, color_index: int = 0, fabric: tuple[bytes, str] | None = None,
+    scene_key: str | None = None,
 ) -> EcomSet:
     """上传商品图（或从商品库选）→ 计费规划 → 落库套图与各张方案（status=planned）。
 
@@ -144,6 +148,7 @@ async def create_plan(
             db, user, category=category, name=name, notes=notes, count=count, size=scarf_size,
             material=scarf_material, model_asset_id=model_asset_id, frame=frame, slots_picked=slots_picked,
             product_id=product_id, color_index=color_index, data=data, filename=filename, fabric=fabric,
+            scene_key=scene_key,
         )
         return await get_set(db, user, set_id)
     name = clip(name, 60)

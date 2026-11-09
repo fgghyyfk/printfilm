@@ -100,11 +100,15 @@ async def generate_base(db: AsyncSession, ecom: EcomSet, item: EcomSetItem) -> P
     if scarf is not None:
         from app.services.ecom_set import categories
 
+        category = scarf.get("category") or "scarf"
+        if category == "goods" and slot.ref in {"composite", "texture"}:
+            return await generate_goods_base(db, ecom, item, scarf, dest)
         fabric = scarf.get("fabric_url") or ""
         real = scarf.get("real_url") or ""
-        prompt = categories.build_prompt(scarf.get("category") or "scarf", slot_prompt=slot.prompt, scene=item.scene,
+        prompt = categories.build_prompt(category, slot_prompt=slot.prompt, scene=item.scene,
                                          ref=slot.ref, size=scarf.get("size"), material=scarf.get("material"),
-                                         has_fabric=bool(fabric), has_real=bool(real))
+                                         has_fabric=bool(fabric), has_real=bool(real),
+                                         scene_card=categories.scene_of(scarf), blank=item.blank)
         refs = [scarf["model_url"], ecom.product_image_url] if slot.ref == "model" and scarf.get("model_url") \
             else [ecom.product_image_url]
         if real:
@@ -134,9 +138,92 @@ async def generate_base(db: AsyncSession, ecom: EcomSet, item: EcomSetItem) -> P
     if not url:
         raise RuntimeError("生图未返回图片")
     path = await storage.ensure_local_media(url, dest)
-    if scarf is not None:
+    if scarf is not None and (scarf.get("category") or "scarf") != "goods":
         path = await asyncio.to_thread(color_fix, path, product)
     return path
+
+
+# 标品：合成槽位（摆位 → AI 搭景 → 原图贴回）或质地槽位（只拍内容物）
+async def generate_goods_base(db: AsyncSession, ecom: EcomSet, item: EcomSetItem, info: dict, dest: Path) -> Path:
+    from app.services.ark import get_ark
+    from app.services.drama.billing_util import record_seedream_image_usage
+    from app.services.ecom_set import categories, composite
+    from app.services.ecom_set.scenes import bg_rgb, normalize_spec
+
+    settings = get_settings()
+    slot = SLOTS[item.slot]
+    spec = normalize_spec(((info.get("scene") or {}).get("spec")) or {})
+    prompt = categories.build_prompt("goods", slot_prompt=slot.prompt, scene=item.scene, ref=slot.ref, size=None,
+                                     material=info.get("material"), has_fabric=False,
+                                     scene_card=categories.scene_of(info), blank=item.blank)
+    w, h = composite.COMPOSITE_SIZE.get(item.ratio, composite.COMPOSITE_SIZE["3:4"])
+    paths = await _goods_cutout_paths(db, ecom, info, lineup=item.slot == "goods_lineup")
+    use_composite = slot.ref == "composite" and bool(paths)
+    refs: list[str] = []
+    stage_boxes: list = []
+    cutouts: list = []
+    if use_composite:
+        cutouts = [composite.load_cutout(p) for p in paths]
+        height = spec["product_ratio"] * (0.85 if len(cutouts) > 1 else 1.0)
+        base = 0.86 if item.blank != "bottom" else 0.68
+        aspect = float(sum(c.width / c.height for c in cutouts) / len(cutouts))
+        placements = composite.lineup_placements(len(cutouts), height=height, base=base, aspect=aspect,
+                                                 frame_ratio=w / h)
+        stage, stage_boxes = await asyncio.to_thread(composite.place_products, cutouts, placements, (w, h), bg_rgb(spec))
+        stage_path = dest.with_name(dest.stem + "_stage.jpg")
+        await asyncio.to_thread(stage.save, stage_path, "JPEG", quality=94)
+        refs = [await asyncio.to_thread(public_url, stage_path)]
+    elif slot.ref == "composite":
+        # 没有透明抠图：退回「商品参考图」直接生图（商品可能被重绘，前端已提示上传透明底 PNG）
+        refs = [ecom.product_image_url]
+    result = await get_ark().gen_image(prompt, NEGATIVE_PROMPT, refs or None, project_id=0, shot_no=ecom.user_id,
+                                       size=f"{w}x{h}")
+    await record_seedream_image_usage(
+        db, user_id=ecom.user_id, model=settings.model_image, domain="studio", image_result=result,
+        extra_raw={"tool_id": "ecomset", "set_id": ecom.id, "idx": item.idx, "mode": "composite" if use_composite else slot.ref},
+    )
+    url = result.local_url or result.remote_url or ""
+    if not url:
+        raise RuntimeError("生图未返回图片")
+    path = await storage.ensure_local_media(url, dest)
+    if not use_composite:
+        return path
+
+    def _restore() -> Path:
+        from PIL import Image
+
+        with Image.open(path) as src:
+            ai = src.convert("RGB").resize((w, h), Image.Resampling.LANCZOS)
+        found = composite.locate(ai, cutouts, stage_boxes)
+        if not composite.plausible(found, stage_boxes, (w, h)):
+            # 定位不可信：保留 AI 原图（商品由 AI 绘制），不强行贴回造成错位
+            logger.warning("标品贴回定位不可信，保留 AI 原图 set=%s idx=%s found=%s", ecom.id, item.idx, found)
+            return path
+        out = dest.with_name(dest.stem + "_cmp.jpg")
+        composite.restore(ai, cutouts, found).save(out, "JPEG", quality=94)
+        return out
+
+    return await asyncio.to_thread(_restore)
+
+
+# 标品合成要用的透明抠图：多款陈列取商品库里所有带透明底的款（最多 6 款），否则只用当前款
+async def _goods_cutout_paths(db: AsyncSession, ecom: EcomSet, info: dict, *, lineup: bool) -> list[Path]:
+    from app.models_ecom import EcomProduct
+    from app.services.ecom_set.composite import has_alpha
+
+    main = Path(ecom.product_image_path)
+    paths: list[Path] = []
+    if lineup and info.get("product_id"):
+        row = await db.get(EcomProduct, int(info["product_id"]))
+        for color in (row.colors if row else None) or []:
+            p = Path(str(color.get("image_path") or ""))
+            if p.exists() and await asyncio.to_thread(has_alpha, p):
+                paths.append(p)
+            if len(paths) >= 6:
+                break
+    if not paths and main.exists() and await asyncio.to_thread(has_alpha, main):
+        paths = [main]
+    return paths
 
 
 # 「模特上身」套图的附加信息（品类、尺寸、材质、模特、面料）；旧丝巾套图存在 plan.scarf；通用商品返回 None
@@ -171,6 +258,12 @@ def render_flat_item(ecom: EcomSet, item: EcomSetItem) -> Path:
         return scarf_mod.render_size_spec(product, out, size_id=(scarf_info(ecom) or {}).get("size"), copy=copy, size=size)
     if item.slot == "scarf_crop":
         return scarf_mod.render_crop(product, out, copy=copy, size=size)
+    if item.slot.startswith("goods_"):
+        from app.services.ecom_set import composite
+
+        cut = composite.load_cutout(product) if composite.has_alpha(product) else composite.flatten_white(product).convert("RGBA")
+        composite.render_white(cut, size).save(out, "JPEG", quality=94)
+        return out
     return scarf_mod.render_flat(product, out, copy=copy, size=size)
 
 

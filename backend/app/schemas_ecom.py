@@ -41,6 +41,8 @@ class EcomScarfOut(BaseModel):
     color_name: str = ""
     fabric_url: str = ""
     real_url: str = ""
+    scene_key: str = ""
+    scene_name: str = ""
 
 
 class EcomProductOut(BaseModel):
@@ -102,6 +104,8 @@ class EcomSetOptionsOut(BaseModel):
     scarf_materials: list[EcomOptionOut] = []
     styled: list[dict] = []
     frames: list[EcomOptionOut] = []
+    industries: list[EcomOptionOut] = []
+    category_industry: dict[str, str] = {}
     plan_fen: int
     image_fen: int
     billing_enabled: bool

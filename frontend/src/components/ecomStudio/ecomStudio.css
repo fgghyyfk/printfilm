@@ -34,6 +34,8 @@
 .pf-es-slot strong { font-size: 0.85rem; }
 .pf-es-ref { font-size: 0.72rem; color: var(--pf-muted, #888); }
 .pf-es-ref-flat { color: #2f8f5b; }
+.pf-es-ref-composite { color: #a0662e; }
+.pf-es-ref-texture { color: #4f7fa8; }
 .pf-es-tick { position: absolute; top: 8px; right: 8px; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--pf-accent, #ff6a3d); color: #fff; }
 .pf-es-confirm { display: grid; gap: 0.9rem; }
 .pf-es-summary { display: flex; gap: 1rem; align-items: flex-start; }
@@ -61,3 +63,15 @@
 .pf-es-preview img { max-width: min(92vw, 820px); max-height: 78vh; object-fit: contain; border-radius: 10px; cursor: default; }
 .pf-es-preview-bar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; width: min(92vw, 820px); padding: 0.6rem 0.8rem; border-radius: 12px; background: var(--pf-card, #fff); color: var(--pf-ink, #222); }
 .pf-es-preview-close { position: absolute; top: 16px; right: 16px; display: grid; place-items: center; width: 40px; height: 40px; border: 0; border-radius: 50%; background: rgba(255, 255, 255, 0.15); color: #fff; cursor: pointer; }
+/* 选场景：场景卡封面占位、描述单行、详情 */
+.pf-es-card.pf-es-scene { cursor: pointer; }
+.pf-es-scene-cover { display: grid; place-items: center; width: 100%; aspect-ratio: 3 / 4; border-radius: 10px; background: var(--pf-bg); color: rgba(0, 0, 0, 0.55); font-size: 0.9rem; text-align: center; padding: 0.5rem; box-sizing: border-box; }
+.pf-es-scene-cover span { padding: 0.2rem 0.5rem; border-radius: 6px; background: rgba(255, 255, 255, 0.6); }
+.pf-es-scene-none { color: var(--pf-muted, #999); border: 1px dashed var(--pf-line); }
+.pf-es-scene-desc { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.pf-es-scene-detail dl { display: grid; gap: 0.35rem; margin: 0; font-size: 0.88rem; }
+.pf-es-scene-detail dl > div { display: grid; grid-template-columns: 3.5em 1fr; gap: 0.6rem; align-items: center; }
+.pf-es-scene-detail dt { color: var(--pf-muted, #888); }
+.pf-es-scene-detail dd { margin: 0; }
+.pf-es-scene-detail .pf-tool-chips { gap: 0.35rem; }
+.pf-es-tip { padding: 0.5rem 0.7rem; border-radius: 8px; background: color-mix(in srgb, var(--pf-accent, #ff6a3d) 10%, transparent); font-size: 0.82rem; }

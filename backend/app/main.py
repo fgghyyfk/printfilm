@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from app.api import auth, billing, capabilities, creation, projects, tasks, templates, tools
 from app.api import teams, team_billing, team_content, team_edit_locks
 from app.api import project_avatar
-from app.api import ecom_products, ecom_set
+from app.api import ecom_products, ecom_scenes, ecom_set
 from app.api.admin import router as admin_router
 from app.api.drama import router as drama_router
 from app.config import get_settings
@@ -136,6 +136,7 @@ app.include_router(tasks.router, prefix="/api")
 app.include_router(billing.router, prefix="/api")
 app.include_router(ecom_set.router, prefix="/api")
 app.include_router(ecom_products.router, prefix="/api")
+app.include_router(ecom_scenes.router, prefix="/api")
 app.include_router(tools.router, prefix="/api")
 app.include_router(drama_router, prefix="/api")
 app.include_router(teams.router, prefix="/api")
@@ -167,6 +168,7 @@ async def on_startup() -> None:
             _apply_schema_patches,
             _load_startup_model_settings,
             seed_templates,
+            seed_ecom_scenes,
             bootstrap_admins,
             seed_agent_skills,
         )
@@ -489,6 +491,13 @@ def _publish_template_cover(cover: str, log: logging.Logger) -> str:
     except Exception:  # noqa: BLE001
         log.exception("template cover OSS publish failed: %s", local)
         return cover
+
+
+async def seed_ecom_scenes() -> None:
+    """电商图场景库：建表（若缺）并补齐系统场景，不覆盖后台改动。"""
+    from app.services.ecom_set.scenes import ensure_seeded
+
+    await ensure_seeded()
 
 
 async def seed_templates() -> None:

@@ -20,10 +20,11 @@ def _png(path: Path, color=(200, 120, 140)) -> Path:
     return path
 
 
-# 注册表：四个品类都有材质、张数构成与槽位，槽位 key 都已登记
+# 注册表：各品类都有材质、张数构成与槽位，槽位 key 都已登记
 def test_categories_options():
     opts = {c["id"]: c for c in categories.options()}
-    assert set(opts) == {"scarf", "apparel", "jewelry", "bag"}
+    assert set(opts) == {"scarf", "apparel", "jewelry", "bag", "goods"}
+    assert opts["goods"]["uses_model"] is False and opts["goods"]["material_label"] == "包装形态"
     for c in opts.values():
         assert c["materials"] and c["counts"] and c["slots"]
         for keys in c["compositions"].values():

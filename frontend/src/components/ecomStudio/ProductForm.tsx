@@ -77,7 +77,7 @@ export default function ProductForm({ categories, onSaved, onCancel }: Props) {
     </div> : <label className="pf-tool-field"><span>{text('规格（选填）', 'Spec (optional)')}</span>
       <input className="pf-ecom-input" maxLength={20} value={size} disabled={busy} placeholder={text('如：均码 / 45cm 链长 / 中号', 'e.g. One size / 45cm')} onChange={(e) => setSize(e.target.value)} />
     </label>}
-    <div className="pf-tool-field"><span>{text('材质', 'Material')}</span>
+    <div className="pf-tool-field"><span>{text(cat?.material_label || '材质', cat?.uses_model === false ? 'Packaging' : 'Material')}</span>
       <div className="pf-tool-chips">{cat?.materials.map((m) => <button key={m.id} type="button" disabled={busy} className={material === m.id ? 'active' : ''} onClick={() => setMaterial(m.id)}>{m.name}</button>)}</div>
     </div>
     <div className="pf-tool-field"><span>{text('① 设计图（每个颜色一张：平铺设计稿或平铺实拍）', '① Design image per colorway')}</span>
@@ -98,6 +98,7 @@ export default function ProductForm({ categories, onSaved, onCancel }: Props) {
           <input type="file" hidden multiple accept={ECOM_UPLOAD_ACCEPT} disabled={busy} onChange={(e) => { addColorFiles(e.target.files); e.target.value = '' }} />
         </label>
       </div>
+      {category === 'goods' ? <p className="pf-es-tip">{text('请上传透明底 PNG 抠图：商品会原样合成进场景，不会被 AI 重画；普通照片也能用，但商品可能被重绘', 'Upload a transparent-background PNG: the product is composited into the scene as-is, not redrawn by AI. Regular photos work too, but the product may be redrawn.')}</p> : null}
       <span className="pf-muted">{text('设计图越清晰、越正，生成后的图案和颜色越准。每个颜色还可以加一张「实物图」（真实拍摄的商品照片），让真实光线下的颜色和质感更准。', 'Clear designs give accurate patterns. Add a real photo per color for true-to-life color.')}</span>
     </div>
     <div className="pf-tool-field"><span>{text('② 材质实拍（强烈推荐）', '② Fabric close-up (recommended)')}</span>

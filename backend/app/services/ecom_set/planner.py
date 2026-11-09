@@ -29,13 +29,12 @@ VISION_MAX_EDGE = 1024
 
 # 把商品图缩到长边 ≤1024 并转成 JPEG data URI，节省视觉 token
 def image_data_uri(path: Path) -> str:
-    from PIL import Image, ImageOps
+    from app.services.ecom_set.composite import flatten_white
 
-    with Image.open(path) as im:
-        im = ImageOps.exif_transpose(im).convert("RGB")
-        im.thumbnail((VISION_MAX_EDGE, VISION_MAX_EDGE))
-        buf = io.BytesIO()
-        im.save(buf, format="JPEG", quality=88)
+    im = flatten_white(path)  # 透明底 PNG 铺白，避免透明区域变黑影响视觉识别
+    im.thumbnail((VISION_MAX_EDGE, VISION_MAX_EDGE))
+    buf = io.BytesIO()
+    im.save(buf, format="JPEG", quality=88)
     return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
 
 

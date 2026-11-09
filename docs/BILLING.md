@@ -275,3 +275,5 @@ EPAY_RETURN_URL=https://your-site.example.com/pricing?paid=1
 ### 电商图（/ecom）补充
 - 生成模特（`/api/tools/models/generate`）：`run_billed_ephemeral(domain=studio, tool_image)`，按 2K 张价收一次
 - 同款换色（`/{id}/recolor`）沿用原方案，不收规划费；生成时按张收费
+
+> 电商图「日化/标品场景图」：合成槽位与普通生图一样按张收费（`ecom_set_image`，按 2K 张价预扣）；实际按 1.5K 出图，上游成本约为 2K 的一半。白底主图由程序渲染，免费。场景库浏览与选择免费。

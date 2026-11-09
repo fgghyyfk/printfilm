@@ -43,7 +43,8 @@ class Slot:
     ratio: str
     blank: str
     is_main: bool = False
-    # 底图参考：product 商品图 | model 固定模特 + 商品图（丝巾）| flat 不调模型、直接用商品图排版
+    # 底图参考：product 商品图 | model 固定模特 + 商品图 | flat 不调模型、直接用商品图排版
+    # | composite 标品：按比例摆好商品抠图 → AI 搭景 → 原图贴回 | texture 只拍内容物质地（不带商品）
     ref: str = "product"
 
 
@@ -199,6 +200,27 @@ GENERIC_SLOTS: dict[str, Slot] = {s.key: s for s in (
 )}
 SLOTS.update(GENERIC_SLOTS)
 
+
+def _c(key: str, label: str, prompt: str, layout: str = "title_sub", blank: str = "top", main: bool = False) -> Slot:
+    """标品合成槽位：商品按比例摆好后让 AI 搭景，再贴回品牌原图。"""
+    return Slot(key, label, prompt, layout, "3:4", blank, is_main=main, ref="composite")
+
+
+# 日化 / 标品槽位
+GOODS_SLOTS: dict[str, Slot] = {s.key: s for s in (
+    _c("goods_cover", "封面·场景", "高级商品静物主视觉，商品是画面视觉中心", "title_sub", "top", True),
+    Slot("goods_white", "白底主图", "纯白背景商品图", "none", "3:4", "none", is_main=True, ref="flat"),
+    _c("goods_scene", "场景主图", "商品在场景中的展示图，构图稳定，主体突出", "title_corner", "top", True),
+    _c("goods_selling", "卖点图", "突出商品核心卖点的氛围图，构图简洁", "title_bullets", "top"),
+    _c("goods_selling2", "卖点图二", "从另一个角度展示商品的氛围图，与卖点图同一场景但道具与机位有变化", "title_sub", "top"),
+    Slot("goods_texture", "质地特写",
+         "商品内容物的质地微距特写：一抹膏体或液体自然涂抹在干净的浅色背景或手背上，质地细腻真实，浅景深",
+         "label_bar", "3:4", "bottom", ref="texture"),
+    _c("goods_usage", "使用场景", "商品放在真实的使用环境里，生活感强，商品清晰", "title_corner", "top"),
+    _c("goods_lineup", "多款陈列", "多款商品一字排开陈列，整齐有序", "title_sub", "top"),
+)}
+SLOTS.update(GOODS_SLOTS)
+
 SCARF_COMPOSITION: dict[int, tuple[str, ...]] = {
     6: ("scarf_cover", "scarf_hold", "scarf_texture", "scarf_knot", "scarf_size", "scarf_back"),
     8: ("scarf_cover", "scarf_hold", "scarf_texture", "scarf_knot", "scarf_size", "scarf_closeup", "scarf_long",
@@ -206,7 +228,8 @@ SCARF_COMPOSITION: dict[int, tuple[str, ...]] = {
     10: ("scarf_cover", "scarf_hold", "scarf_texture", "scarf_knot", "scarf_size", "scarf_crop", "scarf_long",
          "scarf_back", "scarf_street", "scarf_flat"),
 }
-CATEGORIES = {"general": "通用商品", "scarf": "丝巾详情页", "apparel": "服饰上身", "jewelry": "首饰佩戴", "bag": "包袋上身"}
+CATEGORIES = {"general": "通用商品", "scarf": "丝巾详情页", "apparel": "服饰上身", "jewelry": "首饰佩戴", "bag": "包袋上身",
+              "goods": "日化/标品场景图"}
 
 
 # 规整品类，未知回落通用
@@ -267,7 +290,7 @@ def slots_for_count(count: int) -> list[Slot]:
 
 # 按平台与槽位得到最终输出像素 (宽, 高)
 def output_size(platform: str, slot_key: str) -> tuple[int, int]:
-    if slot_key.split("_", 1)[0] in {"scarf", "apparel", "jewelry", "bag"}:
+    if slot_key.split("_", 1)[0] in {"scarf", "apparel", "jewelry", "bag", "goods"}:
         from app.services.ecom_set.categories import frame_size
 
         return frame_size(platform)

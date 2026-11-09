@@ -8,21 +8,24 @@ import BillingErrorNotice from '../components/billing/BillingErrorNotice'
 import ProductStep from '../components/ecomStudio/ProductStep'
 import ModelStep from '../components/ecomStudio/ModelStep'
 import SlotStep from '../components/ecomStudio/SlotStep'
+import SceneStep from '../components/ecomStudio/SceneStep'
 import ProductsTab from '../components/ecomStudio/ProductsTab'
 import EcomSetBatches from '../components/ecomSet/EcomSetBatches'
 import { getEcomSetOptions, planEcomSet, type EcomSetOptions } from '../api/ecomSet'
 import type { EcomProduct } from '../api/ecomProducts'
 import { resolveToolMediaUrl } from '../api/tools'
 import { formatFen } from '../lib/ecomSet'
+import { defaultSceneIndustry, loadScenePref, saveScenePref } from '../lib/ecomScenePrefs'
 import { useGenerationText } from '../lib/generationMedia'
 import '../styles/tools-base.css'
 import '../components/ecomSet/ecomSet.css'
 import '../components/ecomStudio/ecomStudio.css'
 
 type Tab = 'make' | 'products' | 'history'
+type StepKey = 'product' | 'scene' | 'model' | 'slots' | 'confirm'
 
 /**
- * 电商图：四步出图（选商品 → 选模特 → 选要哪些图 → 确认），全程不用写提示词。
+ * 电商图：分步出图（选商品 → 选场景 →〔选模特，日化标品跳过〕→ 选要哪些图 → 确认），全程不用写提示词。
  * 确认后生成方案，进入套图页（/daihuo?id=）改文案、生成、下载 ZIP / 长图、同款换色。
  */
 export default function EcomStudioPage() {
@@ -32,7 +35,7 @@ export default function EcomStudioPage() {
   const [options, setOptions] = useState<EcomSetOptions | null>(null)
   const [optionsError, setOptionsError] = useState('')
   const [tab, setTab] = useState<Tab>('make')
-  /* 四步选择 */
+  /* 分步选择 */
   const [step, setStep] = useState(0)
   const [product, setProduct] = useState<EcomProduct | null>(null)
   const [colorIndex, setColorIndex] = useState(0)
@@ -40,6 +43,9 @@ export default function EcomStudioPage() {
   const [frame, setFrame] = useState('taobao_34')
   const [slots, setSlots] = useState<string[]>([])
   const [notes, setNotes] = useState('')
+  /* 场景：行业标签与所选场景（空 key = 不指定场景） */
+  const [industry, setIndustry] = useState('')
+  const [scene, setScene] = useState<{ key: string; name: string } | null>(null)
   /* 提交 */
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -50,19 +56,43 @@ export default function EcomStudioPage() {
 
   const categories = useMemo(() => options?.styled || [], [options])
   const category = categories.find((c) => c.id === product?.category) || categories[0]
-  const needsModel = slots.some((k) => category?.slots.find((s) => s.key === k)?.ref === 'model')
+  const usesModel = category?.uses_model !== false
+  const needsModel = usesModel && slots.some((k) => category?.slots.find((s) => s.key === k)?.ref === 'model')
+  const isGoods = category?.id === 'goods'
+  const industries = useMemo(() => options?.industries || [], [options])
   const billable = slots.filter((k) => !category?.slots.find((s) => s.key === k)?.free).length
   const total = (options?.plan_fen || 0) + billable * (options?.image_fen || 0)
 
-  // 选商品：换品类时默认勾上该品类的默认整套
+  // 选商品：换品类时默认勾上该品类的默认整套，并恢复该品类上次的行业与场景
   function pickProduct(p: EcomProduct, ci: number) {
     const changed = p.category !== product?.category
     setProduct(p); setColorIndex(ci)
     const cat = categories.find((c) => c.id === p.category)
     if (cat && (changed || !slots.length)) setSlots(cat.compositions[String(cat.default_count)] || [])
+    if (changed || !industry) {
+      const pref = loadScenePref(p.category)
+      setIndustry(defaultSceneIndustry(p.category, industries, options?.category_industry))
+      setScene(pref?.sceneKey ? { key: pref.sceneKey, name: pref.sceneName } : null)
+    }
   }
 
-  const canNext = [Boolean(product), !needsModel || Boolean(modelId), slots.length > 0, true][step]
+  // 切换行业：记住选择
+  function pickIndustry(id: string) {
+    setIndustry(id)
+    if (product) saveScenePref(product.category, { industry: id, sceneKey: scene?.key || '', sceneName: scene?.name || '' })
+  }
+
+  // 选场景：记住选择（null = 不指定场景）
+  function pickScene(next: { key: string; name: string } | null) {
+    setScene(next)
+    if (product) saveScenePref(product.category, { industry, sceneKey: next?.key || '', sceneName: next?.name || '' })
+  }
+
+  /* 步骤流：不用模特的品类（日化标品）跳过选模特 */
+  const stepKeys: StepKey[] = usesModel ? ['product', 'scene', 'model', 'slots', 'confirm'] : ['product', 'scene', 'slots', 'confirm']
+  const stepKey = stepKeys[Math.min(step, stepKeys.length - 1)]
+  const lastStep = stepKeys.length - 1
+  const canNext = { product: Boolean(product), scene: true, model: !needsModel || Boolean(modelId), slots: slots.length > 0, confirm: true }[stepKey]
 
   // 生成方案并进入套图页
   async function submit() {
@@ -72,22 +102,25 @@ export default function EcomStudioPage() {
       const set = await planEcomSet({
         name: product.name, platform: '', style: 'minimal', count: slots.length, notes: notes.trim(),
         category: product.category, productId: product.id, colorIndex, modelAssetId: needsModel ? modelId : null,
-        frame, slots,
+        frame, slots, sceneKey: scene?.key || '',
       })
       nav(`/daihuo?id=${set.id}`)
     } catch (err) { setError(err instanceof Error ? err.message : text('生成方案失败', 'Planning failed')) }
     finally { setBusy(false) }
   }
 
-  const steps = [text('选商品', 'Product'), text('选模特', 'Model'), text('选图', 'Images'), text('确认', 'Confirm')]
-    .map((label, i) => ({ key: String(i), label }))
+  const stepLabels: Record<StepKey, string> = {
+    product: text('选商品', 'Product'), scene: text('选场景', 'Scene'), model: text('选模特', 'Model'),
+    slots: text('选图', 'Images'), confirm: text('确认', 'Confirm'),
+  }
+  const steps = stepKeys.map((key) => ({ key, label: stepLabels[key] }))
 
   return <AppShell active="image">
     <div className="pf-tool-detail pf-ecom-page pf-es-page">
       <div className="pf-ecom-head">
         <div>
           <h1>{text('电商图', 'Product images')}</h1>
-          <p className="pf-muted">{text('上传商品，选模特和要的图，一键出整套详情页或单张上身图，不用写提示词。', 'Pick product, model and shots — no prompts needed.')}</p>
+          <p className="pf-muted">{text('上传商品，选场景、模特和要的图，一键出整套详情页或单张上身图，不用写提示词。', 'Pick product, scene, model and shots — no prompts needed.')}</p>
         </div>
         <Link to="/tools/image" className="pf-es-link">{text('高级生成（自己写提示词）', 'Advanced generation')} <ArrowRight size={14} /></Link>
       </div>
@@ -101,31 +134,38 @@ export default function EcomStudioPage() {
           : tab === 'history' ? <EcomSetBatches onOpen={(id) => nav(`/daihuo?id=${id}`)} />
             : <>
               <div className="pf-ecom-steps"><Stepper steps={steps} current={step} /></div>
-              {step === 0 ? <ProductStep categories={categories} product={product} colorIndex={colorIndex} onPick={pickProduct} /> : null}
-              {step === 1 ? <ModelStep modelId={modelId} onPick={setModelId} imageFen={options.image_fen} billing={options.billing_enabled} /> : null}
-              {step === 2 && category ? <SlotStep category={category} frames={options.frames || []} frame={frame} slots={slots} onFrame={setFrame} onSlots={setSlots} /> : null}
-              {step === 3 && product && category ? <div className="pf-tool-panel pf-es-confirm">
+              {stepKey === 'product' ? <ProductStep categories={categories} product={product} colorIndex={colorIndex} onPick={pickProduct} /> : null}
+              {stepKey === 'scene' && product ? <SceneStep industries={industries} industry={industry || industries[0]?.id || 'daily'}
+                onIndustry={pickIndustry} sceneKey={scene?.key || ''} onPick={pickScene} /> : null}
+              {stepKey === 'model' ? <ModelStep modelId={modelId} onPick={setModelId} imageFen={options.image_fen} billing={options.billing_enabled} /> : null}
+              {stepKey === 'slots' && category ? <SlotStep category={category} frames={options.frames || []} frame={frame} slots={slots} onFrame={setFrame} onSlots={setSlots} /> : null}
+              {stepKey === 'confirm' && product && category ? <div className="pf-tool-panel pf-es-confirm">
                 <div className="pf-es-summary">
                   <img src={resolveToolMediaUrl(product.colors[colorIndex]?.image_url)} alt="" />
                   <dl>
                     <dt>{text('商品', 'Product')}</dt><dd>{product.name} · {product.colors[colorIndex]?.name} · {[category.name, product.material_label, product.size].filter(Boolean).join(' · ')}</dd>
+                    <dt>{text('场景', 'Scene')}</dt><dd>{scene ? scene.name || scene.key : text('不指定（按品类默认画面）', 'Category default')}</dd>
                     <dt>{text('画幅', 'Format')}</dt><dd>{options.frames?.find((f) => f.id === frame)?.name}</dd>
                     <dt>{text('张数', 'Images')}</dt><dd>{text(`${slots.length} 张（${slots.length - billable} 张免费）`, `${slots.length}`)}</dd>
-                    <dt>{text('模特', 'Model')}</dt><dd>{needsModel ? text('已选', 'Selected') : text('不需要', 'Not needed')}</dd>
+                    {usesModel ? <><dt>{text('模特', 'Model')}</dt><dd>{needsModel ? text('已选', 'Selected') : text('不需要', 'Not needed')}</dd></> : null}
                   </dl>
                 </div>
                 <div className="pf-es-checklist">
                   <strong>{text('素材检查', 'Inputs')}</strong>
-                  {[
+                  {(isGoods ? [
+                    { ok: Boolean(product.colors[colorIndex]?.image_url), label: text('透明底商品图', 'Transparent product PNG'), tip: text('商品会原样合成进场景；普通照片也能用，但商品可能被重绘', 'Composited as-is into the scene') },
+                    { ok: Boolean(product.material_label), label: text('包装形态', 'Packaging'), tip: text('决定台面摆放与道具比例，可到「我的商品」补上', 'Set it in My products') },
+                    { ok: Boolean(product.notes.trim() || notes.trim()), label: text('成分与卖点', 'Selling points'), tip: text('没有时文案会比较泛，建议写核心成分、功效、规格', 'Add ingredients & benefits for better copy') },
+                  ] : [
                     { ok: Boolean(product.colors[colorIndex]?.image_url), label: text('设计图', 'Design image'), tip: text('出图的图案和颜色以它为准', 'Pattern & color source') },
                     { ok: Boolean(product.colors[colorIndex]?.real_image_url), label: text('实物图（选填）', 'Real photo (optional)'), tip: text('有实物图时，真实光线下的颜色和质感更准；可到「我的商品」给这个颜色加一张', 'Add one in My products for true color') },
                     { ok: Boolean(product.fabric_image_url), label: text('材质实拍', 'Fabric photo'), tip: text('没有时质感靠文字描述，容易偏；建议到「我的商品」补一张近拍', 'Add a close-up in My products for accurate texture') },
                     { ok: !needsModel || Boolean(modelId), label: text('模特图', 'Model'), tip: text('所有上身图都以这位模特为原型', 'Every on-model shot uses this model') },
                     { ok: Boolean(product.notes.trim() || notes.trim()), label: text('成分与卖点', 'Selling points'), tip: text('没有时文案会比较泛，建议写成分、工艺', 'Add composition & craft for better copy') },
-                  ].map((row) => <div key={row.label} className={`pf-es-check-row${row.ok ? ' ok' : ''}`}>
+                  ]).map((row) => <div key={row.label} className={`pf-es-check-row${row.ok ? ' ok' : ''}`}>
                     {row.ok ? <CheckCircle2 size={16} /> : <CircleAlert size={16} />}<span>{row.label}</span><small className="pf-muted">{row.ok ? text('已就绪', 'Ready') : row.tip}</small>
                   </div>)}
-                  {!product.fabric_image_url ? <button type="button" className="pf-es-link" onClick={() => setTab('products')}>{text('去「我的商品」补材质实拍 →', 'Add fabric photo →')}</button> : null}
+                  {!isGoods && !product.fabric_image_url ? <button type="button" className="pf-es-link" onClick={() => setTab('products')}>{text('去「我的商品」补材质实拍 →', 'Add fabric photo →')}</button> : null}
                 </div>
                 <label className="pf-tool-field"><span>{text('这次想强调的卖点（选填）', 'Extra notes (optional)')}</span>
                   <textarea rows={2} maxLength={300} value={notes} placeholder={text('留空则用商品资料里的成分与卖点', 'Defaults to product notes')} onChange={(e) => setNotes(e.target.value)} />
@@ -136,7 +176,7 @@ export default function EcomStudioPage() {
               </div> : null}
               <div className="pf-es-actions pf-es-nav">
                 <Button variant="outline" disabled={step === 0 || busy} onClick={() => setStep((s) => s - 1)}><ArrowLeft size={14} />{text('上一步', 'Back')}</Button>
-                {step < 3 ? <Button variant="lime" disabled={!canNext} onClick={() => setStep((s) => s + 1)}>{text('下一步', 'Next')}<ArrowRight size={14} /></Button>
+                {step < lastStep ? <Button variant="lime" disabled={!canNext} onClick={() => setStep((s) => s + 1)}>{text('下一步', 'Next')}<ArrowRight size={14} /></Button>
                   : <Button variant="lime" disabled={busy} onClick={() => void submit()}>{busy ? <><Loader2 size={16} className="pf-tool-spin" />{text('正在出方案，约 20 秒…', 'Planning…')}</> : <><Wand2 size={16} />{text('生成方案', 'Create plan')}</>}</Button>}
               </div>
             </>}

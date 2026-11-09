@@ -90,7 +90,24 @@ BAG = Category(
     },
     default_material="cowhide",
 )
-GENERIC: dict[str, Category] = {c.id: c for c in (APPAREL, JEWELRY, BAG)}
+# 日化 / 标品：不用模特，商品用品牌抠图原样合成进场景；「材质」改作包装形态（决定摆放方式与比例）
+GOODS = Category(
+    "goods", "日化/标品", "",
+    materials={
+        "tube": ("软管", "软管包装，管盖朝下竖立摆放", ""),
+        "bottle": ("瓶装", "瓶装（泵头或旋盖），竖立摆放", ""),
+        "jar": ("罐装", "圆罐包装，平放在台面上", ""),
+        "box": ("盒装", "盒装包装，正面朝向镜头摆放", ""),
+        "pouch": ("袋装", "袋装包装，正面朝向镜头立放", ""),
+    },
+    compositions={
+        6: ("goods_cover", "goods_white", "goods_scene", "goods_selling", "goods_texture", "goods_usage"),
+        8: ("goods_cover", "goods_white", "goods_scene", "goods_selling", "goods_selling2", "goods_texture",
+            "goods_usage", "goods_lineup"),
+    },
+    default_material="tube",
+)
+GENERIC: dict[str, Category] = {c.id: c for c in (APPAREL, JEWELRY, BAG, GOODS)}
 STYLED_IDS = ("scarf", *GENERIC)
 
 
@@ -168,24 +185,60 @@ def slot_keys(category: str) -> list[str]:
     return [*longest, *rest]
 
 
+# 标品合成：参考图是已经按比例摆好的商品
+COMPOSITE_PREFIX = (
+    "以参考图中已经摆放好的商品为主体，严格保持每件商品的位置、大小、形状、颜色和包装上的文字完全不变，"
+    "不要改动、不要新增或复制任何商品；只在商品周围搭建背景、台面、道具与光影"
+)
+COMPOSITE_LOCK = "商业静物摄影，真实质感，浅景深；画面中不要出现任何额外文字、字母、logo、水印；不要出现其他品牌的商品"
+TEXTURE_PREFIX = "画面中不要出现任何包装或商品容器，只表现商品内容物本身"
+BLANK_HINT = {"top": "画面上方约 30% 是干净的背景留白，用于排版文字", "bottom": "画面下方约 25% 是干净的留白，用于排版文字"}
+
+
+def scene_of(info: dict | None) -> str:
+    """从套图信息里取场景卡描述（没选场景时为空）。"""
+    from app.services.ecom_set.scenes import scene_text
+
+    scene = (info or {}).get("scene") or {}
+    return scene_text(scene.get("spec") or {}) if isinstance(scene, dict) else ""
+
+
 REAL_HINT = ("商品设计图后面的一张是实物照片：商品在真实光线下的颜色、质感、厚薄与垂坠以它为准；"
              "图案和细节仍以设计图为准。")
 
 
 def build_prompt(category: str, *, slot_prompt: str, scene: str, ref: str, size: str | None,
-                 material: str | None, has_fabric: bool, has_real: bool = False) -> str:
-    """拼装底图提示词。"""
+                 material: str | None, has_fabric: bool, has_real: bool = False, scene_card: str = "",
+                 blank: str = "none") -> str:
+    """拼装底图提示词。scene 为本张画面描述；场景卡描述由 scene_card 传入（标品与纯商品槽位使用）。"""
+    if category == "goods":
+        return build_goods_prompt(slot_prompt=slot_prompt, scene=scene, ref=ref, scene_card=scene_card,
+                                  blank=blank, material=material)
     if category == "scarf":
         text = scarf_mod.build_prompt(slot_prompt=slot_prompt, scene=scene, ref=ref, size=size, material=material)
     else:
         cat = GENERIC[category]
         _, texture, look = cat.materials[normalize_material(category, material)]
         prefix = GENERIC_MODEL_PREFIX if ref == "model" else GENERIC_PRODUCT_PREFIX
-        parts = [prefix, slot_prompt, scene, look if ref == "model" else "", f"材质：{texture}", GENERIC_LOCK]
+        # 纯商品槽位跟随场景卡；模特槽位沿用各自的拍摄地点
+        card = scene_card if ref == "product" else ""
+        parts = [prefix, slot_prompt, card, scene, look if ref == "model" else "", f"材质：{texture}", GENERIC_LOCK]
         text = "。".join(p.strip("。 ") for p in parts if p and p.strip())
     if has_real:
         text = f"{text}。{REAL_HINT}"
     return f"{text}。{FABRIC_HINT}" if has_fabric else text
+
+
+def build_goods_prompt(*, slot_prompt: str, scene: str, ref: str, scene_card: str, blank: str,
+                       material: str | None) -> str:
+    """标品底图提示词：合成槽位围绕已摆好的商品搭景；质地槽位只拍内容物。"""
+    if ref == "texture":
+        parts = [TEXTURE_PREFIX, slot_prompt, scene, scene_card, BLANK_HINT.get(blank, ""), COMPOSITE_LOCK]
+    else:
+        _, form, _ = GOODS.materials[normalize_material("goods", material)]
+        parts = [COMPOSITE_PREFIX, f"商品摆放：{form}", slot_prompt, scene_card, scene,
+                 BLANK_HINT.get(blank, ""), COMPOSITE_LOCK]
+    return "。".join(p.strip("。 ") for p in parts if p and p.strip())
 
 
 def plan_notes(category: str, *, size: str | None, material: str | None, notes: str) -> str:
@@ -194,7 +247,8 @@ def plan_notes(category: str, *, size: str | None, material: str | None, notes: 
         return scarf_mod.plan_notes(size, notes, material)
     cat = GENERIC[category]
     _, texture, _ = cat.materials[normalize_material(category, material)]
-    head = f"品类：{cat.name}；材质：{material_label(category, material)}（{texture}）"
+    kind = "包装" if category == "goods" else "材质"
+    head = f"品类：{cat.name}；{kind}：{material_label(category, material)}（{texture}）"
     if size:
         head += f"；规格：{size}"
     return f"{head}。{notes.strip()}" if notes.strip() else head
@@ -205,8 +259,9 @@ def cover_copy(category: str, *, name: str, size: str | None, material: str | No
     if category == "scarf":
         return scarf_mod.cover_copy(name, size, material)
     base = (name or "").strip("《》 ")
-    return {"title": base[:12], "subtitle": f"{material_label(category, material)} {GENERIC[category].noun}"[:16],
-            "bullets": []}
+    noun = GENERIC[category].noun
+    sub = f"{material_label(category, material)} {noun}".strip() if noun else ""
+    return {"title": base[:12], "subtitle": sub[:16], "bullets": []}
 
 
 def options() -> list[dict]:
@@ -232,5 +287,7 @@ def options() -> list[dict]:
             "compositions": {str(n): list(composition(cid, n)) for n in counts(cid)},
             "slots": [{"key": k, "label": SLOTS[k].label, "ref": SLOTS[k].ref, "free": SLOTS[k].ref == "flat"}
                       for k in slot_keys(cid)],
+            "uses_model": any(SLOTS[k].ref == "model" for k in slot_keys(cid)),
+            "material_label": "包装形态" if cid == "goods" else "材质",
         })
     return out

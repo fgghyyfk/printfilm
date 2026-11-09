@@ -75,6 +75,7 @@ async def create_plan(
     product_id: int | None = Form(default=None, ge=1, description="「我的商品」id；传入时用其颜色款图片与资料"),
     color_index: int = Form(0, ge=0, le=20, description="颜色款序号（从 0 开始）"),
     fabric: UploadFile | None = File(default=None, description="面料/材质实拍图（可选，作为质感参考）"),
+    scene_key: str = Form("", max_length=64, description="场景库里的场景 key；留空用品类默认场景"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -86,7 +87,7 @@ async def create_plan(
         platform=platform, style=style, count=count, notes=notes,
         category=category, scarf_size=scarf_size or None, model_asset_id=model_asset_id,
         scarf_material=scarf_material or None, frame=frame or None, slots_picked=picked,
-        product_id=product_id, color_index=color_index, fabric=fabric_upload,
+        product_id=product_id, color_index=color_index, fabric=fabric_upload, scene_key=scene_key or None,
     ))
     return await _out(db, ecom)
 

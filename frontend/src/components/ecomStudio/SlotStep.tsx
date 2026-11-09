@@ -1,4 +1,4 @@
-import { Check, ImageIcon, Shirt, UserRound } from 'lucide-react'
+import { Check, Droplet, ImageIcon, Layers, Shirt, UserRound } from 'lucide-react'
 import type { EcomStyledCategory } from '../../api/ecomSet'
 import { useGenerationText } from '../../lib/generationMedia'
 
@@ -25,8 +25,11 @@ export default function SlotStep({ category, frames, frame, slots, onFrame, onSl
     onSlots(category.slots.map((s) => s.key).filter((k) => next.includes(k)))
   }
 
-  const refLabel = { model: text('模特上身', 'On model'), product: text('商品特写', 'Product'), flat: text('免费', 'Free') }
-  const RefIcon = { model: UserRound, product: Shirt, flat: ImageIcon }
+  const refLabel = {
+    model: text('模特上身', 'On model'), product: text('商品特写', 'Product'), flat: text('免费', 'Free'),
+    composite: text('原图合成', 'Composite'), texture: text('质地特写', 'Texture'),
+  }
+  const RefIcon = { model: UserRound, product: Shirt, flat: ImageIcon, composite: Layers, texture: Droplet }
 
   return <div className="pf-es-step">
     <div className="pf-tool-field"><span>{text('画幅', 'Format')}</span>
@@ -51,6 +54,8 @@ export default function SlotStep({ category, frames, frame, slots, onFrame, onSl
         </button>
       })}
     </div>
-    <p className="pf-muted">{text(`已选 ${slots.length} 张。只要一张上身图就只勾一张；「免费」的直接用你的商品图排版，不调用 AI。`, `${slots.length} selected.`)}</p>
+    <p className="pf-muted">{category.uses_model === false
+      ? text(`已选 ${slots.length} 张。「原图合成」由 AI 按所选场景搭景，商品用你上传的透明底原图贴回，包装文字不会被改；「免费」的直接排版，不调用 AI。`, `${slots.length} selected.`)
+      : text(`已选 ${slots.length} 张。只要一张上身图就只勾一张；「免费」的直接用你的商品图排版，不调用 AI。`, `${slots.length} selected.`)}</p>
   </div>
 }

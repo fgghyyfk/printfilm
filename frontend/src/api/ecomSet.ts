@@ -62,6 +62,10 @@ export interface EcomSetOptions {
   scarf_materials?: { id: string; name: string }[]
   styled?: EcomStyledCategory[]
   frames?: { id: string; name: string }[]
+  /** 场景库行业标签 */
+  industries?: { id: string; name: string }[]
+  /** 品类默认打开的行业，如 goods → daily */
+  category_industry?: Record<string, string>
   plan_fen: number
   image_fen: number
   billing_enabled: boolean
@@ -91,6 +95,9 @@ export type EcomStyledInfo = {
   color_name?: string
   fabric_url?: string
   real_url?: string
+  /** 场景库场景（未指定为空） */
+  scene_key?: string | null
+  scene_name?: string | null
 }
 
 /** 品类选项（来自 /options 的 styled） */
@@ -104,7 +111,11 @@ export type EcomStyledCategory = {
   counts: number[]
   default_count: number
   compositions: Record<string, string[]>
-  slots: { key: string; label: string; ref: 'model' | 'product' | 'flat'; free: boolean }[]
+  slots: { key: string; label: string; ref: 'model' | 'product' | 'flat' | 'composite' | 'texture'; free: boolean }[]
+  /** 是否需要模特（goods 日化标品为 false，跳过选模特） */
+  uses_model?: boolean
+  /** 材质栏标签：goods 为「包装形态」，其余为「材质」 */
+  material_label?: string
 }
 
 export type EcomSetPlanPayload = {
@@ -125,6 +136,8 @@ export type EcomSetPlanPayload = {
   productId?: number | null
   colorIndex?: number
   fabric?: File | null
+  /** 场景库场景 key；留空 = 按品类默认画面 */
+  sceneKey?: string
 }
 
 /** 方案编辑：单张可改字段 */
@@ -180,6 +193,7 @@ export function planEcomSet(payload: EcomSetPlanPayload): Promise<EcomSet> {
     body.append('color_index', String(payload.colorIndex || 0))
   }
   if (payload.fabric) body.append('fabric', payload.fabric)
+  if (payload.sceneKey) body.append('scene_key', payload.sceneKey)
   return requestEcom('/plan', '方案生成失败', { method: 'POST', body }, true)
 }
 

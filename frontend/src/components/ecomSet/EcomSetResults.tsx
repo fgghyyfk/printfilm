@@ -3,6 +3,7 @@ import { AlertCircle, Download, Loader2, Pencil, RefreshCw } from 'lucide-react'
 import type { EcomSet, EcomSetItem } from '../../api/ecomSet'
 import { resolveToolMediaUrl } from '../../api/tools'
 import { useI18n } from '../../i18n'
+import { useGenerationText } from '../../lib/generationMedia'
 import { canDownloadSet, canEditCopy, countEcomItems, isItemBusy, ratioToCss } from '../../lib/ecomSet'
 import BillingErrorNotice from '../billing/BillingErrorNotice'
 import Button from '../ui/Button'
@@ -28,6 +29,8 @@ type Props = {
 export default function EcomSetResults(props: Props) {
   const { set, busyIdx, downloading, error, onDownload, onNew, extraActions } = props
   const { t } = useI18n()
+  const text = useGenerationText()
+  const sceneName = set.styled?.scene_name || ''
   const progress = countEcomItems(set.items)
   const generating = set.status === 'generating'
 
@@ -41,6 +44,7 @@ export default function EcomSetResults(props: Props) {
             {progress.failed ? ` · ${t('ecomSet.result.failedCount', { count: progress.failed })}` : ''}
             {generating ? ` · ${t('ecomSet.result.waitHint')}` : ''}
           </p>
+          {sceneName ? <p className="pf-muted">{text(`场景：${sceneName}`, `Scene: ${sceneName}`)}</p> : null}
         </div>
         <div className="pf-ecom-actions">
           <Button variant="text" size="sm" onClick={onNew}>

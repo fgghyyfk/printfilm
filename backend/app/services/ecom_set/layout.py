@@ -265,9 +265,9 @@ def mock_base(product_path: Path, out_path: Path, *, ratio: str, seed: str) -> P
         t = yy / H
         draw.line([(0, yy), (W, yy)], fill=tuple(int(a + (b - a) * t) for a, b in zip(top_c, bottom_c)))
     with Image.open(product_path) as p:
-        prod = ImageOps.exif_transpose(p).convert("RGB")
+        prod = ImageOps.exif_transpose(p).convert("RGBA")  # 透明底抠图按 alpha 贴，避免出现白框/黑框
         prod.thumbnail((int(W * 0.6), int(H * 0.5)))
-    bg.paste(prod, ((W - prod.width) // 2, int(H * 0.42)))
+    bg.paste(prod, ((W - prod.width) // 2, int(H * 0.42)), prod.getchannel("A"))
     out_path.parent.mkdir(parents=True, exist_ok=True)
     bg.save(out_path, format="JPEG", quality=90)
     return out_path

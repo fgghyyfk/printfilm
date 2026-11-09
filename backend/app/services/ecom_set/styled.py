@@ -37,6 +37,26 @@ async def _pick_model(db: AsyncSession, user: User, model_asset_id: int | None, 
     return {"model_asset_id": model.id, "model_name": model.name or "", "model_url": model.url or model.cover or ""}
 
 
+async def _pick_scene(db: AsyncSession, user: User, scene_key: str | None) -> dict | None:
+    """取场景并做快照；没选场景返回 None。"""
+    from app.services.ecom_set import scenes
+
+    key = (scene_key or "").strip()
+    if not key:
+        return None
+    return scenes.snapshot(await scenes.get_scene(db, user.id, key))
+
+
+def _scene_note(scene: dict | None) -> str:
+    """给规划模型的场景约束：每张图只写机位、构图与道具变化，背景、台面、光线沿用同一场景。"""
+    if not scene:
+        return ""
+    from app.services.ecom_set.scenes import scene_text
+
+    return (f"整套图统一使用「{scene['name']}」场景（{scene_text(scene.get('spec') or {})}）。"
+            "每张图的 scene 只写机位、构图和道具的变化，背景、台面、光线与色调保持这一场景")
+
+
 async def _resolve_images(db: AsyncSession, user: User, *, product_id: int | None, color_index: int,
                           data: bytes | None, filename: str, fabric: tuple[bytes, str] | None) -> dict:
     """确定商品图与面料图：优先商品库（颜色款），否则用本次上传。"""
@@ -67,7 +87,7 @@ async def create_styled_plan(
     db: AsyncSession, user: User, *, category: str, name: str, notes: str, count: int | str | None,
     size: str | None, material: str | None, model_asset_id: int | None, frame: str | None,
     slots_picked: list[str] | None, product_id: int | None, color_index: int,
-    data: bytes | None, filename: str, fabric: tuple[bytes, str] | None,
+    data: bytes | None, filename: str, fabric: tuple[bytes, str] | None, scene_key: str | None = None,
 ) -> int:
     """规划一套「模特上身」图，返回套图 id。商品库里的款名/尺寸/材质/卖点会作为默认值。"""
     from app.services.ecom_set.service import _record_plan_charge
@@ -89,9 +109,10 @@ async def create_styled_plan(
     frame = categories.normalize_frame(frame)
     slots = slots_for(category, count, slots_picked)
     model = await _pick_model(db, user, model_asset_id, required=any(s.ref == "model" for s in slots))
+    scene = await _pick_scene(db, user, scene_key)
     color_note = f"本款颜色：{images['color_name']}" if images.get("color_name") else ""
     plan_text = categories.plan_notes(category, size=size, material=material,
-                                      notes="；".join(x for x in (notes.strip(), color_note) if x))
+                                      notes="；".join(x for x in (notes.strip(), color_note, _scene_note(scene)) if x))
     path = Path(images["image_path"])
 
     async def _exec() -> dict:
@@ -106,6 +127,8 @@ async def create_styled_plan(
     )
     styled = {"category": category, "size": size, "material": material, "frame": frame,
               **(model or {}), **{k: v for k, v in images.items() if k not in {"image_path", "image_url"}}}
+    if scene:
+        styled["scene"] = scene
     ecom = EcomSet(
         user_id=user.id, status="planned", name=name, platform=frame, style="minimal", count=len(slots),
         notes=clip(plan_text, 500), product_image_path=str(path), product_image_url=images["image_url"],
@@ -192,6 +215,7 @@ def styled_out(ecom: EcomSet) -> dict | None:
         "model_url": info.get("model_url") or "", "product_id": info.get("product_id"),
         "color_index": info.get("color_index") or 0, "color_name": info.get("color_name") or "",
         "fabric_url": info.get("fabric_url") or "", "real_url": info.get("real_url") or "",
+        "scene_key": (info.get("scene") or {}).get("key") or "", "scene_name": (info.get("scene") or {}).get("name") or "",
     }
 
 
