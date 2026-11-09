@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 from app.services.ecom_set import scarf as scarf_mod
@@ -259,9 +260,27 @@ def cover_copy(category: str, *, name: str, size: str | None, material: str | No
     if category == "scarf":
         return scarf_mod.cover_copy(name, size, material)
     base = (name or "").strip("《》 ")
+    if category == "goods":
+        return goods_cover_copy(base, size)
     noun = GENERIC[category].noun
     sub = f"{material_label(category, material)} {noun}".strip() if noun else ""
     return {"title": base[:12], "subtitle": sub[:16], "bullets": []}
+
+
+GOODS_SPEC_RE = re.compile(r"\s*[\d.]+\s*(g|kg|ml|l|克|千克|毫升|升|片|支|粒|袋|瓶)\s*$", re.I)
+GOODS_TITLE_MAX = 16
+
+
+def goods_cover_copy(name: str, size: str | None) -> dict:
+    """日化/标品封面：标题用商品名（去掉末尾规格，最多 16 字，版式会自动换行），规格放副标题。"""
+    m = GOODS_SPEC_RE.search(name)
+    title = name[: m.start()].strip() if m and m.start() > 0 else name
+    spec = (size or "").strip() or (m.group(0).strip() if m else "")
+    if len(title) > GOODS_TITLE_MAX:
+        cut = title[:GOODS_TITLE_MAX]
+        # 尽量在空格处断开，避免把英文单词或中文词截成半个
+        title = cut[: cut.rfind(" ")].strip() if " " in cut[GOODS_TITLE_MAX // 2:] else cut
+    return {"title": title, "subtitle": spec[:16], "bullets": []}
 
 
 def options() -> list[dict]:

@@ -187,3 +187,13 @@ async def test_goods_plan_with_scene(db_session, monkeypatch, tmp_path):
     with _pytest.raises(ValueError, match="场景不存在"):
         await svc.create_plan(db_session, user, data=None, filename="", name="", platform="", style="", count=6,
                               notes="", category="goods", frame="taobao_34", product_id=row.id, scene_key="nope")
+
+
+# 回归：日化封面标题不再把商品名截成半个词；末尾规格移到副标题
+def test_goods_cover_copy():
+    c = categories.cover_copy("goods", name="Van Reed 香氛护手霜 60g", size="60g", material="tube")
+    assert c["title"] == "Van Reed 香氛护手霜" and c["subtitle"] == "60g"
+    c2 = categories.cover_copy("goods", name="身体乳 250ml", size="", material="bottle")
+    assert c2["title"] == "身体乳" and c2["subtitle"] == "250ml"
+    long = categories.cover_copy("goods", name="Van Reed Paris Fragrance Hand Cream Gift", size="", material="tube")
+    assert len(long["title"]) <= 16 and not long["title"].endswith(" ")
