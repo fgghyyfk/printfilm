@@ -141,6 +141,11 @@ def _error_text(resp: httpx.Response, label: str = "OpenAI") -> str:
     return f"{head}（{resp.status_code}）：{msg[:200]}"
 
 
+def _hd_unsupported(resp: httpx.Response) -> bool:
+    """Promptoll 默认路由把 quality=high/hd 计成 <model>-hd，目录里没有就回 400。"""
+    return resp.status_code == 400 and "-hd" in resp.text
+
+
 def _cost_usd(resp: httpx.Response) -> float | None:
     """Promptoll 响应头 X-Price-Microcents → 美元（1 美元 = 1 亿 microcents）。"""
     raw = resp.headers.get("x-price-microcents")
@@ -187,6 +192,11 @@ async def generate(
             if provider == "promptoll":
                 body["response_format"] = "b64_json"
             resp = await client.post(f"{base}/images/generations", headers=headers, json=body)
+            if provider == "promptoll" and _hd_unsupported(resp):
+                # 普通 Key 不支持高画质（会被记成 <model>-hd）：去掉 quality 重试一次，用默认画质出图
+                logger.info("Promptoll 不支持 quality=%s，改用默认画质重试", quality)
+                body.pop("quality", None)
+                resp = await client.post(f"{base}/images/generations", headers=headers, json=body)
         if resp.status_code >= 400:
             raise RuntimeError(_error_text(resp, label))
         data = resp.json()

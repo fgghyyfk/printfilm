@@ -101,10 +101,32 @@ async def test_promptoll_url_fallback(monkeypatch, tmp_path):
     assert Path(out["local_path"]).read_bytes() == _png() and "cost_usd" not in out["usage"]
 
 
+# 文生图：普通 Key 不支持高画质时去掉 quality 自动重试一次
+async def test_promptoll_hd_retry(monkeypatch, tmp_path):
+    import json as _json
+
+    from app.services import storage
+
+    s = _settings(monkeypatch, openai_image_quality="high")
+    monkeypatch.setattr(storage, "project_dir", lambda pid: tmp_path / f"p{pid}")
+    bodies = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        body = _json.loads(req.content)
+        bodies.append(body)
+        if "quality" in body:
+            return httpx.Response(400, json={"detail": "model gpt-image-2-hd not found"})
+        return httpx.Response(200, json={"data": [{"b64_json": base64.b64encode(_png()).decode()}]})
+
+    _mock_client(monkeypatch, handler)
+    out = await openai_image.generate("画", [], project_id=0, shot_no=1, size="1024x1024", settings=s)
+    assert Path(out["local_path"]).exists() and len(bodies) == 2 and "quality" not in bodies[1]
+
+
 # 报错转中文：高画质未开通、余额不足、Key 无效
 async def test_promptoll_errors(monkeypatch, tmp_path):
     s = _settings(monkeypatch, openai_image_quality="high")
-    cases = [(400, {"detail": "model gpt-image-2-hd not found"}, "高画质"), (402, {"detail": "insufficient"}, "余额不足"),
+    cases = [(400, {"detail": "model gpt-image-2-hd unavailable"}, "高画质"), (402, {"detail": "insufficient"}, "余额不足"),
              (401, {"error": {"message": "bad key"}}, "Key 无效")]
     for status, body, expect in cases:
         _mock_client(monkeypatch, lambda req, st=status, b=body: httpx.Response(st, json=b))
