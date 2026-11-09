@@ -14,6 +14,7 @@ from app.deps import get_current_user
 from app.models import User
 from app.schemas_ecom import (
     EcomCopyIn,
+    EcomTypeStyleIn,
     EcomPlanUpdateIn,
     EcomRegenerateIn,
     EcomSetListOut,
@@ -147,6 +148,15 @@ async def update_copy(
     db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user),
 ):
     return await _out(db, await _guard(db, svc.update_copy(db, user, set_id, idx, body.model_dump())))
+
+
+# 切换整套字体风格（重新排字，免费）
+@router.put("/{set_id}/type-style", response_model=EcomSetOut)
+async def set_type_style(
+    set_id: int, body: EcomTypeStyleIn,
+    db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user),
+):
+    return await _out(db, await _guard(db, svc.set_type_style(db, user, set_id, body.type_style)))
 
 
 # 打包下载 zip

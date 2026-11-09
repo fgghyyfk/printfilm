@@ -43,6 +43,7 @@ export const zhEcomSet = {
       copyTitle: '主标题',
       subtitle: '副标题',
       bullets: '卖点',
+      en: '英文小标（可选，衬线/黑体风格显示）',
       bulletPlaceholder: '卖点 {n}',
       noCopy: '此图为无字图，不叠加文案',
       save: '保存修改',

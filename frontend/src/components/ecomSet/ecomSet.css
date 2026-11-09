@@ -300,3 +300,7 @@
 .pf-ecom-model { display: grid; gap: 4px; width: 88px; padding: 4px; border: 1px solid var(--pf-line, #e4e0db); border-radius: var(--pf-radius-sm); background: transparent; cursor: pointer; font-size: 12px; color: inherit; }
 .pf-ecom-model img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 7px; }
 .pf-ecom-model.active { border-color: var(--pf-accent, var(--pf-lime)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--pf-accent, var(--pf-lime)) 30%, transparent); }
+
+/* 结果页：字体风格切换 */
+.pf-es-type { display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; height: 32px; border: 1px solid var(--pf-line); border-radius: 999px; color: var(--pf-muted, var(--pf-faint)); font-size: 0.82rem; }
+.pf-es-type select { border: 0; background: transparent; color: var(--pf-text, inherit); font: inherit; cursor: pointer; }

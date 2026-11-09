@@ -185,6 +185,7 @@ sequenceDiagram
 | 科普选题扩写 | `run_billed_ephemeral(domain=kepu, content_expand)` |
 | 漫剧资产 seed（轻量同步） | `run_billed_ephemeral(domain=drama, seed_assets)` |
 | 工作室工具 | `run_billed_ephemeral(domain=studio, tool_image/tool_video)` |
+| 电商图·参考详情整理 | `run_billed_ephemeral(domain=studio, ecom_knowledge)`：按实际视觉调用批次计，每批 `ECOM_SET_PLAN_FEN`（默认 10 分），预扣按切片批数估；一张长详情约 1～3 批 |
 | 一图出套图·规划 | `run_billed_ephemeral(domain=studio, ecom_set_plan)`：**固定价**，写一条 `billing_key=ecom_set_plan`、`charge_fen=ECOM_SET_PLAN_FEN`（默认 10 分）的用量行，不按 token 计；规划失败不扣 |
 | 一图出套图·生图 | `create_task(domain=studio, ecom_set_image)`，一张一个 TaskRun；payload 带 `aspect_ratio` 与 `resolution=2K`，**与图片生成页同走后台媒体价目表（fixed_media）**，按张固定价预扣并结算；尺寸图、平铺图、纹样细节等免模型槽位不建任务、不收费 |
 
@@ -282,4 +283,4 @@ EPAY_RETURN_URL=https://your-site.example.com/pricing?paid=1
 - 上游已受理（已有 `provider_task_id`）的任务停不下来，平台仍要付费：用户取消、批量取消、删除项目或改分镜作废时，都按预扣额计费（`billing/cancel_charge.py`），用量行 `provider=cancel_after_accept`。管理端可从任务详情追溯。
 - `BILLING_SIGNUP_GRANT_FEN` 默认 0。开启后同一 IP 每天最多 2 个账号可领，同一 IP 每小时最多注册 10 个账号（`services/register_limit.py`）。
 
-> 电商图「日化/标品场景图」：合成槽位与普通生图一样按张收费（`ecom_set_image`，按 2K 张价预扣）；实际按 1.5K 出图，上游成本约为 2K 的一半。白底主图由程序渲染，免费。场景库浏览与选择免费。
+> 电商图「日化/标品场景图」：合成槽位与普通生图一样按张收费（`ecom_set_image`，按 2K 张价预扣）；实际按 1.5K 出图，上游成本约为 2K 的一半。白底主图由程序渲染，免费。场景库浏览与选择免费。信息屏（多款一览、成分说明等）与切换字体风格只排字，免费。

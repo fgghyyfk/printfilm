@@ -14,9 +14,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import User
 from app.models_ecom import EcomSet, EcomSetItem
 from app.services.billing import run_billed_ephemeral
-from app.services.ecom_set import categories
+from app.services.ecom_set import categories, typo
 from app.services.ecom_set.planner import plan_set
-from app.services.ecom_set.presets import SLOTS, gen_ratio, slots_for
+from app.services.ecom_set.presets import FREE_REFS, SLOTS, gen_ratio, slots_for
 from app.services.ecom_set.prompts import clip
 
 LONG_WIDTH = 1080
@@ -108,6 +108,8 @@ async def create_styled_plan(
     material = categories.normalize_material(category, material)
     frame = categories.normalize_frame(frame)
     slots = slots_for(category, count, slots_picked)
+    know, variants = _knowledge_of(product)
+    slots, skipped = _filter_info_slots(slots, know, variants)
     model = await _pick_model(db, user, model_asset_id, required=any(s.ref == "model" for s in slots))
     scene = await _pick_scene(db, user, scene_key)
     color_note = f"本款颜色：{images['color_name']}" if images.get("color_name") else ""
@@ -116,8 +118,10 @@ async def create_styled_plan(
     path = Path(images["image_path"])
 
     async def _exec() -> dict:
+        from app.services.ecom_set.knowledge import digest
+
         result = await plan_set(image_path=path, name=name, notes=clip(plan_text, 500), platform="taobao",
-                                style="minimal", slots=slots)
+                                style="minimal", slots=slots, knowledge=digest(know))
         await _record_plan_charge(db, user.id)
         return result
 
@@ -129,6 +133,11 @@ async def create_styled_plan(
               **(model or {}), **{k: v for k, v in images.items() if k not in {"image_path", "image_url"}}}
     if scene:
         styled["scene"] = scene
+    styled["type_style"] = typo.default_type_style(category, scene)
+    if any(s.ref == "info" for s in slots):
+        styled.update(knowledge=know, variants=variants, product_path=str(path), product_name=name,
+                      material_label=categories.material_label(category, material))
+    plan["warnings"] = [*skipped, *plan["warnings"]]
     ecom = EcomSet(
         user_id=user.id, status="planned", name=name, platform=frame, style="minimal", count=len(slots),
         notes=clip(plan_text, 500), product_image_path=str(path), product_image_url=images["image_url"],
@@ -139,13 +148,41 @@ async def create_styled_plan(
     await db.flush()
     cover_key = f"{category}_cover"
     for idx, (slot, it) in enumerate(zip(slots, plan["items"], strict=True)):
-        copy = (categories.cover_copy(category, name=name, size=size, material=material)
+        copy = ({**it["copy"], **categories.cover_copy(category, name=name, size=size, material=material)}
                 if slot.key == cover_key else it["copy"])
         db.add(EcomSetItem(set_id=ecom.id, idx=idx, slot=slot.key, layout=slot.layout,
                            ratio=gen_ratio(frame, slot.key), blank=slot.blank, scene=it["scene"],
                            status="planned", copy_json=copy))
     await db.commit()
     return ecom.id
+
+
+def _knowledge_of(product) -> tuple[dict, list[dict]]:
+    """商品资料快照 + 各颜色款（名称、图片路径），给规划与信息屏用。"""
+    from app.services.ecom_set import knowledge as kn
+
+    if product is None:
+        return {}, []
+    know = kn.normalize(product.knowledge or {}) if not kn.is_empty(product.knowledge) else {}
+    variants = [{"name": c.get("name") or "", "image_path": c.get("image_path") or ""}
+                for c in (product.colors or [])[:12]]
+    return know, variants
+
+
+def _filter_info_slots(slots: list, know: dict, variants: list[dict]) -> tuple[list, list[str]]:
+    """去掉资料不够的信息屏并给出提示；全部被去掉时报错。"""
+    from app.services.ecom_set import infoscreens
+
+    keep, skipped = [], []
+    for s in slots:
+        if s.ref == "info" and not infoscreens.available(s.key, know, variants):
+            skipped.append(f"「{s.label}」需要商品资料里的{infoscreens.missing_hint(s.key)}，本次已跳过；"
+                           "可在「我的商品」上传参考详情整理资料后再生成")
+            continue
+        keep.append(s)
+    if not keep:
+        raise ValueError(skipped[0] if skipped else "请至少选择一张要生成的图")
+    return keep, skipped
 
 
 async def recolor_set(db: AsyncSession, user: User, set_id: int, color_index: int) -> int:
@@ -216,10 +253,12 @@ def styled_out(ecom: EcomSet) -> dict | None:
         "color_index": info.get("color_index") or 0, "color_name": info.get("color_name") or "",
         "fabric_url": info.get("fabric_url") or "", "real_url": info.get("real_url") or "",
         "scene_key": (info.get("scene") or {}).get("key") or "", "scene_name": (info.get("scene") or {}).get("name") or "",
+        "type_style": typo.normalize_type_style(info.get("type_style"),
+                                                typo.default_type_style(cat, info.get("scene"))),
     }
 
 
 def slot_is_free(slot_key: str) -> bool:
     """该槽位是否免费（不调模型）。"""
     slot = SLOTS.get(slot_key)
-    return bool(slot and slot.ref == "flat")
+    return bool(slot and slot.ref in FREE_REFS)

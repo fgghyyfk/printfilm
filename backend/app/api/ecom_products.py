@@ -27,6 +27,12 @@ async def _guard(db: AsyncSession, coro):
     except ValueError as exc:
         await db.rollback()
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        await db.rollback()
+        logger.exception("ecom-products 请求失败")
+        raise HTTPException(status_code=502, detail="服务暂时不可用，请稍后再试") from exc
 
 
 def _names(raw: str, n: int) -> list[str]:
@@ -119,6 +125,32 @@ async def set_fabric(product_id: int, file: UploadFile = File(...), db: AsyncSes
 @router.delete("/{product_id}/fabric", summary="清除面料实拍图")
 async def clear_fabric(product_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)) -> dict:
     return svc.to_out(await _guard(db, svc.set_fabric(db, user, product_id, None)))
+
+
+@router.post("/{product_id}/references", summary="上传参考详情图（品牌自己的或竞品）")
+async def add_references(product_id: int, kind: str = Form("own", description="own 自己的 | competitor 竞品"),
+                         files: list[UploadFile] = File(...), db: AsyncSession = Depends(get_db),
+                         user: User = Depends(get_current_user)) -> dict:
+    items = [(await f.read(), f.filename or "ref.jpg") for f in files]
+    return svc.to_out(await _guard(db, svc.add_references(db, user, product_id, kind=kind, files=items)))
+
+
+@router.delete("/{product_id}/references/{index}", summary="删除一张参考详情图")
+async def remove_reference(product_id: int, index: int, db: AsyncSession = Depends(get_db),
+                           user: User = Depends(get_current_user)) -> dict:
+    return svc.to_out(await _guard(db, svc.remove_reference(db, user, product_id, index)))
+
+
+@router.post("/{product_id}/knowledge/extract", summary="AI 读参考详情整理商品资料（按读图批次计费）")
+async def extract_knowledge(product_id: int, db: AsyncSession = Depends(get_db),
+                            user: User = Depends(get_current_user)) -> dict:
+    return svc.to_out(await _guard(db, svc.extract_knowledge(db, user, product_id)))
+
+
+@router.put("/{product_id}/knowledge", summary="保存修改后的商品资料")
+async def set_knowledge(product_id: int, body: dict, db: AsyncSession = Depends(get_db),
+                        user: User = Depends(get_current_user)) -> dict:
+    return svc.to_out(await _guard(db, svc.set_knowledge(db, user, product_id, body)))
 
 
 @router.delete("/{product_id}", summary="删除商品资料（已生成的套图保留）")

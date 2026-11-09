@@ -24,6 +24,7 @@ export function EcomSetCopyModal({ item, busy, error, onClose, onSave }: CopyPro
     title: item.title,
     subtitle: item.subtitle,
     bullets: item.bullets,
+    en: item.en || '',
   })
 
   return (

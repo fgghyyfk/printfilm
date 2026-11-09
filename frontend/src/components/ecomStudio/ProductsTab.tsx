@@ -8,12 +8,19 @@ import { resolveToolMediaUrl } from '../../api/tools'
 import { ECOM_UPLOAD_ACCEPT } from '../../lib/ecomSet'
 import { useGenerationText } from '../../lib/generationMedia'
 import { dialog } from '../../lib/dialog'
+import KnowledgePanel from './KnowledgePanel'
 import ProductForm from './ProductForm'
 
-type Props = { categories: EcomStyledCategory[]; onUse: (product: EcomProduct) => void }
+type Props = {
+  categories: EcomStyledCategory[]
+  onUse: (product: EcomProduct) => void
+  /** 读参考详情的单价（分/批）与是否计费 */
+  planFen?: number
+  billingEnabled?: boolean
+}
 
 /** 「我的商品」管理：新建、加/删颜色款、面料实拍、删除商品 */
-export default function ProductsTab({ categories, onUse }: Props) {
+export default function ProductsTab({ categories, onUse, planFen = 0, billingEnabled = false }: Props) {
   const text = useGenerationText()
   /* 列表三态与操作状态 */
   const [items, setItems] = useState<EcomProduct[] | null>(null)
@@ -89,6 +96,8 @@ export default function ProductsTab({ categories, onUse }: Props) {
           }} />
         </label>
       </div>
+      <KnowledgePanel product={p} planFen={planFen} billingEnabled={billingEnabled}
+        onChange={(next) => setItems((prev) => (prev || []).map((x) => (x.id === next.id ? next : x)))} />
     </div>)}
   </div>
 }

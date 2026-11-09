@@ -167,7 +167,7 @@ export default function EcomStudioPage() {
       </div>
 
       {optionsError ? <p className="pf-tool-error">{optionsError}</p> : !options ? <p className="pf-muted"><Loader2 size={16} className="pf-tool-spin" /></p>
-        : tab === 'products' ? <ProductsTab categories={categories} onUse={(p) => { pickProduct(p, 0); setTab('make'); setStep(1) }} />
+        : tab === 'products' ? <ProductsTab categories={categories} planFen={options.plan_fen} billingEnabled={options.billing_enabled} onUse={(p) => { pickProduct(p, 0); setTab('make'); setStep(1) }} />
           : tab === 'history' ? <EcomSetBatches onOpen={(id) => nav(`/daihuo?id=${id}`)} />
             : <>
               <div className="pf-ecom-steps"><Stepper steps={steps} current={step} /></div>

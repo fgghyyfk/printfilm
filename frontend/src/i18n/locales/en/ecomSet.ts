@@ -43,6 +43,7 @@ export const enEcomSet = {
       copyTitle: 'Headline',
       subtitle: 'Subheadline',
       bullets: 'Selling points',
+      en: 'English accent line (optional)',
       bulletPlaceholder: 'Point {n}',
       noCopy: 'No text on this image',
       save: 'Save changes',

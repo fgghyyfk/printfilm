@@ -17,6 +17,7 @@ class EcomSetItemOut(BaseModel):
     title: str
     subtitle: str
     bullets: list[str]
+    en: str = ""
     base_url: str | None = None
     final_url: str | None = None
     status: str
@@ -43,6 +44,7 @@ class EcomScarfOut(BaseModel):
     real_url: str = ""
     scene_key: str = ""
     scene_name: str = ""
+    type_style: str = "bold"
 
 
 class EcomProductOut(BaseModel):
@@ -106,6 +108,7 @@ class EcomSetOptionsOut(BaseModel):
     frames: list[EcomOptionOut] = []
     industries: list[EcomOptionOut] = []
     category_industry: dict[str, str] = {}
+    type_styles: list[dict] = []
     plan_fen: int
     image_fen: int
     billing_enabled: bool
@@ -119,13 +122,15 @@ class EcomPlanItemIn(BaseModel):
     title: str = Field(default="", max_length=40)
     subtitle: str = Field(default="", max_length=60)
     bullets: list[str] = Field(default_factory=list, max_length=3)
+    # 英文小标；不传（None）表示保持原值
+    en: str | None = Field(default=None, max_length=60)
 
 
 class EcomPlanUpdateIn(BaseModel):
     """修改方案请求。"""
 
-    # 上限须覆盖各品类的全部可选槽位（丝巾 11 个，官方预设最多 10 张）
-    items: list[EcomPlanItemIn] = Field(max_length=12)
+    # 上限须覆盖各品类的全部可选槽位（丝巾 11 个，日化 14 个）
+    items: list[EcomPlanItemIn] = Field(max_length=16)
 
 
 class EcomRegenerateIn(BaseModel):
@@ -140,6 +145,13 @@ class EcomCopyIn(BaseModel):
     title: str = Field(default="", max_length=40)
     subtitle: str = Field(default="", max_length=60)
     bullets: list[str] = Field(default_factory=list, max_length=3)
+    en: str | None = Field(default=None, max_length=60)
+
+
+class EcomTypeStyleIn(BaseModel):
+    """切换整套图的字体风格（只重新排字，免费）。"""
+
+    type_style: str = Field(max_length=16)
 
 
 class EcomToProjectIn(BaseModel):

@@ -45,6 +45,7 @@ class Slot:
     is_main: bool = False
     # 底图参考：product 商品图 | model 固定模特 + 商品图 | flat 不调模型、直接用商品图排版
     # | composite 标品：按比例摆好商品抠图 → AI 搭景 → 原图贴回 | texture 只拍内容物质地（不带商品）
+    # | info 信息屏：按商品资料直接排版（不调模型）
     ref: str = "product"
 
 
@@ -218,7 +219,18 @@ GOODS_SLOTS: dict[str, Slot] = {s.key: s for s in (
          "label_bar", "3:4", "bottom", ref="texture"),
     _c("goods_usage", "使用场景", "商品放在真实的使用环境里，生活感强，商品清晰", "title_corner", "top"),
     _c("goods_lineup", "多款陈列", "多款商品一字排开陈列，整齐有序", "title_sub", "top"),
+    *(Slot(k, label, f"信息屏（程序排版，不出画面）：{hint}；只需写标题（≤10字）、副标题与英文小标", "info", "3:4", "none",
+           ref="info") for k, label, hint in (
+        ("goods_info_variants", "多款一览", "各款式/香型的名称与香调一览"),
+        ("goods_info_points", "卖点详解", "逐条讲清商品卖点"),
+        ("goods_info_ingredients", "成分说明", "核心成分及作用"),
+        ("goods_info_usage", "使用方法", "分步骤的使用方法"),
+        ("goods_info_specs", "产品信息", "品名、规格、保质期等信息表"),
+        ("goods_info_story", "品牌故事", "品牌理念与故事"),
+    )),
 )}
+# 不调模型的槽位类型（免费）
+FREE_REFS = frozenset({"flat", "info"})
 SLOTS.update(GOODS_SLOTS)
 
 SCARF_COMPOSITION: dict[int, tuple[str, ...]] = {

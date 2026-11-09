@@ -162,12 +162,117 @@ async def list_products(db: AsyncSession, user: User, *, page: int, page_size: i
     return list(rows), total
 
 
+# ---------- 参考详情与商品资料 ----------
+async def add_references(db: AsyncSession, user: User, product_id: int, *, kind: str,
+                         files: list[tuple[bytes, str]]) -> EcomProduct:
+    """上传参考详情图（kind：own 品牌自己的 | competitor 竞品）。"""
+    from app.services.ecom_set.knowledge import MAX_REFERENCES
+
+    row = await get_product(db, user, product_id)
+    refs = [dict(r) for r in row.ref_images or []]
+    if not files:
+        raise ValueError("请选择参考详情图")
+    if len(refs) + len(files) > MAX_REFERENCES:
+        raise ValueError(f"参考详情图最多 {MAX_REFERENCES} 张")
+    kind = "competitor" if kind == "competitor" else "own"
+    for data, filename in files:
+        path, url = await asyncio.to_thread(_save, user, data, filename)
+        refs.append({"path": path, "url": url, "kind": kind})
+    row.ref_images = refs
+    await db.commit()
+    return row
+
+
+async def remove_reference(db: AsyncSession, user: User, product_id: int, index: int) -> EcomProduct:
+    """删除一张参考详情图（已整理的资料保留）。"""
+    row = await get_product(db, user, product_id)
+    refs = [dict(r) for r in row.ref_images or []]
+    if not 0 <= index < len(refs):
+        raise LookupError("参考图不存在")
+    refs.pop(index)
+    row.ref_images = refs
+    await db.commit()
+    return row
+
+
+async def set_knowledge(db: AsyncSession, user: User, product_id: int, body: dict) -> EcomProduct:
+    """保存用户修改后的商品资料（重新做极限词提示）。"""
+    from app.services.ecom_set import knowledge as kn
+
+    row = await get_product(db, user, product_id)
+    data = kn.normalize(body)
+    row.knowledge = None if kn.is_empty(data) else kn.stamp(data, kn.compliance_warnings(data))
+    await db.commit()
+    return row
+
+
+async def extract_knowledge(db: AsyncSession, user: User, product_id: int) -> EcomProduct:
+    """AI 读参考详情整理商品资料（按视觉调用批次计费）；已有资料里用户填的内容会被新结果补充而不是清空。"""
+    from pathlib import Path
+
+    from app.config import get_settings
+    from app.services.billing import run_billed_ephemeral
+    from app.services.ecom_set import knowledge as kn
+
+    row = await get_product(db, user, product_id)
+    refs = [r for r in row.ref_images or [] if Path(str(r.get("path") or "")).exists()]
+    if not refs:
+        raise ValueError("请先上传参考详情图")
+    own = [Path(r["path"]) for r in refs if r.get("kind") != "competitor"]
+    comp = [Path(r["path"]) for r in refs if r.get("kind") == "competitor"]
+    settings = get_settings()
+    batches = 1 if settings.ark_mock else len(await asyncio.to_thread(kn.plan_batches, own, comp))
+
+    async def _exec() -> tuple[dict, list[str]]:
+        k, warns, calls = await kn.extract(own=own, competitor=comp, name=row.name, mock=settings.ark_mock)
+        await _record_knowledge_charge(db, user.id, calls)
+        return k, warns
+
+    _, (k, warns) = await run_billed_ephemeral(db, user, domain="studio", task_type="ecom_knowledge",
+                                               executor=_exec, payload={"batches": batches, "product_id": row.id},
+                                               commit=False)
+    old = kn.normalize(row.knowledge or {})
+    merged = kn.merge([k, old]) if not kn.is_empty(old) else k
+    row.knowledge = kn.stamp(merged, warns)
+    await db.commit()
+    return row
+
+
+async def _record_knowledge_charge(db: AsyncSession, user_id: int, calls: int) -> None:
+    """在计费范围内按实际视觉调用次数写用量行（单价同规划）。"""
+    from datetime import UTC, datetime
+
+    from app.config import get_settings
+    from app.models import UsageEvent
+    from app.services.billing.context import get_current_task_run_id
+
+    tid = get_current_task_run_id()
+    if tid is None or calls <= 0:
+        return
+    db.add(UsageEvent(
+        user_id=user_id, task_run_id=tid, domain="studio", capability="llm", provider="ark",
+        billing_key="ecom_knowledge", model="ecom_knowledge", total_tokens=0, cost_fen=0,
+        charge_fen=int(get_settings().ecom_set_plan_fen) * calls, estimated=False, settled=False,
+        created_at=datetime.now(UTC),
+    ))
+    await db.flush()
+
+
 def color_of(row: EcomProduct, index: int) -> dict:
     """取第 index 个颜色款。"""
     colors = list(row.colors or [])
     if not 0 <= index < len(colors):
         raise ValueError("颜色款不存在")
     return colors[index]
+
+
+def knowledge_out(data: dict | None) -> dict | None:
+    """商品资料序列化（空资料返回 None）。"""
+    from app.services.ecom_set import knowledge as kn
+
+    if not data or kn.is_empty(data):
+        return None
+    return {**kn.normalize(data), "warnings": list(data.get("warnings") or []), "updated_at": data.get("updated_at") or ""}
 
 
 def to_out(row: EcomProduct) -> dict:
@@ -179,5 +284,7 @@ def to_out(row: EcomProduct) -> dict:
         "colors": [{"name": c.get("name") or "", "image_url": c.get("image_url") or "",
                     "real_image_url": c.get("real_image_url") or ""} for c in row.colors or []],
         "fabric_image_url": row.fabric_image_url or "",
+        "references": [{"url": r.get("url") or "", "kind": r.get("kind") or "own"} for r in row.ref_images or []],
+        "knowledge": knowledge_out(row.knowledge),
         "created_at": row.created_at.isoformat() if row.created_at else "",
     }

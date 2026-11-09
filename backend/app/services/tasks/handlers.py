@@ -405,6 +405,7 @@ TASK_HANDLERS: dict[tuple[str, str], TaskHandler] = {
     ("studio", "tool_audio"): TaskHandler("studio", "tool_audio", _run_studio_generation),
     ("studio", "ecom_set_plan"): TaskHandler("studio", "ecom_set_plan", _noop_ephemeral),
     ("studio", "ecom_set_image"): TaskHandler("studio", "ecom_set_image", _run_studio_ecom_set_image),
+    ("studio", "ecom_knowledge"): TaskHandler("studio", "ecom_knowledge", _noop_ephemeral),
     ("kepu", "project_pipeline"): TaskHandler("kepu", "project_pipeline", _run_kepu_project_pipeline),
     ("kepu", "shot_regen_image"): TaskHandler("kepu", "shot_regen_image", _run_kepu_shot_image),
     ("kepu", "shot_regen_video"): TaskHandler("kepu", "shot_regen_video", _run_kepu_shot_video),

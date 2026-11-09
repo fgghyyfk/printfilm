@@ -32,10 +32,12 @@ from app.services.ecom_set.jobs import (
 from app.services.ecom_set.planner import plan_set
 from app.services.ecom_set import categories
 from app.services.ecom_set import scenes as scenes_mod
+from app.services.ecom_set import typo as typo_mod
 from app.services.ecom_set.categories import is_styled
 from app.services.ecom_set.styled import build_long_image, create_styled_plan, recolor_set, styled_out
 from app.services.ecom_set.presets import (
     CATEGORIES,
+    FREE_REFS,
     SLOTS,
     normalize_category,
     slots_for,
@@ -110,6 +112,7 @@ async def get_options(db: AsyncSession) -> dict:
         "frames": [{"id": k, "name": v[0]} for k, v in categories.FRAMES.items()],
         "industries": scenes_mod.industries_out(),
         "category_industry": dict(scenes_mod.CATEGORY_INDUSTRY),
+        "type_styles": typo_mod.options(),
         "scarf_sizes": next(c["sizes"] for c in categories.options() if c["id"] == "scarf"),
         "scarf_counts": next(c["counts"] for c in categories.options() if c["id"] == "scarf"),
         "scarf_materials": next(c["materials"] for c in categories.options() if c["id"] == "scarf"),
@@ -202,7 +205,7 @@ async def create_plan(
 # 是否为不调模型的槽位（尺寸图、平铺图）
 def _is_flat(item: EcomSetItem) -> bool:
     slot = SLOTS.get(item.slot)
-    return bool(slot and slot.ref == "flat")
+    return bool(slot and slot.ref in FREE_REFS)
 
 
 # 不调模型的槽位直接排版成图（免费、同步）
@@ -258,7 +261,7 @@ async def update_plan(db: AsyncSession, user: User, set_id: int, items: list[dic
             scene, sh = sanitize_scene(str(body.get("scene") or ""))
             it.scene = clip(scene, 300)
             hits += sh
-        copy, ch = normalize_copy(body, layout=it.layout, title_max=title_limit(it.slot))
+        copy, ch = normalize_copy(_keep_en(body, it), layout=it.layout, title_max=title_limit(it.slot))
         it.copy_json = copy
         hits += ch
     _set_edit_warnings(ecom, hits)
@@ -330,11 +333,38 @@ async def update_copy(db: AsyncSession, user: User, set_id: int, idx: int, body:
     it = _item(ecom, idx)
     if not it.base_path or not Path(it.base_path).exists():
         raise ValueError("这张图还没有底图，请先生成")
-    copy, hits = normalize_copy(body, layout=it.layout, title_max=title_limit(it.slot))
+    copy, hits = normalize_copy(_keep_en(body, it), layout=it.layout, title_max=title_limit(it.slot))
     it.copy_json = copy
     _set_edit_warnings(ecom, hits)
     _, it.final_url = await render_final(ecom, it, Path(it.base_path))
     await refresh_set_status(db, ecom.id)
+    await db.commit()
+    return await get_set(db, user, set_id)
+
+
+def _keep_en(body: dict, it: EcomSetItem) -> dict:
+    """请求里没带英文小标（None）时沿用原值。"""
+    if body.get("en") is None:
+        return {**body, "en": (it.copy_json or {}).get("en") or ""}
+    return body
+
+
+async def set_type_style(db: AsyncSession, user: User, set_id: int, type_style: str) -> EcomSet:
+    """切换整套图的字体风格：已出图的全部重新排字（不调模型、不收费）。"""
+    from app.services.ecom_set import typo
+
+    if type_style not in typo.TYPE_STYLES:
+        raise ValueError("不支持的字体风格")
+    ecom = await get_set(db, user, set_id)
+    plan = dict(ecom.plan or {})
+    if isinstance(plan.get("styled"), dict):
+        plan["styled"] = {**plan["styled"], "type_style": type_style}
+    else:
+        plan["type_style"] = type_style
+    ecom.plan = plan
+    for it in ecom.items:
+        if it.status == "succeeded" and it.base_path and Path(it.base_path).exists():
+            _, it.final_url = await render_final(ecom, it, Path(it.base_path))
     await db.commit()
     return await get_set(db, user, set_id)
 
@@ -409,6 +439,7 @@ def to_out(ecom: EcomSet, *, image_fen: int) -> dict:
             "idx": it.idx, "slot": it.slot, "slot_label": slot_label(it.slot), "layout": it.layout,
             "ratio": it.ratio, "scene": it.scene or "", "title": copy.get("title") or "",
             "subtitle": copy.get("subtitle") or "", "bullets": list(copy.get("bullets") or []),
+            "en": copy.get("en") or "",
             "base_url": it.base_url, "final_url": it.final_url, "status": it.status, "error": it.error,
             "billable": not _is_flat(it),
         })

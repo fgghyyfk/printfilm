@@ -22,6 +22,8 @@ export interface EcomSetItem {
   title: string
   subtitle: string
   bullets: string[]
+  /** 标题上方的英文小标（可空） */
+  en?: string
   base_url: string | null
   final_url: string | null
   status: EcomSetItemStatus
@@ -66,6 +68,8 @@ export interface EcomSetOptions {
   industries?: { id: string; name: string }[]
   /** 品类默认打开的行业，如 goods → daily */
   category_industry?: Record<string, string>
+  /** 字体风格：serif 典雅衬线 / sans 简约黑体 / bold 促销醒目 */
+  type_styles?: { id: string; name: string; hint: string }[]
   plan_fen: number
   image_fen: number
   billing_enabled: boolean
@@ -98,6 +102,8 @@ export type EcomStyledInfo = {
   /** 场景库场景（未指定为空） */
   scene_key?: string | null
   scene_name?: string | null
+  /** 当前字体风格 */
+  type_style?: string
 }
 
 /** 品类选项（来自 /options 的 styled） */
@@ -111,7 +117,7 @@ export type EcomStyledCategory = {
   counts: number[]
   default_count: number
   compositions: Record<string, string[]>
-  slots: { key: string; label: string; ref: 'model' | 'product' | 'flat' | 'composite' | 'texture'; free: boolean }[]
+  slots: { key: string; label: string; ref: 'model' | 'product' | 'flat' | 'composite' | 'texture' | 'info'; free: boolean }[]
   /** 是否需要模特（goods 日化标品为 false，跳过选模特） */
   uses_model?: boolean
   /** 材质栏标签：goods 为「包装形态」，其余为「材质」 */
@@ -141,7 +147,7 @@ export type EcomSetPlanPayload = {
 }
 
 /** 方案编辑：单张可改字段 */
-export type EcomSetPlanItemPatch = Pick<EcomSetItem, 'idx' | 'scene' | 'title' | 'subtitle' | 'bullets'>
+export type EcomSetPlanItemPatch = Pick<EcomSetItem, 'idx' | 'scene' | 'title' | 'subtitle' | 'bullets' | 'en'>
 
 /** 带货视频画幅 */
 export type DaihuoRatio = '9:16' | '16:9' | '1:1' | '4:3'
@@ -150,7 +156,7 @@ export type DaihuoRatio = '9:16' | '16:9' | '1:1' | '4:3'
 export type DaihuoProjectPayload = { output_ratio: DaihuoRatio; voice_id?: string }
 
 /** 文案编辑：单张排版文字 */
-export type EcomSetCopyPatch = Pick<EcomSetItem, 'title' | 'subtitle' | 'bullets'>
+export type EcomSetCopyPatch = Pick<EcomSetItem, 'title' | 'subtitle' | 'bullets' | 'en'>
 
 // 错误策略：401 统一抛「未登录」，收费入口额外触发余额不足充值引导
 function errorHandler(fallback: string, notifyBilling: boolean): ApiErrorHandler {
@@ -260,4 +266,9 @@ export function recolorEcomSet(id: number, colorIndex: number): Promise<EcomSet>
 // 用套图建带货视频项目（同一套图重复调用返回同一项目）
 export function createDaihuoProject(id: number, payload: DaihuoProjectPayload): Promise<{ project_id: number }> {
   return requestEcom(`/${id}/project`, '创建带货视频失败', { method: 'POST', body: JSON.stringify(payload) }, true)
+}
+
+/** 切换整套图的字体风格（已出图的全部重新排字，免费） */
+export function setEcomSetTypeStyle(id: number, typeStyle: string): Promise<EcomSet> {
+  return requestEcom(`/${id}/type-style`, '切换字体失败', { method: 'PUT', body: JSON.stringify({ type_style: typeStyle }) })
 }

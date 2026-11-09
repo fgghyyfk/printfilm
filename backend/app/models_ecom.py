@@ -92,6 +92,10 @@ class EcomProduct(Base):
     # 面料/材质实拍（可选），作为质感参考
     fabric_image_path: Mapped[str] = mapped_column(String(1024), default="")
     fabric_image_url: Mapped[str] = mapped_column(String(1024), default="")
+    # 参考详情图：[{"path", "url", "kind": "own" 品牌自己的 | "competitor" 竞品}]
+    ref_images: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # 商品资料（读参考详情整理 + 用户修改）：结构见 services/ecom_set/knowledge.py
+    knowledge: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

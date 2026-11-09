@@ -1,4 +1,4 @@
-"""标品场景图合成：先按比例摆产品 → AI 围绕产品搭景 → 找到 AI 画的产品位置 → 品牌原抠图精确贴回 + 光色迁移。
+"""标品场景图合成：先按比例摆产品 → AI 围绕产品搭景 → 找到 AI 画的产品位置 → 品牌原抠图贴回 + 细节移植（光影取 AI，文字取原图）。
 
 产品像素始终来自原图（文字、logo 不会被 AI 改写），场景、道具、阴影来自 AI，比例由摆位决定。
 """
@@ -118,6 +118,18 @@ def _ssd_map(img_e: np.ndarray, tpl_e: np.ndarray, mask: np.ndarray) -> np.ndarr
     return (s1 - 2 * s2 + s3) / max(float(mask.sum()), 1.0)
 
 
+def _ncc_cost(img_e: np.ndarray, tpl_e: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    """逐位置遮罩内归一化互相关代价（1 - NCC，越小越像）：平坦背景方差低，不会被当成匹配。"""
+    n = max(float(mask.sum()), 1.0)
+    t = (tpl_e - float((mask * tpl_e).sum()) / n) * mask
+    t_var = float((t ** 2).sum())
+    num = _corr(img_e, t)
+    s1 = _corr(img_e, mask)
+    s2 = _corr(img_e ** 2, mask)
+    i_var = np.maximum(s2 - s1 ** 2 / n, 1e-6)
+    return 1.0 - num / np.sqrt(i_var * max(t_var, 1e-6))
+
+
 def _template(cut: Image.Image, h: int) -> tuple[np.ndarray, np.ndarray, int, int]:
     w = max(1, int(cut.width * h / cut.height))
     t = cut.resize((w, h), Image.Resampling.BILINEAR)
@@ -125,8 +137,13 @@ def _template(cut: Image.Image, h: int) -> tuple[np.ndarray, np.ndarray, int, in
     return _edges(t), mask, w, h
 
 
-def _best(img: Image.Image, cut: Image.Image, heights: list[int], step: int) -> tuple[float, int, int, int, int]:
-    """在 img 里按若干高度搜 cut，返回 (分数, x, y, w, h)（原尺寸坐标）。"""
+def _best(img: Image.Image, cut: Image.Image, heights: list[int], step: int,
+          expect: tuple[float, float, float] | None = None) -> tuple[float, int, int, int, int]:
+    """在 img 里按若干高度搜 cut，返回 (分数, x, y, w, h)（原尺寸坐标）。
+
+    expect=(底边中心 x, 底边 y, 高度)（img 坐标）时，离预期越远、大小差越多分数越差：
+    AI 通常不会把商品挪很远，这样能避免在背景纹理上误配。
+    """
     small = img.resize((max(1, img.width // step), max(1, img.height // step)), Image.Resampling.BILINEAR)
     e = _edges(small)
     best = (np.inf, 0, 0, 0, 0)
@@ -137,7 +154,12 @@ def _best(img: Image.Image, cut: Image.Image, heights: list[int], step: int) -> 
         te, m, ws, _ = _template(cut, hs)
         if ws >= e.shape[1]:
             continue
-        ssd = _ssd_map(e, te, m)
+        ssd = _ncc_cost(e, te, m)
+        if expect is not None:
+            ex, ey, eh = (v / step for v in expect)
+            ys, xs = np.mgrid[0: ssd.shape[0], 0: ssd.shape[1]]
+            dist2 = ((xs + ws / 2 - ex) ** 2 + (ys + hs - ey) ** 2) / max(eh, 1.0) ** 2
+            ssd = ssd * (1 + 0.8 * dist2 + 3.0 * np.log(hs / max(eh, 1.0)) ** 2)
         y, x = np.unravel_index(np.argmin(ssd), ssd.shape)
         if ssd[y, x] < best[0]:
             best = (float(ssd[y, x]), int(x * step), int(y * step), int(ws * step), int(hs * step))
@@ -161,7 +183,7 @@ def locate(ai: Image.Image, cutouts: list[Image.Image], boxes: list[tuple[int, i
     out = []
     for cut, win in zip(cutouts, anchors, strict=True):
         sub = ai.crop(win)
-        _, cx, cy, cw, ch = _best(sub, cut, heights, COARSE_STEP)
+        _, cx, cy, cw, ch = _best(sub, cut, heights, COARSE_STEP, expect=(x + w / 2 - win[0], y + h - win[1], h))
         pad = max(8, ch // 8)
         fx0, fy0 = max(0, win[0] + cx - pad), max(0, win[1] + cy - pad)
         fine_win = (fx0, fy0, min(W, win[0] + cx + cw + pad), min(H, win[1] + cy + ch + pad))
@@ -229,27 +251,76 @@ def _lineup_anchors(ai: Image.Image, cut: Image.Image, heights: list[int], n: in
     return found
 
 
-# ---------- ④ 贴回 + 光色迁移 ----------
-def relight(p: Image.Image, ai_patch: Image.Image, strength: float = 0.9) -> Image.Image:
-    """把 AI 图里产品区域的低频光色（大范围明暗 + 色温）按 RGB 分通道迁移到原抠图；文字、边缘细节不变。"""
-    r = max(3, p.width // 6)
+# ---------- ④ 贴回：细节移植（光影取 AI，文字与纹理取原图） ----------
+def _box_blur(a: np.ndarray, r: int) -> np.ndarray:
+    """二维均值模糊（积分图，边缘按复制填充）。"""
+    if r <= 0:
+        return a
+    pad = np.pad(a, ((r + 1, r), (r + 1, r)), mode="edge")
+    c = pad.cumsum(0).cumsum(1)
+    k = 2 * r + 1
+    return (c[k:, k:] - c[:-k, k:] - c[k:, :-k] + c[:-k, :-k]) / (k * k)
+
+
+def _blur(a: np.ndarray, sigma: float) -> np.ndarray:
+    """三次均值模糊近似高斯模糊（不依赖 scipy）。"""
+    r = max(1, int(round(sigma * 0.85)))
+    for _ in range(3):
+        a = _box_blur(a, r)
+    return a
+
+
+def _noise_sigma(gray: np.ndarray, mask: np.ndarray | None = None) -> float:
+    """估计图像噪点强度（Immerkær 拉普拉斯法，可只统计 mask 内）。"""
+    if gray.shape[0] < 3 or gray.shape[1] < 3:
+        return 0.0
+    lap = (gray[:-2, :-2] - 2 * gray[:-2, 1:-1] + gray[:-2, 2:]
+           - 2 * gray[1:-1, :-2] + 4 * gray[1:-1, 1:-1] - 2 * gray[1:-1, 2:]
+           + gray[2:, :-2] - 2 * gray[2:, 1:-1] + gray[2:, 2:])
+    vals = np.abs(lap)
+    if mask is not None:
+        vals = vals[mask[1:-1, 1:-1] > 0.5]
+    if vals.size < 50:
+        return 0.0
+    # 取中位数而非均值，避免文字、边缘被当成噪点
+    return float(np.median(vals) * np.sqrt(np.pi / 2) / 6 * 1.4826)
+
+
+def harmonize(p: Image.Image, ai_patch: Image.Image, *, upscale: float = 1.0, seed: int = 0) -> Image.Image:
+    """让原图商品「长」进场景：
+
+    1. 光影：按 RGB 分通道，用 AI 画的商品区域的中低频明暗/色温去调制原图（侧光、暗部、反光、暖色都跟随场景），
+       文字、logo 等高频细节仍是原图像素；
+    2. 清晰度：原图被放大时适度锐化，避免产品比场景「糊」；
+    3. 颗粒：场景比产品噪点多时补一点同强度的亮度颗粒，避免产品「太干净」像贴纸。
+    """
     a = np.asarray(p.getchannel("A"), dtype=np.float32) / 255.0
-    den = np.asarray(Image.fromarray((a * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(r)),
-                     dtype=np.float32) / 255.0
-
-    def low(ch: np.ndarray) -> np.ndarray:
-        num = Image.fromarray(np.clip(ch * a, 0, 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(r))
-        return np.asarray(num, dtype=np.float32) / np.maximum(den, 1e-3)
-
     src = np.asarray(p.convert("RGB"), dtype=np.float32)
-    ref = np.asarray(ai_patch.convert("RGB").resize(p.size), dtype=np.float32)
+    ref = np.asarray(ai_patch.convert("RGB").resize(p.size, Image.Resampling.BILINEAR), dtype=np.float32)
+    sigma = max(2.0, p.height / 60)
+    inner = (a > 0.5).astype(np.float32)
+    den = np.maximum(_blur(inner, sigma), 1e-3)
     out = np.empty_like(src)
     for c in range(3):
-        ratio = np.clip(low(ref[..., c]) / np.maximum(low(src[..., c]), 1.0), 0.7, 1.15)
-        out[..., c] = src[..., c] * (1 + strength * (ratio - 1))
-    im = Image.fromarray(np.clip(out, 0, 255).astype(np.uint8)).convert("RGBA")
-    im.putalpha(p.getchannel("A"))
-    return im
+        lo_ref = _blur(ref[..., c] * inner, sigma) / den
+        lo_src = _blur(src[..., c] * inner, sigma) / den
+        ratio = np.clip(lo_ref / np.maximum(lo_src, 4.0), 0.45, 1.6)
+        out[..., c] = src[..., c] * ratio
+    im = Image.fromarray(np.clip(out, 0, 255).astype(np.uint8))
+    if upscale > 1.15:
+        im = im.filter(ImageFilter.UnsharpMask(radius=1.4, percent=int(min(110, 70 * (upscale - 1) + 30)), threshold=2))
+    # 颗粒：AI 背景（商品外）与商品内的噪点差
+    ref_gray = ref.mean(axis=2)
+    cur = np.asarray(im, dtype=np.float32)
+    diff = _noise_sigma(ref_gray, 1 - inner) - _noise_sigma(cur.mean(axis=2), inner)
+    if diff > 0.4:
+        rng = np.random.default_rng(seed)
+        grain = rng.normal(0, min(diff, 6.0), size=a.shape).astype(np.float32)
+        cur = cur + grain[..., None]
+        im = Image.fromarray(np.clip(cur, 0, 255).astype(np.uint8))
+    out_im = im.convert("RGBA")
+    out_im.putalpha(p.getchannel("A"))
+    return out_im
 
 
 def plausible(found: list[tuple[int, int, int, int]], boxes: list[tuple[int, int, int, int]], size: tuple[int, int]) -> bool:
@@ -269,12 +340,13 @@ def plausible(found: list[tuple[int, int, int, int]], boxes: list[tuple[int, int
 
 
 def restore(ai: Image.Image, cutouts: list[Image.Image], found: list[tuple[int, int, int, int]]) -> Image.Image:
-    """把原抠图按找到的位置贴回 AI 图，带光色迁移与 1px 羽化。"""
+    """把原抠图按找到的位置贴回 AI 图：细节移植 + 边缘内收 1px 再柔化，让 AI 画的轮廓光与接地阴影自然衔接。"""
     canvas = ai.convert("RGBA")
-    for cut, (x, y, w, h) in zip(cutouts, found, strict=True):
+    for i, (cut, (x, y, w, h)) in enumerate(zip(cutouts, found, strict=True)):
         p = cut.resize((max(1, w), max(1, h)), Image.Resampling.LANCZOS)
-        p = relight(p, ai.crop((x, y, x + w, y + h)))
-        p.putalpha(p.getchannel("A").filter(ImageFilter.GaussianBlur(0.6)))
+        p = harmonize(p, ai.crop((x, y, x + w, y + h)), upscale=h / max(1, cut.height), seed=i)
+        edge = p.getchannel("A").filter(ImageFilter.MinFilter(3)).filter(ImageFilter.GaussianBlur(1.2))
+        p.putalpha(edge)
         canvas.alpha_composite(p, (x, y))
     return canvas.convert("RGB")
 

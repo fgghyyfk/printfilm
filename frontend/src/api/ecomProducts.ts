@@ -16,6 +16,10 @@ export type EcomProduct = {
   notes: string
   colors: { name: string; image_url: string; real_image_url?: string }[]
   fabric_image_url: string
+  /** 参考详情图 */
+  references?: { url: string; kind: 'own' | 'competitor' }[]
+  /** 商品资料（未整理为 null） */
+  knowledge?: EcomKnowledge | null
   created_at: string
 }
 
@@ -100,4 +104,46 @@ export function setEcomProductFabric(id: number, file: File): Promise<EcomProduc
 /** 删除商品 */
 export function deleteEcomProduct(id: number): Promise<{ ok: boolean }> {
   return request(`/${id}`, '删除失败', { method: 'DELETE' })
+}
+
+/** 商品资料（读参考详情整理 + 用户修改） */
+export type EcomKnowledge = {
+  summary: string
+  en_name: string
+  story: string
+  selling_points: { title: string; desc: string }[]
+  ingredients: { name: string; desc: string }[]
+  variants: { name: string; top: string; middle: string; base: string; desc: string }[]
+  specs: { label: string; value: string }[]
+  faq: { q: string; a: string }[]
+  usage: string[]
+  scenarios: string[]
+  cautions: string[]
+  outline: string[]
+  angles: string[]
+  warnings?: string[]
+  updated_at?: string
+}
+
+/** 上传参考详情图：own 品牌自己的详情（提取事实），competitor 竞品（只学结构） */
+export function addEcomProductReferences(id: number, kind: 'own' | 'competitor', files: File[]): Promise<EcomProduct> {
+  const body = new FormData()
+  body.append('kind', kind)
+  for (const f of files) body.append('files', f)
+  return request(`/${id}/references`, '上传参考详情失败', { method: 'POST', body })
+}
+
+/** 删除一张参考详情图 */
+export function removeEcomProductReference(id: number, index: number): Promise<EcomProduct> {
+  return request(`/${id}/references/${index}`, '删除失败', { method: 'DELETE' })
+}
+
+/** AI 读参考详情整理商品资料（按读图批次计费） */
+export function extractEcomProductKnowledge(id: number): Promise<EcomProduct> {
+  return request(`/${id}/knowledge/extract`, '整理资料失败', { method: 'POST' })
+}
+
+/** 保存修改后的商品资料 */
+export function saveEcomProductKnowledge(id: number, knowledge: Partial<EcomKnowledge>): Promise<EcomProduct> {
+  return request(`/${id}/knowledge`, '保存资料失败', { method: 'PUT', body: JSON.stringify(knowledge) })
 }

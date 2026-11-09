@@ -47,7 +47,10 @@ def font_path(bold: bool) -> str:
 # 按字号加载字体（带缓存）
 @lru_cache(maxsize=64)
 def load_font(size: int, bold: bool) -> ImageFont.FreeTypeFont:
-    return ImageFont.truetype(font_path(bold), size=max(8, int(size)))
+    path = font_path(bold)
+    # Noto CJK 合集里 index 2 才是简体中文字形（0 是日文）
+    index = 2 if "NotoSansCJK" in path or "NotoSerifCJK" in path else 0
+    return ImageFont.truetype(path, size=max(8, int(size)), index=index)
 
 
 # 等比缩放并居中裁切到目标尺寸
@@ -163,10 +166,12 @@ def render(
     layout: str,
     blank: str,
     copy: dict | None,
+    type_style: str = "bold",
 ) -> Path:
     """把文案按版式排到底图上，裁到 size 并保存为 JPEG。
 
     layout: none | title_corner | title_sub | title_bullets | label_bar | vertical_title（丝巾封面竖排）；blank: top | bottom | none。
+    type_style: bold 促销醒目（粗黑体）| serif 典雅衬线 | sans 简约黑体（见 typo.TYPE_STYLES）。
     """
     with Image.open(base_path) as src:
         img = cover(ImageOps.exif_transpose(src).convert("RGBA"), size)
@@ -174,12 +179,20 @@ def render(
     title = str(body.get("title") or "").strip()
     subtitle = str(body.get("subtitle") or "").strip()
     bullets = [str(b).strip() for b in body.get("bullets") or [] if str(b).strip()]
+    en = str(body.get("en") or "").strip()
     if layout == "vertical_title" and (title or subtitle):
         from app.services.ecom_set.scarf import draw_vertical_title
 
         draw_vertical_title(img, title=title, subtitle=subtitle)
     elif layout not in {"none", "vertical_title"} and (title or subtitle or bullets):
-        _draw_layout(img, layout=layout, blank=blank, title=title, subtitle=subtitle, bullets=bullets)
+        from app.services.ecom_set import typo
+
+        style = typo.TYPE_STYLES[typo.normalize_type_style(type_style)]
+        if style.id == "bold":
+            _draw_layout(img, layout=layout, blank=blank, title=title, subtitle=subtitle, bullets=bullets)
+        else:
+            typo.draw_refined(img, style=style, layout=layout, blank=blank, title=title, subtitle=subtitle,
+                              bullets=bullets, en=en)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     img.convert("RGB").save(out_path, format="JPEG", quality=92)
     return out_path

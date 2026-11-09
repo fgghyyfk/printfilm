@@ -336,6 +336,9 @@ async def estimate_task_fen(db: AsyncSession, task: TaskRun, settings: Settings 
             return _catalog_image_fen(s, size="2k")
         if task_type == "ecom_set_plan":
             return max(1, int(s.ecom_set_plan_fen))
+        if task_type == "ecom_knowledge":
+            # 参考详情整理：每批切片一次视觉调用，按规划价计
+            return max(1, int(s.ecom_set_plan_fen)) * max(1, int(payload.get("batches") or 1))
         if task_type == "tool_video":
             dur = float(payload.get("duration") or 5)
             c = charge_fen_official_video(

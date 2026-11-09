@@ -105,6 +105,12 @@ GOODS = Category(
         6: ("goods_cover", "goods_white", "goods_scene", "goods_selling", "goods_texture", "goods_usage"),
         8: ("goods_cover", "goods_white", "goods_scene", "goods_selling", "goods_selling2", "goods_texture",
             "goods_usage", "goods_lineup"),
+        # 10 / 12 张：在 8 张基础上加信息屏（免费，按商品资料排版；资料不够的那张会自动跳过并提示）
+        10: ("goods_cover", "goods_white", "goods_scene", "goods_selling", "goods_info_points", "goods_selling2",
+             "goods_texture", "goods_usage", "goods_lineup", "goods_info_specs"),
+        12: ("goods_cover", "goods_white", "goods_scene", "goods_selling", "goods_info_points", "goods_selling2",
+             "goods_info_variants", "goods_texture", "goods_info_ingredients", "goods_usage", "goods_info_usage",
+             "goods_info_specs"),
     },
     default_material="tube",
 )
@@ -285,7 +291,7 @@ def goods_cover_copy(name: str, size: str | None) -> dict:
 
 def options() -> list[dict]:
     """前端选项：每个品类的材质、尺寸、张数与槽位。"""
-    from app.services.ecom_set.presets import SLOTS
+    from app.services.ecom_set.presets import FREE_REFS, SLOTS
 
     out = []
     for cid in STYLED_IDS:
@@ -304,7 +310,7 @@ def options() -> list[dict]:
             "default_material": default_material, "default_size": default_size,
             "counts": counts(cid), "default_count": default_count,
             "compositions": {str(n): list(composition(cid, n)) for n in counts(cid)},
-            "slots": [{"key": k, "label": SLOTS[k].label, "ref": SLOTS[k].ref, "free": SLOTS[k].ref == "flat"}
+            "slots": [{"key": k, "label": SLOTS[k].label, "ref": SLOTS[k].ref, "free": SLOTS[k].ref in FREE_REFS}
                       for k in slot_keys(cid)],
             "uses_model": any(SLOTS[k].ref == "model" for k in slot_keys(cid)),
             "material_label": "包装形态" if cid == "goods" else "材质",

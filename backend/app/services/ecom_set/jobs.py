@@ -16,7 +16,7 @@ from app.models_ecom import EcomSet, EcomSetItem
 from app.models_tasks import TaskRun
 from app.services import storage
 from app.services.ecom_set.layout import mock_base, render
-from app.services.ecom_set.presets import GEN_SIZE, SLOTS, output_size
+from app.services.ecom_set.presets import FREE_REFS, GEN_SIZE, SLOTS, output_size
 from app.services.ecom_set.prompts import NEGATIVE_PROMPT, build_scene_prompt
 
 logger = logging.getLogger(__name__)
@@ -233,6 +233,15 @@ def scarf_info(ecom: EcomSet) -> dict | None:
     return info if isinstance(info, dict) else None
 
 
+# 套图当前的字体风格（旧套图没存时按品类与场景给默认）
+def type_style_of(ecom: EcomSet) -> str:
+    from app.services.ecom_set import typo
+
+    info = scarf_info(ecom) or {}
+    default = typo.default_type_style(str(info.get("category") or "general"), info.get("scene"))
+    return typo.normalize_type_style(info.get("type_style") or (ecom.plan or {}).get("type_style"), default)
+
+
 # 按丝巾平铺图自动校色（只修正接近丝巾主色的像素）；未校色时原样返回
 def color_fix(path: Path, product: Path) -> Path:
     from app.services.color_match import match_colors_file
@@ -258,6 +267,13 @@ def render_flat_item(ecom: EcomSet, item: EcomSetItem) -> Path:
         return scarf_mod.render_size_spec(product, out, size_id=(scarf_info(ecom) or {}).get("size"), copy=copy, size=size)
     if item.slot == "scarf_crop":
         return scarf_mod.render_crop(product, out, copy=copy, size=size)
+    if SLOTS[item.slot].ref == "info":
+        from app.services.ecom_set.infoscreens import render_info
+
+        info = dict(scarf_info(ecom) or {})
+        info.setdefault("product_path", str(product))
+        info.setdefault("product_name", ecom.name)
+        return render_info(item.slot, out, size=size, copy=copy, styled=info, type_style=type_style_of(ecom))
     if item.slot.startswith("goods_"):
         from app.services.ecom_set import composite
 
@@ -269,7 +285,7 @@ def render_flat_item(ecom: EcomSet, item: EcomSetItem) -> Path:
 
 # 把底图排版成成图，返回 (本地路径, 对外 URL)
 async def render_final(ecom: EcomSet, item: EcomSetItem, base: Path) -> tuple[Path, str]:
-    if SLOTS.get(item.slot) is not None and SLOTS[item.slot].ref == "flat":
+    if SLOTS.get(item.slot) is not None and SLOTS[item.slot].ref in FREE_REFS:
         out = await asyncio.to_thread(render_flat_item, ecom, item)
         return out, await asyncio.to_thread(public_url, out)
     out = set_dir(ecom.user_id, ecom.id) / f"final_{item.idx:02d}_{uuid.uuid4().hex[:6]}.jpg"
@@ -281,6 +297,7 @@ async def render_final(ecom: EcomSet, item: EcomSetItem, base: Path) -> tuple[Pa
         layout=item.layout,
         blank=item.blank,
         copy=item.copy_json,
+        type_style=type_style_of(ecom),
     )
     return out, await asyncio.to_thread(public_url, out)
 

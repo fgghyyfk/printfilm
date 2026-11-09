@@ -394,7 +394,8 @@ function EcomSetWorkspace() {
             onRetry={onRetry}
             onDownload={onDownload}
             onNew={() => backToForm()}
-            extraActions={<EcomSetExtras set={set} onOpenSet={(id) => setParams({ id: String(id) })} onError={setActionError} />}
+            extraActions={<EcomSetExtras set={set} onOpenSet={(id) => setParams({ id: String(id) })} onError={setActionError}
+              typeStyles={options?.type_styles} onUpdated={setSet} />}
           />
           {canMakeDaihuoVideo(set) ? <DaihuoVideoPanel key={set.id} set={set} /> : null}
         </>

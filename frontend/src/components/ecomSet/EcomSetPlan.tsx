@@ -105,7 +105,7 @@ export default function EcomSetPlan({ set, billingEnabled, busy, error, onSave, 
             </label>
             {hasCopy(item) ? (
               <EcomSetCopyFields
-                value={{ title: item.title, subtitle: item.subtitle, bullets: item.bullets }}
+                value={{ title: item.title, subtitle: item.subtitle, bullets: item.bullets, en: item.en || '' }}
                 disabled={Boolean(busy)}
                 titleMax={titleLimitOf(item.slot)}
                 onChange={(copy) => patchItem(item.idx, copy)}

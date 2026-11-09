@@ -18,6 +18,7 @@ from app.services.ecom_set.prompts import (
     clip,
     normalize_copy,
     sanitize_scene,
+    title_limit,
 )
 from app.services.compliance.ad_words import Hit, summarize
 from app.services.llm_client import chat_completions, chat_completions_vision
@@ -72,9 +73,9 @@ def align_items(raw_items: Any, slots: list[Slot], *, name: str) -> tuple[list[d
             # 只有该位置的项没标已知槽位时才按位置兜底，避免错配别的槽位的文案
             pos = ordered[i] if i < len(ordered) else {}
             src = pos if str(pos.get("slot") or "") not in valid else {}
-        copy, h = normalize_copy(src, layout=slot.layout)
+        copy, h = normalize_copy(src, layout=slot.layout, title_max=title_limit(slot.key))
         hits += h
-        if slot.layout != "none" and not copy["title"]:
+        if slot.layout not in {"none", "info"} and not copy["title"]:
             copy["title"] = clip(name, 10)
         scene, sh = sanitize_scene(str(src.get("scene") or ""))
         hits += sh
@@ -117,15 +118,16 @@ async def plan_set(
     platform: str,
     style: str,
     slots: list[Slot],
+    knowledge: str = "",
 ) -> dict:
-    """规划整套图。返回 {"product", "items":[{slot, scene, copy}], "warnings", "vision"}。
+    """规划整套图（knowledge 为商品资料摘要，文案只用其中事实）。返回 {"product", "items":[{slot, scene, copy}], "warnings", "vision"}。
 
     优先用视觉模型看图；视觉不可用或失败时退化为纯文字规划并写入 warnings。
     """
     settings = get_settings()
     platform_name = PLATFORMS[normalize_platform(platform)][0]
     user_text = build_plan_user_text(
-        name=name, notes=notes, platform_name=platform_name, style=style, slots=slots
+        name=name, notes=notes, platform_name=platform_name, style=style, slots=slots, knowledge=knowledge
     )
     warnings: list[str] = []
     vision = False
