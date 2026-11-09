@@ -57,41 +57,86 @@ def missing_hint(slot_key: str) -> str:
 
 # ---------- 画布与标题 ----------
 def _paper(spec_bg: tuple[int, int, int] | None) -> tuple[int, int, int]:
-    """信息屏底色：场景主色和暖白按 1:4 混合，浅而不白。"""
-    base = (248, 245, 240)
+    """信息屏底色：近白暖调，带一点场景主色（9:1 混合），和场景图衔接又足够干净。"""
+    base = (251, 249, 246)
     if not spec_bg:
         return base
-    return tuple(int(b * 0.8 + s * 0.2) for b, s in zip(base, spec_bg, strict=True))  # type: ignore[return-value]
+    return tuple(int(b * 0.9 + s * 0.1) for b, s in zip(base, spec_bg, strict=True))  # type: ignore[return-value]
+
+
+RULE = (205, 196, 184)
+
+
+def _title_family(style: typo.TypeStyle) -> str:
+    return "sans" if style.id != "serif" else "serif"
 
 
 def _header(img: Image.Image, style: typo.TypeStyle, *, title: str, subtitle: str, en: str) -> int:
-    """画英文小标 + 标题 + 细线 + 副标题，返回下方内容起始 y。"""
+    """英文小标（两侧细线）→ 大标题 → 副标题（两侧细线），返回下方内容起始 y。"""
     W, H = img.size
     d = ImageDraw.Draw(img)
-    y = int(H * 0.06)
-    margin = int(W * 0.08)
-    inner = W - 2 * margin
+    y = int(H * 0.045)
+    inner = int(W * 0.84)
+
+    def flanked(text: str, f, fill, track: float, y0: int) -> None:
+        tw = typo.text_width(text, f, track)
+        x = (W - tw) / 2
+        typo.draw_text(d, (x, y0), text, f, fill, track)
+        mid = y0 + f.size * 0.62
+        gap, ln = W * 0.03, W * 0.12
+        d.line([(x - gap - ln, mid), (x - gap, mid)], fill=RULE, width=max(1, W // 720))
+        d.line([(x + tw + gap, mid), (x + tw + gap + ln, mid)], fill=RULE, width=max(1, W // 720))
+
     if en:
-        f = typo.font("serif", False, int(W * 0.022))
-        t = en.upper()
-        typo.draw_text(d, ((W - typo.text_width(t, f, 0.32)) / 2, y), t, f, typo.INK_MUTED, 0.32)
-        y += typo.line_h(f, 0.6)
+        f = typo.font("serif", False, int(W * 0.026))
+        flanked(en, f, typo.INK_MUTED, 0.04, y)
+        y += typo.line_h(f, 0.5)
     if title:
-        f, lines = typo.fit(title, style.title_family if style.id != "bold" else "sans", style.id == "bold",
-                            int(W * 0.06), 0.06, inner, 2)
+        f, lines = typo.fit(title, _title_family(style), style.id == "bold", int(W * 0.07), 0.08, inner, 2)
         for line in lines:
-            typo.draw_text(d, ((W - typo.text_width(line, f, 0.06)) / 2, y), line, f, typo.INK, 0.06)
-            y += typo.line_h(f, 0.3)
-    y += int(W * 0.012)
-    rw = int(W * 0.05)
-    d.line([((W - rw) / 2, y), ((W + rw) / 2, y)], fill=typo.INK_MUTED, width=max(1, W // 700))
-    y += int(W * 0.03)
+            typo.draw_text(d, ((W - typo.text_width(line, f, 0.08)) / 2, y), line, f, typo.INK, 0.08)
+            y += typo.line_h(f, 0.25)
     if subtitle:
-        f, lines = typo.fit(subtitle, "sans", False, int(W * 0.028), 0.1, inner, 2)
-        for line in lines:
-            typo.draw_text(d, ((W - typo.text_width(line, f, 0.1)) / 2, y), line, f, typo.INK_MUTED, 0.1)
-            y += typo.line_h(f, 0.5)
+        f, lines = typo.fit(subtitle, "sans", False, int(W * 0.03), 0.12, int(W * 0.6), 1)
+        y += int(W * 0.008)
+        flanked(lines[0], f, typo.INK_MUTED, 0.12, y)
+        y += typo.line_h(f, 0.5)
     return y + int(H * 0.03)
+
+
+def _footer(img: Image.Image, lines: list[str], *, title: str = "", flank: bool = False) -> int:
+    """底部说明条（免责声明 / 适用场景 / 温馨提示），返回它占用区域的顶部 y。"""
+    W, H = img.size
+    lines = [_clean(x) for x in lines if x and _clean(x)]
+    if not lines and not title:
+        return int(H * 0.96)
+    d = ImageDraw.Draw(img)
+    f = typo.font("sans", False, int(W * 0.022))
+    t_f = typo.font(_title_family(typo.TYPE_STYLES["serif"]), False, int(W * 0.03))
+    width = int(W * 0.8)
+    wrapped: list[str] = []
+    for ln in lines[:4]:
+        wrapped += typo.wrap(ln, f, 0.04, width, 2)
+    h = len(wrapped) * typo.line_h(f, 0.6) + (typo.line_h(t_f, 0.5) if title else 0)
+    top = int(H * 0.965) - h
+    y = top
+    if title:
+        tw = typo.text_width(title, t_f, 0.2)
+        typo.draw_text(d, ((W - tw) / 2, y), title, t_f, typo.INK, 0.2)
+        y += typo.line_h(t_f, 0.5)
+    for ln in wrapped:
+        tw = typo.text_width(ln, f, 0.04)
+        x = (W - tw) / 2
+        typo.draw_text(d, (x, y), ln, f, typo.INK_MUTED if not flank else typo.INK, 0.04)
+        if flank:
+            mid = y + f.size * 0.62
+            d.line([(W * 0.06, mid), (x - W * 0.03, mid)], fill=RULE, width=max(1, W // 720))
+            d.line([(x + tw + W * 0.03, mid), (W * 0.94, mid)], fill=RULE, width=max(1, W // 720))
+        y += typo.line_h(f, 0.6)
+    rule_y = top - int(H * 0.02)
+    if not flank:
+        d.line([(W * 0.08, rule_y), (W * 0.92, rule_y)], fill=RULE, width=max(1, W // 720))
+    return rule_y - int(H * 0.01)
 
 
 def _paste_cutout(img: Image.Image, path: str, box: tuple[int, int, int, int]) -> None:
@@ -125,14 +170,14 @@ def _para(d: ImageDraw.ImageDraw, text: str, f, *, x: int, y: int, width: int, f
 
 # ---------- 各类信息屏 ----------
 def display_name(name: str, variants: list[dict]) -> str:
-    """款名显示：资料里只有英文名时用商品库里同编号的中文款名；中文名后面拖的英文去掉。"""
-    has_cjk = any("\u4e00" <= ch <= "\u9fff" for ch in name)
-    if not has_cjk:
-        num = re.search(r"No\.?\s*(\d+)", name, re.I)
+    """款名显示：商品库里同编号的款有中文名时用它；否则把中文名后面拖的英文去掉。"""
+    num = re.search(r"No\.?\s*(\d+)", name, re.I)
+    if num:
         for v in variants:
             vn = str(v.get("name") or "")
-            if num and re.search(rf"No\.?\s*0*{int(num.group(1))}\b", vn, re.I) and any("\u4e00" <= c <= "\u9fff" for c in vn):
+            if re.search(rf"No\.?\s*0*{int(num.group(1))}\b", vn, re.I) and any("\u4e00" <= c <= "\u9fff" for c in vn):
                 return vn
+    if not any("\u4e00" <= ch <= "\u9fff" for ch in name):
         return name
     m = re.match(r"^(.*?[\u4e00-\u9fff]+)\s+[A-Za-z].*$", name)
     return m.group(1) if m else name
@@ -150,7 +195,8 @@ def _match_image(name: str, variants: list[dict]) -> str:
     return ""
 
 
-def _variants(img: Image.Image, y: int, k: dict, variants: list[dict], style: typo.TypeStyle) -> None:
+def _variants(img: Image.Image, y: int, bottom: int, k: dict, variants: list[dict], style: typo.TypeStyle) -> None:
+    """多款一览：有商品图的款排成网格（大图 + 款名 + 一行香调），没有图的款放到底部文字条。"""
     W, H = img.size
     rows = [dict(r) for r in k.get("variants") or []]
     if len(rows) < 2:
@@ -161,125 +207,142 @@ def _variants(img: Image.Image, y: int, k: dict, variants: list[dict], style: ty
     if not any(r["image"] for r in rows) and len(rows) == len(variants):
         for r, v in zip(rows, variants, strict=True):
             r["image"] = str(v.get("image_path") or "")
-    rows = rows[:9]
-    cols = 2 if len(rows) in (2, 4) else 3
-    n_rows = (len(rows) + cols - 1) // cols
+    with_img = [r for r in rows if r["image"]][:9] or rows[:9]
+    extra = [r for r in rows if r not in with_img][:3]
+
+    def notes(r: dict) -> str:
+        parts = [r.get(x) for x in ("top", "middle", "base") if r.get(x)]
+        if parts:
+            return " · ".join(p.split("、")[0] for p in parts)
+        return r.get("desc") or ""
+
+    if extra:
+        lines = [f"{r['name']}　{_clean(' / '.join(x for x in (r.get('top'), r.get('middle'), r.get('base')) if x) or r.get('desc') or '')}"
+                 for r in extra]
+        bottom = min(bottom, _footer(img, lines))
+    n = len(with_img)
+    cols = 2 if n in (2, 4) else 3
+    n_rows = (n + cols - 1) // cols
     margin = int(W * 0.06)
     cell_w = (W - 2 * margin) // cols
-    cell_h = min(int((H * 0.95 - y) / max(1, n_rows)), int(cell_w * 1.9))
-    y += max(0, int((H * 0.95 - y - cell_h * n_rows) / 2))
+    cell_h = int((bottom - y) / max(1, n_rows))
     d = ImageDraw.Draw(img)
-    name_f = typo.font(style.title_family if style.id != "bold" else "sans", False, int(W * (0.03 if cols == 2 else 0.026)))
-    note_f = typo.font("sans", False, int(W * (0.021 if cols == 2 else 0.018)))
-    last_n = len(rows) - (n_rows - 1) * cols
-
-    # 先算每格文字占多高，全部格子用同一个商品图高度（按最高的文字算），避免与下一行重叠、同行高低不齐
-    def text_h(r: dict) -> int:
-        name_lines = len(typo.wrap(_clean(r["name"]), name_f, 0.02, cell_w, 2))
-        notes = sum(1 for x in ("top", "middle", "base") if r.get(x)) or (2 if r.get("desc") else 0)
-        return (name_lines * typo.line_h(name_f, 0.3) + notes * typo.line_h(note_f, 0.45)
-                + int(cell_h * 0.04) + int(cell_h * 0.08))
-    img_h = max(int(cell_h * 0.25), cell_h - max(text_h(r) for r in rows))
-    for i, r in enumerate(rows):
+    name_f = typo.font(_title_family(style), False, int(W * (0.032 if cols == 2 else 0.027)))
+    note_f = typo.font("sans", False, int(W * (0.023 if cols == 2 else 0.02)))
+    text_h = typo.line_h(name_f, 0.35) + typo.line_h(note_f, 0.4) + int(cell_h * 0.06)
+    img_h = max(int(cell_h * 0.3), cell_h - text_h)
+    last_n = n - (n_rows - 1) * cols
+    for i, r in enumerate(with_img):
         row_i = i // cols
-        # 最后一行不满时居中
         shift = (cols - last_n) * cell_w // 2 if row_i == n_rows - 1 else 0
         cx, cy = margin + shift + (i % cols) * cell_w, y + row_i * cell_h
         if r["image"]:
-            _paste_cutout(img, r["image"], (cx + int(cell_w * 0.1), cy, cx + int(cell_w * 0.9), cy + img_h))
+            _paste_cutout(img, r["image"], (cx + int(cell_w * 0.15), cy + int(cell_h * 0.03), cx + int(cell_w * 0.85), cy + img_h))
             d = ImageDraw.Draw(img)
-        ty = cy + img_h + int(cell_h * 0.04)
-        ty = _para(d, _clean(r["name"]), name_f, x=cx, y=ty, width=cell_w, fill=typo.INK, max_lines=2, center=True,
-                   gap=0.3)
-        for label, key in (("前调", "top"), ("中调", "middle"), ("后调", "base")):
-            if r.get(key):
-                ty = _para(d, f"{label} · {_clean(r[key])}", note_f, x=cx + 6, y=ty, width=cell_w - 12,
-                           fill=typo.INK_MUTED, max_lines=1, center=True, gap=0.45)
-        if r.get("desc") and not any(r.get(x) for x in ("top", "middle", "base")):
-            _para(d, _clean(r["desc"]), note_f, x=cx + 6, y=ty, width=cell_w - 12, fill=typo.INK_MUTED,
-                  max_lines=2, center=True, gap=0.45)
+        ty = cy + img_h + int(cell_h * 0.03)
+        ty = _para(d, _clean(r["name"]), name_f, x=cx, y=ty, width=cell_w, fill=typo.INK, max_lines=1, center=True, gap=0.35)
+        _para(d, _clean(notes(r)), note_f, x=cx + 8, y=ty, width=cell_w - 16, fill=typo.INK_MUTED, max_lines=1,
+              center=True, gap=0.4)
 
 
-def _list(img: Image.Image, y: int, rows: list[tuple[str, str]], style: typo.TypeStyle, *, numbered: bool,
-          product: str = "") -> None:
-    """编号列表（卖点 / 成分 / 用法）：左侧序号，右侧标题 + 说明，行间细线；整块在剩余空间里垂直居中。"""
+def _side_list(img: Image.Image, y: int, bottom: int, rows: list[tuple[str, str]], style: typo.TypeStyle, *,
+               product: str, numbered: bool) -> None:
+    """左侧大商品图 + 右侧条目（标题 + 说明，细线分隔）；放不下自动缩小字号，整块垂直居中。"""
     W, H = img.size
-    margin = int(W * 0.1)
+    avail = max(1, bottom - y)
+    px0, px1 = int(W * 0.05), int(W * 0.40)
     if product:
-        ph = int(H * 0.22)
-        _paste_cutout(img, product, (margin, y, W - margin, y + ph))
-        y += ph + int(H * 0.035)
-    avail = int(H * 0.95 - y)
-    each = avail / max(1, len(rows))
-    big = min(0.038, each / W * 0.42)
-    text_x = margin + int(W * 0.12) if numbered else margin
-    width = W - text_x - margin
-    # 放不下就缩小字号重排，直到整块装进剩余空间
-    for _ in range(8):
-        layer, ly = _draw_list_rows(rows, style, W=W, avail=avail, each=each, big=big, numbered=numbered,
-                                    margin=margin, text_x=text_x, width=width)
-        if ly <= avail:
+        _paste_cutout(img, product, (px0, y + int(avail * 0.06), px1, y + int(avail * 0.94)))
+    x0 = int(W * 0.45) if product else int(W * 0.12)
+    width = int(W * 0.94) - x0
+    big = 0.044
+    for _ in range(10):
+        layer, used = _draw_rows(rows, style, W=W, avail=avail, big=big, numbered=numbered, x0=x0, width=width)
+        if used <= avail:
             break
-        big *= 0.88
-    used = min(ly, avail)
+        big *= 0.9
+    used = min(used, avail)
     img.alpha_composite(layer.crop((0, 0, W, max(1, used))), (0, y + max(0, (avail - used) // 2)))
 
 
-def _draw_list_rows(rows: list[tuple[str, str]], style: typo.TypeStyle, *, W: int, avail: int, each: float, big: float,
-                    numbered: bool, margin: int, text_x: int, width: int) -> tuple[Image.Image, int]:
-    """把列表画到透明图层上，返回 (图层, 实际用掉的高度)；图层留两倍高度以便量出是否超出。"""
-    num_f = typo.font("serif", False, int(W * big * 1.25))
-    t_f = typo.font(style.title_family if style.id != "bold" else "sans", style.id == "bold", int(W * big))
-    s_f = typo.font("sans", False, int(W * big * 0.72))
-    row_gap = int(min(each * 0.18, W * 0.05, W * big * 1.1))
+def _draw_rows(rows: list[tuple[str, str]], style: typo.TypeStyle, *, W: int, avail: int, big: float,
+               numbered: bool, x0: int, width: int) -> tuple[Image.Image, int]:
+    """把条目画到透明图层，返回 (图层, 用掉的高度)。"""
+    t_f = typo.font(_title_family(style), style.id == "bold", int(W * big))
+    s_f = typo.font("sans", False, int(W * big * 0.6))
+    n_f = typo.font("serif", False, int(W * big * 1.25))
+    gap = int(W * big * 0.75)
     layer = Image.new("RGBA", (W, max(1, avail * 2)), (0, 0, 0, 0))
     d = ImageDraw.Draw(layer)
+    tx = x0 + (int(n_f.size * 1.6) if numbered else 0)
+    tw = width - (tx - x0)
     ly = 0
     for i, (title, desc) in enumerate(rows):
         top = ly
         if numbered:
-            typo.draw_text(d, (margin, ly - int(num_f.size * 0.1)), f"{i + 1:02d}", num_f, typo.INK_MUTED, 0.02)
-        ly = _para(d, _clean(title), t_f, x=text_x, y=ly, width=width, fill=typo.INK, max_lines=2, gap=0.35)
+            typo.draw_text(d, (x0, ly - int(n_f.size * 0.18)), f"{i + 1:02d}", n_f, typo.INK_MUTED, 0.0)
+        if not title:
+            l_f = typo.font(_title_family(style), False, int(W * big * 0.68))
+            ly = _para(d, _clean(desc), l_f, x=tx, y=ly, width=tw, fill=typo.INK, max_lines=4, gap=0.45)
+            desc = ""
+        else:
+            ly = _para(d, _clean(title), t_f, x=tx, y=ly, width=tw, fill=typo.INK, max_lines=2, gap=0.3)
         if desc:
-            ly = _para(d, _clean(desc), s_f, x=text_x, y=ly + int(W * 0.004), width=width, fill=typo.INK_MUTED,
-                       max_lines=2, gap=0.55)
-        ly = max(ly, top + int(num_f.size * 1.2)) + row_gap
+            ly = _para(d, _clean(desc), s_f, x=tx, y=ly + int(W * 0.004), width=tw, fill=typo.INK_MUTED,
+                       max_lines=2, gap=0.5)
+        ly = max(ly, top + int(n_f.size * 1.1)) + gap // 2
         if i < len(rows) - 1:
-            d.line([(text_x, ly - row_gap // 2), (W - margin, ly - row_gap // 2)], fill=(214, 207, 198), width=1)
-            ly += row_gap // 2
+            d.line([(x0, ly), (x0 + width, ly)], fill=RULE, width=max(1, W // 720))
+            ly += gap // 2 + gap // 3
     return layer, ly
 
 
-def _specs(img: Image.Image, y: int, rows: list[tuple[str, str]], style: typo.TypeStyle, product: str) -> None:
+def _specs(img: Image.Image, y: int, bottom: int, rows: list[tuple[str, str]], style: typo.TypeStyle, product: str) -> None:
+    """左侧商品图 + 右侧信息表（项目 | 内容，细线分隔）。"""
     W, H = img.size
-    margin = int(W * 0.12)
-    ph = int(H * 0.3)
-    _paste_cutout(img, product, (margin, y, W - margin, y + ph))
-    y += ph + int(H * 0.05)
+    avail = max(1, bottom - y)
+    _paste_cutout(img, product, (int(W * 0.05), y + int(avail * 0.08), int(W * 0.38), y + int(avail * 0.92)))
+    x0, x1 = int(W * 0.43), int(W * 0.94)
+    each = min(int(W * 0.085), int(avail * 0.92 / max(1, len(rows))))
+    l_f = typo.font("sans", False, int(each * 0.34))
+    v_f = typo.font(_title_family(style), False, int(each * 0.36))
+    label_w = int((x1 - x0) * 0.3)
     d = ImageDraw.Draw(img)
-    each = min(int(W * 0.075), int((H * 0.95 - y) / max(1, len(rows))))
-    l_f = typo.font("sans", False, int(each * 0.36))
-    v_f = typo.font(style.title_family if style.id != "bold" else "sans", False, int(each * 0.4))
-    label_w = int((W - 2 * margin) * 0.3)
-    for label, value in rows:
-        d.line([(margin, y), (W - margin, y)], fill=(214, 207, 198), width=1)
-        typo.draw_text(d, (margin, y + each * 0.28), _clean(label), l_f, typo.INK_MUTED, 0.1)
-        _para(d, _clean(value), v_f, x=margin + label_w, y=int(y + each * 0.25), width=W - 2 * margin - label_w,
-              fill=typo.INK, max_lines=1)
-        y += each
-    d.line([(margin, y), (W - margin, y)], fill=(214, 207, 198), width=1)
+    ty = y + (avail - each * len(rows)) // 2
+    for i, (label, value) in enumerate(rows):
+        typo.draw_text(d, (x0, ty + each * 0.28), _clean(label), l_f, typo.INK_MUTED, 0.1)
+        _para(d, _clean(value), v_f, x=x0 + label_w, y=int(ty + each * 0.24), width=x1 - x0 - label_w,
+              fill=typo.INK, max_lines=2 if each > v_f.size * 2.6 else 1, gap=0.25)
+        ty += each
+        if i < len(rows) - 1:
+            d.line([(x0, ty), (x1, ty)], fill=RULE, width=max(1, W // 720))
 
 
-def _story(img: Image.Image, y: int, k: dict, style: typo.TypeStyle, product: str) -> None:
+def _story(img: Image.Image, y: int, bottom: int, k: dict, style: typo.TypeStyle, product: str) -> None:
+    """品牌故事：一段居中正文，下方商品图。"""
     W, H = img.size
     margin = int(W * 0.12)
     d = ImageDraw.Draw(img)
-    f = typo.font(style.title_family if style.id != "bold" else "sans", False, int(W * 0.028))
-    y = _para(d, _clean(k.get("story") or ""), f, x=margin, y=y + int(H * 0.02), width=W - 2 * margin, fill=typo.INK, gap=0.9,
-              max_lines=9, center=True)
-    top = max(y + int(H * 0.05), int(H * 0.55))
-    if top < H * 0.82:
-        _paste_cutout(img, product, (margin, top, W - margin, int(H * 0.92)))
+    f = typo.font(_title_family(style), False, int(W * 0.03))
+    y = _para(d, _clean(k.get("story") or ""), f, x=margin, y=y + int(H * 0.01), width=W - 2 * margin, fill=typo.INK,
+              gap=0.9, max_lines=9, center=True)
+    top = max(y + int(H * 0.04), int(H * 0.55))
+    if top < bottom - H * 0.12:
+        _paste_cutout(img, product, (margin, top, W - margin, bottom))
+
+
+def split_step(text: str) -> tuple[str, str]:
+    """长步骤拆成「短标题 + 说明」：在第一个逗号处断开（标题 ≤12 字时）。"""
+    text = (text or "").strip()
+    m = re.match(r"^(.{2,12}?)[，,；;：:]\s*(.+)$", text)
+    if len(text) > 12 and m:
+        return m.group(1), m.group(2)
+    if len(text) > 12:
+        return "", text  # 拆不开的长句：整句用小一号字、最多 3 行
+    return text, ""
+
+
+INGREDIENT_NOTE = "以上为成分说明，不作为产品功效承诺"
 
 
 def render_info(slot_key: str, out: Path, *, size: tuple[int, int], copy: dict | None, styled: dict,
@@ -293,32 +356,40 @@ def render_info(slot_key: str, out: Path, *, size: tuple[int, int], copy: dict |
     style = typo.TYPE_STYLES[typo.normalize_type_style(type_style, "serif")]
     body = copy or {}
     d_title, d_sub, d_en = DEFAULT_COPY.get(slot_key, ("", "", ""))
-    title = _clean(body.get("title") or d_title)
-    y = _header(img, style, title=title, subtitle=_clean(body.get("subtitle") or d_sub),
+    y = _header(img, style, title=_clean(body.get("title") or d_title), subtitle=_clean(body.get("subtitle") or d_sub),
                 en=str(body.get("en") or d_en))
     k = styled.get("knowledge") or {}
     variants = list(styled.get("variants") or [])
     product = str(styled.get("product_path") or "")
+    bottom = int(H * 0.95)
     if slot_key == "goods_info_variants":
-        _variants(img, y, k, variants, style)
+        _variants(img, y, bottom, k, variants, style)
     elif slot_key == "goods_info_points":
-        _list(img, y, [(r["title"], r.get("desc", "")) for r in k.get("selling_points") or []][:6], style,
-              numbered=True)
+        _side_list(img, y, bottom, [(r["title"], r.get("desc", "")) for r in k.get("selling_points") or []][:5], style,
+                   product=product, numbered=False)
     elif slot_key == "goods_info_ingredients":
-        _list(img, y, [(r["name"], r.get("desc", "")) for r in k.get("ingredients") or []][:6], style,
-              numbered=False, product=product)
+        cautions = [c for c in k.get("cautions") or [] if "成分" in c or "功效" in c]
+        bottom = _footer(img, cautions[:1] or [INGREDIENT_NOTE])
+        _side_list(img, y, bottom, [(r["name"], r.get("desc", "")) for r in k.get("ingredients") or []][:5], style,
+                   product=product, numbered=False)
     elif slot_key == "goods_info_usage":
-        _list(img, y, [(s, "") for s in k.get("usage") or []][:6], style, numbered=True, product=product)
+        scen = [s for s in k.get("scenarios") or []][:4]
+        if scen:
+            bottom = _footer(img, [" · ".join(scen)], flank=True)
+        _side_list(img, y, bottom, [split_step(s) for s in k.get("usage") or []][:5], style, product=product, numbered=True)
     elif slot_key == "goods_info_specs":
-        _specs(img, y, spec_rows(styled), style, product)
+        tips = [c for c in k.get("cautions") or [] if not ("成分" in c and "功效" in c)][:3]
+        if tips:
+            bottom = _footer(img, tips, title="温馨提示")
+        _specs(img, y, bottom, spec_rows(styled, with_cautions=not tips), style, product)
     elif slot_key == "goods_info_story":
-        _story(img, y, k, style, product)
+        _story(img, y, bottom, k, style, product)
     out.parent.mkdir(parents=True, exist_ok=True)
     img.convert("RGB").save(out, format="JPEG", quality=94)
     return out
 
 
-def spec_rows(styled: dict) -> list[tuple[str, str]]:
+def spec_rows(styled: dict, *, with_cautions: bool = True) -> list[tuple[str, str]]:
     """产品信息表：资料里的规格优先，缺的用品名、规格、包装形态补。"""
     k = styled.get("knowledge") or {}
     rows: list[tuple[str, str]] = []
@@ -337,6 +408,6 @@ def spec_rows(styled: dict) -> list[tuple[str, str]]:
     for label, value in extra:
         if value and value not in values and label not in have and not any(label in h for h in have):
             rows.append((label, value))
-    if k.get("cautions"):
+    if with_cautions and k.get("cautions"):
         rows.append(("注意事项", "；".join(k["cautions"])[:30]))
     return rows[:9]

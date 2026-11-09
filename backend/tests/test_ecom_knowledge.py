@@ -209,3 +209,13 @@ def test_spec_rows_dedupe():
               "product_name": "护手霜", "size": "60g"}
     rows = infoscreens.spec_rows(styled)
     assert [r[0] for r in rows] == ["净含量", "保质期", "品名"]
+    assert all(r[0] != "注意事项" for r in infoscreens.spec_rows({**styled, "knowledge": {**styled["knowledge"], "cautions": ["避光"]}}, with_cautions=False))
+
+
+# 使用方法：长句在第一个逗号处拆成「短标题 + 说明」，拆不开的整句保留
+def test_split_step():
+    assert infoscreens.split_step("洁净手部后，取适量手霜均匀涂抹") == ("洁净手部后", "取适量手霜均匀涂抹")
+    assert infoscreens.split_step("取适量于手背") == ("取适量于手背", "")
+    assert infoscreens.split_step("干燥粗糙倒刺区域可沿甲缘涂抹一层后轻轻按揉") == ("", "干燥粗糙倒刺区域可沿甲缘涂抹一层后轻轻按揉")
+    v = [{"name": "No.12 布斯瓦勒", "image_path": ""}]
+    assert infoscreens.display_name("No.12 Bousval 布斯瓦勒", v) == "No.12 布斯瓦勒"
