@@ -25,6 +25,7 @@ from app.schemas_drama import (
     DramaScriptOut,
 )
 from app.services.drama.access import get_owned_drama_project, require_drama_project_manager
+from app.services.drama.assets_seed_state import merge_saved_project_params, reconcile_stale_assets_seed
 from app.services.teams.write_access import workspace_team
 from app.services.teams.access import get_team
 from app.services.drama.generation import project_link_last_frame_enabled
@@ -303,6 +304,9 @@ async def get_project(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> DramaProjectOut:
+    project = await get_owned_drama_project(db, project_id, user)
+    # 页面靠轮询本接口等待抽取结束：进程重启遗留的 generating 要在这里收敛。
+    await reconcile_stale_assets_seed(db, project)
     project = await get_owned_drama_project(
         db, project_id, user, with_script=True, with_assets=True, with_episodes=True
     )
@@ -338,7 +342,9 @@ async def update_project(
     if body.content is not None:
         project.content = body.content
     if body.params is not None:
-        project.params = body.params
+        # 抽取状态只由服务端写：先锁行重读，任务可能刚写入新状态。
+        await db.refresh(project, attribute_names=["params"], with_for_update=True)
+        project.params = merge_saved_project_params(project.params, body.params)
     await db.commit()
 
     # 镜间衔接开关变化时，动态重排仍排队的分镜视频任务

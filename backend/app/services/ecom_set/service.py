@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import logging
 import uuid
 import zipfile
 from pathlib import Path
@@ -50,6 +51,8 @@ from app.services.ecom_set.presets import (
 from app.services.compliance.ad_words import Hit, summarize
 from app.services.ecom_set.prompts import clip, normalize_copy, sanitize_scene
 
+logger = logging.getLogger(__name__)
+
 ALLOWED_EXT = {".png", ".jpg", ".jpeg", ".webp"}
 MAX_UPLOAD = 10 * 1024 * 1024
 
@@ -81,7 +84,12 @@ async def image_unit_fen(db: AsyncSession) -> int:
     from app.services.media_models.planning import prepare_task_media
 
     probe = TaskRun(domain="studio", task_type="ecom_set_image", payload=image_task_payload("3:4"))
-    await prepare_task_media(db, probe)
+    try:
+        await prepare_task_media(db, probe)
+    except ValueError as exc:
+        # 模型渠道未配置时只是报不出价，不能让选项和历史列表整页 500；真正提交生成时仍会报错。
+        logger.warning("电商图估价跳过：%s", exc)
+        return 0
     return int(await estimate_task_fen(db, probe))
 
 

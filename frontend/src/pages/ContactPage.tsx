@@ -3,12 +3,13 @@ import { Link } from 'react-router-dom'
 import { HelpCircle, Mail, Building2 } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import { useI18n } from '../i18n'
+import { brandName } from '../lib/siteLinks'
 
 const CHANNEL_ICONS = [Mail, HelpCircle, Building2] as const
 
 /** 联系我们：渠道说明 + 本地反馈表单（引导发邮件） */
 export default function ContactPage() {
-  const { t, m } = useI18n()
+  const { t, m, locale } = useI18n()
   /*
    * topic 反馈主题
    * email 联系邮箱
@@ -29,7 +30,7 @@ export default function ContactPage() {
       message.trim() || t('contact.mailEmpty'),
     ].join('\n')
     const href = `mailto:support@haituike.com?subject=${encodeURIComponent(
-      `[开口播] ${topic}`,
+      `[${brandName(locale)}] ${topic}`,
     )}&body=${encodeURIComponent(body)}`
     window.location.href = href
     setSent(true)

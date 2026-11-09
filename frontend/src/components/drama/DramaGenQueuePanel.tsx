@@ -166,7 +166,7 @@ export function DramaGenQueuePanel() {
                       type="button"
                       className="drama-gen-fab-icon-btn"
                       onClick={cancelAllVideo}
-                      title="取消全部视频任务"
+                      title="取消全部视频任务（已开始生成的费用不退）"
                       aria-label="取消全部视频任务"
                     >
                       <Octagon size={16} />

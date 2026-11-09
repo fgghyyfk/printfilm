@@ -10,6 +10,8 @@ from app.database import AsyncSessionLocal
 from app.services.billing.context import billing_scope
 from app.services.billing.settlement import freeze_for_task, settle_task
 from app.services.tasks.handlers import get_task_handler
+from app.services.billing.cancel_charge import CANCEL_CHARGE_MESSAGE, record_accepted_upstream_charge
+from app.services.tasks.recovery import converge_fragment_plan_status, fragment_plan_target
 from app.services.tasks.service import append_task_event, get_task_for_runtime, set_task_step_state
 
 logger = logging.getLogger(__name__)
@@ -192,11 +194,14 @@ async def _fail_task_before_start(db, task, step, *, error_code: str, message: s
     # 资产生图/视频：同步写回 asset.params.generation，避免前端只看到空的「生图失败」
     await _fail_drama_asset_generation_if_needed(db, task, task.error_message)
     await _fail_kepu_project_if_running(db, task, task.error_message)
+    plan_target, plan_message = fragment_plan_target(task), task.error_message
     try:
         await settle_task(db, task.id)
     except Exception:  # noqa: BLE001
         logger.exception("settle_task failed task_id=%s", task.id)
     await db.commit()
+    if plan_target:
+        await converge_fragment_plan_status(db, *plan_target, plan_message or "分镜任务失败")
 
 
 # 科普项目还停在进行中时转为失败，否则页面一直转圈且无法重试。
@@ -270,11 +275,14 @@ async def _fail_task(db, task, exc: Exception) -> None:
             batch_index,
             "上一镜失败，无法衔接尾帧",
         )
+    plan_target, plan_message = fragment_plan_target(task), task.error_message
     try:
         await settle_task(db, task.id)
     except Exception:  # noqa: BLE001
         logger.exception("settle_task failed task_id=%s", task.id)
     await db.commit()
+    if plan_target:
+        await converge_fragment_plan_status(db, *plan_target, plan_message or "分镜任务失败")
 
 
 # 把任务收敛到取消态。
@@ -305,11 +313,19 @@ async def _mark_cancelled(db, task) -> None:
         phase=task.current_step_key,
         message="任务已取消",
     )
+    plan_target = fragment_plan_target(task)
     try:
+        if await record_accepted_upstream_charge(db, task):
+            await append_task_event(
+                db, task.id, event_type="task.cancel_charged", status=task.status,
+                phase=task.current_step_key, message=CANCEL_CHARGE_MESSAGE,
+            )
         await settle_task(db, task.id)
     except Exception:  # noqa: BLE001
         logger.exception("settle_task failed task_id=%s", task.id)
     await db.commit()
+    if plan_target:
+        await converge_fragment_plan_status(db, *plan_target, "分镜任务已取消")
 
 
 async def _fail_drama_asset_generation_if_needed(db, task, error: str) -> None:

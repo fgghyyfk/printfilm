@@ -17,6 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PageHeader } from "@/components/ui/page";
 import { useAdminDetailQuery } from "@/hooks/useAdminDetailQuery";
+import { withoutOrderDeepLink } from "@/lib/orderDeepLink";
 import { fenToYuan } from "@/lib/utils";
 import { ledgerKindLabel, orderStatusLabel, payTypeLabel, taskDomainLabel } from "@/lib/statusLabels";
 
@@ -483,7 +484,7 @@ export function OrdersPage() {
         open={orderQuery.isOpen}
         onClose={() => {
           setOrderDetail(null);
-          orderQuery.close();
+          setSearchParams(withoutOrderDeepLink, { replace: true });
         }}
       />
       <LedgerDetailDialog ledgerDetail={ledgerDetail} onClose={() => setLedgerDetail(null)} />

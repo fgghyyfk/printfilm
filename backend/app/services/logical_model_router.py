@@ -231,6 +231,11 @@ def resolve_upstream_model(
     if route:
         return route.upstream_model
     if is_managed_model(capability, logical_id, snapshot.logical_models):
+        from app.config import get_settings
+
+        # Mock 联调不调用上游，没有 Key 和渠道绑定也要能走通（见 deploy/LOCAL.md）。
+        if get_settings().ark_mock:
+            return logical_id
         raise ValueError(f"model: {logical_id} 没有启用的可用渠道绑定")
     fallback = _legacy_upstream_fallback(capability, model_id, snapshot.default_models)
     if fallback:

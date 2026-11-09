@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client'
 import App from './App'
 import { I18nProvider } from './i18n'
 import './index.css'
+import { API_BASE } from './api/client'
+import { syncSiteTheme } from './lib/siteTheme'
 
 /* 发版后旧页面再按需加载会找不到已删除的分包：自动刷新一次拿新版本（30 秒内不重复刷新） */
 window.addEventListener('vite:preloadError', (event) => {
@@ -16,6 +18,8 @@ window.addEventListener('vite:preloadError', (event) => {
   event.preventDefault()
   window.location.reload()
 })
+
+void syncSiteTheme(API_BASE)
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

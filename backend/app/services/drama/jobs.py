@@ -25,6 +25,7 @@ from app.models_drama import (
 )
 from app.services.billing import record_line, record_llm_chat_line
 from app.services.drama.billing_util import record_seed_assets_llm_usage
+from app.services.drama.episode_regen import DRAFT_KEY as REGEN_DRAFT_KEY, finalize_regen_episodes, regen_working_episodes
 from app.services.drama.seed import seed_assets_from_episode_body
 from app.services.teams.script_updates import bump_episode_versions, locked_script, set_episode_job_state
 from app.services.drama.agents import (
@@ -482,39 +483,25 @@ async def run_episode_scripts_job(
 
         creative = (script.source or "").strip()
         try:
-            if force and existing:
-                params0 = dict(script.params or {})
-                status0 = str(params0.get("episode_content_status") or "")
-                # generating=本轮已开跑（含进程重启续跑），勿再因 force 清空已生成正文
-                if status0 != "generating":
-                    existing = [
-                        {
-                            "episodeNumber": int(item.get("episodeNumber") or 0),
-                            "title": str(item.get("title") or f"第 {item.get('episodeNumber')} 集"),
-                            "body": "",
-                        }
-                        for item in existing
-                        if isinstance(item, dict) and int(item.get("episodeNumber") or 0) >= 1
-                    ]
-                    script.episode_content = {"episodes": existing}
-                    params0["episode_content_status"] = "generating"
-                    params0["episode_content_error"] = None
-                    script.params = params0
-                    await db.flush()
-                    logger.info("已清空分集正文准备重写 project_id=%s total=%s", project_id, total)
-                else:
-                    logger.info(
-                        "force 续跑跳过清空 project_id=%s done=%s/%s",
-                        project_id,
-                        count_completed_episodes(existing, total),
-                        total,
-                    )
+            # 强制重写：新稿写在草稿里，旧正文全部成功后才替换，失败时不丢稿。
+            regen = bool(force and existing)
+            if regen:
+                existing = regen_working_episodes(existing, script.params)
+                logger.info(
+                    "分集重写开始 project_id=%s done=%s/%s",
+                    project_id,
+                    count_completed_episodes(existing, total),
+                    total,
+                )
 
             existing, outline_used_llm = await ensure_episode_outline(creative, summary, existing, total)
-            script.episode_content = {"episodes": existing}
-            if project.team_id is not None:
-                bump_episode_versions(script, [int(row.get("episodeNumber") or 0) for row in existing])
             params_outline = dict(script.params or {})
+            if regen:
+                params_outline[REGEN_DRAFT_KEY] = existing
+            else:
+                script.episode_content = {"episodes": existing}
+                if project.team_id is not None:
+                    bump_episode_versions(script, [int(row.get("episodeNumber") or 0) for row in existing])
             params_outline["episode_content_status"] = "generating"
             script.params = params_outline
             await db.flush()
@@ -556,10 +543,13 @@ async def run_episode_scripts_job(
                     creative=creative,
                 )
                 existing = merge_episode_bodies(existing, batch)
-                script.episode_content = {"episodes": existing}
-                if project.team_id is not None:
-                    bump_episode_versions(script, [int(row.get("episodeNumber") or 0) for row in batch])
+                if not regen:
+                    script.episode_content = {"episodes": existing}
+                    if project.team_id is not None:
+                        bump_episode_versions(script, [int(row.get("episodeNumber") or 0) for row in batch])
                 params = dict(script.params or {})
+                if regen:
+                    params[REGEN_DRAFT_KEY] = existing
                 params["episode_content_status"] = "generating"
                 params["episode_count"] = total
                 params["episode_content_progress"] = {
@@ -583,7 +573,7 @@ async def run_episode_scripts_job(
                     await db.commit()
                 await db.refresh(script)
                 content = script.episode_content
-                if isinstance(content, dict) and isinstance(content.get("episodes"), list):
+                if not regen and isinstance(content, dict) and isinstance(content.get("episodes"), list):
                     existing = list(content["episodes"])
                 done_now = count_completed_episodes(existing, total)
                 logger.info(
@@ -599,7 +589,8 @@ async def run_episode_scripts_job(
                     message=f"分集剧本进度 {done_now}/{total}",
                 )
                 # 本批刚写完的集：立刻补抽资产并入队 AI 分镜（不必等全集）
-                finished_numbers = sorted(
+                # 重写时新稿尚未生效，分镜要等替换后由收尾统一入队。
+                finished_numbers = [] if regen else sorted(
                     {
                         int(item.get("episodeNumber") or 0)
                         for item in batch
@@ -627,7 +618,15 @@ async def run_episode_scripts_job(
                 if not batch:
                     raise RuntimeError("分集生成无进度")
 
+            if regen:
+                current = script.episode_content
+                current_rows = current.get("episodes", []) if isinstance(current, dict) else (current or [])
+                existing = finalize_regen_episodes(current_rows, existing)
+                script.episode_content = {"episodes": existing}
+                if project.team_id is not None:
+                    bump_episode_versions(script, [int(row.get("episodeNumber") or 0) for row in existing])
             params = dict(script.params or {})
+            params.pop(REGEN_DRAFT_KEY, None)
             params["episode_content_status"] = "completed"
             params["episode_content_error"] = None
             params["episode_count"] = total
@@ -658,6 +657,7 @@ async def run_episode_scripts_job(
             params = dict(script.params or {})
             params["episode_content_status"] = "failed"
             params["episode_content_error"] = str(exc)[:500]
+            params.pop(REGEN_DRAFT_KEY, None)
             script.params = params
             await db.commit()
             logger.exception("分集剧本失败 project_id=%s err=%s", project_id, exc)

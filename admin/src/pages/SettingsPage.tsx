@@ -8,13 +8,14 @@ import { RoutingSettingsPanel } from "@/components/settings/RoutingSettingsPanel
 import { ImageProviderSettingsPanel } from "@/components/settings/ImageProviderSettingsPanel";
 import { RuntimeSettingsPanel } from "@/components/settings/RuntimeSettingsPanel";
 import { SiteSettingsPanel } from "@/components/settings/SiteSettingsPanel";
+import { AppearanceSettingsPanel } from "@/components/settings/AppearanceSettingsPanel";
 import {
   SettingsSaveProvider,
   useSettingsSaveSlot,
 } from "@/components/settings/SettingsSaveContext";
 import { cn } from "@/lib/utils";
 
-type SettingsTab = "routing" | "image" | "avatar" | "runtime" | "oss" | "payment" | "site" | "compliance";
+type SettingsTab = "routing" | "image" | "avatar" | "runtime" | "oss" | "payment" | "site" | "appearance" | "compliance";
 
 const TABS: { id: SettingsTab; label: string }[] = [
   { id: "routing", label: "模型" },
@@ -24,6 +25,7 @@ const TABS: { id: SettingsTab; label: string }[] = [
   { id: "oss", label: "存储 OSS" },
   { id: "payment", label: "支付计费" },
   { id: "site", label: "站点工具" },
+  { id: "appearance", label: "外观主题" },
   { id: "compliance", label: "内容合规" },
 ];
 
@@ -84,6 +86,7 @@ function SettingsPageInner() {
         {tab === "oss" ? <OssSettingsPanel /> : null}
         {tab === "payment" ? <PaymentSettingsPanel /> : null}
         {tab === "site" ? <SiteSettingsPanel /> : null}
+        {tab === "appearance" ? <AppearanceSettingsPanel /> : null}
         {tab === "compliance" ? <ComplianceSettingsPanel /> : null}
       </div>
     </div>

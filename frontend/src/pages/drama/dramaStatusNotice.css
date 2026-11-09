@@ -9,7 +9,7 @@
   min-width: 0;
   padding: 13px 15px;
   border: 1px solid var(--notice-line);
-  border-radius: 12px;
+  border-radius: var(--pf-radius);
   background: var(--notice-bg);
   color: var(--notice-ink);
   font-size: 13px;
@@ -32,10 +32,10 @@
 }
 
 .drama-status-notice.is-error {
-  --notice-ink: #b04444;
-  --notice-bg: #fff7f7;
-  --notice-line: #f4dddd;
-  --notice-icon-bg: #fbe8e8;
+  --notice-ink: var(--pf-accent-deep);
+  --notice-bg: var(--pf-lime-soft);
+  --notice-line: var(--pf-lime-soft);
+  --notice-icon-bg: var(--pf-lime-soft);
 }
 
 .drama-status-notice-icon {
@@ -43,7 +43,7 @@
   place-items: center;
   flex: 0 0 30px;
   height: 30px;
-  border-radius: 9px;
+  border-radius: var(--pf-radius-sm);
   background: var(--notice-icon-bg);
 }
 

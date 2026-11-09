@@ -133,8 +133,10 @@ async def test_edit_rejected_while_project_task_active(db_session, media, task_t
     lambda p, s, db, u: projects.regen_all_audio(p, db, u),
     lambda p, s, db, u: projects.compose_only(p, db, u),
 ], ids=["image", "video", "audio", "all_audio", "compose"])
-async def test_regen_insufficient_balance_does_not_stick_status(db_session, media, call):
+async def test_regen_insufficient_balance_does_not_stick_status(db_session, media, call, monkeypatch):
     """建任务失败时状态不变，不能卡在进行中。"""
+    # 走外部配音：内置口播的重配音在建任务前就会被 400 拒绝，到不了余额校验。
+    monkeypatch.setattr("app.services.pipeline._kepu_seedance_native_audio", lambda _project: False)
     user, project, shot = await _with_old_media(db_session, status=ProjectStatus.VIDEO_READY)
     project_id, shot_id = project.id, shot.id
     with _no_balance(), pytest.raises(HTTPException) as exc:

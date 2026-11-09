@@ -66,6 +66,7 @@ export const enEcomSet = {
       retry: 'Retry',
       download: 'Download zip',
       downloading: 'Packing…',
+      downloadImage: 'Download image',
       newSet: 'New set',
       preview: 'Preview',
       noImage: 'No image yet',

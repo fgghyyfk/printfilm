@@ -138,9 +138,12 @@ async def save_canvas(
         if matched is not None:
             asset = matched
             asset.name = name
-            if kind and kind != "none":
+            # 节点 kind 只是展示分类（道具、音色都可能显示成图片卡），不能反写已定型的资产。
+            if kind and kind != "none" and (asset.type or "none") == "none":
                 asset.type = kind
-            asset.asset_type = asset_type
+                asset.asset_type = asset_type
+            elif not asset.asset_type:
+                asset.asset_type = asset_type
             node = _node_with_asset_media(node, asset)
             nodes[index] = node
             params = dict(asset.params or {})

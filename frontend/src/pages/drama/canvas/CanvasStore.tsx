@@ -42,7 +42,7 @@ import { mergeAssetsWithCanvasLayout, buildNodeDataFromAsset } from './assetsToC
 import { buildBoundParams } from '../CharacterVoiceBindModal'
 import {
   CANVAS_NODE_DEFAULT_LABEL,
-  nextCanvasNodeLabel,
+  nextCanvasNodeLabelInProject,
   canvasKindToAssetType,
   type CanvasAssetNodeData,
   type CanvasNodeKind,
@@ -399,12 +399,15 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
   const addNodeOfKind = useCallback(
     async (kind: CanvasNodeKind, position: { x: number; y: number }) => {
       const run = async () => {
-        /* 唯一名避免同类型同名去重复用资产；错开落点避免叠在同一位置 */
-        let label = nextCanvasNodeLabel(kind, nodesRef.current)
+        /* 错开落点避免叠在同一位置 */
+        let label = ''
         const stagger = nodesRef.current.length * 24
         const placed = { x: position.x + stagger, y: position.y + stagger }
         let assetId: number | undefined
         try {
+          /* 名称避开全部项目资产：含已从画布移除、但仍保留的资产，否则会被去重复用 */
+          const projectAssets = await dramaApi.listAssets(projectId)
+          label = nextCanvasNodeLabelInProject(kind, nodesRef.current, projectAssets)
           const asset = await dramaApi.createAsset({
             project_id: projectId,
             type: kind,
@@ -413,12 +416,13 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
             params: { on_canvas: true },
           })
           assetId = asset.id
-          /* 若仍命中旧资产（兼容库内同名卡），换名再试一次 */
-          const usedIds = new Set(
-            nodesRef.current
+          /* 若仍命中已有资产（并发或规范化后同名），换名再试一次 */
+          const usedIds = new Set([
+            ...projectAssets.map((a) => a.id),
+            ...nodesRef.current
               .map((n) => n.data.assetId)
               .filter((id): id is number => typeof id === 'number' && id > 0),
-          )
+          ])
           if (usedIds.has(assetId)) {
             label = `${label} ${Date.now().toString(36)}`
             const retry = await dramaApi.createAsset({
@@ -1060,10 +1064,13 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
     }
   }, [flush, loading])
 
-  /* 页面关闭前尽量刷一次保存 */
+  /* 刷新或关闭标签页时请求可能发不出去：尽量保存一次，并提示用户确认 */
   useEffect(() => {
-    const onBeforeUnload = () => {
-      if (dirty) void flush().catch(() => undefined)
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!dirty) return
+      void flush().catch(() => undefined)
+      event.preventDefault()
+      event.returnValue = ''
     }
     window.addEventListener('beforeunload', onBeforeUnload)
     return () => window.removeEventListener('beforeunload', onBeforeUnload)

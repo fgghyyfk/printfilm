@@ -6,7 +6,6 @@ import {
   type AdminOrder,
   type AdminUsageEvent,
   type AdminUserRow,
-  type PageResult,
 } from "@/api/client";
 import { listAdminLedger, listAdminOrders, listAdminUsageEvents } from "@/api/finance";
 import {
@@ -20,8 +19,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatAccountId } from "@/lib/admin-account";
 import { fenToYuan } from "@/lib/utils";
 import { ledgerKindLabel, orderStatusLabel } from "@/lib/statusLabels";
-
-type ListRes<T> = PageResult<T>;
 
 type UserDetailDrawerProps = {
   userId: number | null;
@@ -45,13 +42,13 @@ export function UserDetailDrawer({ userId, open, onOpenChange, initialUser }: Us
       try {
         const [userRes, orderRes, ledgerRes, usageRes] = await Promise.all([
           initialUser?.id === userId
-            ? Promise.resolve({ items: [initialUser], meta: { page: 1, page_size: 1, total: 1 } })
-            : api<ListRes<AdminUserRow>>(`/api/admin/users?page=1&page_size=1&q=${userId}`),
+            ? Promise.resolve(initialUser)
+            : api<AdminUserRow>(`/api/admin/users/${userId}`),
           listAdminOrders(1, { pageSize: 8, userId }),
           listAdminLedger(1, { pageSize: 8, userId }),
           listAdminUsageEvents(1, { pageSize: 20, userId }),
         ]);
-        setUser(userRes.items[0] ?? initialUser ?? null);
+        setUser(userRes);
         setOrders(orderRes.items);
         setLedger(ledgerRes.items);
         setUsage(usageRes.items);

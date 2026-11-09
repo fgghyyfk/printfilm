@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,7 +17,7 @@ from app.schemas import (
     TokenResponse,
     UserOut,
 )
-from app.services import storage
+from app.services import register_limit, storage
 from app.services.auth import (
     create_access_token,
     get_user_by_email,
@@ -43,11 +43,21 @@ settings = get_settings()
     description="使用邮箱、密码和昵称注册账号，按系统配置初始化额度及注册赠送余额，成功后返回访问令牌。已注册邮箱返回 400。",
     response_description="注册成功的访问令牌",
 )
-async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)) -> TokenResponse:
+async def register(
+    body: RegisterRequest,
+    request: Request = None,  # type: ignore[assignment]
+    db: AsyncSession = Depends(get_db),
+) -> TokenResponse:
+    """注册账号；同 IP 限频，赠金按 IP 限量，防止批量注册刷额度。"""
+    ip = register_limit.client_ip(request)
+    if not register_limit.register_allowed(ip):
+        raise HTTPException(status_code=429, detail="注册过于频繁，请稍后再试")
     existing = await get_user_by_email(db, body.email)
     if existing:
         raise HTTPException(status_code=400, detail="邮箱已注册")
     grant = int(get_settings().billing_signup_grant_fen or 0)
+    if grant > 0 and not register_limit.grant_allowed(ip):
+        grant = 0
     user = User(
         email=body.email.lower(),
         nickname=body.nickname,
@@ -181,6 +191,9 @@ async def update_me(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     if fields["email"] != user.email:
+        # 启动时名单内的账号会被提权，邮箱又未验证，改成名单地址等于自助当管理员。
+        if fields["email"].lower() in get_settings().admin_bootstrap_email_set():
+            raise HTTPException(status_code=400, detail="该邮箱已被使用")
         taken = await get_user_by_email(db, fields["email"])
         if taken and taken.id != user.id:
             raise HTTPException(status_code=400, detail="该邮箱已被使用")

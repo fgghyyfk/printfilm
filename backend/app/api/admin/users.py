@@ -57,6 +57,23 @@ async def list_users(
     )
 
 
+@router.get("/users/{user_id}", response_model=AdminUserOut,
+    summary="获取用户详情",
+    description="管理员按用户编号精确读取单个用户；用户不存在时返回 404。",
+    response_description="操作成功，返回结果详见响应结构",
+)
+async def get_user(
+    user_id: int,
+    _admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+) -> AdminUserOut:
+    """按编号精确读取用户，供跨页深链打开明细，不走模糊搜索。"""
+    user = await db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    return AdminUserOut.model_validate(user)
+
+
 @router.patch("/users/{user_id}", response_model=AdminUserOut,
     summary="更新用户套餐、角色或余额",
     description="管理员局部更新用户套餐、角色或个人钱包余额。balance_delta_fen 为增减金额，balance_fen 为目标余额，两者不能同时传入，金额单位为分；余额变化会记录钱包流水。不能将余额减为负数，也不能降低自己的管理员权限。",

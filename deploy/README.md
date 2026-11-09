@@ -130,7 +130,7 @@ OSS_ACCESS_KEY_SECRET=...
 ```
 
 - 分镜图/视频/配音/成片：本地落盘供 FFmpeg，上传后 DB 存 OSS 公网 URL（前端预览走 OSS）
-- 对象前缀：`kepu/generated/p{id}/...`
+- 对象前缀：`kepu/generated/p{id}_{随机段}/...`（历史项目仍为 `p{id}`）
 - 前端构建产物上传：
 
 ```bash

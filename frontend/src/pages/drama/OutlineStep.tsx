@@ -255,7 +255,7 @@ export function OutlineStep({
     const ok = await dialog.confirm({
       title: '重新生成分集剧本',
       message:
-        '将清空当前分集正文并按最新剧本摘要重新生成全部集数，已有编辑将丢失。是否继续？',
+        '将按最新剧本摘要重新生成全部集数。全部成功后才替换当前正文，届时已有编辑将被覆盖；生成失败时保留原稿。是否继续？',
       confirmText: '重新生成',
       tone: 'danger',
     })

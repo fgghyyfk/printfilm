@@ -260,7 +260,9 @@ def _run(cmd: list[str]) -> None:
             " ".join(cmd[:6]),
         )
         raise FfmpegInterrupted(FFMPEG_INTERRUPTED_MSG)
-    raise RuntimeError(stderr[-2000:] or stdout[-2000:] or "ffmpeg failed")
+    # 原始输出含路径和版本信息，只进日志；对外（error_msg）只给中文短句。
+    logger.error("ffmpeg failed returncode=%s output=%s", proc.returncode, (stderr or stdout)[-2000:])
+    raise RuntimeError("视频合成失败，请点击重新拼接；多次失败请联系客服")
 
 
 def _which(bin_name: str) -> str:

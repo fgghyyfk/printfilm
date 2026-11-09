@@ -68,6 +68,9 @@ backend/ai_movie.db
 backend/*.db
 backend/.celery_autoscale/
 backend/static/generated/
+# Mock 联调生成物；local/ 是入库的本地素材，保留
+backend/static/mock/*
+!backend/static/mock/local/
 backend/static/voice_previews/
 backend/frontend/
 

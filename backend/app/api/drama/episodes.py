@@ -48,7 +48,8 @@ from app.services.drama.access import (
     replace_fragment_asset_refs,
     match_fragments_for_generate,
 )
-from app.services.drama.fragment_editing import merge_saved_fragment_params
+from app.services.drama.assets_seed_state import assets_seed_in_progress
+from app.services.drama.fragment_editing import merge_saved_episode_params, merge_saved_fragment_params
 from app.services.drama.generation import (
     activate_fragment_video_version,
     collect_active_fragment_ids_from_tasks,
@@ -333,7 +334,7 @@ async def confirm_episode_from_script(
         )
     ).scalar_one()
     params = dict(locked.params or {}) if isinstance(locked.params, dict) else {}
-    if str(params.get("assets_seed_status") or "") == "generating":
+    if await assets_seed_in_progress(db, int(project.id), params):
         raise HTTPException(status_code=409, detail="资产抽取进行中，请稍后再确认")
 
     params["assets_seed_status"] = "generating"
@@ -482,11 +483,10 @@ async def update_episode(
     if body.name is not None:
         ep.name = body.name.strip() or ep.name
     if body.params is not None:
-        # 规划归属只由服务端写：旧页面带回旧值，会让新任务的结果被当成已取代而丢弃。
-        owner = (ep.params or {}).get("fragment_plan_task_id")
-        ep.params = {k: v for k, v in body.params.items() if k != "fragment_plan_task_id"}
-        if owner is not None:
-            ep.params = {**ep.params, "fragment_plan_task_id": owner}
+        # 规划状态、归属和来源指纹只由服务端写：旧页面带回旧值会让分集卡在分镜中，
+        # 或让新任务的结果被当成已取代而丢弃。先锁行重读，任务可能刚写入新状态。
+        await db.refresh(ep, attribute_names=["params"], with_for_update=True)
+        ep.params = merge_saved_episode_params(ep.params, body.params)
     await db.commit()
     return await _episode_out_with_tasks(db, user, ep)
 

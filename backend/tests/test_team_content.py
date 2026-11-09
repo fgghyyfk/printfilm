@@ -155,7 +155,7 @@ async def test_team_content_copy_is_independent_and_cleans_source_runtime_params
     assert copied["id"] != asset.id and copied["project_id"] == target.id
     assert copied["params"]["description"] == "保留设定"
     assert set(copied["params"]).isdisjoint({"generation", "canvas_node_id", "project_id", "reference_asset_ids"})
-    assert f"/p{target.id}/" in copied["url"] and copied["cover"] == copied["url"]
+    assert f"/p{target.id}_" in copied["url"] and copied["cover"] == copied["url"]
     destination = a.static_root / copied["url"].removeprefix("/static/")
     assert destination.read_bytes() == b"test-local-media"
     media.unlink()

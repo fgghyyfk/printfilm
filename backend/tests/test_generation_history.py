@@ -315,7 +315,7 @@ async def test_history_restores_actual_submission_without_other_attempts_or_help
         await db.flush()
         actual = {"model": "MiniMax-H3", "seconds": "6", "ratio": "16:9", "resolution": "480p",
                   "generate_audio": False, "content": [{"type": "text", "text": "Final submitted scene"},
-                  {"type": "image_url", "image_url": {"url": "https://private.test/reference.png"}}], "api_key": "private"}
+                  {"type": "image_url", "image_url": {"url": "https://cdn.test/reference.png"}}], "api_key": "private"}
         for event_type, provider_id, is_video, body in (
             ("upstream.request.accepted", "final-video", True, actual),
             ("upstream.request.accepted", None, False, {"model": "helper-image", "prompt": "Helper still"}),

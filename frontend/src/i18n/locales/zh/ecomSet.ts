@@ -66,6 +66,7 @@ export const zhEcomSet = {
       retry: '重试',
       download: '打包下载',
       downloading: '打包中…',
+      downloadImage: '下载图片',
       newSet: '新建套图',
       preview: '预览',
       noImage: '暂无成图',

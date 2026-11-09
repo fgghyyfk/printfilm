@@ -179,11 +179,11 @@ async def _assign(shot_ids: list[int], url: str) -> None:
 
 
 async def ensure_scene_images(project_id: int, look: Path, on_progress=None,
-                              only_shot_ids: set[int] | None = None) -> None:
+                              only_shot_ids: set[int] | None = None, force: bool = False) -> None:
     """为缺场景图的段画「同一个人 + 场景」。
 
     每段换场景：逐段画，最多并发 SCENE_CONCURRENCY 张；全片固定场景：只画一张，所有缺图的段共用。
-    only_shot_ids 给定时只处理这些段（单段重画用）。
+    only_shot_ids 给定时只处理这些段（单段重画用）；force 时已有场景图也重画，画好才替换旧图。
     """
     async with AsyncSessionLocal() as db:
         result = await db.execute(select(Project).where(Project.id == project_id)
@@ -194,7 +194,7 @@ async def ensure_scene_images(project_id: int, look: Path, on_progress=None,
         framing = project.avatar_framing or "waist"
         fixed = project.avatar_scene_mode == "fixed"
         todo = [(s.id, s.shot_no, s.img_prompt) for s in sorted(project.shots, key=lambda s: s.shot_no)
-                if needs_scene(s, project.avatar_image_url)
+                if (needs_scene(s, project.avatar_image_url) or (force and (s.img_prompt or "").strip()))
                 and (only_shot_ids is None or s.id in only_shot_ids)]
     if not todo:
         return

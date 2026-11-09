@@ -35,6 +35,7 @@ import {
   canMakeDaihuoVideo,
   daihuoStepIndex,
   defaultZipName,
+  ecomReplanPath,
   ecomSetTotalFen,
   formatFen,
   needsPolling,
@@ -257,6 +258,12 @@ function EcomSetWorkspace() {
       tone: 'danger',
     })
     if (!ok) return
+    // 从商品库建的、或服饰/首饰/包袋套图回电商图重选，保留原商品和品类
+    const replanPath = ecomReplanPath(set)
+    if (replanPath) {
+      nav(replanPath)
+      return
+    }
     backToForm({ name: set.name, platform: set.platform, style: set.style, count: set.count,
       ...(set.category === 'scarf' && set.scarf ? { category: 'scarf' as const, scarfSize: set.scarf.size, scarfMaterial: set.scarf.material, modelAssetId: set.scarf.model_asset_id } : {}) })
   }
@@ -264,7 +271,7 @@ function EcomSetWorkspace() {
   // ③ 失败单张直接重试（收费时确认）
   async function onRetry(item: EcomSetItem) {
     if (!set) return
-    if (billingEnabled) {
+    if (billingEnabled && item.billable !== false) {
       const ok = await dialog.confirm({
         title: t('ecomSet.confirm.retryTitle'),
         message: t('ecomSet.confirm.retry', { label: item.slot_label, price: formatFen(set.image_fen) }),
@@ -458,7 +465,7 @@ function EcomSetWorkspace() {
           key={`regen-${regenItem.idx}`}
           item={regenItem}
           imageFen={set.image_fen}
-          billingEnabled={billingEnabled}
+          billingEnabled={billingEnabled && regenItem.billable !== false}
           busy={modalBusy}
           error={modalError}
           onClose={() => setRegenItem(null)}

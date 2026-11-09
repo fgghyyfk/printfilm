@@ -68,7 +68,12 @@ async def test_persisted_creation_delivers_real_vertical_mp4_with_voice_motion_a
     async def local_session():
         yield db
 
-    for module in (creation, pipeline, executor):
+    # 所有独立开会话的执行路径都要落到同一测试事务，否则会连到空的主库。
+    import app.database as database
+    from app.services import tts_billing
+    from app.services.tasks import inline, upstream
+
+    for module in (database, creation, pipeline, executor, inline, upstream, tts_billing):
         monkeypatch.setattr(module, "AsyncSessionLocal", local_session)
 
     template = await db.get(Template, "anim_3d")

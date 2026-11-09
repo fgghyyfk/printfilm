@@ -177,6 +177,8 @@ export type Project = {
   ecom_set_id?: number | null
   created_at: string
   updated_at: string
+  /** 声音由视频模型内置生成，没有可单独重配的配音。 */
+  native_video_audio?: boolean
   shots: Shot[]
   active_tasks?: Array<{
     id: number
@@ -606,9 +608,11 @@ export const api = {
       method: 'POST',
     })
   },
-  regenAudio(projectId: number, shotId: number) {
+  /** 重配音；extraShotIds 为数字人批量重配时随同一任务重做的其它段。 */
+  regenAudio(projectId: number, shotId: number, extraShotIds: number[] = []) {
     return request<Project>(`/api/projects/${projectId}/shots/${shotId}/regen-audio`, {
       method: 'POST',
+      ...(extraShotIds.length ? { body: JSON.stringify({ extra_shot_ids: extraShotIds }) } : {}),
     })
   },
   regenAllAudio(projectId: number) {

@@ -27,6 +27,7 @@ from app.schemas import (
     ProjectOut,
     ProjectUpdate,
     ShotOut,
+    ShotRegenAudioIn,
     ShotReorderIn,
     ShotUpdate,
     VoicePreviewOut,
@@ -193,6 +194,7 @@ async def _get_owned_project(db: AsyncSession, project_id: int, user: User) -> P
     project.status = runtime_status
     project.progress = runtime_progress
     project.error_msg = runtime_error
+    project.native_video_audio = pipeline._kepu_seedance_native_audio(project)
     return project
 
 
@@ -232,6 +234,13 @@ def _ensure_side_task_allowed(project: Project) -> None:
             continue
         if str(getattr(task, "task_type", "") or "") in _PROJECT_WIDE_TASK_TYPES:
             raise HTTPException(status_code=409, detail="整片生成进行中，请稍后")
+
+
+def _ensure_shot_task_free(project: Project, shot_id: int) -> None:
+    """同一分镜已有活动任务时拒绝再提交，避免重复扣费和结果互相覆盖。"""
+    for task in getattr(project, "active_tasks", []) or []:
+        if getattr(task, "shot_id", None) == shot_id and str(getattr(task, "status", "") or "") in ACTIVE_TASK_STATUSES:
+            raise HTTPException(status_code=409, detail="该镜头正在生成，请稍后")
 
 
 def _ensure_project_idle(project: Project, *, detail: str = "生成进行中，请稍后") -> None:
@@ -545,10 +554,27 @@ async def update_project(
         data["subtitle_preset"] = str(data["subtitle_preset"] or "").strip()
     # 按新模式判定下一阶段；保留图片/视频/配音，只作废原模式的成片。
     mode_changed = "pipeline_mode" in data and data["pipeline_mode"] != (project.pipeline_mode or "full")
+    # 数字人口型对齐该段配音：音色实际变化时各段配音与视频都要重做（比较解析后的音色，别名不算变化）。
+    voice_changed = False
+    if "voice_id" in data and data.get("pipeline_mode", project.pipeline_mode) == "avatar":
+        from app.models import Template
+        from app.services.voices import resolve_speaker
+
+        tpl = await db.get(Template, project.template_id) if project.template_id else None
+        audio_cfg = tpl.audio_config if tpl and isinstance(tpl.audio_config, dict) else {}
+        preset = str(audio_cfg.get("voice_preset") or "")
+        voice_changed = resolve_speaker(data["voice_id"], template_preset=preset) != resolve_speaker(
+            project.voice_id, template_preset=preset
+        )
     for k, v in data.items():
         setattr(project, k, v)
-    if mode_changed or "bgm_lock" in data or "subtitle_preset" in data:
-        _demote_after_edit(project, recheck_stage=mode_changed)
+    if voice_changed:
+        for shot in project.shots:
+            shot.audio_url = None
+            shot.video_url = None
+            shot.avatar_job_id = None
+    if voice_changed or mode_changed or "bgm_lock" in data or "subtitle_preset" in data:
+        _demote_after_edit(project, recheck_stage=voice_changed or mode_changed)
     await db.commit()
     return await _get_owned_project(db, project_id, user)
 
@@ -738,8 +764,9 @@ async def delete_project(
     await db.execute(
         update(UsageEvent).where(UsageEvent.project_id == project.id).values(project_id=None)
     )
+    # shot_id 同样外键到将被级联删除的分镜，不清掉会让整个删除失败。
     await db.execute(
-        update(TaskRun).where(TaskRun.project_id == project.id).values(project_id=None)
+        update(TaskRun).where(TaskRun.project_id == project.id).values(project_id=None, shot_id=None)
     )
 
     # Remove published work if any
@@ -748,9 +775,10 @@ async def delete_project(
     if work:
         await db.delete(work)
 
-    await pipeline.delete_project_assets(project_id)
     await db.delete(project)
     await db.commit()
+    # 文件不可恢复：数据库删除成功后才清，失败时项目和素材都还在。
+    await pipeline.delete_project_assets(project_id)
     return {"ok": True, "id": project_id}
 
 
@@ -859,8 +887,18 @@ async def reorder_shots(
     existing = {s.id: s for s in project.shots}
     if set(body.shot_ids) != set(existing.keys()):
         raise HTTPException(status_code=400, detail="镜头列表不完整")
+    order_changed = any(existing[sid].shot_no != i for i, sid in enumerate(body.shot_ids, start=1))
     for i, sid in enumerate(body.shot_ids, start=1):
         existing[sid].shot_no = i
+    # 整片旁白按旧顺序朗读，调序后必须重配；数字人逐段配音、内置口播的声音都跟着镜头走。
+    if (
+        order_changed
+        and (project.pipeline_mode or "full") != "avatar"
+        and not pipeline._kepu_seedance_native_audio(project)
+    ):
+        (storage.project_dir(project_id) / "full_narration.mp3").unlink(missing_ok=True)
+        for shot in project.shots:
+            shot.audio_url = None
     _demote_after_edit(project)
     await db.commit()
     return await _get_owned_project(db, project_id, user)
@@ -918,6 +956,8 @@ async def upload_shot_image(
     shot.image_ark_url = None
     shot.video_url = None
     shot.last_frame_url = None
+    shot.video_skip_reason = None  # 换了画面，隐私拦截结论失效
+    shot.avatar_job_id = None  # 旧画面提交的对口型任务不能再续接
     shot.status = ShotStatus.IMAGE_READY
     shot.version += 1
     _demote_after_edit(project)
@@ -1093,9 +1133,13 @@ async def regen_image(
 ) -> Project:
     project = await _get_owned_project(db, project_id, user)
     _ensure_side_task_allowed(project)
+    if (project.pipeline_mode or "full") == "avatar":
+        # 普通生图不带定妆照，会把数字人换成别的人。
+        raise HTTPException(status_code=400, detail="数字人请使用重画场景")
     shot = next((s for s in project.shots if s.id == shot_id), None)
     if not shot:
         raise HTTPException(status_code=404, detail="分镜不存在")
+    _ensure_shot_task_free(project, shot_id)
     project.status = ProjectStatus.IMAGING
     project.error_msg = None
     # 状态和任务同事务提交：建任务失败（如余额不足）时一起回滚，项目不会卡在进行中。
@@ -1130,6 +1174,7 @@ async def regen_video(
     if not shot or not (shot.image_url or shot.image_ark_url):
         detail = "请先上传数字人照片并完成配音" if (project.pipeline_mode or "") == "avatar" else "请先生成该镜画面"
         raise HTTPException(status_code=400, detail=detail)
+    _ensure_shot_task_free(project, shot_id)
     project.status = ProjectStatus.VIDEOING
     project.error_msg = None
     # 状态和任务同事务提交：建任务失败（如余额不足）时一起回滚，项目不会卡在进行中。
@@ -1155,12 +1200,22 @@ async def regen_audio(
     shot_id: int,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
+    body: ShotRegenAudioIn | None = None,
 ) -> Project:
+    """提交配音任务；body.extra_shot_ids 只对数字人生效，同一任务内一并重做这些段。"""
     project = await _get_owned_project(db, project_id, user)
     _ensure_side_task_allowed(project)
+    # 建任务前拒绝：否则任务必败，会把已完成的项目打成失败。
+    if pipeline._kepu_seedance_native_audio(project):
+        raise HTTPException(status_code=400, detail="当前为视频内置配音，请重绘该镜视频以更新口播")
     shot = next((s for s in project.shots if s.id == shot_id), None)
     if not shot:
         raise HTTPException(status_code=404, detail="分镜不存在")
+    known_ids = {s.id for s in project.shots}
+    extra_shot_ids = list(dict.fromkeys(body.extra_shot_ids)) if body else []
+    if any(sid not in known_ids for sid in extra_shot_ids):
+        raise HTTPException(status_code=400, detail="镜头列表无效")
+    extra_shot_ids = [sid for sid in extra_shot_ids if sid != shot_id]
     project.status = ProjectStatus.AUDIOING
     project.error_msg = None
     # 状态和任务同事务提交：建任务失败（如余额不足）时一起回滚，项目不会卡在进行中。
@@ -1170,6 +1225,7 @@ async def regen_audio(
         project_id=project_id,
         shot_id=shot_id,
         task_type="shot_regen_audio",
+        payload={"extra_shot_ids": extra_shot_ids} if extra_shot_ids else None,
     )
     return await _get_owned_project(db, project_id, user)
 

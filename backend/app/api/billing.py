@@ -197,6 +197,9 @@ async def create_order(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
+    # 支付未配置时不落库，避免留下无法支付的订单
+    if not epay.payment_configured():
+        raise HTTPException(status_code=503, detail="支付暂未开通，请联系管理员")
     # 下单前先清理该用户已过期的待支付单
     await billing.close_expired_pending_orders(db, user_id=user.id)
     sku = billing.sku_by_id(body.sku_id)

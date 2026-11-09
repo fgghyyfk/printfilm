@@ -20,10 +20,11 @@ from PIL import Image, ImageOps
 
 from app.config import Settings, get_settings
 from app.services import storage
+from app.services.url_guard import guard_request
 
 logger = logging.getLogger(__name__)
 
-SCOPES = {"tools", "all"}
+SCOPES ={"tools", "all"}
 QUALITIES = {"low", "medium", "high", "auto"}
 TARGET_PIXELS = 1536 * 1536          # 约 2.36MP：清晰度够用、成本可控
 MAX_REFS = 16
@@ -74,7 +75,8 @@ async def _ref_bytes(url: str) -> tuple[str, bytes]:
     if local is not None and local.exists():
         raw = local.read_bytes()
     elif url.startswith(("http://", "https://")):
-        async with httpx.AsyncClient(timeout=httpx.Timeout(60, connect=15), follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(60, connect=15), follow_redirects=True,
+                                     event_hooks={"request": [guard_request]}) as client:
             resp = await client.get(url)
             resp.raise_for_status()
             raw = resp.content

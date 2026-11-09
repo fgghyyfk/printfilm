@@ -22,10 +22,24 @@ from app.services.model_settings import (
     patch_admin_model_settings,
     patch_admin_routing_settings,
 )
+from app.services.site_appearance import SITE_THEMES, get_site_theme, set_site_theme
 from app.services.upstream_model_catalog import list_upstream_models
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+class SiteAppearanceBody(BaseModel):
+    """切换全站主题。"""
+
+    theme: str = Field(description="主题 ID")
+
+
+class AdminSiteAppearanceOut(BaseModel):
+    """全站主题及可选范围。"""
+
+    theme: str = Field(description="当前全站主题 ID")
+    themes: list[str] = Field(description="可选主题 ID")
 
 
 class MediaPricePublishBody(BaseModel):
@@ -133,6 +147,39 @@ async def admin_patch_routing_settings(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return AdminRoutingSettingsSaveOut(settings=settings, applied=applied)
+
+
+@router.get(
+    "/settings/appearance",
+    response_model=AdminSiteAppearanceOut,
+    summary="获取全站主题",
+    description="仅管理员可访问。返回当前全站主题和可选主题。",
+    response_description="当前主题与可选主题",
+)
+async def admin_get_appearance(
+    _admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+) -> AdminSiteAppearanceOut:
+    return AdminSiteAppearanceOut(theme=await get_site_theme(db), themes=list(SITE_THEMES))
+
+
+@router.put(
+    "/settings/appearance",
+    response_model=AdminSiteAppearanceOut,
+    summary="切换全站主题",
+    description="仅管理员可操作。保存后用户端刷新页面即生效；不支持的主题返回 400。",
+    response_description="切换后的主题与可选主题",
+)
+async def admin_set_appearance(
+    body: SiteAppearanceBody,
+    _admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+) -> AdminSiteAppearanceOut:
+    try:
+        theme = await set_site_theme(db, body.theme)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return AdminSiteAppearanceOut(theme=theme, themes=list(SITE_THEMES))
 
 
 @router.get(

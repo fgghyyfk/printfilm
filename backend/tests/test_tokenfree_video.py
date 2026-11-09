@@ -28,13 +28,13 @@ def test_remap_video_path_on_tokenfree():
 
 
 def test_remap_video_path_ignores_volces_host():
-    """方舟主机不再保留原生任务路径。"""
+    """非官方 ModelArk 主机一律改写为 New API 路径。"""
     path = remap_video_path(
         "/contents/generations/tasks",
-        base_url="https://ark.cn-beijing.volces.com/api/v3",
+        base_url="https://relay.example.com/v1",
     )
     assert path == "/videos"
-    assert uses_tokenfree_video(base_url="https://ark.cn-beijing.volces.com/api/v3") is True
+    assert uses_tokenfree_video(base_url="https://relay.example.com/v1") is True
 
 
 def test_wrap_seedance_payload_canonicalizes_mini_hyphen_id():
@@ -238,7 +238,7 @@ def test_prepare_video_create_body_always_wraps():
     body = {"model": "seedance-2-5", "content": [{"type": "text", "text": "hi"}], "duration": 5}
     wrapped = prepare_video_create_body(
         body,
-        base_url="https://ark.cn-beijing.volces.com/api/v3",
+        base_url="https://relay.example.com/v1",
     )
     assert wrapped["prompt"] == "hi"
     assert wrapped["metadata"]["duration"] == 5

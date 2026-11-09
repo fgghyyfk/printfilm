@@ -2406,37 +2406,34 @@ class ArkGateway:
         return storage.to_public_url(raw)
 
     def _write_mock_image(self, prompt: str, size: str | None = None) -> str:
-        """写出 mock 立绘 SVG；每次唯一文件名，避免重试覆盖。"""
+        """写出 mock 分镜 PNG（位图，FFmpeg 不依赖 librsvg 也能合成）；每次唯一文件名，避免重试覆盖。"""
+        import colorsys
+
+        from PIL import Image, ImageDraw, ImageFont
+
         digest = uuid.uuid4().hex[:12]
         root = Path(__file__).resolve().parents[2] / "static" / "mock"
         root.mkdir(parents=True, exist_ok=True)
-        path = root / f"image_{digest}.svg"
-        hue = int(digest[:2], 16)
-        label = (prompt[:42] + "…") if len(prompt) > 42 else prompt
-        safe = (
-            label.replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-            .replace('"', "&quot;")
-        )
+        path = root / f"image_{digest}.png"
+        hue = int(digest[:2], 16) / 255
+
+        def tone(offset: float, sat: float, light: float) -> tuple[int, int, int]:
+            r, g, b = colorsys.hls_to_rgb((hue + offset) % 1, light, sat)
+            return int(r * 255), int(g * 255), int(b * 255)
+
         # Portrait mock for image_text / 9:16
         portrait = bool(size and ("x" in size.lower()) and self._is_portrait_size(size))
         w, h = (720, 1280) if portrait else (960, 540)
-        svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}">
-  <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="hsl({hue},28%,22%)"/>
-      <stop offset="100%" stop-color="hsl({(hue + 40) % 360},22%,38%)"/>
-    </linearGradient>
-  </defs>
-  <rect width="{w}" height="{h}" fill="url(#g)"/>
-  <rect x="{int(w*0.08)}" y="{int(h*0.28)}" width="{int(w*0.4)}" height="{int(h*0.28)}" rx="10" fill="hsl({(hue + 20) % 360},35%,72%)" opacity="0.9"/>
-  <circle cx="{int(w*0.72)}" cy="{int(h*0.38)}" r="{int(w*0.14)}" fill="hsl({(hue + 80) % 360},30%,65%)" opacity="0.55"/>
-  <text x="{int(w*0.08)}" y="{int(h*0.78)}" fill="#f2ebe0" font-family="Georgia, serif" font-size="28">Mock Storyboard</text>
-  <text x="{int(w*0.08)}" y="{int(h*0.84)}" fill="#d7cfc3" font-family="sans-serif" font-size="18">{safe}</text>
-</svg>"""
-        path.write_text(svg, encoding="utf-8")
-        return f"/static/mock/image_{digest}.svg"
+        image = Image.new("RGB", (w, h), tone(0, 0.28, 0.26))
+        draw = ImageDraw.Draw(image)
+        draw.rounded_rectangle(
+            (int(w * 0.08), int(h * 0.28), int(w * 0.48), int(h * 0.56)), radius=10, fill=tone(0.06, 0.35, 0.68)
+        )
+        cx, cy, r = int(w * 0.72), int(h * 0.38), int(w * 0.14)
+        draw.ellipse((cx - r, cy - r, cx + r, cy + r), fill=tone(0.22, 0.3, 0.58))
+        draw.text((int(w * 0.08), int(h * 0.78)), "Mock Storyboard", fill="#f2ebe0", font=ImageFont.load_default(28))
+        image.save(path, "PNG")
+        return f"/static/mock/image_{digest}.png"
 
     @staticmethod
     def _is_portrait_size(size: str) -> bool:

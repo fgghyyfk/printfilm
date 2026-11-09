@@ -24,7 +24,7 @@
 .pf-ecom-form input[type='text'],
 .pf-ecom-input {
   border: 1px solid var(--pf-line);
-  border-radius: 12px;
+  border-radius: var(--pf-radius);
   padding: 0.6rem 0.75rem;
   font: inherit;
   background: var(--pf-bg);
@@ -37,9 +37,9 @@
   max-width: 220px;
   max-height: 220px;
   margin: 0 auto 0.6rem;
-  border-radius: 10px;
+  border-radius: var(--pf-radius-sm);
   object-fit: contain;
-  background: #fff;
+  background: var(--pf-card);
 }
 
 .pf-ecom-submit-row {
@@ -59,9 +59,9 @@
 }
 
 .pf-ecom-section {
-  background: #fff;
+  background: var(--pf-card);
   border: 1px solid var(--pf-line);
-  border-radius: 16px;
+  border-radius: var(--pf-radius-lg);
   box-shadow: var(--pf-shadow);
   padding: 1.15rem;
 }
@@ -95,7 +95,7 @@
 .pf-ecom-warnings {
   margin: 0 0 1rem;
   padding: 0.65rem 0.85rem;
-  border-radius: 12px;
+  border-radius: var(--pf-radius);
   background: #fff7e6;
   color: #8a5300;
   font-size: 0.85rem;
@@ -114,7 +114,7 @@
 
 .pf-ecom-card {
   border: 1px solid var(--pf-line);
-  border-radius: 14px;
+  border-radius: var(--pf-radius);
   background: var(--pf-bg);
   padding: 0.75rem;
   display: flex;
@@ -139,7 +139,7 @@
 
 .pf-ecom-card .pf-tool-field textarea,
 .pf-ecom-card .pf-ecom-input {
-  background: #fff;
+  background: var(--pf-card);
 }
 
 .pf-ecom-field-label {
@@ -158,9 +158,9 @@
 .pf-ecom-thumb {
   position: relative;
   width: 100%;
-  border-radius: 10px;
+  border-radius: var(--pf-radius-sm);
   overflow: hidden;
-  background: #fff;
+  background: var(--pf-card);
   border: 1px solid var(--pf-line);
   display: grid;
   place-items: center;
@@ -206,7 +206,7 @@
   max-height: 75vh;
   object-fit: contain;
   display: block;
-  border-radius: 10px;
+  border-radius: var(--pf-radius-sm);
 }
 
 .pf-ecom-modal-hint {
@@ -236,8 +236,8 @@
   box-sizing: border-box;
   cursor: pointer;
   border: 1px solid var(--pf-line);
-  border-radius: 12px;
-  background: #fff;
+  border-radius: var(--pf-radius);
+  background: var(--pf-card);
   padding: 0.5rem;
   display: flex;
   flex-direction: column;
@@ -297,6 +297,6 @@
 
 /* 丝巾详情页：模特选择 */
 .pf-ecom-models { display: flex; flex-wrap: wrap; gap: 10px; }
-.pf-ecom-model { display: grid; gap: 4px; width: 88px; padding: 4px; border: 1px solid var(--pf-line, #e4e0db); border-radius: 10px; background: transparent; cursor: pointer; font-size: 12px; color: inherit; }
+.pf-ecom-model { display: grid; gap: 4px; width: 88px; padding: 4px; border: 1px solid var(--pf-line, #e4e0db); border-radius: var(--pf-radius-sm); background: transparent; cursor: pointer; font-size: 12px; color: inherit; }
 .pf-ecom-model img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 7px; }
-.pf-ecom-model.active { border-color: var(--pf-accent, #ff6a3d); box-shadow: 0 0 0 2px color-mix(in srgb, var(--pf-accent, #ff6a3d) 30%, transparent); }
+.pf-ecom-model.active { border-color: var(--pf-accent, var(--pf-lime)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--pf-accent, var(--pf-lime)) 30%, transparent); }

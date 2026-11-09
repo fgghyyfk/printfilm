@@ -24,7 +24,7 @@ test('资产、团队和旧短视频地址高亮对应入口，不被漫剧前�
 
 test('公开顶栏只展示核心产品，个人入口归入头像菜单', () => {
   assert.deepEqual(HOME_NAV, { key: 'home', path: '/', label: 'nav.home' })
-  assert.deepEqual(CREATION_NAV.map((item) => item.key), ['drama', 'canvas', 'kepu'])
+  assert.deepEqual(CREATION_NAV.map((item) => item.key), ['kaikou', 'drama', 'canvas', 'kepu', 'image'])
   assert.deepEqual(RESOURCE_NAV.map((item) => item.key), ['pricing'])
   assert.deepEqual(PERSONAL_NAV.map((item) => item.key), ['tasks', 'assets'])
   assert.equal(resolveNavActive('/tools'), undefined)
