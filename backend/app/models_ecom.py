@@ -124,3 +124,30 @@ class EcomScene(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+class EcomElement(Base):
+    """电商图元素库：系统预置元素（启动只补缺失）与用户自定义元素（文字或实物照片）。"""
+
+    __tablename__ = "ecom_elements"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    key: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    # system 系统预置 | user 我的元素
+    scope: Mapped[str] = mapped_column(String(16), default="system", index=True)
+    owner_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    name: Mapped[str] = mapped_column(String(32), default="")
+    # plant / produce / natural / vessel / fabric / water / light / festival
+    category: Mapped[str] = mapped_column(String(16), default="plant", index=True)
+    # 给 AI 的画面描述
+    prompt: Mapped[str] = mapped_column(String(200), default="")
+    keywords: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    industries: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # s 小 / m 中 / l 大（氛围类）
+    scale: Mapped[str] = mapped_column(String(4), default="s")
+    # 用户上传的实物照（生成时作为额外参考图）
+    image_path: Mapped[str] = mapped_column(String(1024), default="")
+    image_url: Mapped[str] = mapped_column(String(1024), default="")
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

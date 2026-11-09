@@ -18,6 +18,9 @@ class EcomSetItemOut(BaseModel):
     subtitle: str
     bullets: list[str]
     en: str = ""
+    shot: str = ""
+    shot_name: str = ""
+    elements: list[dict] = []
     base_url: str | None = None
     final_url: str | None = None
     status: str
@@ -46,6 +49,7 @@ class EcomScarfOut(BaseModel):
     scene_name: str = ""
     type_style: str = "bold"
     image_engine: str = "seedream"
+    elements: list[dict] = []
 
 
 class EcomProductOut(BaseModel):
@@ -111,6 +115,7 @@ class EcomSetOptionsOut(BaseModel):
     category_industry: dict[str, str] = {}
     type_styles: list[dict] = []
     image_engines: list[dict] = []
+    shots: list[dict] = []
     plan_fen: int
     image_fen: int
     billing_enabled: bool
@@ -126,6 +131,8 @@ class EcomPlanItemIn(BaseModel):
     bullets: list[str] = Field(default_factory=list, max_length=3)
     # 英文小标；不传（None）表示保持原值
     en: str | None = Field(default=None, max_length=60)
+    shot: str | None = Field(default=None, max_length=32)
+    elements: list[str] | None = Field(default=None, max_length=6)
 
 
 class EcomPlanUpdateIn(BaseModel):
@@ -136,9 +143,11 @@ class EcomPlanUpdateIn(BaseModel):
 
 
 class EcomRegenerateIn(BaseModel):
-    """单张重做请求（可改画面描述）。"""
+    """单张重做请求（可改画面描述、镜头与元素）。"""
 
     scene: str | None = Field(default=None, max_length=300)
+    shot: str | None = Field(default=None, max_length=32)
+    elements: list[str] | None = Field(default=None, max_length=6)
 
 
 class EcomCopyIn(BaseModel):

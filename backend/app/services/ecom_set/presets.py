@@ -45,7 +45,7 @@ class Slot:
     is_main: bool = False
     # 底图参考：product 商品图 | model 固定模特 + 商品图 | flat 不调模型、直接用商品图排版
     # | composite 标品：按比例摆好商品抠图 → AI 搭景 → 原图贴回 | texture 只拍内容物质地（不带商品）
-    # | info 信息屏：按商品资料直接排版（不调模型）
+    # | info 信息屏：按商品资料直接排版（不调模型）| hand 手持：商品图作参考，AI 画手握商品（不贴回）
     ref: str = "product"
 
 
@@ -219,6 +219,11 @@ GOODS_SLOTS: dict[str, Slot] = {s.key: s for s in (
          "label_bar", "3:4", "bottom", ref="texture"),
     _c("goods_usage", "使用场景", "商品放在真实的使用环境里，生活感强，商品清晰", "title_corner", "top"),
     _c("goods_lineup", "多款陈列", "多款商品一字排开陈列，整齐有序", "title_sub", "top"),
+    _c("goods_ingredient_still", "原料静物", "商品与它的香调、成分原料一起的丰盛静物，原料真实新鲜", "title_sub", "top"),
+    _c("goods_flatlay", "平铺俯拍", "正上方俯拍的平铺构图，商品与元素在台面上有序排布", "title_corner", "top"),
+    Slot("goods_hand", "手持展示",
+         "一只干净自然的女性手轻轻握着商品，手部姿态优雅放松，背景为同一场景的虚化环境",
+         "title_corner", "3:4", "top", ref="hand"),
     *(Slot(k, label, f"信息屏（程序排版，不出画面）：{hint}；只需写标题（≤10字）、副标题与英文小标", "info", "3:4", "none",
            ref="info") for k, label, hint in (
         ("goods_info_variants", "多款一览", "各款式/香型的名称与香调一览"),

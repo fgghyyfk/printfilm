@@ -47,14 +47,30 @@ async def _pick_scene(db: AsyncSession, user: User, scene_key: str | None) -> di
     return scenes.snapshot(await scenes.get_scene(db, user.id, key))
 
 
-def _scene_note(scene: dict | None) -> str:
+def _scene_note(scene: dict | None, *, with_props: bool = True) -> str:
     """给规划模型的场景约束：每张图只写机位、构图与道具变化，背景、台面、光线沿用同一场景。"""
     if not scene:
         return ""
     from app.services.ecom_set.scenes import scene_text
 
-    return (f"整套图统一使用「{scene['name']}」场景（{scene_text(scene.get('spec') or {})}）。"
+    return (f"整套图统一使用「{scene['name']}」场景（{scene_text(scene.get('spec') or {}, with_props=with_props)}）。"
             "每张图的 scene 只写机位、构图和道具的变化，背景、台面、光线与色调保持这一场景")
+
+
+async def _element_pool(db: AsyncSession, user: User, *, category: str, keys: list[str] | None,
+                        knowledge: dict, scene: dict | None) -> list[dict]:
+    """本套图的元素池：用户选了就用所选；日化没选时按商品资料推荐 + 场景道具自动组成，保证每张能错开。"""
+    from app.services.ecom_set import elements, variety
+
+    if keys:
+        return elements.snapshot(await elements.get_many(db, user, keys))
+    if category != "goods":
+        return []
+    industry = next(iter((scene or {}).get("industries") or []), "")
+    rec = elements.snapshot(await elements.recommend(db, user, knowledge=knowledge, industry=industry, limit=8))
+    scene_props = variety.pool_from_scene(scene)
+    names = {e["name"] for e in rec}
+    return rec + [e for e in scene_props if e["name"] not in names]
 
 
 async def _resolve_images(db: AsyncSession, user: User, *, product_id: int | None, color_index: int,
@@ -88,7 +104,7 @@ async def create_styled_plan(
     size: str | None, material: str | None, model_asset_id: int | None, frame: str | None,
     slots_picked: list[str] | None, product_id: int | None, color_index: int,
     data: bytes | None, filename: str, fabric: tuple[bytes, str] | None, scene_key: str | None = None,
-    image_engine: str | None = None,
+    image_engine: str | None = None, element_keys: list[str] | None = None,
 ) -> int:
     """规划一套「模特上身」图，返回套图 id。商品库里的款名/尺寸/材质/卖点会作为默认值。"""
     from app.services.ecom_set.service import _record_plan_charge
@@ -114,16 +130,20 @@ async def create_styled_plan(
     model = await _pick_model(db, user, model_asset_id, required=any(s.ref == "model" for s in slots))
     scene = await _pick_scene(db, user, scene_key)
     engine = _pick_engine(image_engine)
+    pool = await _element_pool(db, user, category=category, keys=element_keys, knowledge=know, scene=scene)
     color_note = f"本款颜色：{images['color_name']}" if images.get("color_name") else ""
     plan_text = categories.plan_notes(category, size=size, material=material,
-                                      notes="；".join(x for x in (notes.strip(), color_note, _scene_note(scene)) if x))
+                                      notes="；".join(x for x in (notes.strip(), color_note,
+                                                                   _scene_note(scene, with_props=not pool)) if x))
     path = Path(images["image_path"])
 
     async def _exec() -> dict:
         from app.services.ecom_set.knowledge import digest
 
+        from app.services.ecom_set.variety import hint_text
+
         result = await plan_set(image_path=path, name=name, notes=clip(plan_text, 500), platform="taobao",
-                                style="minimal", slots=slots, knowledge=digest(know))
+                                style="minimal", slots=slots, knowledge=digest(know), extra=hint_text(slots, pool))
         await _record_plan_charge(db, user.id)
         return result
 
@@ -137,6 +157,15 @@ async def create_styled_plan(
         styled["scene"] = scene
     styled["type_style"] = typo.default_type_style(category, scene)
     styled["image_engine"] = engine
+    if pool:
+        from app.services.ecom_set.variety import assign
+
+        styled["elements"] = pool
+        styled["layout"] = assign(slots, plan["items"], pool)
+    elif any(s.ref == "composite" for s in slots):
+        from app.services.ecom_set.variety import assign
+
+        styled["layout"] = assign(slots, plan["items"], [])
     if any(s.ref == "info" for s in slots):
         styled.update(knowledge=know, variants=variants, product_path=str(path), product_name=name,
                       material_label=categories.material_label(category, material))
@@ -268,6 +297,8 @@ def styled_out(ecom: EcomSet) -> dict | None:
         "fabric_url": info.get("fabric_url") or "", "real_url": info.get("real_url") or "",
         "scene_key": (info.get("scene") or {}).get("key") or "", "scene_name": (info.get("scene") or {}).get("name") or "",
         "image_engine": info.get("image_engine") or "seedream",
+        "elements": [{"key": e["key"], "name": e["name"], "image_url": e.get("image_url") or ""}
+                     for e in info.get("elements") or []],
         "type_style": typo.normalize_type_style(info.get("type_style"),
                                                 typo.default_type_style(cat, info.get("scene"))),
     }

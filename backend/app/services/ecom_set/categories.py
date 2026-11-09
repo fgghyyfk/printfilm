@@ -103,14 +103,17 @@ GOODS = Category(
     },
     compositions={
         6: ("goods_cover", "goods_white", "goods_scene", "goods_selling", "goods_texture", "goods_usage"),
-        8: ("goods_cover", "goods_white", "goods_scene", "goods_selling", "goods_selling2", "goods_texture",
-            "goods_usage", "goods_lineup"),
-        # 10 / 12 张：在 8 张基础上加信息屏（免费，按商品资料排版；资料不够的那张会自动跳过并提示）
-        10: ("goods_cover", "goods_white", "goods_scene", "goods_selling", "goods_info_points", "goods_selling2",
-             "goods_texture", "goods_usage", "goods_lineup", "goods_info_specs"),
-        12: ("goods_cover", "goods_white", "goods_scene", "goods_selling", "goods_info_points", "goods_selling2",
-             "goods_info_variants", "goods_texture", "goods_info_ingredients", "goods_usage", "goods_info_usage",
+        8: ("goods_cover", "goods_white", "goods_scene", "goods_selling", "goods_ingredient_still", "goods_texture",
+            "goods_flatlay", "goods_usage"),
+        # 10～14 张：加信息屏（免费，按商品资料排版；资料不够的那张会自动跳过并提示）与更多构图
+        10: ("goods_cover", "goods_white", "goods_scene", "goods_selling", "goods_info_points", "goods_ingredient_still",
+             "goods_texture", "goods_flatlay", "goods_usage", "goods_info_specs"),
+        12: ("goods_cover", "goods_white", "goods_scene", "goods_selling", "goods_info_points", "goods_ingredient_still",
+             "goods_info_variants", "goods_texture", "goods_info_ingredients", "goods_hand", "goods_info_usage",
              "goods_info_specs"),
+        14: ("goods_cover", "goods_white", "goods_scene", "goods_selling", "goods_info_points", "goods_ingredient_still",
+             "goods_info_variants", "goods_lineup", "goods_texture", "goods_info_ingredients", "goods_flatlay",
+             "goods_hand", "goods_usage", "goods_info_specs"),
     },
     default_material="tube",
 )
@@ -199,15 +202,17 @@ COMPOSITE_PREFIX = (
 )
 COMPOSITE_LOCK = "商业静物摄影，真实质感，浅景深；画面中不要出现任何额外文字、字母、logo、水印；不要出现其他品牌的商品"
 TEXTURE_PREFIX = "画面中不要出现任何包装或商品容器，只表现商品内容物本身"
+HAND_PREFIX = ("参考图是商品：画一只手握持这件商品，商品的外形、颜色、比例与包装上的文字、logo 必须与参考图完全一致，"
+               "不要改字、不要新增文字")
 BLANK_HINT = {"top": "画面上方约 30% 是干净的背景留白，用于排版文字", "bottom": "画面下方约 25% 是干净的留白，用于排版文字"}
 
 
-def scene_of(info: dict | None) -> str:
-    """从套图信息里取场景卡描述（没选场景时为空）。"""
+def scene_of(info: dict | None, *, with_props: bool = True) -> str:
+    """从套图信息里取场景卡描述（没选场景时为空）。选了元素时不带场景卡道具（道具由每张的元素决定）。"""
     from app.services.ecom_set.scenes import scene_text
 
     scene = (info or {}).get("scene") or {}
-    return scene_text(scene.get("spec") or {}) if isinstance(scene, dict) else ""
+    return scene_text(scene.get("spec") or {}, with_props=with_props) if isinstance(scene, dict) else ""
 
 
 REAL_HINT = ("商品设计图后面的一张是实物照片：商品在真实光线下的颜色、质感、厚薄与垂坠以它为准；"
@@ -216,11 +221,13 @@ REAL_HINT = ("商品设计图后面的一张是实物照片：商品在真实光
 
 def build_prompt(category: str, *, slot_prompt: str, scene: str, ref: str, size: str | None,
                  material: str | None, has_fabric: bool, has_real: bool = False, scene_card: str = "",
-                 blank: str = "none") -> str:
+                 blank: str = "none", shot: str = "", elements: str = "") -> str:
     """拼装底图提示词。scene 为本张画面描述；场景卡描述由 scene_card 传入（标品与纯商品槽位使用）。"""
     if category == "goods":
         return build_goods_prompt(slot_prompt=slot_prompt, scene=scene, ref=ref, scene_card=scene_card,
-                                  blank=blank, material=material)
+                                  blank=blank, material=material, shot=shot, elements=elements)
+    if elements and ref == "product":
+        scene_card = "。".join(x for x in (scene_card, elements) if x)
     if category == "scarf":
         text = scarf_mod.build_prompt(slot_prompt=slot_prompt, scene=scene, ref=ref, size=size, material=material)
     else:
@@ -237,13 +244,19 @@ def build_prompt(category: str, *, slot_prompt: str, scene: str, ref: str, size:
 
 
 def build_goods_prompt(*, slot_prompt: str, scene: str, ref: str, scene_card: str, blank: str,
-                       material: str | None) -> str:
-    """标品底图提示词：合成槽位围绕已摆好的商品搭景；质地槽位只拍内容物。"""
+                       material: str | None, shot: str = "", elements: str = "") -> str:
+    """标品底图提示词：合成槽位围绕已摆好的商品搭景；质地槽位只拍内容物；手持槽位按商品参考图画手握商品。
+
+    shot：本张镜头构图描述；elements：本张画面元素（来自元素库，每张不同）。
+    """
     if ref == "texture":
-        parts = [TEXTURE_PREFIX, slot_prompt, scene, scene_card, BLANK_HINT.get(blank, ""), COMPOSITE_LOCK]
+        parts = [TEXTURE_PREFIX, slot_prompt, scene, scene_card, elements, BLANK_HINT.get(blank, ""), COMPOSITE_LOCK]
+    elif ref == "hand":
+        parts = [HAND_PREFIX, slot_prompt, scene_card, elements, scene, BLANK_HINT.get(blank, ""), COMPOSITE_LOCK]
     else:
         _, form, _ = GOODS.materials[normalize_material("goods", material)]
-        parts = [COMPOSITE_PREFIX, f"商品摆放：{form}", slot_prompt, scene_card, scene,
+        lay = "；本张商品平放在台面上" if "平放" in shot else ""
+        parts = [COMPOSITE_PREFIX, f"商品摆放：{form}{lay}", slot_prompt, shot, scene_card, elements, scene,
                  BLANK_HINT.get(blank, ""), COMPOSITE_LOCK]
     return "。".join(p.strip("。 ") for p in parts if p and p.strip())
 

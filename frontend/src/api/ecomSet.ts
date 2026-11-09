@@ -24,6 +24,10 @@ export interface EcomSetItem {
   bullets: string[]
   /** 标题上方的英文小标（可空） */
   en?: string
+  /** 本张镜头（构图）与画面元素 */
+  shot?: string
+  shot_name?: string
+  elements?: { key: string; name: string }[]
   base_url: string | null
   final_url: string | null
   status: EcomSetItemStatus
@@ -72,6 +76,8 @@ export interface EcomSetOptions {
   type_styles?: { id: string; name: string; hint: string }[]
   /** 出图模型（GPT Image 2 仅在后台开通后出现），带各自单价（分） */
   image_engines?: { id: string; name: string; hint: string; image_fen: number }[]
+  /** 镜头库 */
+  shots?: { key: string; name: string }[]
   plan_fen: number
   image_fen: number
   billing_enabled: boolean
@@ -108,6 +114,8 @@ export type EcomStyledInfo = {
   type_style?: string
   /** 出图模型 */
   image_engine?: string
+  /** 本套元素池（单张可从中改选） */
+  elements?: { key: string; name: string; image_url: string }[]
 }
 
 /** 品类选项（来自 /options 的 styled） */
@@ -121,7 +129,7 @@ export type EcomStyledCategory = {
   counts: number[]
   default_count: number
   compositions: Record<string, string[]>
-  slots: { key: string; label: string; ref: 'model' | 'product' | 'flat' | 'composite' | 'texture' | 'info'; free: boolean }[]
+  slots: { key: string; label: string; ref: 'model' | 'product' | 'flat' | 'composite' | 'texture' | 'info' | 'hand'; free: boolean }[]
   /** 是否需要模特（goods 日化标品为 false，跳过选模特） */
   uses_model?: boolean
   /** 材质栏标签：goods 为「包装形态」，其余为「材质」 */
@@ -148,12 +156,17 @@ export type EcomSetPlanPayload = {
   fabric?: File | null
   /** 出图模型：seedream（默认）| gpt-image-2 */
   imageEngine?: string
+  /** 画面元素 key（最多 12 个；不传自动推荐） */
+  elementKeys?: string[]
   /** 场景库场景 key；留空 = 按品类默认画面 */
   sceneKey?: string
 }
 
 /** 方案编辑：单张可改字段 */
-export type EcomSetPlanItemPatch = Pick<EcomSetItem, 'idx' | 'scene' | 'title' | 'subtitle' | 'bullets' | 'en'>
+export type EcomSetPlanItemPatch = Pick<EcomSetItem, 'idx' | 'scene' | 'title' | 'subtitle' | 'bullets' | 'en'> & {
+  shot?: string
+  elements?: string[]
+}
 
 /** 带货视频画幅 */
 export type DaihuoRatio = '9:16' | '16:9' | '1:1' | '4:3'
@@ -207,6 +220,7 @@ export function planEcomSet(payload: EcomSetPlanPayload): Promise<EcomSet> {
   if (payload.fabric) body.append('fabric', payload.fabric)
   if (payload.sceneKey) body.append('scene_key', payload.sceneKey)
   if (payload.imageEngine) body.append('image_engine', payload.imageEngine)
+  if (payload.elementKeys?.length) body.append('element_keys', payload.elementKeys.join(','))
   return requestEcom('/plan', '方案生成失败', { method: 'POST', body }, true)
 }
 
@@ -232,8 +246,9 @@ export function listEcomSets(page = 1, pageSize = 12): Promise<EcomSetList> {
 }
 
 // 单张重新生成，可选改画面描述（收一张生图费）
-export function regenerateEcomSetItem(id: number, idx: number, scene?: string): Promise<EcomSet> {
-  const body = scene === undefined ? {} : { scene }
+export function regenerateEcomSetItem(id: number, idx: number, scene?: string,
+  layout?: { shot?: string; elements?: string[] }): Promise<EcomSet> {
+  const body = { ...(scene === undefined ? {} : { scene }), ...(layout || {}) }
   return requestEcom(
     `/${id}/items/${idx}/regenerate`,
     '重新生成失败',
@@ -278,4 +293,9 @@ export function createDaihuoProject(id: number, payload: DaihuoProjectPayload): 
 /** 切换整套图的字体风格（已出图的全部重新排字，免费） */
 export function setEcomSetTypeStyle(id: number, typeStyle: string): Promise<EcomSet> {
   return requestEcom(`/${id}/type-style`, '切换字体失败', { method: 'PUT', body: JSON.stringify({ type_style: typeStyle }) })
+}
+
+/** 往本套元素池追加元素（单张换元素前用） */
+export function addEcomSetElements(id: number, keys: string[]): Promise<EcomSet> {
+  return requestEcom(`/${id}/elements`, '添加元素失败', { method: 'POST', body: JSON.stringify({ keys }) })
 }

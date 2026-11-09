@@ -55,8 +55,8 @@ def normalize_spec(raw: dict[str, Any] | None) -> dict[str, Any]:
     return out
 
 
-def scene_text(spec: dict[str, Any]) -> str:
-    """场景卡 → 给生图模型的场景描述（有手写提示词时以手写为准）。"""
+def scene_text(spec: dict[str, Any], *, with_props: bool = True) -> str:
+    """场景卡 → 给生图模型的场景描述（有手写提示词时以手写为准）。with_props=False 时只给背景/台面/光线/色调骨架。"""
     s = normalize_spec(spec)
     if s["prompt"]:
         return s["prompt"]
@@ -67,7 +67,7 @@ def scene_text(spec: dict[str, Any]) -> str:
         parts.append(f"主色调：{s['palette']}")
     if s["surface"]:
         parts.append(f"商品立在{s['surface']}上")
-    if s["props"]:
+    if s["props"] and with_props:
         parts.append(f"周围点缀{'、'.join(s['props'])}，道具小巧、尺寸与商品相称、比例真实，不遮挡商品")
     if s["light"]:
         parts.append(f"光线：{s['light']}，商品在台面上有自然的柔和阴影")

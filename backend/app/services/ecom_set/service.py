@@ -32,7 +32,17 @@ from app.services.ecom_set.jobs import (
 from app.services.ecom_set.planner import plan_set
 from app.services.ecom_set import categories
 from app.services.ecom_set import scenes as scenes_mod
+from app.services.ecom_set import shots as shots_mod
 from app.services.ecom_set import typo as typo_mod
+from app.services.ecom_set import variety
+from app.services.ecom_set.engines import (  # noqa: F401  出图模型（对外仍从 service 导出）
+    IMAGE_ENGINES,
+    engine_of,
+    engine_options,
+    item_engine,
+    normalize_engine,
+)
+from app.services.ecom_set.variety import add_set_elements  # noqa: F401
 from app.services.ecom_set.categories import is_styled
 from app.services.ecom_set.styled import build_long_image, create_styled_plan, recolor_set, styled_out
 from app.services.ecom_set.presets import (
@@ -81,43 +91,6 @@ def save_product_image(user_id: int, data: bytes, filename: str) -> Path:
     return dest
 
 
-# 出图模型：seedream 默认（主渠道）| gpt-image-2（后台「生图」渠道：OpenAI 官方或 Promptoll）
-IMAGE_ENGINES = ("seedream", "gpt-image-2")
-
-
-def normalize_engine(value: str | None) -> str:
-    """规整出图模型，未知回落 seedream。"""
-    v = (value or "").strip()
-    return v if v in IMAGE_ENGINES else "seedream"
-
-
-def engine_of(ecom: EcomSet) -> str:
-    """套图选的出图模型（旧套图为 seedream）。"""
-    plan = ecom.plan or {}
-    info = plan.get("styled") if isinstance(plan.get("styled"), dict) else plan
-    return normalize_engine((info or {}).get("image_engine"))
-
-
-def item_engine(ecom: EcomSet, item: EcomSetItem) -> str:
-    """单张实际用的出图模型：质地特写不带商品参考图，GPT 会画出无品牌的包装，固定用 Seedream。"""
-    engine = engine_of(ecom)
-    slot = SLOTS.get(item.slot)
-    if engine == "gpt-image-2" and slot is not None and slot.ref == "texture":
-        return "seedream"
-    return engine
-
-
-def engine_options() -> list[dict]:
-    """前台可选的出图模型：GPT Image 2 只在后台开通了生图渠道时出现。"""
-    from app.services.openai_image import openai_image_configured, provider_label
-
-    out = [{"id": "seedream", "name": "Seedream 5.0 Pro", "hint": "默认，出图稳定、性价比高"}]
-    if openai_image_configured():
-        out.append({"id": "gpt-image-2", "name": f"GPT Image 2（{provider_label()}）",
-                    "hint": "画面质感与排版感更强，单价更高"})
-    return out
-
-
 # 单张生图预估价（分）
 async def image_unit_fen(db: AsyncSession, engine: str = "seedream") -> int:
     from app.services.media_models.planning import prepare_task_media
@@ -154,6 +127,7 @@ async def get_options(db: AsyncSession) -> dict:
         "category_industry": dict(scenes_mod.CATEGORY_INDUSTRY),
         "type_styles": typo_mod.options(),
         "image_engines": [{**e, "image_fen": await image_unit_fen(db, e["id"])} for e in engine_options()],
+        "shots": shots_mod.options(),
         "scarf_sizes": next(c["sizes"] for c in categories.options() if c["id"] == "scarf"),
         "scarf_counts": next(c["counts"] for c in categories.options() if c["id"] == "scarf"),
         "scarf_materials": next(c["materials"] for c in categories.options() if c["id"] == "scarf"),
@@ -188,7 +162,7 @@ async def create_plan(
     category: str = "general", scarf_size: str | None = None, model_asset_id: int | None = None,
     scarf_material: str | None = None, frame: str | None = None, slots_picked: list[str] | None = None,
     product_id: int | None = None, color_index: int = 0, fabric: tuple[bytes, str] | None = None,
-    scene_key: str | None = None, image_engine: str | None = None,
+    scene_key: str | None = None, image_engine: str | None = None, element_keys: list[str] | None = None,
 ) -> EcomSet:
     """上传商品图（或从商品库选）→ 计费规划 → 落库套图与各张方案（status=planned）。
 
@@ -200,7 +174,7 @@ async def create_plan(
             db, user, category=category, name=name, notes=notes, count=count, size=scarf_size,
             material=scarf_material, model_asset_id=model_asset_id, frame=frame, slots_picked=slots_picked,
             product_id=product_id, color_index=color_index, data=data, filename=filename, fabric=fabric,
-            scene_key=scene_key, image_engine=image_engine,
+            scene_key=scene_key, image_engine=image_engine, element_keys=element_keys,
         )
         return await get_set(db, user, set_id)
     name = clip(name, 60)
@@ -305,6 +279,8 @@ async def update_plan(db: AsyncSession, user: User, set_id: int, items: list[dic
         copy, ch = normalize_copy(_keep_en(body, it), layout=it.layout, title_max=title_limit(it.slot))
         it.copy_json = copy
         hits += ch
+        if body.get("shot") is not None or body.get("elements") is not None:
+            variety.set_item_layout(ecom, it, shot=body.get("shot"), elements=body.get("elements"))
     _set_edit_warnings(ecom, hits)
     await db.commit()
     return await get_set(db, user, set_id)
@@ -348,12 +324,15 @@ async def start_generation(db: AsyncSession, user: User, set_id: int) -> EcomSet
     return await get_set(db, user, set_id)
 
 
-async def regenerate_item(db: AsyncSession, user: User, set_id: int, idx: int, scene: str | None) -> EcomSet:
-    """单张重新生成底图（收一张生图费），可顺带改画面描述。"""
+async def regenerate_item(db: AsyncSession, user: User, set_id: int, idx: int, scene: str | None,
+                          shot: str | None = None, elements: list[str] | None = None) -> EcomSet:
+    """单张重新生成底图（收一张生图费），可顺带改画面描述、镜头与元素。"""
     ecom = await get_set(db, user, set_id)
     it = _item(ecom, idx)
     if it.status in {"queued", "running"}:
         raise ValueError("这张图正在生成中")
+    if shot is not None or elements is not None:
+        variety.set_item_layout(ecom, it, shot=shot, elements=elements)
     if scene is not None and scene.strip():
         clean, hits = sanitize_scene(scene)
         it.scene = clip(clean, 300)
@@ -500,6 +479,7 @@ def to_out(ecom: EcomSet, *, image_fen: int) -> dict:
             "ratio": it.ratio, "scene": it.scene or "", "title": copy.get("title") or "",
             "subtitle": copy.get("subtitle") or "", "bullets": list(copy.get("bullets") or []),
             "en": copy.get("en") or "",
+            **variety.item_layout_out(ecom, it),
             "base_url": it.base_url, "final_url": it.final_url, "status": it.status, "error": it.error,
             "billable": not _is_flat(it),
         })

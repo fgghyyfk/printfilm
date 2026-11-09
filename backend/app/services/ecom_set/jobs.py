@@ -84,6 +84,20 @@ async def reconcile_stuck_items(db: AsyncSession, ecom: EcomSet) -> bool:
     return changed
 
 
+# 本张的镜头与元素（建套图时分配，单张可改）
+def item_layout(info: dict, item: EcomSetItem) -> tuple[Any, list[dict]]:
+    from app.services.ecom_set import shots as shots_mod
+    from app.services.ecom_set.variety import elements_of
+
+    entry = ((info.get("layout") or {}).get(str(item.idx))) or {}
+    return shots_mod.get(entry.get("shot")), elements_of(list(info.get("elements") or []), list(entry.get("elements") or []))
+
+
+def element_refs(elements: list[dict]) -> list[str]:
+    """带实物照的元素 → 额外参考图地址（最多 3 张）。"""
+    return [e["image_url"] for e in elements if e.get("image_url")][:3]
+
+
 # 出图模型对应的生图参数：GPT Image 2 走后台「生图」渠道（OpenAI 官方或 Promptoll）
 def engine_kwargs(ecom: EcomSet, item: EcomSetItem) -> dict:
     from app.services.ecom_set.service import item_engine
@@ -121,12 +135,18 @@ async def generate_base(db: AsyncSession, ecom: EcomSet, item: EcomSetItem) -> P
             return await generate_goods_base(db, ecom, item, scarf, dest)
         fabric = scarf.get("fabric_url") or ""
         real = scarf.get("real_url") or ""
+        from app.services.ecom_set.elements import prompt_line
+
+        _, els = item_layout(scarf, item)
         prompt = categories.build_prompt(category, slot_prompt=slot.prompt, scene=item.scene,
                                          ref=slot.ref, size=scarf.get("size"), material=scarf.get("material"),
                                          has_fabric=bool(fabric), has_real=bool(real),
-                                         scene_card=categories.scene_of(scarf), blank=item.blank)
+                                         scene_card=categories.scene_of(scarf, with_props=not scarf.get("elements")),
+                                         blank=item.blank, elements=prompt_line(els))
         refs = [scarf["model_url"], ecom.product_image_url] if slot.ref == "model" and scarf.get("model_url") \
             else [ecom.product_image_url]
+        if slot.ref in {"product", "hand"}:
+            refs += element_refs(els)
         if real:
             refs.append(real)
         if fabric:
@@ -169,10 +189,16 @@ async def generate_goods_base(db: AsyncSession, ecom: EcomSet, item: EcomSetItem
 
     settings = get_settings()
     slot = SLOTS[item.slot]
+    from app.services.ecom_set import shots as shots_mod
+    from app.services.ecom_set.elements import prompt_line
+
     spec = normalize_spec(((info.get("scene") or {}).get("spec")) or {})
+    shot, els = item_layout(info, item)
     prompt = categories.build_prompt("goods", slot_prompt=slot.prompt, scene=item.scene, ref=slot.ref, size=None,
                                      material=info.get("material"), has_fabric=False,
-                                     scene_card=categories.scene_of(info), blank=item.blank)
+                                     scene_card=categories.scene_of(info, with_props=not info.get("elements")),
+                                     blank=item.blank, shot=f"{shot.prompt}（{shot.name}）" if shot else "",
+                                     elements=prompt_line(els))
     w, h = composite.COMPOSITE_SIZE.get(item.ratio, composite.COMPOSITE_SIZE["3:4"])
     paths = await _goods_cutout_paths(db, ecom, info, lineup=item.slot == "goods_lineup")
     use_composite = slot.ref == "composite" and bool(paths)
@@ -180,19 +206,26 @@ async def generate_goods_base(db: AsyncSession, ecom: EcomSet, item: EcomSetItem
     stage_boxes: list = []
     cutouts: list = []
     if use_composite:
-        cutouts = [composite.load_cutout(p) for p in paths]
+        cutouts = [shots_mod.transform(composite.load_cutout(p), shot if len(paths) == 1 else None) for p in paths]
         height = spec["product_ratio"] * (0.85 if len(cutouts) > 1 else 1.0)
         base = 0.86 if item.blank != "bottom" else 0.68
         aspect = float(sum(c.width / c.height for c in cutouts) / len(cutouts))
-        placements = composite.lineup_placements(len(cutouts), height=height, base=base, aspect=aspect,
-                                                 frame_ratio=w / h)
+        if len(cutouts) == 1 and shot is not None:
+            # 平放时按竖放的高度换算（躺倒后宽变高），保持商品真实大小
+            ref_h = height * (cutouts[0].height / max(1, cutouts[0].width)) if shot.lay else height
+            placements = [shots_mod.placement(shot, height=ref_h, blank=item.blank, frame_ratio=w / h, aspect=aspect)]
+        else:
+            placements = composite.lineup_placements(len(cutouts), height=height, base=base, aspect=aspect,
+                                                     frame_ratio=w / h)
         stage, stage_boxes = await asyncio.to_thread(composite.place_products, cutouts, placements, (w, h), bg_rgb(spec))
         stage_path = dest.with_name(dest.stem + "_stage.jpg")
         await asyncio.to_thread(stage.save, stage_path, "JPEG", quality=94)
-        refs = [await asyncio.to_thread(public_url, stage_path)]
+        refs = [await asyncio.to_thread(public_url, stage_path), *element_refs(els)]
     elif slot.ref == "composite":
         # 没有透明抠图：退回「商品参考图」直接生图（商品可能被重绘，前端已提示上传透明底 PNG）
-        refs = [ecom.product_image_url]
+        refs = [ecom.product_image_url, *element_refs(els)]
+    elif els:
+        refs = element_refs(els)
     result = await get_ark().gen_image(prompt, NEGATIVE_PROMPT, refs or None, project_id=0, shot_no=ecom.user_id,
                                        size=f"{w}x{h}", **engine_kwargs(ecom, item))
     await record_seedream_image_usage(

@@ -90,3 +90,17 @@
 .pf-es-kb-grid label small { color: var(--pf-muted, var(--pf-faint)); }
 .pf-es-kb-grid textarea { width: 100%; min-height: 96px; resize: vertical; font: inherit; font-size: 0.85rem; }
 .pf-es-kb-warn { margin: 0; padding-left: 1.1rem; color: #a0662e; font-size: 0.8rem; }
+
+/* 画面元素 */
+.pf-es-elements { display: grid; gap: 0.7rem; margin-top: 0.9rem; }
+.pf-es-el-row { display: flex; flex-wrap: wrap; gap: 0.45rem; }
+.pf-es-el { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--pf-line); border-radius: 999px; background: var(--pf-card, #fff); font: inherit; font-size: 0.82rem; color: inherit; cursor: pointer; }
+.pf-es-el img { width: 20px; height: 20px; border-radius: 50%; object-fit: cover; }
+.pf-es-el.active { border-color: var(--pf-accent, var(--pf-lime)); background: color-mix(in srgb, var(--pf-accent, #7a9a3a) 12%, transparent); }
+.pf-es-el svg { cursor: pointer; opacity: 0.6; }
+.pf-es-el-del:hover { opacity: 1; }
+.pf-es-el-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.5rem; align-items: center; }
+.pf-es-el-tabs { flex-wrap: wrap; }
+.pf-es-el-search { display: flex; align-items: center; gap: 6px; max-width: 280px; padding: 4px 10px; border: 1px solid var(--pf-line); border-radius: 999px; }
+.pf-es-el-search input { border: 0; outline: 0; background: transparent; font: inherit; width: 100%; color: inherit; }
+.pf-es-ref-hand { color: #8a5a7a; }

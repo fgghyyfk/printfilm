@@ -79,7 +79,8 @@ def align_items(raw_items: Any, slots: list[Slot], *, name: str) -> tuple[list[d
             copy["title"] = clip(name, 10)
         scene, sh = sanitize_scene(str(src.get("scene") or ""))
         hits += sh
-        items.append({"slot": slot.key, "scene": clip(scene, 300), "copy": copy})
+        items.append({"slot": slot.key, "scene": clip(scene, 300), "copy": copy,
+                      "shot": str(src.get("shot") or ""), "elements": list(src.get("elements") or [])[:6]})
     return items, hits
 
 
@@ -119,6 +120,7 @@ async def plan_set(
     style: str,
     slots: list[Slot],
     knowledge: str = "",
+    extra: str = "",
 ) -> dict:
     """规划整套图（knowledge 为商品资料摘要，文案只用其中事实）。返回 {"product", "items":[{slot, scene, copy}], "warnings", "vision"}。
 
@@ -127,7 +129,7 @@ async def plan_set(
     settings = get_settings()
     platform_name = PLATFORMS[normalize_platform(platform)][0]
     user_text = build_plan_user_text(
-        name=name, notes=notes, platform_name=platform_name, style=style, slots=slots, knowledge=knowledge
+        name=name, notes=notes, platform_name=platform_name, style=style, slots=slots, knowledge=knowledge, extra=extra
     )
     warnings: list[str] = []
     vision = False

@@ -36,7 +36,7 @@ PLAN_SYSTEM = """你是资深电商视觉策划与文案。根据商品图片（
 {
   "product": {"name": "品名", "category": "品类", "colors": ["主色"], "selling_points": ["卖点1", "卖点2", "卖点3"]},
   "items": [
-    {"slot": "槽位key（与输入一致，顺序一致）", "scene": "底图画面描述", "title": "主标题", "subtitle": "副标题", "bullets": ["要点"], "en": "英文小标"}
+    {"slot": "槽位key（与输入一致，顺序一致）", "scene": "底图画面描述", "title": "主标题", "subtitle": "副标题", "bullets": ["要点"], "en": "英文小标", "shot": "镜头key（有可选镜头时）", "elements": ["元素名"]}
   ]
 }
 要求：
@@ -49,12 +49,14 @@ PLAN_SYSTEM = """你是资深电商视觉策划与文案。根据商品图片（
 7. en 是排在标题上方的英文小标（2-5 个英文单词，如 Soft & Fragrant），与该张主题呼应，不要拼音。
 8. 如果提供了「商品资料」：每张图的文案只能使用资料里的事实（成分、香调、规格、数据、功效都必须出自资料），不得编造；
    不同的图分别讲资料里不同的卖点，尽量覆盖资料中的主要卖点、香调或成分，副标题写具体（如成分名、香调、使用感受），不要空泛；
-   资料里有「讲述顺序」时，按它安排各卖点图的先后；资料里的违规用语不要照抄。"""
+   资料里有「讲述顺序」时，按它安排各卖点图的先后；资料里的违规用语不要照抄。
+9. 如果提供了「镜头与元素」：有可选镜头的槽位从中选一个写进 shot（写 key）；有元素池时，每张合成图从元素池里选 2～3 个写进 elements（写名称，原料静物可选 4 个），
+   不同的图镜头与元素组合尽量不重复；scene 只写这张图的机位与元素如何摆放，不要罗列元素池以外的道具。"""
 
 
 # 组装规划的用户消息文本
 def build_plan_user_text(
-    *, name: str, notes: str, platform_name: str, style: str, slots: list[Slot], knowledge: str = ""
+    *, name: str, notes: str, platform_name: str, style: str, slots: list[Slot], knowledge: str = "", extra: str = ""
 ) -> str:
     style_name, _ = STYLES[normalize_style(style)]
     lines = [
@@ -66,6 +68,8 @@ def build_plan_user_text(
         lines.append(f"用户补充的卖点/信息：{notes.strip()}")
     if knowledge.strip():
         lines.append("商品资料（文案只能使用其中的事实）：\n" + knowledge.strip())
+    if extra.strip():
+        lines.append(extra.strip())
     lines.append("槽位列表（按顺序）：")
     for i, slot in enumerate(slots, 1):
         copy_hint = "无文案" if slot.layout == "none" else f"版式 {slot.layout}"

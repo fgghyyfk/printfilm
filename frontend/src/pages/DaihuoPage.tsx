@@ -8,6 +8,7 @@ import {
   getEcomSetOptions,
   planEcomSet,
   regenerateEcomSetItem,
+  addEcomSetElements,
   saveEcomSetPlan,
   updateEcomSetItemCopy,
   type EcomSet,
@@ -29,6 +30,7 @@ import Stepper from '../components/ui/Stepper'
 import { useEcomSetPolling } from '../hooks/useEcomSetPolling'
 import { useI18n } from '../i18n'
 import EcomSetExtras from '../components/ecomSet/EcomSetExtras'
+import { createEcomElement } from '../api/ecomElements'
 import '../styles/tools-base.css'
 import { dialog } from '../lib/dialog'
 import {
@@ -297,12 +299,12 @@ function EcomSetWorkspace() {
   }
 
   // ④ 重新生成（弹层内可改画面）
-  async function onRegenConfirm(scene: string | undefined) {
+  async function onRegenConfirm(scene: string | undefined, layout?: { shot?: string; elements?: string[] }) {
     if (!set || !regenItem) return
     setModalBusy(true)
     setModalError('')
     try {
-      commitSet(await regenerateEcomSetItem(set.id, regenItem.idx, scene))
+      commitSet(await regenerateEcomSetItem(set.id, regenItem.idx, scene, layout))
       setRegenItem(null)
     } catch (err) {
       failWith(err, setModalError)
@@ -377,6 +379,7 @@ function EcomSetWorkspace() {
           onSave={onSavePlan}
           onGenerate={onGenerate}
           onReplan={onReplan}
+          shots={options?.shots}
         />
       )
     }
@@ -471,6 +474,15 @@ function EcomSetWorkspace() {
           error={modalError}
           onClose={() => setRegenItem(null)}
           onConfirm={onRegenConfirm}
+          shots={options?.shots}
+          pool={set.styled?.elements}
+          onAddElement={async (name) => {
+            try {
+              const el = await createEcomElement({ name, category: 'vessel' })
+              commitSet(await addEcomSetElements(set.id, [el.key]))
+              return { key: el.key, name: el.name }
+            } catch (err) { failWith(err, setModalError); return null }
+          }}
         />
       ) : null}
       {previewItem ? <EcomSetPreviewModal item={previewItem} onClose={() => setPreviewItem(null)} /> : null}

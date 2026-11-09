@@ -1,4 +1,4 @@
-import { Check, Droplet, FileText, ImageIcon, Layers, Shirt, UserRound } from 'lucide-react'
+import { Check, Droplet, FileText, Hand, ImageIcon, Layers, Shirt, UserRound } from 'lucide-react'
 import type { EcomStyledCategory } from '../../api/ecomSet'
 import { formatFen } from '../../lib/ecomSet'
 import { useGenerationText } from '../../lib/generationMedia'
@@ -32,9 +32,9 @@ export default function SlotStep({ category, frames, frame, slots, onFrame, onSl
 
   const refLabel = {
     model: text('模特上身', 'On model'), product: text('商品特写', 'Product'), flat: text('免费', 'Free'),
-    composite: text('原图合成', 'Composite'), texture: text('质地特写', 'Texture'), info: text('免费·信息屏', 'Free · Info'),
+    composite: text('原图合成', 'Composite'), texture: text('质地特写', 'Texture'), info: text('免费·信息屏', 'Free · Info'), hand: text('手持展示', 'In hand'),
   }
-  const RefIcon = { model: UserRound, product: Shirt, flat: ImageIcon, composite: Layers, texture: Droplet, info: FileText }
+  const RefIcon = { model: UserRound, product: Shirt, flat: ImageIcon, composite: Layers, texture: Droplet, info: FileText, hand: Hand }
 
   return <div className="pf-es-step">
     <div className="pf-tool-field"><span>{text('画幅', 'Format')}</span>

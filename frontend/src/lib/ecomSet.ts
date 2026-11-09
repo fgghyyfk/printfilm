@@ -128,6 +128,8 @@ export function toPlanPatch(items: EcomSetItem[]): EcomSetPlanItemPatch[] {
     subtitle: hasCopy(item) ? item.subtitle.trim() : '',
     bullets: hasCopy(item) ? normalizeBullets(item.bullets) : [],
     en: hasCopy(item) ? (item.en || '').trim() : '',
+    ...(item.shot !== undefined ? { shot: item.shot } : {}),
+    ...(item.elements ? { elements: item.elements.map((e) => e.key) } : {}),
   }))
 }
 

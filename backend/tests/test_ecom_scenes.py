@@ -68,7 +68,8 @@ def test_goods_prompts():
 # 标品槽位与构成
 def test_goods_slots():
     keys = categories.composition("goods", 8)
-    assert "goods_lineup" in keys and all(k in presets.SLOTS for k in keys)
+    assert "goods_flatlay" in keys and all(k in presets.SLOTS for k in keys)
+    assert "goods_lineup" in categories.composition("goods", 14)
     assert presets.SLOTS["goods_white"].ref == "flat" and presets.SLOTS["goods_cover"].ref == "composite"
     assert presets.output_size("taobao_34", "goods_cover") == (1440, 1920)
 

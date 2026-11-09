@@ -78,6 +78,7 @@ async def create_plan(
     fabric: UploadFile | None = File(default=None, description="面料/材质实拍图（可选，作为质感参考）"),
     scene_key: str = Form("", max_length=64, description="场景库里的场景 key；留空用品类默认场景"),
     image_engine: str = Form("seedream", max_length=32, description="出图模型：seedream | gpt-image-2"),
+    element_keys: str = Form("", max_length=1200, description="元素库 key，逗号分隔（最多 12 个）；留空自动推荐"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -91,6 +92,7 @@ async def create_plan(
         scarf_material=scarf_material or None, frame=frame or None, slots_picked=picked,
         product_id=product_id, color_index=color_index, fabric=fabric_upload, scene_key=scene_key or None,
         image_engine=image_engine,
+        element_keys=[k.strip() for k in element_keys.split(",") if k.strip()][:12] or None,
     ))
     return await _out(db, ecom)
 
@@ -144,7 +146,16 @@ async def regenerate(
     db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user),
 ):
     scene = body.scene if body else None
-    return await _out(db, await _guard(db, svc.regenerate_item(db, user, set_id, idx, scene)))
+    return await _out(db, await _guard(db, svc.regenerate_item(
+        db, user, set_id, idx, scene, shot=body.shot if body else None, elements=body.elements if body else None)))
+
+
+# 往本套元素池追加元素（单张换元素前用）
+@router.post("/{set_id}/elements", response_model=EcomSetOut)
+async def add_set_elements(set_id: int, body: dict, db: AsyncSession = Depends(get_db),
+                           user: User = Depends(get_current_user)):
+    keys = [str(k) for k in (body.get("keys") or []) if k][:12]
+    return await _out(db, await _guard(db, svc.add_set_elements(db, user, set_id, keys)))
 
 
 # 单张改文案（重新排版，免费）

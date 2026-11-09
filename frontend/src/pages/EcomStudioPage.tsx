@@ -8,6 +8,8 @@ import BillingErrorNotice from '../components/billing/BillingErrorNotice'
 import ProductStep from '../components/ecomStudio/ProductStep'
 import ModelStep from '../components/ecomStudio/ModelStep'
 import SlotStep from '../components/ecomStudio/SlotStep'
+import ElementPicker from '../components/ecomStudio/ElementPicker'
+import type { EcomElement } from '../api/ecomElements'
 import SceneStep from '../components/ecomStudio/SceneStep'
 import ProductsTab from '../components/ecomStudio/ProductsTab'
 import EcomSetBatches from '../components/ecomSet/EcomSetBatches'
@@ -47,6 +49,7 @@ export default function EcomStudioPage() {
   const [slots, setSlots] = useState<string[]>([])
   const [notes, setNotes] = useState('')
   const [engine, setEngine] = useState('seedream')
+  const [elements, setElements] = useState<EcomElement[]>([])
   /* 场景：行业标签与所选场景（空 key = 不指定场景） */
   const [industry, setIndustry] = useState('')
   const [scene, setScene] = useState<{ key: string; name: string } | null>(null)
@@ -142,7 +145,7 @@ export default function EcomStudioPage() {
       const set = await planEcomSet({
         name: product.name, platform: '', style: 'minimal', count: slots.length, notes: notes.trim(),
         category: product.category, productId: product.id, colorIndex, modelAssetId: needsModel ? modelId : null,
-        frame, slots, sceneKey: scene?.key || '', imageEngine: engine,
+        frame, slots, sceneKey: scene?.key || '', imageEngine: engine, elementKeys: elements.map((e) => e.key),
       })
       nav(`/daihuo?id=${set.id}`)
     } catch (err) { setError(err instanceof Error ? err.message : text('生成方案失败', 'Planning failed')) }
@@ -178,6 +181,8 @@ export default function EcomStudioPage() {
               {stepKey === 'product' ? <ProductStep categories={categories} product={product} colorIndex={colorIndex} onPick={pickProduct} /> : null}
               {stepKey === 'scene' && product ? <SceneStep industries={industries} industry={industry || industries[0]?.id || 'daily'}
                 onIndustry={pickIndustry} sceneKey={scene?.key || ''} onPick={pickScene} /> : null}
+              {stepKey === 'scene' && product ? <ElementPicker productId={product.id} industry={industry || industries[0]?.id || ''}
+                value={elements} onChange={setElements} /> : null}
               {stepKey === 'model' ? <ModelStep modelId={modelId} onPick={setModelId} imageFen={options.image_fen} billing={options.billing_enabled} /> : null}
               {stepKey === 'slots' && category ? <SlotStep category={category} frames={options.frames || []} frame={frame} slots={slots} onFrame={setFrame} onSlots={setSlots}
                 engines={engines} engine={engine} onEngine={setEngine} /> : null}

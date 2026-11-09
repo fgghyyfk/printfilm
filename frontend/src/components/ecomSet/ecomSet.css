@@ -304,3 +304,7 @@
 /* 结果页：字体风格切换 */
 .pf-es-type { display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; height: 32px; border: 1px solid var(--pf-line); border-radius: 999px; color: var(--pf-muted, var(--pf-faint)); font-size: 0.82rem; }
 .pf-es-type select { border: 0; background: transparent; color: var(--pf-text, inherit); font: inherit; cursor: pointer; }
+
+/* 方案卡片：镜头与画面元素 */
+.pf-ecom-layout { display: grid; gap: 0.5rem; }
+.pf-ecom-layout .pf-tool-chips button { font-size: 0.78rem; }
