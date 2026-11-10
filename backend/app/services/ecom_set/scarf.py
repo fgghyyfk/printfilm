@@ -162,10 +162,20 @@ def draw_vertical_title(img: Image.Image, *, title: str, subtitle: str) -> None:
     step = int(t_font.size * 1.12)
     title_chars = [c for c in title.replace(" ", "") if c][:12]
     col_x = x0 + int(s_font.size * 1.8)
+    from app.services.ecom_set.readable import TITLE_MIN, ensure
+
+    # 竖排整列一起把关（同一列字色一致）
+    if title_chars:
+        ink = ensure(img, (col_x, y0, col_x + t_font.size, y0 + step * len(title_chars)), ink, need=TITLE_MIN)
+    sub_chars = [c for c in subtitle.replace(" ", "") if c][:20]
+    s_step = int(s_font.size * 1.25)
+    if sub_chars:
+        sy = y0 + int(t_font.size * 0.2)
+        muted = ensure(img, (x0, sy, x0 + s_font.size, sy + s_step * len(sub_chars)), muted)
+    draw = ImageDraw.Draw(img)
     for i, ch in enumerate(title_chars):
         draw.text((col_x, y0 + i * step), "·" if ch in "·・." else ch, font=t_font, fill=ink)
-    s_step = int(s_font.size * 1.25)
-    for i, ch in enumerate([c for c in subtitle.replace(" ", "") if c][:20]):
+    for i, ch in enumerate(sub_chars):
         draw.text((x0, y0 + int(t_font.size * 0.2) + i * s_step), ch, font=s_font, fill=muted)
 
 

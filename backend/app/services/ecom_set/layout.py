@@ -116,15 +116,36 @@ def draw_panel(img: Image.Image, box: tuple[int, int, int, int], *, light: bool,
 def draw_lines(
     draw: ImageDraw.ImageDraw, lines: list[str], font: ImageFont.FreeTypeFont, *,
     x: int, y: int, width: int, align: str, fill: tuple[int, int, int], gap: float = 0.25,
+    img: Image.Image | None = None, need: float = 4.0,
 ) -> int:
+    """传入 img 时每行先过可读性把关（readable.ensure），字色不够清楚会加深 / 提亮或垫局部雾面。"""
+    from app.services.ecom_set.readable import ensure, text_box
+
     asc, desc = font.getmetrics()
     lh = int((asc + desc) * (1 + gap))
     for line in lines:
         w = font.getlength(line)
         lx = x + (width - w) / 2 if align == "center" else x
-        draw.text((lx, y), line, font=font, fill=fill)
+        c = ensure(img, text_box(lx, y, w, font.size), fill, need=need) if img is not None else fill
+        draw.text((lx, y), line, font=font, fill=c)
         y += lh
     return y
+
+
+def _pill_rows(bullets: list[str], size: int, width: int) -> int:
+    """卖点胶囊实际排几行（与 draw_pills 的换行规则一致），用于估算底板高度。"""
+    if not bullets:
+        return 0
+    font = load_font(size, False)
+    pad_x, gap = int(size * 0.8), int(size * 0.6)
+    rows, row_w = 1, 0
+    for b in bullets:
+        w = int(font.getlength(b)) + pad_x * 2
+        if row_w and row_w + gap + w > width * 0.9:
+            rows, row_w = rows + 1, w
+        else:
+            row_w = row_w + gap + w if row_w else w
+    return rows
 
 
 # 画一排胶囊标签（卖点要点），自动换行居中
@@ -152,7 +173,10 @@ def draw_pills(img: Image.Image, bullets: list[str], *, top: int, width: int, si
             ImageDraw.Draw(overlay).rounded_rectangle((x, y, x + w, y + h), radius=h // 2, fill=bg)
             img.alpha_composite(overlay)
             draw = ImageDraw.Draw(img)
-            draw.text((x + pad_x, y + pad_y - size * 0.1), text, font=font, fill=DARK if dark_text else LIGHT)
+            from app.services.ecom_set.readable import ensure
+
+            c = ensure(img, (x + pad_x, y + pad_y, x + w - pad_x, y + h - pad_y), DARK if dark_text else LIGHT)
+            draw.text((x + pad_x, y + pad_y - size * 0.1), text, font=font, fill=c)
             x += w + gap
         y += h + gap
     return y
@@ -209,8 +233,14 @@ def _draw_layout(img: Image.Image, *, layout: str, blank: str, title: str, subti
     zone_h = int(H * (0.26 if layout == "label_bar" else 0.32))
     zone = (0, H - zone_h, W, H) if at_bottom else (0, 0, W, zone_h)
     bright, busy = region_tone(img, zone)
-    dark_text = bright
     align = "left" if layout == "title_corner" else "center"
+    # 深字 / 白字按与文字所在列背景的对比度选（不用固定亮度阈值，中间调墙面也能选对）
+    from app.services.ecom_set.readable import contrast
+
+    col = (margin, zone[1], margin + int(inner_w * 0.7), zone[3]) if align == "left" else (margin, zone[1], W - margin, zone[3])
+    m = ImageStat.Stat(img.crop(col).convert("RGB")).mean
+    dark_text = contrast(DARK, m) >= contrast(LIGHT, m)
+    bright = dark_text
 
     t_font, t_lines = fit_lines(title, int(W * 0.085), True, inner_w, 2) if title else (None, [])
     s_font, s_lines = fit_lines(subtitle, int(W * 0.042), False, inner_w, 2) if subtitle else (None, [])
@@ -223,7 +253,7 @@ def _draw_layout(img: Image.Image, *, layout: str, blank: str, title: str, subti
             return 0
         a, d = font.getmetrics()
         return int((a + d) * (1 + gap)) * n
-    pill_rows = 0 if not pills else (1 if len(pills) <= 2 else 2)
+    pill_rows = _pill_rows(pills, pill_size, W)
     content_h = (
         block_h(t_font, len(t_lines)) + block_h(s_font, len(s_lines))
         + (pill_rows * int(pill_size * 2.6) + int(pill_size * 0.6) if pills else 0)
@@ -231,6 +261,22 @@ def _draw_layout(img: Image.Image, *, layout: str, blank: str, title: str, subti
     pad = int(W * 0.035)
     top = (H - margin - content_h) if at_bottom else margin
 
+    if not busy and layout != "label_bar":
+        # 有一行只靠字色救不回来（中间调 / 亮斑 / 阴影）：按「有纹理」处理，整块加底板
+        from app.services.ecom_set.readable import short, text_box
+
+        fill0 = DARK if dark_text else LIGHT
+        y_probe = top
+        for f_, ls_, need in ((t_font, t_lines, 4.5), (s_font, s_lines, 4.0)):
+            if not f_:
+                continue
+            a_, d_ = f_.getmetrics()
+            for line in ls_:
+                w_ = f_.getlength(line)
+                lx = margin + (inner_w - w_) / 2 if align == "center" else margin
+                if short(img, text_box(lx, y_probe, w_, f_.size), fill0, need=need):
+                    busy = True
+                y_probe += int((a_ + d_) * 1.25)
     if layout == "label_bar" or busy:
         panel_light = bright if layout != "label_bar" else False
         box = (margin - pad, top - pad, W - margin + pad, top + content_h + pad)
@@ -246,10 +292,11 @@ def _draw_layout(img: Image.Image, *, layout: str, blank: str, title: str, subti
         if not busy and layout != "label_bar":
             _shadow(img, t_lines, t_font, x=margin, y=y, width=inner_w, align=align, dark_text=dark_text)
             draw = ImageDraw.Draw(img)
-        y = draw_lines(draw, t_lines, t_font, x=margin, y=y, width=inner_w, align=align, fill=fill)
+        y = draw_lines(draw, t_lines, t_font, x=margin, y=y, width=inner_w, align=align, fill=fill,
+                       img=img, need=4.5)
     if s_lines and s_font:
         sub_fill = (ACCENT_DARK if dark_text and layout == "title_sub" else fill)
-        y = draw_lines(draw, s_lines, s_font, x=margin, y=y, width=inner_w, align=align, fill=sub_fill)
+        y = draw_lines(draw, s_lines, s_font, x=margin, y=y, width=inner_w, align=align, fill=sub_fill, img=img)
     if pills:
         draw_pills(img, pills, top=y + int(pill_size * 0.6), width=W, size=pill_size, dark_text=dark_text)
 

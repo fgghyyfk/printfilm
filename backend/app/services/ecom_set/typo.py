@@ -12,6 +12,8 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont, ImageStat
 
+from app.services.ecom_set.readable import TITLE_MIN, TEXT_MIN, contrast, ensure, short, text_box
+
 NOTO_DIR = "/usr/share/fonts/opentype/noto"
 # Noto CJK 的 ttc 里第 3 个字面（index 2）才是简体中文（SC），0 是日文字形
 NOTO_SC_INDEX = 2
@@ -215,21 +217,6 @@ def _tone(img: Image.Image, box: tuple[int, int, int, int]) -> tuple[bool, float
     return st.mean[0] >= 140, st.stddev[0]
 
 
-def _lum(rgb: tuple[float, ...]) -> float:
-    """sRGB 颜色的相对亮度（WCAG）。"""
-    def ch(c: float) -> float:
-        c = c / 255
-        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
-    r, g, b = (ch(c) for c in rgb[:3])
-    return 0.2126 * r + 0.7152 * g + 0.0722 * b
-
-
-def contrast(a: tuple[float, ...], b: tuple[float, ...]) -> float:
-    """两色对比度（1–21）。"""
-    la, lb = sorted((_lum(a), _lum(b)), reverse=True)
-    return (la + 0.05) / (lb + 0.05)
-
-
 def _mix(a: tuple[int, ...], b: tuple[int, ...], t: float) -> tuple[int, int, int]:
     return tuple(round(a[i] + (b[i] - a[i]) * t) for i in range(3))  # type: ignore[return-value]
 
@@ -312,6 +299,9 @@ def draw_refined(img: Image.Image, *, style: TypeStyle, layout: str, blank: str,
     top_pad = int(H * 0.05)
     top = (H - int(H * 0.05) - content_h) if at_bottom else top_pad
     zone = (0, max(0, top - top_pad), W, min(H, top + content_h + top_pad))
+    def x_for(w: float) -> float:
+        return margin + (inner_w - w) / 2 if align == "center" else margin
+
     _, busy = _tone(img, zone)
     # 字色按文字实际覆盖的区域取（左对齐时只看左侧，不被右边的商品或亮窗拉偏）
     tx0 = margin if align == "left" else margin + inner_w // 8
@@ -328,35 +318,68 @@ def draw_refined(img: Image.Image, *, style: TypeStyle, layout: str, blank: str,
         _scrim(img, scrim_box, light=dark_text, strength=0.42 if dark_text else 0.32, from_top=not at_bottom)
     # 雾面之后按文字实际所在的背景重新确定字色
     dark_text, ink, muted = pick_ink(_mean_rgb(img, text_zone))
+    # 有任何一行只靠字色救不回来（压在亮斑 / 阴影 / 中间调上）：整块加浓雾面，避免逐行补成一块块污渍
+    if not label_bar:
+        boxes = _line_boxes(blocks, top=top, gap=gap_s, x_for=x_for, en=(en_text, en_f, style.en_track),
+                            title=(t_lines, t_f, style.title_track), sub=(s_lines, s_f, style.sub_track))
+        for strength in (0.35, 0.5, 0.65, 0.8):
+            if not any(short(img, b, ink if k == "title" else muted, need=TITLE_MIN if k == "title" else TEXT_MIN)
+                       for k, b in boxes):
+                break
+            _scrim(img, scrim_box, light=dark_text, strength=strength, from_top=not at_bottom)
 
     draw = ImageDraw.Draw(img)
-
-    def x_for(w: float) -> float:
-        return margin + (inner_w - w) / 2 if align == "center" else margin
 
     y = top
     for kind, h in blocks:
         if kind == "en" and en_f:
-            draw_text(draw, (x_for(text_width(en_text, en_f, style.en_track)), y), en_text, en_f, muted, style.en_track)
+            ew = text_width(en_text, en_f, style.en_track)
+            c = ensure(img, text_box(x_for(ew), y, ew, en_f.size), muted)
+            draw_text(draw, (x_for(ew), y), en_text, en_f, c, style.en_track)
         elif kind == "title" and t_f:
             ty = y
             for line in t_lines:
-                draw_text(draw, (x_for(text_width(line, t_f, style.title_track)), ty), line, t_f, ink, style.title_track)
+                lw = text_width(line, t_f, style.title_track)
+                c = ensure(img, text_box(x_for(lw), ty, lw, t_f.size), ink, need=TITLE_MIN)
+                draw_text(draw, (x_for(lw), ty), line, t_f, c, style.title_track)
                 ty += line_h(t_f, 0.32)
         elif kind == "rule":
             rw = int(W * 0.05)
             rx = x_for(rw)
             ry = y + h // 2
-            draw.line([(rx, ry), (rx + rw, ry)], fill=muted, width=max(1, W // 700))
+            c = ensure(img, (rx, ry - 4, rx + rw, ry + 4), muted, need=3.0)
+            draw.line([(rx, ry), (rx + rw, ry)], fill=c, width=max(1, W // 700))
         elif kind == "sub" and s_f:
             sy = y
             for line in s_lines:
-                draw_text(draw, (x_for(text_width(line, s_f, style.sub_track)), sy), line, s_f, muted, style.sub_track)
+                lw = text_width(line, s_f, style.sub_track)
+                c = ensure(img, text_box(x_for(lw), sy, lw, s_f.size), muted)
+                draw_text(draw, (x_for(lw), sy), line, s_f, c, style.sub_track)
                 sy += line_h(s_f, 0.5)
         elif kind == "pills" and p_f:
             _draw_pills(img, pills, p_f, y=y, width=W, style=style, dark_text=dark_text, align=align, margin=margin)
             draw = ImageDraw.Draw(img)
         y += h + gap_s
+
+
+def _line_boxes(blocks: list[tuple[str, int]], *, top: int, gap: int, x_for, en: tuple, title: tuple,
+                sub: tuple) -> list[tuple[str, tuple[float, float, float, float]]]:
+    """按排版顺序算出英文小标、标题、副标题每一行占的框（与 draw_refined 的落笔位置一致）。"""
+    out: list[tuple[str, tuple[float, float, float, float]]] = []
+    y = top
+    for kind, h in blocks:
+        if kind == "en" and en[1]:
+            w = text_width(en[0], en[1], en[2])
+            out.append(("en", text_box(x_for(w), y, w, en[1].size)))
+        elif kind in {"title", "sub"}:
+            lines, f, track = title if kind == "title" else sub
+            ly = y
+            for line in lines if f else []:
+                w = text_width(line, f, track)
+                out.append((kind, text_box(x_for(w), ly, w, f.size)))
+                ly += line_h(f, 0.32 if kind == "title" else 0.5)
+        y += h + gap
+    return out
 
 
 def _draw_pills(img: Image.Image, bullets: list[str], f: ImageFont.FreeTypeFont, *, y: int, width: int,
@@ -386,5 +409,6 @@ def _draw_pills(img: Image.Image, bullets: list[str], f: ImageFont.FreeTypeFont,
     draw = ImageDraw.Draw(img)
     x = (width - total) // 2 if align == "center" else margin
     for b, w in zip(bullets, ws, strict=True):
-        draw_text(draw, (x + pad_x, y + pad_y - f.size * 0.08), b, f, ink, track)
+        c = ensure(img, (x + pad_x, y + pad_y, x + w - pad_x, y + h - pad_y), ink)
+        draw_text(draw, (x + pad_x, y + pad_y - f.size * 0.08), b, f, c, track)
         x += w + gap
