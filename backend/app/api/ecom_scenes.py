@@ -24,6 +24,8 @@ class EcomSceneOut(BaseModel):
     description: str
     cover_url: str
     spec: dict
+    group: str = ""
+    festival: dict | None = None
 
 
 class EcomSceneListOut(BaseModel):
@@ -34,20 +36,26 @@ class EcomSceneListOut(BaseModel):
     page: int
     page_size: int
     industries: list[dict]
+    groups: list[dict] = []
+    festival_types: list[dict] = []
 
 
 # 场景列表：系统场景 + 我的场景，可按行业筛选（服务端分页）
 @router.get("", response_model=EcomSceneListOut)
 async def list_scenes(
     industry: str = Query("", max_length=16),
+    group: str = Query("", max_length=16),
+    festival_type: str = Query("", max_length=16),
     page: int = Query(1, ge=1),
     page_size: int = Query(24, ge=1, le=60),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     await svc.ensure_seeded()
-    rows, total = await svc.list_scenes(db, user.id, industry=industry or None, page=page, page_size=page_size)
+    rows, total = await svc.list_scenes(db, user.id, industry=industry or None, group=group,
+                                        festival_type=festival_type, page=page, page_size=page_size)
+    groups, festival_types = svc.groups_out()
     return EcomSceneListOut(
         items=[EcomSceneOut(**svc.to_out(r)) for r in rows], total=total, page=page, page_size=page_size,
-        industries=svc.industries_out(),
+        industries=svc.industries_out(), groups=groups, festival_types=festival_types,
     )

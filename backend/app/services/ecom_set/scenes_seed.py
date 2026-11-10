@@ -171,3 +171,35 @@ SYSTEM_SCENES: list[dict] = [
        backdrop="素色暖白墙面，有午后阳光透过窗户投下的斜向光影", palette="暖白、金色阳光", surface="浅色石台",
        props=["一枝绿植"], light="午后斜射阳光，光影分明", mood="温暖、自然、高级", bg="E9DFD0"),
 ]
+
+# 场景风格分组（节日场景都归「节日」）：给用户按风格快速筛选
+SCENE_GROUPS: dict[str, str] = {
+    "festival": "节日氛围",
+    "natural": "自然质感",
+    "fresh": "清新植物",
+    "floral": "花香柔美",
+    "water": "水感清透",
+    "minimal": "极简棚拍",
+    "luxury": "高级质感",
+    "oriental": "东方新中式",
+    "life": "生活场景",
+    "pop": "潮流撞色",
+}
+_GROUP_MEMBERS = {
+    "natural": "daily_wood_stone food_origin jewelry_stone tea_mountain",
+    "fresh": "daily_plant_morning daily_citrus beauty_ingredient common_sunlit_window",
+    "floral": "daily_floral jewelry_floral",
+    "water": "daily_water beauty_serum_water jewelry_water liquor_ice",
+    "minimal": "daily_minimal_white beauty_acrylic digital_white common_studio_gray jewelry_plaster digital_geometry",
+    "luxury": "beauty_marble jewelry_velvet jewelry_black_gold liquor_luxury liquor_cellar digital_dark_tech",
+    "oriental": "tea_zen tea_new_chinese tea_gift tea_leaf_flat liquor_banquet liquor_new_chinese",
+    "life": "beauty_vanity food_breakfast food_picnic food_office digital_desk digital_outdoor liquor_pairing tea_brew",
+    "pop": "beauty_color_block food_pop digital_neon",
+    "festival": "daily_holiday food_festival",
+}
+SCENE_GROUP_OF: dict[str, str] = {k: g for g, keys in _GROUP_MEMBERS.items() for k in keys.split()}
+
+
+def group_of(key: str) -> str:
+    """场景所属风格组；节日场景（fest_ 开头）归节日，其余未登记的（我的场景等）归空。"""
+    return "festival" if key.startswith("fest_") else SCENE_GROUP_OF.get(key, "")

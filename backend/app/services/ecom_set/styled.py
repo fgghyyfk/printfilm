@@ -51,10 +51,21 @@ def _scene_note(scene: dict | None, *, with_props: bool = True) -> str:
     """给规划模型的场景约束：每张图只写机位、构图与道具变化，背景、台面、光线沿用同一场景。"""
     if not scene:
         return ""
+    from app.services.ecom_set import festivals
     from app.services.ecom_set.scenes import scene_text
 
-    return (f"整套图统一使用「{scene['name']}」场景（{scene_text(scene.get('spec') or {}, with_props=with_props)}）。"
+    note = (f"整套图统一使用「{scene['name']}」场景（{scene_text(scene.get('spec') or {}, with_props=with_props)}）。"
             "每张图的 scene 只写机位、构图和道具的变化，背景、台面、光线与色调保持这一场景")
+    fest = festivals.of_scene(scene.get("key"))
+    return f"「{fest.name}」节日主题。{note}" if fest else note
+
+
+def _festival_note(scene: dict | None) -> str:
+    """节日场景的文案语气约束（放进规划的补充说明，不受备注 500 字截断影响）。"""
+    from app.services.ecom_set import festivals
+
+    fest = festivals.of_scene((scene or {}).get("key"))
+    return festivals.copy_note(fest) if fest else ""
 
 
 async def _element_pool(db: AsyncSession, user: User, *, category: str, keys: list[str] | None,
@@ -67,7 +78,9 @@ async def _element_pool(db: AsyncSession, user: User, *, category: str, keys: li
     if category != "goods":
         return []
     industry = next(iter((scene or {}).get("industries") or []), "")
-    rec = elements.snapshot(await elements.recommend(db, user, knowledge=knowledge, industry=industry, limit=8))
+    # 节日场景：节日包 + 商品资料命中的元素；否则按商品资料推荐
+    rec = elements.snapshot(await elements.recommend(db, user, knowledge=knowledge, industry=industry, limit=8,
+                                                     scene_key=(scene or {}).get("key") or ""))
     scene_props = variety.pool_from_scene(scene)
     names = {e["name"] for e in rec}
     return rec + [e for e in scene_props if e["name"] not in names]
@@ -143,7 +156,8 @@ async def create_styled_plan(
         from app.services.ecom_set.variety import hint_text
 
         result = await plan_set(image_path=path, name=name, notes=clip(plan_text, 500), platform="taobao",
-                                style="minimal", slots=slots, knowledge=digest(know), extra=hint_text(slots, pool))
+                                style="minimal", slots=slots, knowledge=digest(know),
+                                extra="\n".join(x for x in (hint_text(slots, pool), _festival_note(scene)) if x))
         await _record_plan_charge(db, user.id)
         return result
 

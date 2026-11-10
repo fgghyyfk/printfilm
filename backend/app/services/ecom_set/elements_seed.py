@@ -14,7 +14,7 @@ CATEGORIES = {
     "fabric": "布艺织物",
     "water": "水与质感",
     "light": "光影氛围",
-    "festival": "节日季节",
+    "festival": "节日道具",
 }
 
 _RAW = {
@@ -184,16 +184,25 @@ PROMPTS = {
 INDUSTRY_ALL = ["daily", "beauty", "food", "tea", "liquor", "digital", "jewelry"]
 
 
-def system_elements() -> list[dict]:
-    """展开为结构化列表：key / name / category / prompt / keywords / industries / scale / sort_order。"""
+def _expand(raw: dict[str, str], prompts: dict[str, str], offset: int) -> list[dict]:
     out: list[dict] = []
-    for cat, block in _RAW.items():
+    for cat, block in raw.items():
         for i, line in enumerate(x for x in block.strip().splitlines() if x.strip()):
             key, name, kws, inds, scale = (p.strip() for p in line.split("|"))
             industries = [x for x in inds.split(",") if x and x != "festival"] or INDUSTRY_ALL
             out.append({
-                "key": f"el_{key}", "name": name, "category": cat, "prompt": PROMPTS.get(key, name),
+                "key": f"el_{key}", "name": name, "category": cat, "prompt": prompts.get(key, name),
                 "keywords": [k for k in kws.split(",") if k], "industries": industries, "scale": scale,
-                "sort_order": i * 10,
+                "sort_order": offset + i * 10,
             })
     return out
+
+
+def system_elements() -> list[dict]:
+    """展开为结构化列表：key / name / category / prompt / keywords / industries / scale / sort_order。
+
+    通用元素在前，节日元素（festivals_seed）排在各分类末尾。
+    """
+    from app.services.ecom_set.festivals_seed import FESTIVAL_PROMPTS, FESTIVAL_RAW
+
+    return _expand(_RAW, PROMPTS, 0) + _expand(FESTIVAL_RAW, FESTIVAL_PROMPTS, 1000)

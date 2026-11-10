@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { Ban, Check, Loader2, RefreshCw } from 'lucide-react'
-import { listEcomScenes, type EcomScene } from '../../api/ecomScenes'
+import { Ban, CalendarDays, Check, Loader2, RefreshCw } from 'lucide-react'
+import { listEcomScenes, type EcomOption, type EcomScene } from '../../api/ecomScenes'
+import { festivalBadge } from '../../lib/ecomFestival'
 import { resolveToolMediaUrl } from '../../api/tools'
 import { useGenerationText } from '../../lib/generationMedia'
 import Button from '../ui/Button'
@@ -16,9 +17,17 @@ type Props = {
   onPick: (scene: { key: string; name: string } | null) => void
 }
 
-/** 选场景：行业标签 + 场景卡网格（服务端分页），首张为「不指定场景」，选中后显示场景详情 */
+/**
+ * 选场景：行业 + 风格分组（含「节日」，节日再按传统/大促/礼赠/时令细分）两级筛选，场景卡网格（服务端分页）。
+ * 「全部」里临近的节日场景排最前并标出日期；首张为「不指定场景」，选中后显示场景详情。
+ */
 export default function SceneStep({ industries, industry, onIndustry, sceneKey, onPick }: Props) {
   const text = useGenerationText()
+  /* 风格分组与节日类型 */
+  const [group, setGroup] = useState('')
+  const [festivalType, setFestivalType] = useState('')
+  const [groups, setGroups] = useState<EcomOption[]>([])
+  const [festivalTypes, setFestivalTypes] = useState<EcomOption[]>([])
   /* 场景列表与分页三态 */
   const [items, setItems] = useState<EcomScene[] | null>(null)
   const [total, setTotal] = useState(0)
@@ -28,16 +37,18 @@ export default function SceneStep({ industries, industry, onIndustry, sceneKey, 
   const [reloadKey, setReloadKey] = useState(0)
   const moreCtrl = useRef<AbortController | null>(null)
 
-  // 切换行业（或重试）：从第 1 页重新加载
+  const query = { industry, group, festivalType: group === 'festival' ? festivalType : '' }
+
+  // 切换行业 / 分组 / 节日类型（或重试）：从第 1 页重新加载
   useEffect(() => {
     const controller = new AbortController()
     moreCtrl.current?.abort()
     setItems(null); setError(''); setPage(1); setLoadingMore(false)
-    void listEcomScenes(industry, 1, PAGE_SIZE, controller.signal)
-      .then((r) => { setItems(r.items); setTotal(r.total) })
+    void listEcomScenes({ industry, group, festivalType: group === 'festival' ? festivalType : '', pageSize: PAGE_SIZE }, controller.signal)
+      .then((r) => { setItems(r.items); setTotal(r.total); setGroups(r.groups || []); setFestivalTypes(r.festival_types || []) })
       .catch((err) => { if (!controller.signal.aborted) setError(err instanceof Error ? err.message : text('加载场景失败', 'Failed to load scenes')) })
     return () => controller.abort()
-  }, [industry, reloadKey, text])
+  }, [industry, group, festivalType, reloadKey, text])
 
   // 加载更多：追加下一页
   async function loadMore() {
@@ -45,7 +56,7 @@ export default function SceneStep({ industries, industry, onIndustry, sceneKey, 
     moreCtrl.current = controller
     setLoadingMore(true); setError('')
     try {
-      const r = await listEcomScenes(industry, page + 1, PAGE_SIZE, controller.signal)
+      const r = await listEcomScenes({ ...query, page: page + 1, pageSize: PAGE_SIZE }, controller.signal)
       setItems((prev) => [...(prev || []), ...r.items.filter((s) => !(prev || []).some((p) => p.key === s.key))])
       setTotal(r.total); setPage(page + 1)
     } catch (err) {
@@ -61,6 +72,20 @@ export default function SceneStep({ industries, industry, onIndustry, sceneKey, 
     <div className="pf-tool-field"><span>{text('行业', 'Industry')}</span>
       <div className="pf-tool-chips">{industries.map((i) => <button key={i.id} type="button" className={industry === i.id ? 'active' : ''} onClick={() => onIndustry(i.id)}>{i.name}</button>)}</div>
     </div>
+    {groups.length ? <div className="pf-tool-field"><span>{text('风格', 'Style')}</span>
+      <div className="pf-tool-chips pf-es-groups">
+        {[{ id: '', name: text('全部', 'All') }, ...groups].map((g) => <button key={g.id || 'all'} type="button"
+          className={`${group === g.id ? 'active' : ''}${g.id === 'festival' ? ' pf-es-fest-chip' : ''}`}
+          onClick={() => { setGroup(g.id); setFestivalType('') }}>
+          {g.id === 'festival' ? <CalendarDays size={13} /> : null}{g.name}</button>)}
+      </div>
+    </div> : null}
+    {group === 'festival' && festivalTypes.length ? <div className="pf-tool-field"><span>{text('节日', 'Holiday')}</span>
+      <div className="pf-tool-chips">
+        {[{ id: '', name: text('按日期', 'By date') }, ...festivalTypes].map((t) => <button key={t.id || 'all'} type="button"
+          className={festivalType === t.id ? 'active' : ''} onClick={() => setFestivalType(t.id)}>{t.name}</button>)}
+      </div>
+    </div> : null}
     {error && !items ? <div className="pf-es-actions">
       <p className="pf-tool-error">{error}</p>
       <Button variant="outline" size="sm" onClick={() => setReloadKey((k) => k + 1)}><RefreshCw size={14} />{text('重试', 'Retry')}</Button>
@@ -74,7 +99,7 @@ export default function SceneStep({ industries, industry, onIndustry, sceneKey, 
         </button>
         {items.map((s) => <SceneCard key={s.key} scene={s} active={s.key === sceneKey} onPick={() => onPick({ key: s.key, name: s.name })} />)}
       </div>
-      {!items.length ? <p className="pf-muted">{text('这个行业还没有场景，可以换个行业看看，或直接用「不指定场景」。', 'No scenes in this industry yet.')}</p> : null}
+      {!items.length ? <p className="pf-muted">{text('这个分类下还没有场景，可以换个行业或风格看看，或直接用「不指定场景」。', 'No scenes here yet.')}</p> : null}
       {error ? <p className="pf-tool-error">{error}</p> : null}
       {items.length < total ? <div className="pf-es-actions">
         <Button variant="outline" size="sm" disabled={loadingMore} onClick={() => void loadMore()}>
@@ -86,13 +111,16 @@ export default function SceneStep({ industries, industry, onIndustry, sceneKey, 
   </div>
 }
 
-/** 单张场景卡：封面（无封面时用背景色色块 + 场景名占位）、名称、一行描述 */
+/** 单张场景卡：封面（无封面时用背景色色块 + 场景名占位）、名称、一行描述；节日场景角标显示日期 */
 function SceneCard({ scene, active, onPick }: { scene: EcomScene; active: boolean; onPick: () => void }) {
+  const text = useGenerationText()
   const cover = resolveToolMediaUrl(scene.cover_url)
+  const fest = scene.festival
   const color = /^[0-9a-f]{6}$/i.test(scene.spec?.bg_color || '') ? `#${scene.spec.bg_color}` : 'var(--pf-bg)'
   return <button type="button" className={`pf-es-card pf-es-scene${active ? ' active' : ''}`} aria-pressed={active} onClick={onPick}>
     {cover ? <img src={cover} alt="" loading="lazy" />
       : <span className="pf-es-scene-cover" style={{ background: color }}><span>{scene.name}</span></span>}
+    {fest ? <span className={`pf-es-fest-badge${fest.active ? ' on' : ''}`}>{festivalBadge(fest, text)}</span> : null}
     <strong>{scene.name}</strong>
     {scene.description ? <span className="pf-muted pf-es-scene-desc">{scene.description}</span> : null}
     {active ? <span className="pf-es-tick"><Check size={14} /></span> : null}
@@ -111,6 +139,8 @@ function SceneDetail({ scene }: { scene: EcomScene }) {
   ]
   return <div className="pf-es-checklist pf-es-scene-detail">
     <strong>{text(`已选场景：${scene.name}`, `Scene: ${scene.name}`)}</strong>
+    {scene.festival ? <p className="pf-muted">{text(`「${scene.festival.name}」节日主题：文案会带节日语气；下面不选元素时自动使用「${scene.festival.name}」元素包。`,
+      `${scene.festival.name} theme: holiday copy tone and element pack.`)}</p> : null}
     <dl>
       {rows.filter(([, v]) => v).map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}
       {spec.props?.length ? <div><dt>{text('道具', 'Props')}</dt><dd className="pf-tool-chips">{spec.props.map((p) => <span key={p} className="pf-badge">{p}</span>)}</dd></div> : null}

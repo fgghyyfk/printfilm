@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import re
+from datetime import date
 from typing import Any
 
 from sqlalchemy import or_, select
@@ -89,22 +90,57 @@ def snapshot(row: EcomScene | None) -> dict | None:
     return {"key": row.key, "name": row.name, "industries": list(row.industries or []), "spec": normalize_spec(row.spec)}
 
 
-def to_out(row: EcomScene) -> dict:
-    """序列化给前端。"""
+def to_out(row: EcomScene, today: date | None = None) -> dict:
+    """序列化给前端：带风格组与节日信息（日期、是否临近）。"""
+    from app.services.ecom_set import festivals
+    from app.services.ecom_set.scenes_seed import group_of
+
+    fest = festivals.of_scene(row.key) if row.scope == "system" else None
     return {
         "key": row.key, "name": row.name, "scope": row.scope, "industries": list(row.industries or []),
         "description": row.description or "", "cover_url": row.cover_url or "", "spec": normalize_spec(row.spec),
+        "group": "mine" if row.scope == "user" else group_of(row.key),
+        "festival": festivals.festival_out(fest, today) if fest else None,
     }
 
 
-async def list_scenes(db: AsyncSession, user_id: int, *, industry: str | None = None,
-                      page: int = 1, page_size: int = 24) -> tuple[list[EcomScene], int]:
-    """系统场景 + 我的场景（服务端分页，按行业筛选）。"""
+def _arrange(rows: list[EcomScene], *, group: str, festival_type: str, today: date | None) -> list[EcomScene]:
+    """按风格组筛选与排序。
+
+    - 全部：临近的节日场景排最前（按日期），再接普通场景；还远的节日场景只在「节日」组里出现
+    - 节日：进行中在前，其余按日期；可按节日类型（传统/大促/礼赠/时令）再筛
+    - 其他组：只留该组
+    """
+    from app.services.ecom_set import festivals
+    from app.services.ecom_set.scenes_seed import group_of
+
+    def fest(r: EcomScene):
+        return festivals.of_scene(r.key) if r.scope == "system" else None
+
+    if group == "mine":
+        return [r for r in rows if r.scope == "user"]
+    if group and group != "festival":
+        return [r for r in rows if r.scope == "system" and group_of(r.key) == group]
+    dated = [r for r in rows if fest(r) is not None]
+    dated.sort(key=lambda r: festivals.sort_key(fest(r), today))
+    if group == "festival":
+        if festival_type:
+            return [r for r in dated if fest(r).type == festival_type]
+        return dated + [r for r in rows if fest(r) is None and r.scope == "system" and group_of(r.key) == "festival"]
+    soon = [r for r in dated if festivals.next_occurrence(fest(r), today)["soon"]]
+    return soon + [r for r in rows if fest(r) is None]
+
+
+async def list_scenes(db: AsyncSession, user_id: int, *, industry: str | None = None, group: str = "",
+                      festival_type: str = "", page: int = 1, page_size: int = 24,
+                      today: date | None = None) -> tuple[list[EcomScene], int]:
+    """系统场景 + 我的场景（服务端分页，按行业、风格组、节日类型筛选）。"""
     cond = [EcomScene.is_active.is_(True), or_(EcomScene.scope == "system", EcomScene.owner_user_id == user_id)]
     q = select(EcomScene).where(*cond)
     rows = list((await db.execute(q.order_by(EcomScene.sort_order, EcomScene.id))).scalars().all())
     if industry:
         rows = [r for r in rows if industry in (r.industries or [])]
+    rows = _arrange(rows, group=group, festival_type=festival_type, today=today)
     total = len(rows)
     page, page_size = max(1, page), min(max(1, page_size), 60)
     return rows[(page - 1) * page_size: page * page_size], total
@@ -130,6 +166,14 @@ def industries_out() -> list[dict]:
     return [{"id": k, "name": v} for k, v in INDUSTRIES.items()]
 
 
+def groups_out() -> list[dict]:
+    """风格组选项（含节日）与节日类型选项。"""
+    from app.services.ecom_set.festivals import FESTIVAL_TYPES
+    from app.services.ecom_set.scenes_seed import SCENE_GROUPS
+
+    return [{"id": k, "name": v} for k, v in SCENE_GROUPS.items()], [{"id": k, "name": v} for k, v in FESTIVAL_TYPES.items()]
+
+
 _SEEDED = False
 COVER_DIR = "ecom_scenes"
 
@@ -148,13 +192,14 @@ async def ensure_seeded() -> None:
     if _SEEDED:
         return
     from app.database import AsyncSessionLocal, engine
+    from app.services.ecom_set.festivals_seed import FESTIVAL_SCENES
     from app.services.ecom_set.scenes_seed import SYSTEM_SCENES
 
     async with engine.begin() as conn:
         await conn.run_sync(lambda sync: EcomScene.__table__.create(sync, checkfirst=True))
     async with AsyncSessionLocal() as db:
         existing = {r.key: r for r in (await db.execute(select(EcomScene).where(EcomScene.scope == "system"))).scalars()}
-        for order, item in enumerate(SYSTEM_SCENES):
+        for order, item in enumerate([*SYSTEM_SCENES, *FESTIVAL_SCENES]):
             cover = cover_path_for(item["key"])
             row = existing.get(item["key"])
             if row is not None:

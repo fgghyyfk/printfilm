@@ -40,8 +40,17 @@ async def list_elements(
             "categories": svc.categories_out()}
 
 
-@router.get("/recommend", summary="按商品资料与行业推荐元素")
+@router.get("/packs", summary="元素包：风格包 + 按日期排序的节日包（含本场景对应的节日包）")
+async def list_packs(scene_key: str = Query("", max_length=64),
+                     db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)) -> dict:
+    from app.services.ecom_set import packs
+
+    return await packs.list_packs(db, user, scene_key=scene_key)
+
+
+@router.get("/recommend", summary="按商品资料与行业推荐元素（节日场景时节日包优先）")
 async def recommend(product_id: int | None = Query(None), industry: str = Query("", max_length=16),
+                    scene_key: str = Query("", max_length=64),
                     db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)) -> dict:
     knowledge = None
     if product_id:
@@ -49,7 +58,7 @@ async def recommend(product_id: int | None = Query(None), industry: str = Query(
 
         row = await _guard(db, products.get_product(db, user, product_id))
         knowledge = row.knowledge
-    rows = await svc.recommend(db, user, knowledge=knowledge, industry=industry)
+    rows = await svc.recommend(db, user, knowledge=knowledge, industry=industry, scene_key=scene_key)
     return {"items": [svc.to_out(r) for r in rows]}
 
 

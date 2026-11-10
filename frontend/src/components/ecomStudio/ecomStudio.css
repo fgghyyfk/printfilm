@@ -104,3 +104,18 @@
 .pf-es-el-search { display: flex; align-items: center; gap: 6px; max-width: 280px; padding: 4px 10px; border: 1px solid var(--pf-line); border-radius: 999px; }
 .pf-es-el-search input { border: 0; outline: 0; background: transparent; font: inherit; width: 100%; color: inherit; }
 .pf-es-ref-hand { color: #8a5a7a; }
+
+/* 节日与分类快选 */
+.pf-es-groups button, .pf-es-fest-tabs button { display: inline-flex; align-items: center; gap: 4px; }
+.pf-es-fest-chip:not(.active) { border-color: #c8463a; color: #b03a2e; }
+.pf-es-card.pf-es-scene { position: relative; }
+.pf-es-fest-badge { position: absolute; top: 8px; left: 8px; padding: 2px 8px; border-radius: 999px; background: rgba(0, 0, 0, 0.55); color: #fff; font-size: 0.72rem; }
+.pf-es-fest-badge.on { background: #c8463a; }
+.pf-es-packs { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem; }
+.pf-es-packs > span { display: inline-flex; align-items: center; gap: 4px; font-size: 0.82rem; }
+.pf-es-pack { display: inline-flex; align-items: center; gap: 5px; padding: 5px 12px; border: 1px dashed var(--pf-line); border-radius: 10px; background: var(--pf-card, #fff); font: inherit; font-size: 0.82rem; color: inherit; cursor: pointer; }
+.pf-es-pack small { opacity: 0.55; }
+.pf-es-pack.fest { border-style: solid; border-color: #c8463a; color: #b03a2e; }
+.pf-es-pack.active { border-style: solid; border-color: var(--pf-accent, var(--pf-lime)); background: color-mix(in srgb, var(--pf-accent, #7a9a3a) 12%, transparent); }
+.pf-es-fest-tabs { flex-wrap: wrap; }
+.pf-es-fest-tabs small { margin-left: 4px; opacity: 0.6; font-size: 0.72rem; }

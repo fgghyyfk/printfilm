@@ -66,7 +66,7 @@ async def list_elements(db: AsyncSession, user: User, *, category: str = "", q: 
                         mine: bool = False, page: int = 1, page_size: int = 60) -> tuple[list[EcomElement], int]:
     """元素列表（服务端分页）：我的元素在前，再按分类、排序。"""
     await ensure_seeded(db)
-    page, page_size = max(1, page), min(max(1, page_size), 200)
+    page, page_size = max(1, page), min(max(1, page_size), 400)
     base = select(EcomElement).where(EcomElement.is_active.is_(True), _visible(user))
     if mine:
         base = base.where(EcomElement.scope == "user")
@@ -118,9 +118,9 @@ async def delete_element(db: AsyncSession, user: User, key: str) -> None:
     await db.commit()
 
 
-async def get_many(db: AsyncSession, user: User, keys: list[str]) -> list[EcomElement]:
-    """按 key 取多个可见元素（保持传入顺序，忽略不存在的）。"""
-    keys = list(dict.fromkeys(k for k in keys if k))[:MAX_PICK]
+async def get_many(db: AsyncSession, user: User, keys: list[str], *, limit: int | None = MAX_PICK) -> list[EcomElement]:
+    """按 key 取多个可见元素（保持传入顺序，忽略不存在的）；limit=None 不截断（元素包用）。"""
+    keys = list(dict.fromkeys(k for k in keys if k))[:limit]
     if not keys:
         return []
     await ensure_seeded(db)
@@ -150,9 +150,20 @@ def _knowledge_words(knowledge: dict | None) -> list[str]:
 
 
 async def recommend(db: AsyncSession, user: User, *, knowledge: dict | None, industry: str = "",
-                    limit: int = 12) -> list[EcomElement]:
-    """按商品资料（香调/成分/卖点）与行业推荐元素：命中关键词的在前，再补行业常用的水与光影类氛围元素。"""
-    rows, _ = await list_elements(db, user, industry=industry, page_size=200)
+                    limit: int = 12, scene_key: str = "") -> list[EcomElement]:
+    """按商品资料（香调/成分/卖点）与行业推荐元素：命中关键词的在前，再补行业常用的水与光影类氛围元素。
+
+    选的是节日场景时，节日包排最前（取 6 个），再接商品资料命中的元素。
+    """
+    from app.services.ecom_set import festivals
+
+    fest = festivals.of_scene(scene_key)
+    if fest is not None:
+        head = await get_many(db, user, festivals.pack_keys(fest)[:6])
+        rest = await recommend(db, user, knowledge=knowledge, industry=industry, limit=limit)
+        hit = [r for r in rest if r not in head and any(kw in " ".join(_knowledge_words(knowledge)) for kw in r.keywords or [])]
+        return (head + hit)[:limit]
+    rows, _ = await list_elements(db, user, industry=industry, page_size=300)
     text = " ".join(_knowledge_words(knowledge))
     scored: list[tuple[int, EcomElement]] = []
     for r in rows:

@@ -2,6 +2,7 @@
 
 import { createJsonRequester } from './client'
 import { apiErrorMessage } from './http'
+import type { EcomFestival } from './ecomScenes'
 
 const BASE = '/api/tools/ecom-elements'
 
@@ -16,6 +17,9 @@ export type EcomElement = {
   image_url: string
   industries: string[]
 }
+
+/** 元素包：风格包或节日包（节日包带日期） */
+export type EcomElementPack = { key: string; name: string; kind: 'style' | 'festival'; festival: EcomFestival | null; elements: EcomElement[] }
 
 export type EcomElementList = { items: EcomElement[]; total: number; categories: { id: string; name: string }[] }
 
@@ -39,11 +43,18 @@ export function listEcomElements(params: { category?: string; q?: string; indust
   return request(`?${qs}`, '加载元素失败', { signal })
 }
 
-/** 按商品资料与行业推荐元素 */
-export function recommendEcomElements(productId: number | null, industry: string, signal?: AbortSignal): Promise<{ items: EcomElement[] }> {
+/** 元素包列表：风格包 + 按日期排序的节日包；scene_pack 为所选节日场景对应的包 */
+export function listEcomElementPacks(sceneKey: string, signal?: AbortSignal): Promise<{ packs: EcomElementPack[]; scene_pack: string | null }> {
+  const qs = new URLSearchParams({ scene_key: sceneKey })
+  return request(`/packs?${qs}`, '加载元素包失败', { signal })
+}
+
+/** 按商品资料与行业推荐元素（节日场景时节日包优先） */
+export function recommendEcomElements(productId: number | null, industry: string, sceneKey = '', signal?: AbortSignal): Promise<{ items: EcomElement[] }> {
   const qs = new URLSearchParams()
   if (productId) qs.set('product_id', String(productId))
   if (industry) qs.set('industry', industry)
+  if (sceneKey) qs.set('scene_key', sceneKey)
   return request(`/recommend?${qs}`, '加载推荐元素失败', { signal })
 }
 

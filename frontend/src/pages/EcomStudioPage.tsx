@@ -181,7 +181,7 @@ export default function EcomStudioPage() {
               {stepKey === 'product' ? <ProductStep categories={categories} product={product} colorIndex={colorIndex} onPick={pickProduct} /> : null}
               {stepKey === 'scene' && product ? <SceneStep industries={industries} industry={industry || industries[0]?.id || 'daily'}
                 onIndustry={pickIndustry} sceneKey={scene?.key || ''} onPick={pickScene} /> : null}
-              {stepKey === 'scene' && product ? <ElementPicker productId={product.id} industry={industry || industries[0]?.id || ''}
+              {stepKey === 'scene' && product ? <ElementPicker productId={product.id} industry={industry || industries[0]?.id || ''} sceneKey={scene?.key || ''}
                 value={elements} onChange={setElements} /> : null}
               {stepKey === 'model' ? <ModelStep modelId={modelId} onPick={setModelId} imageFen={options.image_fen} billing={options.billing_enabled} /> : null}
               {stepKey === 'slots' && category ? <SlotStep category={category} frames={options.frames || []} frame={frame} slots={slots} onFrame={setFrame} onSlots={setSlots}
