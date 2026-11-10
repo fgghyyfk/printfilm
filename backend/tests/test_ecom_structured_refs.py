@@ -87,7 +87,7 @@ async def test_prepare_structured_local_refs(monkeypatch, tmp_path):
     refs = await prepare_tokenfree_structured_refs([
         "/static/product.png", "https://cdn.example.com/style.png",
     ])
-    assert refs[0].startswith("data:image/png;base64,")
+    assert refs[0].startswith("data:image/jpeg;base64,")
     assert refs[1] == "https://cdn.example.com/style.png"
 
 
@@ -121,7 +121,7 @@ async def test_gateway_protocol_keeps_fallback_url(monkeypatch, tmp_path, model,
         assert ref in body["prompt"] and "base64" not in body["prompt"]
     elif structured:
         assert captured["url"].endswith("/responses")
-        assert body["input"][0]["content"][2]["image_url"].startswith("data:image/png;base64,")
+        assert body["input"][0]["content"][2]["image_url"].startswith("data:image/jpeg;base64,")
     else:
         # 旧通路仍过滤 localhost 引用，不能因新模式改变默认行为。
         assert ref not in body["input"] and "base64" not in body["input"]

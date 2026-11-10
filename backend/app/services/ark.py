@@ -1073,6 +1073,9 @@ class ArkGateway:
                 "response_format": "url", "watermark": False,
             }
             refs = list(dict.fromkeys([*(subject_refs or []), *(style_refs or [])]))
+            if refs and structured_refs:
+                # 上游拉不到本站/内网地址，结构化模式把本地参考图压缩内嵌
+                refs = await prepare_tokenfree_structured_refs(refs)
             if refs:
                 body["image"] = refs[0] if len(refs) == 1 else refs
         # 2.5 的渠道是 image-generation，走 /responses 会报 default 分组无 distributor

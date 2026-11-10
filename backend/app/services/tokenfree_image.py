@@ -125,14 +125,9 @@ def split_tokenfree_structured_refs(
 
 # 结构化通路优先编码已有本地参考图，远程图保持 URL，文本降级不调用此函数。
 async def prepare_tokenfree_structured_refs(urls: list[str]) -> list[str]:
-    from app.services import storage
+    from app.services.image_ref_inline import inline_local_refs
 
-    prepared = []
-    for url in urls:
-        local = storage.local_path_from_url(url)
-        prepared.append(await asyncio.to_thread(storage.file_to_data_uri, local)
-                        if local and local.is_file() else url)
-    return prepared
+    return await inline_local_refs(urls)
 
 
 def tokenfree_working_image_model(model: str) -> str:
