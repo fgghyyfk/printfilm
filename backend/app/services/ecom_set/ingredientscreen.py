@@ -42,7 +42,7 @@ def grid_prompt(items: list[dict], *, palette: str = "") -> str:
     tone = f"，整体色调：{palette}" if palette else ""
     return ("2×2 四宫格成分示意摄影，四格大小完全相同，格与格之间用细白缝分隔，每格一个主体居中、四周留白，"
             "柔和自然光、干净的浅色背景、写实微距质感" + tone + "。"
-            "用成分的原料实物或常见示意形态表现：植物原料画植物本体（叶片、花朵、根茎切片），"
+            "用成分的原料实物或常见示意形态表现：植物原料画新鲜饱满的植物本体（鲜绿叶片、花朵、根茎切片），不要枯萎发黄，"
             "化学 / 保湿成分画晶莹的液滴、凝胶、乳霜或透明质地。" + "；".join(cells) +
             "。画面中不要出现任何文字、字母、标签、包装或商品")
 
@@ -106,8 +106,18 @@ def render(grid_path: Path, out: Path, *, size: tuple[int, int], copy: dict | No
     n = max(1, len(cells))
     row_h = (bottom - y) / n
     d = int(min(W * 0.28, row_h * 0.8))
-    name_f = typo.font("serif" if style.id == "serif" else "sans", False, int(W * 0.038))
-    desc_f = typo.font("sans", False, int(W * 0.024))
+    # 每组（成分名 + 细线 + 说明）必须放进本行高度的 80%：放不下先减说明行数，再整体缩字号，避免上下两组贴在一起
+    name_size, desc_size, max_lines = 0.038, 0.024, 3
+    for _ in range(8):
+        name_f = typo.font("serif" if style.id == "serif" else "sans", False, int(W * name_size))
+        desc_f = typo.font("sans", False, int(W * desc_size))
+        block = typo.line_h(name_f, 0.4) + int(W * 0.018) + typo.line_h(desc_f, 0.45) * max_lines
+        if block <= row_h * 0.8:
+            break
+        if max_lines > 2:
+            max_lines = 2
+        else:
+            name_size, desc_size = name_size * 0.92, desc_size * 0.92
     draw = ImageDraw.Draw(img)
     rule = (205, 196, 184)
     for i, (cell, row) in enumerate(zip(cells, items, strict=False)):
@@ -119,7 +129,7 @@ def render(grid_path: Path, out: Path, *, size: tuple[int, int], copy: dict | No
         tx0 = int(W * 0.24 + d / 2 + W * 0.06) if left else int(W * 0.08)
         tx1 = int(W * 0.92) if left else int(W * 0.76 - d / 2 - W * 0.06)
         name = f"•{_clean(str(row['name']))}" if left else f"{_clean(str(row['name']))}•"
-        lines = _desc_lines(_clean(str(row.get("desc") or "")), desc_f, tx1 - tx0)
+        lines = _desc_lines(_clean(str(row.get("desc") or "")), desc_f, tx1 - tx0)[:max_lines]
         block = typo.line_h(name_f, 0.4) + int(W * 0.018) + typo.line_h(desc_f, 0.45) * len(lines)
         ty = cy - block // 2
         nw = typo.text_width(name, name_f, 0.04)
