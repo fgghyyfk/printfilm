@@ -221,11 +221,18 @@ REAL_HINT = ("商品设计图后面的一张是实物照片：商品在真实光
 
 def build_prompt(category: str, *, slot_prompt: str, scene: str, ref: str, size: str | None,
                  material: str | None, has_fabric: bool, has_real: bool = False, scene_card: str = "",
-                 blank: str = "none", shot: str = "", elements: str = "") -> str:
-    """拼装底图提示词。scene 为本张画面描述；场景卡描述由 scene_card 传入（标品与纯商品槽位使用）。"""
+                 blank: str = "none", shot: str = "", elements: str = "", dims: dict | None = None) -> str:
+    """拼装底图提示词。scene 为本张画面描述；场景卡描述由 scene_card 传入（标品与纯商品槽位使用）。
+
+    dims：商品实际尺寸（厘米），有时追加比例约束，让道具、手、模特与商品按真实大小搭配。
+    """
+    from app.services.ecom_set.dims import scale_note
+
+    scale = scale_note(dims, ref=ref) if category != "scarf" else ""
     if category == "goods":
-        return build_goods_prompt(slot_prompt=slot_prompt, scene=scene, ref=ref, scene_card=scene_card,
+        text = build_goods_prompt(slot_prompt=slot_prompt, scene=scene, ref=ref, scene_card=scene_card,
                                   blank=blank, material=material, shot=shot, elements=elements)
+        return f"{text}。{scale}" if scale else text
     if elements and ref == "product":
         scene_card = "。".join(x for x in (scene_card, elements) if x)
     if category == "scarf":
@@ -238,6 +245,8 @@ def build_prompt(category: str, *, slot_prompt: str, scene: str, ref: str, size:
         card = scene_card if ref == "product" else ""
         parts = [prefix, slot_prompt, card, scene, look if ref == "model" else "", f"材质：{texture}", GENERIC_LOCK]
         text = "。".join(p.strip("。 ") for p in parts if p and p.strip())
+    if scale:
+        text = f"{text}。{scale}"
     if has_real:
         text = f"{text}。{REAL_HINT}"
     return f"{text}。{FABRIC_HINT}" if has_fabric else text

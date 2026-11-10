@@ -50,6 +50,8 @@ class EcomScarfOut(BaseModel):
     type_style: str = "bold"
     image_engine: str = "seedream"
     elements: list[dict] = []
+    dims: dict = {}
+    no_text: bool = False
 
 
 class EcomProductOut(BaseModel):

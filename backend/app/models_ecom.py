@@ -85,6 +85,8 @@ class EcomProduct(Base):
     name: Mapped[str] = mapped_column(String(128), default="")
     category: Mapped[str] = mapped_column(String(16), default="scarf")
     size: Mapped[str] = mapped_column(String(32), default="")
+    # 实际尺寸（厘米）：{"h": 高, "w": 宽, "d": 厚}，出图时约束道具与手的比例
+    dims: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     material: Mapped[str] = mapped_column(String(32), default="")
     notes: Mapped[str] = mapped_column(Text, default="")
     # 颜色款：[{"name": "米白", "image_path": "...", "image_url": "..."}]

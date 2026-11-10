@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { ImagePlus, Loader2, Plus, X } from 'lucide-react'
-import { createEcomProduct, type EcomProduct } from '../../api/ecomProducts'
+import { createEcomProduct, type EcomDims, type EcomProduct } from '../../api/ecomProducts'
+import { usesDims } from '../../lib/ecomDims'
+import DimsInput from './DimsInput'
 import type { EcomStyledCategory } from '../../api/ecomSet'
 import { useGenerationText } from '../../lib/generationMedia'
 import { ECOM_UPLOAD_ACCEPT, validateProductFile } from '../../lib/ecomSet'
@@ -24,6 +26,7 @@ export default function ProductForm({ categories, onSaved, onCancel }: Props) {
   const [size, setSize] = useState(cat?.default_size || '')
   const [material, setMaterial] = useState(cat?.default_material || '')
   const [notes, setNotes] = useState('')
+  const [dims, setDims] = useState<EcomDims>({})
   const [colors, setColors] = useState<ColorDraft[]>([])
   const [fabric, setFabric] = useState<{ file: File; preview: string } | null>(null)
   /* 提交状态 */
@@ -57,7 +60,7 @@ export default function ProductForm({ categories, onSaved, onCancel }: Props) {
       const saved = await createEcomProduct({
         name: name.trim(), category, size, material, notes: notes.trim(),
         colors: colors.map((c, i) => ({ name: c.name.trim() || text(`颜色${i + 1}`, `Color ${i + 1}`), file: c.file, real: c.real?.file })),
-        fabric: fabric?.file,
+        fabric: fabric?.file, dims: usesDims(category) ? dims : undefined,
       })
       onSaved(saved)
     } catch (err) { setError(err instanceof Error ? err.message : text('保存失败', 'Save failed')) }
@@ -77,6 +80,10 @@ export default function ProductForm({ categories, onSaved, onCancel }: Props) {
     </div> : <label className="pf-tool-field"><span>{text('规格（选填）', 'Spec (optional)')}</span>
       <input className="pf-ecom-input" maxLength={20} value={size} disabled={busy} placeholder={text('如：均码 / 45cm 链长 / 中号', 'e.g. One size / 45cm')} onChange={(e) => setSize(e.target.value)} />
     </label>}
+    {usesDims(category) ? <div className="pf-tool-field"><span>{text('实际尺寸（建议填）', 'Real size (recommended)')}</span>
+      <DimsInput value={dims} onChange={setDims} disabled={busy} />
+      <span className="pf-muted">{text('量一下商品的高、宽、厚。出图时道具、手和商品会按真实比例搭配，还能多出一张免费的「尺寸标注」图。', 'Props and hands are scaled to the real product size.')}</span>
+    </div> : null}
     <div className="pf-tool-field"><span>{text(cat?.material_label || '材质', cat?.uses_model === false ? 'Packaging' : 'Material')}</span>
       <div className="pf-tool-chips">{cat?.materials.map((m) => <button key={m.id} type="button" disabled={busy} className={material === m.id ? 'active' : ''} onClick={() => setMaterial(m.id)}>{m.name}</button>)}</div>
     </div>

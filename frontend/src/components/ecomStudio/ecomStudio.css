@@ -119,3 +119,9 @@
 .pf-es-pack.active { border-style: solid; border-color: var(--pf-accent, var(--pf-lime)); background: color-mix(in srgb, var(--pf-accent, #7a9a3a) 12%, transparent); }
 .pf-es-fest-tabs { flex-wrap: wrap; }
 .pf-es-fest-tabs small { margin-left: 4px; opacity: 0.6; font-size: 0.72rem; }
+
+/* 商品实际尺寸：高 / 宽 / 厚（厘米） */
+.pf-es-dims { display: flex; flex-wrap: wrap; gap: 0.75rem; }
+.pf-es-dims label { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.9rem; }
+.pf-es-dims input { width: 5.5rem; text-align: center; }
+.pf-es-dims em { font-style: normal; color: var(--pf-muted, #8a8178); font-size: 0.85rem; }

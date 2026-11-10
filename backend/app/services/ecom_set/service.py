@@ -163,6 +163,7 @@ async def create_plan(
     scarf_material: str | None = None, frame: str | None = None, slots_picked: list[str] | None = None,
     product_id: int | None = None, color_index: int = 0, fabric: tuple[bytes, str] | None = None,
     scene_key: str | None = None, image_engine: str | None = None, element_keys: list[str] | None = None,
+    dims: dict | None = None, no_text: bool = False,
 ) -> EcomSet:
     """上传商品图（或从商品库选）→ 计费规划 → 落库套图与各张方案（status=planned）。
 
@@ -175,6 +176,7 @@ async def create_plan(
             material=scarf_material, model_asset_id=model_asset_id, frame=frame, slots_picked=slots_picked,
             product_id=product_id, color_index=color_index, data=data, filename=filename, fabric=fabric,
             scene_key=scene_key, image_engine=image_engine, element_keys=element_keys,
+            dims=dims, no_text=no_text,
         )
         return await get_set(db, user, set_id)
     name = clip(name, 60)
@@ -389,17 +391,19 @@ def _keep_en(body: dict, it: EcomSetItem) -> dict:
 
 
 async def set_type_style(db: AsyncSession, user: User, set_id: int, type_style: str) -> EcomSet:
-    """切换整套图的字体风格：已出图的全部重新排字（不调模型、不收费）。"""
+    """切换整套图的字体风格（none = 不加文字）：已出图的全部重新排字（不调模型、不收费）。"""
     from app.services.ecom_set import typo
 
-    if type_style not in typo.TYPE_STYLES:
+    if type_style not in typo.TYPE_STYLES and type_style != typo.NO_TEXT:
         raise ValueError("不支持的字体风格")
     ecom = await get_set(db, user, set_id)
     plan = dict(ecom.plan or {})
+    no_text = type_style == typo.NO_TEXT
+    patch = {"no_text": no_text} if no_text else {"no_text": False, "type_style": type_style}
     if isinstance(plan.get("styled"), dict):
-        plan["styled"] = {**plan["styled"], "type_style": type_style}
+        plan["styled"] = {**plan["styled"], **patch}
     else:
-        plan["type_style"] = type_style
+        plan.update(patch)
     ecom.plan = plan
     for it in ecom.items:
         if it.status == "succeeded" and it.base_path and Path(it.base_path).exists():

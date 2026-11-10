@@ -232,6 +232,7 @@ GOODS_SLOTS: dict[str, Slot] = {s.key: s for s in (
         ("goods_info_usage", "使用方法", "分步骤的使用方法"),
         ("goods_info_specs", "产品信息", "品名、规格、保质期等信息表"),
         ("goods_info_story", "品牌故事", "品牌理念与故事"),
+        ("goods_info_size", "尺寸标注", "商品实际尺寸标注（高、宽、厚）"),
     )),
 )}
 # 不调模型的槽位类型（免费）

@@ -6,6 +6,7 @@ import { parseDispositionFilename } from '../lib/ecomSet'
 import { createJsonRequester, requestResponse } from './client'
 import { apiErrorMessage } from './http'
 import type { ApiErrorHandler } from './http'
+import { appendDims, type EcomDims } from './ecomProducts'
 
 const BASE = '/api/tools/ecom-set'
 
@@ -116,6 +117,10 @@ export type EcomStyledInfo = {
   image_engine?: string
   /** 本套元素池（单张可从中改选） */
   elements?: { key: string; name: string; image_url: string }[]
+  /** 商品实际尺寸（厘米） */
+  dims?: EcomDims
+  /** 成图不加文字 */
+  no_text?: boolean
 }
 
 /** 品类选项（来自 /options 的 styled） */
@@ -160,6 +165,10 @@ export type EcomSetPlanPayload = {
   elementKeys?: string[]
   /** 场景库场景 key；留空 = 按品类默认画面 */
   sceneKey?: string
+  /** 商品实际尺寸（厘米），留空用商品库里的 */
+  dims?: EcomDims
+  /** 成图不加文字（纯画面） */
+  noText?: boolean
 }
 
 /** 方案编辑：单张可改字段 */
@@ -221,6 +230,8 @@ export function planEcomSet(payload: EcomSetPlanPayload): Promise<EcomSet> {
   if (payload.sceneKey) body.append('scene_key', payload.sceneKey)
   if (payload.imageEngine) body.append('image_engine', payload.imageEngine)
   if (payload.elementKeys?.length) body.append('element_keys', payload.elementKeys.join(','))
+  appendDims(body, payload.dims)
+  if (payload.noText) body.append('no_text', 'true')
   return requestEcom('/plan', '方案生成失败', { method: 'POST', body }, true)
 }
 

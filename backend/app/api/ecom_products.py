@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.deps import get_current_user
 from app.models import User
+from app.services.ecom_set import dims as dims_mod
 from app.services.ecom_set import products as svc
 
 router = APIRouter(prefix="/tools/ecom-products", tags=["ecom-products"])
@@ -60,6 +61,9 @@ async def create_product(
     fabric: UploadFile | None = File(default=None, description="面料/材质实拍（可选）"),
     real_files: list[UploadFile] | None = File(default=None, description="实物图（可选），与 real_for 一一对应"),
     real_for: str = Form("", description="实物图对应的颜色款序号，JSON 数组或逗号分隔"),
+    dim_h: str = Form("", max_length=8, description="实际高度（厘米，可空）"),
+    dim_w: str = Form("", max_length=8, description="实际宽度（厘米，可空）"),
+    dim_d: str = Form("", max_length=8, description="实际厚度/深度（厘米，可空）"),
     db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user),
 ) -> dict:
     names = _names(color_names, len(files))
@@ -73,7 +77,8 @@ async def create_product(
         except (TypeError, ValueError) as exc:
             raise HTTPException(status_code=400, detail="实物图对应的颜色款无效") from exc
     row = await _guard(db, svc.create_product(db, user, name=name, category=category, size=size, material=material,
-                                              notes=notes, colors=colors, fabric=fab, reals=reals))
+                                              notes=notes, colors=colors, fabric=fab, reals=reals,
+                                              dims=dims_mod.parse_form(dim_h, dim_w, dim_d)))
     return svc.to_out(row)
 
 

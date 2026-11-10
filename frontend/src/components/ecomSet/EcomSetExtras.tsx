@@ -56,7 +56,7 @@ export default function EcomSetExtras({ set, onOpenSet, onError, typeStyles, onU
   }
 
   const current = set.styled?.color_index ?? 0
-  const typeStyle = set.styled?.type_style || 'bold'
+  const typeStyle = set.styled?.no_text ? 'none' : set.styled?.type_style || 'bold'
   const showType = Boolean(set.styled && typeStyles?.length && set.items.some((it) => it.final_url && it.layout !== 'none'))
   const others = (product?.colors || []).map((c, i) => ({ ...c, i })).filter((c) => c.i !== current)
   return <>
@@ -64,7 +64,7 @@ export default function EcomSetExtras({ set, onOpenSet, onError, typeStyles, onU
       {busy === 'type' ? <Loader2 size={14} className="pf-tool-spin" /> : <Type size={14} />}
       <select value={typeStyle} disabled={!!busy || set.status === 'generating'} aria-label={text('字体风格', 'Type style')}
         onChange={(e) => void switchType(e.target.value)}>
-        {typeStyles?.map((x) => <option key={x.id} value={x.id}>{text(`字体：${x.name}`, x.name)}</option>)}
+        {typeStyles?.map((x) => <option key={x.id} value={x.id}>{x.id === 'none' ? text(x.name, 'No text') : text(`字体：${x.name}`, x.name)}</option>)}
       </select>
     </label> : null}
     {others.map((c) => <Button key={c.i} variant="text" size="sm" disabled={!!busy} onClick={() => void recolor(c.i)}>

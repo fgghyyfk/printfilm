@@ -87,9 +87,13 @@ def default_type_style(category: str, scene: dict | None) -> str:
     return "serif"
 
 
+NO_TEXT = "none"
+
+
 def options() -> list[dict]:
-    """前端选项。"""
-    return [{"id": s.id, "name": s.name, "hint": s.hint} for s in TYPE_STYLES.values()]
+    """前端选项（末尾是「不加文字」：成图只保留画面，信息屏照常排字）。"""
+    return [*({"id": s.id, "name": s.name, "hint": s.hint} for s in TYPE_STYLES.values()),
+            {"id": NO_TEXT, "name": "不加文字", "hint": "成图只保留画面，不排标题和卖点；信息屏、尺寸图照常"}]
 
 
 # ---------- 字体 ----------

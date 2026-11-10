@@ -248,6 +248,8 @@ async def _apply_schema_patches(engine_override: AsyncEngine | None = None) -> N
             await conn.execute(text("ALTER TABLE ecom_products ADD COLUMN ref_images JSON"))
         if prcols and "knowledge" not in prcols:
             await conn.execute(text("ALTER TABLE ecom_products ADD COLUMN knowledge JSON"))
+        if prcols and "dims" not in prcols:
+            await conn.execute(text("ALTER TABLE ecom_products ADD COLUMN dims JSON"))
         ecols = await _pg_columns(conn, "ecom_sets")
         if ecols and "project_id" not in ecols:
             await conn.execute(text("ALTER TABLE ecom_sets ADD COLUMN project_id INTEGER"))

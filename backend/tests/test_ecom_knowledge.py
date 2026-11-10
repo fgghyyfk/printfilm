@@ -117,9 +117,10 @@ def test_info_screens_render(tmp_path: Path):
         "specs": [{"label": "规格", "value": "60g"}], "story": "源自巴黎的香氛品牌。",
     })
     styled = {"knowledge": k, "variants": [{"name": "No.04", "image_path": str(cut)}, {"name": "No.05", "image_path": str(cut)}],
-              "product_path": str(cut), "product_name": "香氛护手霜", "size": "60g", "material_label": "软管"}
+              "product_path": str(cut), "product_name": "香氛护手霜", "size": "60g", "material_label": "软管",
+              "dims": {"h": 15, "w": 4, "d": 3}}
     for slot in infoscreens.INFO_SLOTS:
-        assert infoscreens.available(slot, k, styled["variants"])
+        assert infoscreens.available(slot, k, styled["variants"], styled["dims"])
         out = infoscreens.render_info(slot, tmp_path / f"{slot}.jpg", size=(790, 1053), copy={}, styled=styled,
                                       type_style="serif")
         a = np.asarray(Image.open(out).convert("L"))

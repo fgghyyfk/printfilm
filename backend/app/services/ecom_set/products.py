@@ -24,6 +24,15 @@ def _save(user: User, data: bytes, filename: str) -> tuple[str, str]:
     return str(path), public_url(path)
 
 
+def _dims(category: str, value: dict | None) -> dict | None:
+    """规整实际尺寸；丝巾、服饰不存，空尺寸存 None。"""
+    from app.services.ecom_set import dims as dims_mod
+
+    if category in dims_mod.NO_DIMS_CATEGORIES:
+        return None
+    return dims_mod.normalize(value or {}) or None
+
+
 def _normalize(category: str, size: str | None, material: str | None) -> tuple[str, str, str]:
     """规整品类 / 尺寸 / 材质。"""
     cat = category if categories.is_styled(category) else "scarf"
@@ -33,7 +42,7 @@ def _normalize(category: str, size: str | None, material: str | None) -> tuple[s
 async def create_product(
     db: AsyncSession, user: User, *, name: str, category: str, size: str | None, material: str | None,
     notes: str, colors: list[tuple[str, bytes, str]], fabric: tuple[bytes, str] | None,
-    reals: dict[int, tuple[bytes, str]] | None = None,
+    reals: dict[int, tuple[bytes, str]] | None = None, dims: dict | None = None,
 ) -> EcomProduct:
     """新建商品：至少一个颜色款（颜色名 + 平铺图）。"""
     name = clip(name, 60)
@@ -52,7 +61,7 @@ async def create_product(
             item["real_image_path"], item["real_image_url"] = await asyncio.to_thread(_save, user, *reals[i])
         saved.append(item)
     row = EcomProduct(user_id=user.id, name=name, category=cat, size=size, material=material,
-                      notes=clip(notes, 500), colors=saved)
+                      notes=clip(notes, 500), colors=saved, dims=_dims(cat, dims))
     if fabric is not None:
         row.fabric_image_path, row.fabric_image_url = await asyncio.to_thread(_save, user, *fabric)
     db.add(row)
@@ -78,6 +87,7 @@ async def update_product(db: AsyncSession, user: User, product_id: int, body: di
         row.name = name
     cat = str(body.get("category") or row.category)
     row.category, row.size, row.material = _normalize(cat, body.get("size", row.size), body.get("material", row.material))
+    row.dims = _dims(row.category, body.get("dims", row.dims))
     if "notes" in body:
         row.notes = clip(str(body.get("notes") or ""), 500)
     names = body.get("color_names")
@@ -279,6 +289,7 @@ def to_out(row: EcomProduct) -> dict:
     """序列化给前端（不含本地路径）。"""
     return {
         "id": row.id, "name": row.name, "category": row.category, "size": row.size, "material": row.material,
+        "dims": row.dims or {},
         "material_label": categories.material_label(row.category, row.material) if categories.is_styled(row.category) else "",
         "notes": row.notes or "",
         "colors": [{"name": c.get("name") or "", "image_url": c.get("image_url") or "",

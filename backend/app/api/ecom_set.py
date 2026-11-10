@@ -24,6 +24,7 @@ from app.schemas_ecom import (
     EcomToProjectOut,
 )
 from app.services.ecom_set import service as svc
+from app.services.ecom_set.dims import parse_form as parse_dims
 
 router = APIRouter(prefix="/tools/ecom-set", tags=["ecom-set"])
 logger = logging.getLogger(__name__)
@@ -79,6 +80,10 @@ async def create_plan(
     scene_key: str = Form("", max_length=64, description="场景库里的场景 key；留空用品类默认场景"),
     image_engine: str = Form("seedream", max_length=32, description="出图模型：seedream | gpt-image-2"),
     element_keys: str = Form("", max_length=1200, description="元素库 key，逗号分隔（最多 12 个）；留空自动推荐"),
+    dim_h: str = Form("", max_length=8, description="商品实际高度（厘米）；留空用商品库里的尺寸"),
+    dim_w: str = Form("", max_length=8, description="商品实际宽度（厘米）"),
+    dim_d: str = Form("", max_length=8, description="商品实际厚度/深度（厘米）"),
+    no_text: bool = Form(False, description="成图不加文字（纯画面，之后可在套图页切回加文字）"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -93,6 +98,7 @@ async def create_plan(
         product_id=product_id, color_index=color_index, fabric=fabric_upload, scene_key=scene_key or None,
         image_engine=image_engine,
         element_keys=[k.strip() for k in element_keys.split(",") if k.strip()][:12] or None,
+        dims=parse_dims(dim_h, dim_w, dim_d) or None, no_text=no_text,
     ))
     return await _out(db, ecom)
 

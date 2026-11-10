@@ -142,7 +142,7 @@ async def generate_base(db: AsyncSession, ecom: EcomSet, item: EcomSetItem) -> P
                                          ref=slot.ref, size=scarf.get("size"), material=scarf.get("material"),
                                          has_fabric=bool(fabric), has_real=bool(real),
                                          scene_card=categories.scene_of(scarf, with_props=not scarf.get("elements")),
-                                         blank=item.blank, elements=prompt_line(els))
+                                         blank=item.blank, elements=prompt_line(els), dims=scarf.get("dims"))
         refs = [scarf["model_url"], ecom.product_image_url] if slot.ref == "model" and scarf.get("model_url") \
             else [ecom.product_image_url]
         if slot.ref in {"product", "hand"}:
@@ -198,7 +198,7 @@ async def generate_goods_base(db: AsyncSession, ecom: EcomSet, item: EcomSetItem
                                      material=info.get("material"), has_fabric=False,
                                      scene_card=categories.scene_of(info, with_props=not info.get("elements")),
                                      blank=item.blank, shot=f"{shot.prompt}（{shot.name}）" if shot else "",
-                                     elements=prompt_line(els))
+                                     elements=prompt_line(els), dims=info.get("dims"))
     w, h = composite.COMPOSITE_SIZE.get(item.ratio, composite.COMPOSITE_SIZE["3:4"])
     paths = await _goods_cutout_paths(db, ecom, info, lineup=item.slot == "goods_lineup")
     use_composite = slot.ref == "composite" and bool(paths)
@@ -291,8 +291,16 @@ def scarf_info(ecom: EcomSet) -> dict | None:
     return info if isinstance(info, dict) else None
 
 
-# 套图当前的字体风格（旧套图没存时按品类与场景给默认）
+# 套图当前的字体风格（旧套图没存时按品类与场景给默认）；信息屏本身就是文字，用 _type_style
 def type_style_of(ecom: EcomSet) -> str:
+    """整套图的字体风格；选了「不加文字」时返回 none（成图只保留画面）。"""
+    plan = ecom.plan or {}
+    if (plan.get("styled") or {}).get("no_text") or plan.get("no_text"):
+        return "none"
+    return _type_style(ecom)
+
+
+def _type_style(ecom: EcomSet) -> str:
     from app.services.ecom_set import typo
 
     info = scarf_info(ecom) or {}
@@ -331,7 +339,7 @@ def render_flat_item(ecom: EcomSet, item: EcomSetItem) -> Path:
         info = dict(scarf_info(ecom) or {})
         info.setdefault("product_path", str(product))
         info.setdefault("product_name", ecom.name)
-        return render_info(item.slot, out, size=size, copy=copy, styled=info, type_style=type_style_of(ecom))
+        return render_info(item.slot, out, size=size, copy=copy, styled=info, type_style=_type_style(ecom))
     if item.slot.startswith("goods_"):
         from app.services.ecom_set import composite
 

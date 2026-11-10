@@ -12,11 +12,13 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 from app.services.compliance.ad_words import check_text
+from app.services.ecom_set import dims as dims_mod
 from app.services.ecom_set import typo
 
 # 槽位 key → 需要的资料（判断能否生成）
 INFO_SLOTS = ("goods_info_variants", "goods_info_points", "goods_info_ingredients", "goods_info_usage",
-              "goods_info_specs", "goods_info_story")
+              "goods_info_specs", "goods_info_story", "goods_info_size")
+SIZE_SLOT = "goods_info_size"
 DEFAULT_COPY = {
     "goods_info_variants": ("多款可选 一图看懂", "", "Collection"),
     "goods_info_points": ("为什么选它", "", "Highlights"),
@@ -24,6 +26,7 @@ DEFAULT_COPY = {
     "goods_info_usage": ("使用方法", "", "How to use"),
     "goods_info_specs": ("产品信息", "", "Product details"),
     "goods_info_story": ("品牌故事", "", "Our story"),
+    "goods_info_size": ("产品尺寸", "实物测量 仅供参考", "Size"),
 }
 
 
@@ -32,8 +35,10 @@ def _clean(text: str) -> str:
     return out.strip()
 
 
-def available(slot_key: str, k: dict, variants: list[dict]) -> bool:
-    """资料是否够生成这张信息屏。"""
+def available(slot_key: str, k: dict, variants: list[dict], dims: dict | None = None) -> bool:
+    """资料是否够生成这张信息屏（尺寸标注要有高或宽）。"""
+    if slot_key == SIZE_SLOT:
+        return bool({"h", "w"} & set(dims_mod.normalize(dims or {})))
     if slot_key == "goods_info_variants":
         return len(k.get("variants") or []) >= 2 or len(variants) >= 2
     if slot_key == "goods_info_points":
@@ -49,10 +54,12 @@ def available(slot_key: str, k: dict, variants: list[dict]) -> bool:
 
 def missing_hint(slot_key: str) -> str:
     """缺资料时给用户的提示。"""
+    if slot_key == SIZE_SLOT:
+        return "商品的实际尺寸（高或宽）"
     need = {"goods_info_variants": "至少两个款式（商品里多加几个颜色款/香型，或资料里的款式）",
             "goods_info_points": "至少两条卖点", "goods_info_ingredients": "成分", "goods_info_usage": "使用方法",
             "goods_info_story": "品牌故事"}.get(slot_key, "资料")
-    return need
+    return f"商品资料里的{need}"
 
 
 # ---------- 画布与标题 ----------
@@ -384,6 +391,10 @@ def render_info(slot_key: str, out: Path, *, size: tuple[int, int], copy: dict |
         _specs(img, y, bottom, spec_rows(styled, with_cautions=not tips), style, product)
     elif slot_key == "goods_info_story":
         _story(img, y, bottom, k, style, product)
+    elif slot_key == SIZE_SLOT:
+        from app.services.ecom_set.sizescreen import draw_size
+
+        draw_size(img, y, bottom, styled.get("dims") or {}, product, style)
     out.parent.mkdir(parents=True, exist_ok=True)
     img.convert("RGB").save(out, format="JPEG", quality=94)
     return out
@@ -403,6 +414,7 @@ def spec_rows(styled: dict, *, with_cautions: bool = True) -> list[tuple[str, st
             rows.append((r["label"], value))
     have = {label for label, _ in rows}
     extra = [("品名", styled.get("product_name") or ""), ("规格", styled.get("size") or ""),
+             ("尺寸", dims_mod.short(styled.get("dims"))),
              ("包装", styled.get("material_label") or "")]
     values = {v for _, v in rows} | seen_vals
     for label, value in extra:

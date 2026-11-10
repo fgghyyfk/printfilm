@@ -11,6 +11,8 @@ export type EcomProduct = {
   name: string
   category: string
   size: string
+  /** 实际尺寸（厘米）：高 / 宽 / 厚，可缺项 */
+  dims?: EcomDims
   material: string
   material_label: string
   notes: string
@@ -23,6 +25,9 @@ export type EcomProduct = {
   created_at: string
 }
 
+/** 商品实际尺寸（厘米） */
+export type EcomDims = { h?: number; w?: number; d?: number }
+
 /** 新建商品：颜色款图片与颜色名一一对应 */
 export type EcomProductCreate = {
   name: string
@@ -32,6 +37,7 @@ export type EcomProductCreate = {
   notes: string
   colors: { name: string; file: File; real?: File | null }[]
   fabric?: File | null
+  dims?: EcomDims
 }
 
 // 统一错误：401 抛「未登录」，其它取后端中文短句
@@ -63,14 +69,20 @@ export function createEcomProduct(payload: EcomProductCreate): Promise<EcomProdu
   body.append('color_names', JSON.stringify(payload.colors.map((c) => c.name)))
   for (const c of payload.colors) body.append('files', c.file)
   if (payload.fabric) body.append('fabric', payload.fabric)
+  appendDims(body, payload.dims)
   const reals = payload.colors.map((c, i) => ({ file: c.real, i })).filter((x): x is { file: File; i: number } => Boolean(x.file))
   for (const r of reals) body.append('real_files', r.file)
   if (reals.length) body.append('real_for', JSON.stringify(reals.map((r) => r.i)))
   return request('', '保存商品失败', { method: 'POST', body })
 }
 
+/** 把尺寸写进表单（dim_h / dim_w / dim_d，空项不传） */
+export function appendDims(body: FormData, dims?: EcomDims) {
+  for (const k of ['h', 'w', 'd'] as const) if (dims?.[k]) body.append(`dim_${k}`, String(dims[k]))
+}
+
 /** 改商品资料 */
-export function updateEcomProduct(id: number, patch: Partial<Pick<EcomProduct, 'name' | 'category' | 'size' | 'material' | 'notes'>> & { color_names?: string[] }): Promise<EcomProduct> {
+export function updateEcomProduct(id: number, patch: Partial<Pick<EcomProduct, 'name' | 'category' | 'size' | 'material' | 'notes' | 'dims'>> & { color_names?: string[] }): Promise<EcomProduct> {
   return request(`/${id}`, '保存失败', { method: 'PUT', body: JSON.stringify(patch) })
 }
 

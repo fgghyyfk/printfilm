@@ -15,6 +15,7 @@ from app.models import User
 from app.models_ecom import EcomSet, EcomSetItem
 from app.services.billing import run_billed_ephemeral
 from app.services.ecom_set import categories, typo
+from app.services.ecom_set.infoscreens import DEFAULT_COPY, SIZE_SLOT
 from app.services.ecom_set.planner import plan_set
 from app.services.ecom_set.presets import FREE_REFS, SLOTS, gen_ratio, slots_for
 from app.services.ecom_set.prompts import clip
@@ -122,8 +123,12 @@ async def create_styled_plan(
     slots_picked: list[str] | None, product_id: int | None, color_index: int,
     data: bytes | None, filename: str, fabric: tuple[bytes, str] | None, scene_key: str | None = None,
     image_engine: str | None = None, element_keys: list[str] | None = None,
+    dims: dict | None = None, no_text: bool = False,
 ) -> int:
-    """规划一套「模特上身」图，返回套图 id。商品库里的款名/尺寸/材质/卖点会作为默认值。"""
+    """规划一套「模特上身」图，返回套图 id。商品库里的款名/尺寸/材质/卖点会作为默认值。
+
+    dims：本次填写的实际尺寸（厘米），会记回商品库；留空用商品库里的尺寸。no_text：成图不排文字、不留文字区。
+    """
     from app.services.ecom_set.service import _record_plan_charge
 
     images = await _resolve_images(db, user, product_id=product_id, color_index=color_index,
@@ -135,22 +140,26 @@ async def create_styled_plan(
         size = size or product.size
         material = material or product.material
         notes = notes or product.notes
+        dims = await _remember_dims(db, product, dims)
     name = clip(name, 60)
     if not name:
         raise ValueError("请填写款名")
     size = categories.normalize_size(category, size)
     material = categories.normalize_material(category, material)
     frame = categories.normalize_frame(frame)
+    from app.services.ecom_set import dims as dims_mod
+
+    dims = {} if category in dims_mod.NO_DIMS_CATEGORIES else dims_mod.normalize(dims or {})
     slots = slots_for(category, count, slots_picked)
     know, variants = _knowledge_of(product)
-    slots, skipped = _filter_info_slots(slots, know, variants)
+    slots, skipped = _filter_info_slots(slots, know, variants, dims)
     model = await _pick_model(db, user, model_asset_id, required=any(s.ref == "model" for s in slots))
     scene = await _pick_scene(db, user, scene_key)
     engine = _pick_engine(image_engine)
     pool = await _element_pool(db, user, category=category, keys=element_keys, knowledge=know, scene=scene)
     color_note = f"本款颜色：{images['color_name']}" if images.get("color_name") else ""
     plan_text = categories.plan_notes(category, size=size, material=material,
-                                      notes="；".join(x for x in (notes.strip(), color_note,
+                                      notes="；".join(x for x in (dims_mod.plan_note(dims), notes.strip(), color_note,
                                                                    _scene_note(scene, with_props=not pool)) if x))
     path = Path(images["image_path"])
 
@@ -174,6 +183,10 @@ async def create_styled_plan(
     if scene:
         styled["scene"] = scene
     styled["type_style"] = typo.default_type_style(category, scene)
+    if dims:
+        styled["dims"] = dims
+    if no_text:
+        styled["no_text"] = True
     styled["image_engine"] = engine
     if pool:
         from app.services.ecom_set.variety import assign
@@ -200,11 +213,29 @@ async def create_styled_plan(
     for idx, (slot, it) in enumerate(zip(slots, plan["items"], strict=True)):
         copy = ({**it["copy"], **categories.cover_copy(category, name=name, size=size, material=material)}
                 if slot.key == cover_key else it["copy"])
+        if slot.key == SIZE_SLOT:
+            # 尺寸标注用固定标题，规划模型写的营销句放在这里不合适（用户仍可改）
+            title, subtitle, en = DEFAULT_COPY[SIZE_SLOT]
+            copy = {"title": title, "subtitle": subtitle, "en": en, "bullets": []}
+        # 不加文字：AI 槽位不再留文字区，画面铺满（免费的信息屏、尺寸图本身就是文字/标注，照常排）
+        blank = "none" if no_text and slot.ref not in FREE_REFS else slot.blank
         db.add(EcomSetItem(set_id=ecom.id, idx=idx, slot=slot.key, layout=slot.layout,
-                           ratio=gen_ratio(frame, slot.key), blank=slot.blank, scene=it["scene"],
+                           ratio=gen_ratio(frame, slot.key), blank=blank, scene=it["scene"],
                            status="planned", copy_json=copy))
     await db.commit()
     return ecom.id
+
+
+async def _remember_dims(db: AsyncSession, product, dims: dict | None) -> dict:
+    """本次填了尺寸就记回商品库（下次自动带出）；没填用商品库里的尺寸。"""
+    from app.services.ecom_set import dims as dims_mod
+
+    picked = dims_mod.normalize(dims or {})
+    if not picked:
+        return dims_mod.normalize(product.dims or {})
+    if product.category not in dims_mod.NO_DIMS_CATEGORIES and picked != dims_mod.normalize(product.dims or {}):
+        product.dims = picked
+    return picked
 
 
 def _pick_engine(value: str | None) -> str:
@@ -230,15 +261,16 @@ def _knowledge_of(product) -> tuple[dict, list[dict]]:
     return know, variants
 
 
-def _filter_info_slots(slots: list, know: dict, variants: list[dict]) -> tuple[list, list[str]]:
+def _filter_info_slots(slots: list, know: dict, variants: list[dict], dims: dict | None = None) -> tuple[list, list[str]]:
     """去掉资料不够的信息屏并给出提示；全部被去掉时报错。"""
     from app.services.ecom_set import infoscreens
 
     keep, skipped = [], []
     for s in slots:
-        if s.ref == "info" and not infoscreens.available(s.key, know, variants):
-            skipped.append(f"「{s.label}」需要商品资料里的{infoscreens.missing_hint(s.key)}，本次已跳过；"
-                           "可在「我的商品」上传参考详情整理资料后再生成")
+        if s.ref == "info" and not infoscreens.available(s.key, know, variants, dims):
+            hint = ("可在确认页或「我的商品」填上实际尺寸后再生成" if s.key == infoscreens.SIZE_SLOT
+                    else "可在「我的商品」上传参考详情整理资料后再生成")
+            skipped.append(f"「{s.label}」需要{infoscreens.missing_hint(s.key)}，本次已跳过；{hint}")
             continue
         keep.append(s)
     if not keep:
@@ -315,6 +347,7 @@ def styled_out(ecom: EcomSet) -> dict | None:
         "fabric_url": info.get("fabric_url") or "", "real_url": info.get("real_url") or "",
         "scene_key": (info.get("scene") or {}).get("key") or "", "scene_name": (info.get("scene") or {}).get("name") or "",
         "image_engine": info.get("image_engine") or "seedream",
+        "dims": info.get("dims") or {}, "no_text": bool(info.get("no_text")),
         "elements": [{"key": e["key"], "name": e["name"], "image_url": e.get("image_url") or ""}
                      for e in info.get("elements") or []],
         "type_style": typo.normalize_type_style(info.get("type_style"),

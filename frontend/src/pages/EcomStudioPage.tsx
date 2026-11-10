@@ -14,7 +14,9 @@ import SceneStep from '../components/ecomStudio/SceneStep'
 import ProductsTab from '../components/ecomStudio/ProductsTab'
 import EcomSetBatches from '../components/ecomSet/EcomSetBatches'
 import { getEcomSetOptions, planEcomSet, type EcomSetOptions } from '../api/ecomSet'
-import { getEcomProduct, type EcomProduct } from '../api/ecomProducts'
+import { getEcomProduct, type EcomDims, type EcomProduct } from '../api/ecomProducts'
+import DimsInput from '../components/ecomStudio/DimsInput'
+import { dimsShort, hasDims, usesDims } from '../lib/ecomDims'
 import { resolveToolMediaUrl } from '../api/tools'
 import { formatFen, parseSetId, reconcileColorIndex } from '../lib/ecomSet'
 import { defaultSceneIndustry, loadScenePref, saveScenePref } from '../lib/ecomScenePrefs'
@@ -50,6 +52,9 @@ export default function EcomStudioPage() {
   const [notes, setNotes] = useState('')
   const [engine, setEngine] = useState('seedream')
   const [elements, setElements] = useState<EcomElement[]>([])
+  /* 实际尺寸（默认取商品库，改了会记回商品）与是否加文字 */
+  const [dims, setDims] = useState<EcomDims>({})
+  const [noText, setNoText] = useState(false)
   /* 场景：行业标签与所选场景（空 key = 不指定场景） */
   const [industry, setIndustry] = useState('')
   const [scene, setScene] = useState<{ key: string; name: string } | null>(null)
@@ -71,12 +76,14 @@ export default function EcomStudioPage() {
   const engines = options?.image_engines || []
   const unitFen = engines.find((e) => e.id === engine)?.image_fen ?? options?.image_fen ?? 0
   const total = (options?.plan_fen || 0) + billable * unitFen
+  const withDims = usesDims(product?.category)
 
   // 选商品：换品类时默认勾上该品类的默认整套，并恢复该品类上次的行业与场景
   function pickProduct(p: EcomProduct, ci: number) {
     const changed = p.category !== product?.category
     setError('')
     setProduct(p); setColorIndex(ci)
+    if (p.id !== product?.id) setDims(p.dims || {})
     const cat = categories.find((c) => c.id === p.category)
     if (cat && (changed || !slots.length)) setSlots(cat.compositions[String(cat.default_count)] || [])
     if (changed || !industry) {
@@ -146,6 +153,7 @@ export default function EcomStudioPage() {
         name: product.name, platform: '', style: 'minimal', count: slots.length, notes: notes.trim(),
         category: product.category, productId: product.id, colorIndex, modelAssetId: needsModel ? modelId : null,
         frame, slots, sceneKey: scene?.key || '', imageEngine: engine, elementKeys: elements.map((e) => e.key),
+        dims: withDims ? dims : undefined, noText,
       })
       nav(`/daihuo?id=${set.id}`)
     } catch (err) { setError(err instanceof Error ? err.message : text('生成方案失败', 'Planning failed')) }
@@ -193,6 +201,7 @@ export default function EcomStudioPage() {
                     <dt>{text('商品', 'Product')}</dt><dd>{product.name} · {product.colors[colorIndex]?.name} · {[category.name, product.material_label, product.size].filter(Boolean).join(' · ')}</dd>
                     <dt>{text('场景', 'Scene')}</dt><dd>{scene ? scene.name || scene.key : text('不指定（按品类默认画面）', 'Category default')}</dd>
                     <dt>{text('画幅', 'Format')}</dt><dd>{options.frames?.find((f) => f.id === frame)?.name}</dd>
+                    {withDims && hasDims(dims) ? <><dt>{text('尺寸', 'Size')}</dt><dd>{dimsShort(dims)}</dd></> : null}
                     <dt>{text('张数', 'Images')}</dt><dd>{text(`${slots.length} 张（${slots.length - billable} 张免费）`, `${slots.length}`)}</dd>
                     {usesModel ? <><dt>{text('模特', 'Model')}</dt><dd>{needsModel ? text('已选', 'Selected') : text('不需要', 'Not needed')}</dd></> : null}
                   </dl>
@@ -202,6 +211,7 @@ export default function EcomStudioPage() {
                   {(isGoods ? [
                     { ok: Boolean(product.colors[colorIndex]?.image_url), label: text('透明底商品图', 'Transparent product PNG'), tip: text('商品会原样合成进场景；普通照片也能用，但商品可能被重绘', 'Composited as-is into the scene') },
                     { ok: Boolean(product.material_label), label: text('包装形态', 'Packaging'), tip: text('决定台面摆放与道具比例，可到「我的商品」补上', 'Set it in My products') },
+                    { ok: hasDims(dims), label: text('实际尺寸', 'Real size'), tip: text('填在下方：道具、手和商品按真实比例，不会忽大忽小', 'Fill below to keep props to scale') },
                     { ok: Boolean(product.notes.trim() || notes.trim()), label: text('成分与卖点', 'Selling points'), tip: text('没有时文案会比较泛，建议写核心成分、功效、规格', 'Add ingredients & benefits for better copy') },
                   ] : [
                     { ok: Boolean(product.colors[colorIndex]?.image_url), label: text('设计图', 'Design image'), tip: text('出图的图案和颜色以它为准', 'Pattern & color source') },
@@ -213,6 +223,18 @@ export default function EcomStudioPage() {
                     {row.ok ? <CheckCircle2 size={16} /> : <CircleAlert size={16} />}<span>{row.label}</span><small className="pf-muted">{row.ok ? text('已就绪', 'Ready') : row.tip}</small>
                   </div>)}
                   {!isGoods && !product.fabric_image_url ? <button type="button" className="pf-es-link" onClick={() => setTab('products')}>{text('去「我的商品」补材质实拍 →', 'Add fabric photo →')}</button> : null}
+                </div>
+                {withDims ? <div className="pf-tool-field"><span>{text('商品实际尺寸', 'Real product size')}</span>
+                  <DimsInput key={product.id} value={dims} onChange={setDims} disabled={busy} />
+                  <span className="pf-muted">{text('会记到「我的商品」里，下次自动带出。', 'Saved to the product for next time.')}</span>
+                </div> : null}
+                <div className="pf-tool-field"><span>{text('图上文字', 'Text on images')}</span>
+                  <div className="pf-tool-chips">
+                    <button type="button" className={!noText ? 'active' : ''} onClick={() => setNoText(false)}>{text('加标题和卖点', 'With text')}</button>
+                    <button type="button" className={noText ? 'active' : ''} onClick={() => setNoText(true)}>{text('不加文字（纯画面）', 'No text')}</button>
+                  </div>
+                  <span className="pf-muted">{noText ? text('画面铺满不留文字区；信息屏、尺寸图照常排字。出图后也能在套图页切回加文字。', 'Full-bleed images; info screens keep their text.')
+                    : text('出图后可在套图页随时改成「不加文字」，不用重新生成。', 'You can switch to no-text later for free.')}</span>
                 </div>
                 <label className="pf-tool-field"><span>{text('这次想强调的卖点（选填）', 'Extra notes (optional)')}</span>
                   <textarea rows={2} maxLength={300} value={notes} placeholder={text('留空则用商品资料里的成分与卖点', 'Defaults to product notes')} onChange={(e) => setNotes(e.target.value)} />
