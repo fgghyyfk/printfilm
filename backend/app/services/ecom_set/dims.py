@@ -71,7 +71,7 @@ def reference(dims: dict | None) -> str:
     ratio = size / ref
     if 0.85 <= ratio <= 1.18:
         return f"大小和{name}差不多"
-    return f"约为{name}的 {ratio:.1f} 倍" if ratio > 1 else f"约为{name}的 {ratio:.1f}"
+    return f"约为{name}的 {ratio:.1f} 倍"
 
 
 def scale_note(dims: dict | None, *, ref: str = "composite") -> str:
@@ -82,7 +82,7 @@ def scale_note(dims: dict | None, *, ref: str = "composite") -> str:
     near = reference(dims)
     head = f"商品真实尺寸：{body}" + (f"，{near}" if near else "")
     if ref == "hand":
-        tail = "手与商品按真实比例：成年人手掌宽约 8.5 厘米、手掌长约 18 厘米，商品在手中不要被放大或缩小"
+        tail = hand_note(dims)
     elif ref == "model":
         tail = "商品与模特身体按真实比例呈现（成年女性身高约 165 厘米），不要把商品画得夸张地大或小"
     elif ref == "texture":
@@ -91,6 +91,46 @@ def scale_note(dims: dict | None, *, ref: str = "composite") -> str:
         tail = ("画面里的道具、花材、水果、器皿与台面都按真实世界的大小和商品搭配，"
                 "道具不要比实际大或小，不要出现比商品还大的小物件")
     return f"{head}。{tail}"
+
+
+# 成年女性手部参考尺寸（厘米）：整只手长（手腕到中指指尖）、手掌宽、单根手指宽
+HAND_LEN, PALM_W, FINGER_W = 17.0, 7.5, 1.6
+
+
+def _times(ratio: float) -> str:
+    """0.86 →「约八成半」这类说法太绕，统一写「约 0.9 倍」；接近 1 写「差不多长」。"""
+    return "和整只手差不多长" if 0.9 <= ratio <= 1.1 else f"约为整只手长度的 {ratio:.1f} 倍"
+
+
+def hand_note(dims: dict | None) -> str:
+    """手持图的比例约束：把商品长、宽换算成手长与手指宽度，并按大小给出握法与构图要求。
+
+    AI 画手持时常把商品画大（像握着一个大瓶子），只写「按真实比例」不够，需要给可对照的具体倍数。
+    """
+    d = normalize(dims or {})
+    if not d:
+        return ""
+    vals = sorted(d.values(), reverse=True)
+    long_side = vals[0]
+    narrow = d.get("w") if "w" in d and d["w"] < long_side else (vals[1] if len(vals) > 1 else 0.0)
+    parts = [f"手与商品必须按真实比例：成年女性整只手长（手腕到中指指尖）约 {HAND_LEN:g} 厘米、手掌宽约 {PALM_W:g} 厘米、"
+             f"一根手指宽约 {FINGER_W:g} 厘米；商品最长边 {long_side:g} 厘米，{_times(long_side / HAND_LEN)}"]
+    if narrow:
+        share = narrow / PALM_W
+        if share > 1.3:
+            line = f"商品宽 {narrow:g} 厘米，约为手掌宽度的 {share:.1f} 倍"
+        else:
+            fingers = round(narrow / FINGER_W)
+            line = f"商品宽 {narrow:g} 厘米，" + ("约一根手指宽" if fingers <= 1 else f"约等于 {fingers} 根手指并拢的宽度")
+            if share < 0.95 and long_side >= 6:
+                line += f"，只占手掌宽度的约 {share * 10:.0f} 成，手指能完全绕过商品握住，握住后商品明显比手掌窄"
+        parts.append(line)
+    if long_side < 6:
+        parts.append("商品很小，用拇指和食指捏住，商品不要大过两节手指")
+    elif long_side > 30:
+        parts.append("商品比手大很多，用手扶着或托着商品，不要单手握住")
+    parts.append("构图里手要完整入镜、能看到手腕，手和商品的大小关系一眼可辨；不要为了突出商品把商品画大，也不要把手缩小")
+    return "；".join(parts)
 
 
 def plan_note(dims: dict | None) -> str:

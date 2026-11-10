@@ -134,3 +134,26 @@ async def test_dims_no_text_flow(db_session, monkeypatch, tmp_path):
     assert svc.to_out(back, image_fen=95)["styled"]["no_text"]
     with pytest.raises(ValueError):
         await svc.set_type_style(db_session, user, ecom.id, "comic")
+
+
+def test_hand_note_gives_concrete_ratio():
+    """手持比例：给出相对手长、手指宽的具体倍数，并要求手腕入镜。"""
+    note = dims.hand_note({"h": 14.7, "w": 4.6})
+    assert "整只手长度的 0.9 倍" in note
+    assert "3 根手指并拢" in note and "6 成" in note
+    assert "手腕" in note
+    assert note in dims.scale_note({"h": 14.7, "w": 4.6}, ref="hand")
+
+
+def test_hand_note_grip_by_size():
+    """很小的商品用两指捏，很大的商品托着；宽度超过手掌时不按手指数。"""
+    small = dims.hand_note({"h": 4, "w": 1.5})
+    assert "拇指和食指捏住" in small and "约一根手指宽" in small and "绕过" not in small
+    big = dims.hand_note({"h": 40, "w": 25})
+    assert "托着" in big and "手掌宽度的 3.3 倍" in big and "根手指" not in big.split("；", 1)[1]
+    assert dims.hand_note({}) == ""
+
+
+def test_reference_always_has_times():
+    """参照物比例小于 1 时也写「倍」。"""
+    assert dims.reference({"h": 4}).endswith("倍")
