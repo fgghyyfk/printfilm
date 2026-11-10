@@ -133,6 +133,10 @@ async def generate_base(db: AsyncSession, ecom: EcomSet, item: EcomSetItem) -> P
         category = scarf.get("category") or "scarf"
         if category == "goods" and slot.ref in {"composite", "texture"}:
             return await generate_goods_base(db, ecom, item, scarf, dest)
+        if slot.ref == "ingredients":
+            from app.services.ecom_set.ingredientscreen import generate_grid
+
+            return await generate_grid(db, ecom, item, scarf, dest)
         fabric = scarf.get("fabric_url") or ""
         real = scarf.get("real_url") or ""
         from app.services.ecom_set.elements import prompt_line
@@ -355,6 +359,13 @@ async def render_final(ecom: EcomSet, item: EcomSetItem, base: Path) -> tuple[Pa
         out = await asyncio.to_thread(render_flat_item, ecom, item)
         return out, await asyncio.to_thread(public_url, out)
     out = set_dir(ecom.user_id, ecom.id) / f"final_{item.idx:02d}_{uuid.uuid4().hex[:6]}.jpg"
+    if SLOTS.get(item.slot) is not None and SLOTS[item.slot].ref == "ingredients":
+        # 成分图本身就是文字排版：不受「不加文字」影响
+        from app.services.ecom_set import ingredientscreen
+
+        await asyncio.to_thread(ingredientscreen.render, base, out, size=output_size(ecom.platform, item.slot),
+                                copy=item.copy_json, styled=scarf_info(ecom) or {}, type_style=_type_style(ecom))
+        return out, await asyncio.to_thread(public_url, out)
     await asyncio.to_thread(
         render,
         base,

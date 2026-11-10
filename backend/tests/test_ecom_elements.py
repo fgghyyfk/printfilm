@@ -41,8 +41,10 @@ def test_assign_variety():
     assert len(combos) == len(set(combos))
     assert "1" not in out  # 白底图不分配
     ing = out["5"]["elements"]
-    assert len(ing) == 4 and sum(1 for k in ing if k in {"k0", "k1", "k2", "k6"}) >= 3
+    assert len(ing) == 2 and all(k in {"k0", "k1", "k2", "k6"} for k in ing)  # 原料静物只点缀两样，原料优先
     assert len(out["8"]["elements"]) == 1  # 质地特写只放一个元素
+    assert all(len(v.get("elements", [])) <= 2 for v in out.values())  # 道具宁少勿满
+    assert "high_45" not in shots_used  # 45° 俯拍已停用
     # 只选 3 个元素：每张 2 个，组合轮换不重复
     small = variety.assign([presets.SLOTS[k] for k in ("goods_cover", "goods_scene", "goods_selling")], [{}, {}, {}], _pool(3))
     combos3 = [tuple(sorted(v["elements"])) for v in small.values()]

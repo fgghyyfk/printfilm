@@ -131,6 +131,41 @@
   font-size: 0.9rem;
 }
 
+/* 卡片右上：调整顺序按钮 + 比例 */
+.pf-ecom-card-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-shrink: 0;
+}
+
+.pf-ecom-move {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border: 1px solid var(--pf-line);
+  border-radius: 999px;
+  background: var(--pf-card);
+  color: var(--pf-text);
+  cursor: pointer;
+}
+
+.pf-ecom-move:hover:not(:disabled) {
+  border-color: var(--pf-text);
+}
+
+.pf-ecom-move:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.pf-ecom-order-hint {
+  margin: 0 0 0.75rem;
+  font-size: 0.82rem;
+}
+
 .pf-ecom-card-head strong {
   overflow: hidden;
   text-overflow: ellipsis;

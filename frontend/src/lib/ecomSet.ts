@@ -238,3 +238,12 @@ export function parseSetId(raw: string | null): number | null {
   const id = Number(raw)
   return Number.isInteger(id) && id > 0 ? id : null
 }
+
+/** 把第 pos 张与相邻一张交换，返回新顺序（现有序号列表）；越界返回 null */
+export function swapOrder(items: { idx: number }[], pos: number, dir: -1 | 1): number[] | null {
+  const order = items.map((it) => it.idx)
+  const to = pos + dir
+  if (to < 0 || to >= order.length) return null
+  ;[order[pos], order[to]] = [order[to], order[pos]]
+  return order
+}

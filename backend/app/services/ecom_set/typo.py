@@ -49,10 +49,12 @@ class TypeStyle:
     pill: str = "outline"   # outline 细线框 | soft 浅色底 | fill（促销版式自带）
     pill_size: float = 0.027
     rule: bool = True       # 标题下的细分隔线
+    en_script: bool = False  # 英文小标用花体手写字（Pinyon Script），保留大小写、不加字距
 
 
 TYPE_STYLES: dict[str, TypeStyle] = {
-    "serif": TypeStyle("serif", "典雅衬线", "宋体细字、留白多，适合香氛、护肤、茶酒、珠宝"),
+    "serif": TypeStyle("serif", "典雅衬线", "宋体细字、留白多、英文花体小标，适合香氛、护肤、茶酒、珠宝",
+                       en_size=0.046, en_track=0.0, en_script=True),
     "sans": TypeStyle("sans", "简约黑体", "黑体常规字重，清爽现代，适合 3C、食品、日用", title_family="sans",
                       title_size=0.062, title_track=0.04, sub_size=0.032, sub_track=0.08, pill="soft", rule=False),
     "bold": TypeStyle("bold", "促销醒目", "粗黑体大字，适合大促、活动图", title_family="sans", title_bold=True,
@@ -99,6 +101,29 @@ def options() -> list[dict]:
 
 
 # ---------- 字体 ----------
+# 英文花体（SIL OFL 1.1，随项目分发，见同目录 PinyonScript-OFL.txt）
+SCRIPT_FONT = Path(__file__).resolve().parents[2] / "assets" / "fonts" / "PinyonScript-Regular.ttf"
+
+
+@lru_cache(maxsize=16)
+def script_font(size: int) -> ImageFont.FreeTypeFont:
+    """英文花体字；字体文件缺失时回落衬线体。"""
+    if SCRIPT_FONT.exists():
+        return ImageFont.truetype(str(SCRIPT_FONT), size=max(8, int(size)))
+    return font("serif", False, size)
+
+
+def en_label(text: str, style: "TypeStyle") -> str:
+    """英文小标的写法：花体保留大小写（全大写的转成首字母大写），其余风格全大写。"""
+    t = (text or "").strip()
+    if not style.en_script:
+        return t.upper()
+    return t.title() if t.isupper() else t
+
+
+def en_font(style: "TypeStyle", size: int) -> ImageFont.FreeTypeFont:
+    """英文小标字体：花体风格用 Pinyon Script，否则衬线体。"""
+    return script_font(size) if style.en_script else font("serif", False, size)
 def _font_dirs() -> list[str]:
     extra = (os.environ.get("ECOM_FONT_DIR") or "").strip()
     return [d for d in (extra, NOTO_DIR) if d]
@@ -267,13 +292,13 @@ def draw_refined(img: Image.Image, *, style: TypeStyle, layout: str, blank: str,
     align = "left" if layout == "title_corner" else "center"
     scale = 0.8 if label_bar else 1.0
 
-    en_text = en.upper()
+    en_text = en_label(en, style)
     pills = bullets if layout == "title_bullets" else []
     gap_s = int(W * 0.018)
     # 文字区高度上限：留白区约占画面 1/4，超出就整体缩小，避免压到商品
     max_h = int(H * (0.2 if label_bar else 0.21))
     for _ in range(6):
-        en_f = font("serif", False, int(W * style.en_size * scale)) if en else None
+        en_f = en_font(style, int(W * style.en_size * scale)) if en else None
         t_f, t_lines = (fit(title, style.title_family, style.title_bold, int(W * style.title_size * scale),
                             style.title_track, inner_w, 2) if title else (None, []))
         s_f, s_lines = (fit(subtitle, style.sub_family, False, int(W * style.sub_size * scale), style.sub_track,

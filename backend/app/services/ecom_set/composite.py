@@ -286,6 +286,11 @@ def _noise_sigma(gray: np.ndarray, mask: np.ndarray | None = None) -> float:
     return float(np.median(vals) * np.sqrt(np.pi / 2) / 6 * 1.4826)
 
 
+# 光影跟随的保留比例（<1 时明暗起伏略收，商品更像哑光实物）与最少颗粒强度
+MATTE_KEEP = 0.8
+MATTE_GRAIN = 2.0
+
+
 def harmonize(p: Image.Image, ai_patch: Image.Image, *, upscale: float = 1.0, seed: int = 0) -> Image.Image:
     """让原图商品「长」进场景：
 
@@ -297,7 +302,9 @@ def harmonize(p: Image.Image, ai_patch: Image.Image, *, upscale: float = 1.0, se
     a = np.asarray(p.getchannel("A"), dtype=np.float32) / 255.0
     src = np.asarray(p.convert("RGB"), dtype=np.float32)
     ref = np.asarray(ai_patch.convert("RGB").resize(p.size, Image.Resampling.BILINEAR), dtype=np.float32)
-    sigma = max(2.0, p.height / 60)
+    # 只跟随大尺度的明暗（侧光、暗部、色温）：模糊半径取商品高度的 1/30，
+    # AI 画在商品上的细条高光 / 镜面反光被抹掉，不会让哑光包装看起来「滑滑的」像亮面塑料
+    sigma = max(4.0, p.height / 30)
     inner = (a > 0.5).astype(np.float32)
     den = np.maximum(_blur(inner, sigma), 1e-3)
     out = np.empty_like(src)
@@ -305,6 +312,8 @@ def harmonize(p: Image.Image, ai_patch: Image.Image, *, upscale: float = 1.0, se
         lo_ref = _blur(ref[..., c] * inner, sigma) / den
         lo_src = _blur(src[..., c] * inner, sigma) / den
         ratio = np.clip(lo_ref / np.maximum(lo_src, 4.0), 0.45, 1.6)
+        # 提亮最多 1.25 倍：原图本身已是正常曝光，再大幅提亮就是 AI 加的反光
+        ratio = np.minimum(1 + (ratio - 1) * MATTE_KEEP, 1.25)
         out[..., c] = src[..., c] * ratio
     im = Image.fromarray(np.clip(out, 0, 255).astype(np.uint8))
     if upscale > 1.15:
@@ -313,9 +322,11 @@ def harmonize(p: Image.Image, ai_patch: Image.Image, *, upscale: float = 1.0, se
     ref_gray = ref.mean(axis=2)
     cur = np.asarray(im, dtype=np.float32)
     diff = _noise_sigma(ref_gray, 1 - inner) - _noise_sigma(cur.mean(axis=2), inner)
-    if diff > 0.4:
+    # 实拍商品总有细微颗粒（哑光纸面 / 磨砂软管）；原图过于干净时至少补一点，避免像渲染图
+    amount = max(diff, MATTE_GRAIN)
+    if amount > 0.4:
         rng = np.random.default_rng(seed)
-        grain = rng.normal(0, min(diff, 6.0), size=a.shape).astype(np.float32)
+        grain = rng.normal(0, min(amount, 6.0), size=a.shape).astype(np.float32)
         cur = cur + grain[..., None]
         im = Image.fromarray(np.clip(cur, 0, 255).astype(np.uint8))
     out_im = im.convert("RGBA")

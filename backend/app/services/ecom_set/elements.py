@@ -187,7 +187,8 @@ def prompt_line(elements: list[dict[str, Any]]) -> str:
     if not elements:
         return ""
     names = "、".join(e["prompt"] or e["name"] for e in elements)
-    text = f"画面元素：{names}，元素小巧精致、比例真实、自然散落在商品周围，不遮挡商品"
+    text = (f"画面元素：{names}，只放这几样、每样一两件，元素小巧精致、比例真实，错落点缀在商品旁，不遮挡商品；"
+            "画面保持大面积干净留白，道具不要堆满、不要铺满台面")
     refs = [e["name"] for e in elements if e.get("image_url")]
     if refs:
         text += f"；其中{'、'.join(refs)}请按后面附带的实物参考图画出，保持其外观"

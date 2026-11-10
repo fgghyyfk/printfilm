@@ -197,7 +197,7 @@ async def create_styled_plan(
         from app.services.ecom_set.variety import assign
 
         styled["layout"] = assign(slots, plan["items"], [])
-    if any(s.ref == "info" for s in slots):
+    if any(s.ref in {"info", "ingredients"} for s in slots):
         styled.update(knowledge=know, variants=variants, product_path=str(path), product_name=name,
                       material_label=categories.material_label(category, material))
     plan["warnings"] = [*skipped, *plan["warnings"]]
@@ -218,7 +218,7 @@ async def create_styled_plan(
             title, subtitle, en = DEFAULT_COPY[SIZE_SLOT]
             copy = {"title": title, "subtitle": subtitle, "en": en, "bullets": []}
         # 不加文字：AI 槽位不再留文字区，画面铺满（免费的信息屏、尺寸图本身就是文字/标注，照常排）
-        blank = "none" if no_text and slot.ref not in FREE_REFS else slot.blank
+        blank = "none" if no_text and slot.ref not in FREE_REFS | {"ingredients"} else slot.blank
         db.add(EcomSetItem(set_id=ecom.id, idx=idx, slot=slot.key, layout=slot.layout,
                            ratio=gen_ratio(frame, slot.key), blank=blank, scene=it["scene"],
                            status="planned", copy_json=copy))
@@ -263,10 +263,13 @@ def _knowledge_of(product) -> tuple[dict, list[dict]]:
 
 def _filter_info_slots(slots: list, know: dict, variants: list[dict], dims: dict | None = None) -> tuple[list, list[str]]:
     """去掉资料不够的信息屏并给出提示；全部被去掉时报错。"""
-    from app.services.ecom_set import infoscreens
+    from app.services.ecom_set import infoscreens, ingredientscreen
 
     keep, skipped = [], []
     for s in slots:
+        if s.ref == "ingredients" and not ingredientscreen.available(know):
+            skipped.append(f"「{s.label}」需要商品资料里至少两个成分，本次已跳过；可在「我的商品」上传参考详情整理资料后再生成")
+            continue
         if s.ref == "info" and not infoscreens.available(s.key, know, variants, dims):
             hint = ("可在确认页或「我的商品」填上实际尺寸后再生成" if s.key == infoscreens.SIZE_SLOT
                     else "可在「我的商品」上传参考详情整理资料后再生成")

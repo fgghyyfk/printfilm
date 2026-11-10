@@ -95,9 +95,10 @@ def _header(img: Image.Image, style: typo.TypeStyle, *, title: str, subtitle: st
         d.line([(x + tw + gap, mid), (x + tw + gap + ln, mid)], fill=RULE, width=max(1, W // 720))
 
     if en:
-        f = typo.font("serif", False, int(W * 0.026))
-        flanked(en, f, typo.INK_MUTED, 0.04, y)
-        y += typo.line_h(f, 0.5)
+        # 典雅风格用英文花体（参考详情页大标上方的手写英文），其余衬线小字
+        f = typo.en_font(style, int(W * (0.05 if style.en_script else 0.026)))
+        flanked(typo.en_label(en, style) if style.en_script else en, f, typo.INK_MUTED, 0.0 if style.en_script else 0.04, y)
+        y += typo.line_h(f, 0.3 if style.en_script else 0.5)
     if title:
         f, lines = typo.fit(title, _title_family(style), style.id == "bold", int(W * 0.07), 0.08, inner, 2)
         for line in lines:

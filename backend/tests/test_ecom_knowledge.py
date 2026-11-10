@@ -166,9 +166,9 @@ async def test_knowledge_flow(db_session, monkeypatch, tmp_path):
                                  notes="", category="goods", frame="taobao_34", product_id=row.id, color_index=0)
     slots = [it.slot for it in ecom.items]
     assert "goods_info_points" in slots and "goods_info_specs" in slots and "goods_info_usage" in slots
-    # mock 资料里没有成分 → 成分说明被跳过并提示
-    assert "goods_info_ingredients" not in slots
-    assert any("成分说明" in w for w in (ecom.plan or {})["warnings"])
+    # mock 资料里没有成分 → 成分图被跳过并提示
+    assert "goods_ingredients_photo" not in slots
+    assert any("成分图" in w for w in (ecom.plan or {})["warnings"])
     o = svc.to_out(ecom, image_fen=95)
     assert o["styled"]["type_style"] == "serif"
     assert all(not i["billable"] for i in o["items"] if i["slot"].startswith("goods_info_"))

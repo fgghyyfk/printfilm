@@ -69,7 +69,7 @@ def scene_text(spec: dict[str, Any], *, with_props: bool = True) -> str:
     if s["surface"]:
         parts.append(f"商品立在{s['surface']}上")
     if s["props"] and with_props:
-        parts.append(f"周围点缀{'、'.join(s['props'])}，道具小巧、尺寸与商品相称、比例真实，不遮挡商品")
+        parts.append(f"周围少量点缀{'、'.join(s['props'][:2])}，道具小巧、尺寸与商品相称、比例真实，不遮挡商品，留白充足不堆满")
     if s["light"]:
         parts.append(f"光线：{s['light']}，商品在台面上有自然的柔和阴影")
     if s["mood"]:

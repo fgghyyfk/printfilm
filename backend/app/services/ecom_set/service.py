@@ -345,6 +345,8 @@ async def regenerate_item(db: AsyncSession, user: User, set_id: int, idx: int, s
         await _render_flat_items(ecom, [it])
         await refresh_set_status(db, ecom.id)
     else:
+        if SLOTS[it.slot].ref == "ingredients":
+            await _refresh_knowledge(db, user, ecom)  # 成分图按最新资料重画
         await _enqueue_items(db, user, ecom, [it])
         ecom.status = "generating"
     await db.commit()

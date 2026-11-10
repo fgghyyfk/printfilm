@@ -276,6 +276,11 @@ export function updateEcomSetItemCopy(id: number, idx: number, copy: EcomSetCopy
   })
 }
 
+// 调整套图顺序（order 为现有序号按新顺序排列；免费，长图与 zip 跟着变）
+export function reorderEcomSet(id: number, order: number[]): Promise<EcomSet> {
+  return requestEcom(`/${id}/order`, '调整顺序失败', { method: 'PUT', body: JSON.stringify({ order }) })
+}
+
 // 带鉴权下载套图 zip 并触发浏览器保存
 export async function downloadEcomSetZip(id: number, fallbackName: string): Promise<void> {
   const response = await requestResponse(`${BASE}/${id}/download`, undefined, errorHandler('下载失败', false))

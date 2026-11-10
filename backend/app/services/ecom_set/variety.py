@@ -15,7 +15,8 @@ from app.services.ecom_set.presets import Slot
 SHOT_REFS = {"composite"}
 ELEMENT_REFS = {"composite", "texture", "hand", "product"}
 # 各类槽位放几个元素
-ELEMENT_COUNT = {"goods_ingredient_still": 4, "goods_texture": 1, "goods_hand": 2, "goods_lineup": 2}
+# 道具宁少勿满：原料静物 2 个、手持与陈列 1 个，其余默认 2 个
+ELEMENT_COUNT = {"goods_ingredient_still": 2, "goods_texture": 1, "goods_hand": 1, "goods_lineup": 1}
 
 
 def pool_from_scene(scene: dict | None) -> list[dict]:
@@ -73,7 +74,7 @@ def assign(slots: list[Slot], planned: list[dict], pool: list[dict]) -> dict[str
             entry["shot"] = shot
         if slot.ref in ELEMENT_REFS and pool:
             # 元素池小时每张少拿一个，组合才会轮换（3 个元素 → 每张 2 个，三种组合）
-            default_n = 3 if len(pool) >= 5 else max(1, len(pool) - 1)
+            default_n = 2 if len(pool) >= 3 else 1
             n = min(ELEMENT_COUNT.get(slot.key, default_n), max(1, len(pool) - 1) if len(pool) > 1 else 1) \
                 if slot.key != "goods_ingredient_still" else min(ELEMENT_COUNT[slot.key], len(pool))
             picked = _match(src.get("elements"), pool)[:n]

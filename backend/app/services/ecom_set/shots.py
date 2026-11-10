@@ -35,20 +35,25 @@ SHOTS: dict[str, Shot] = {s.key: s for s in (
     Shot("flat_lay", "正俯平铺", "正上方俯拍，商品平放在台面上，元素围绕商品平铺排布，几何感构图",
          lay=True, scale=0.9, base=0.72),
     Shot("reflection", "水面倒影", "商品立在平静的浅水面上，下方有清晰柔和的倒影", base=0.72, scale=0.9),
-    Shot("ingredient_pile", "原料环绕", "商品被大量原料环绕包围，原料铺满画面下半部分，丰盛饱满", scale=0.8, base=0.8),
+    Shot("ingredient_pile", "原料点缀", "商品旁点缀一两样新鲜原料，原料小而精、比例真实，画面留白充足，不堆满",
+         scale=0.9, base=0.84),
 )}
+
+# 不再分配的镜头：45° 俯拍时贴回的商品仍是正面视角，透视对不上，画面不和谐（老套图里的保留可读）
+RETIRED_SHOTS = {"high_45"}
 
 # 各槽位的镜头偏好（第一个是默认）；规划模型可在其中选，整套尽量不重复
 SLOT_SHOTS: dict[str, tuple[str, ...]] = {
     "goods_cover": ("eye_center", "low_hero", "reflection"),
-    "goods_scene": ("eye_left", "eye_right", "high_45", "eye_center"),
+    "goods_scene": ("eye_left", "eye_right", "eye_center"),
     "goods_selling": ("eye_right", "close_up", "tilt_lean", "eye_left"),
-    "goods_selling2": ("tilt_lean", "high_45", "eye_left", "reflection"),
-    "goods_usage": ("high_45", "eye_left", "eye_right"),
-    "goods_ingredient_still": ("ingredient_pile", "high_45"),
+    "goods_selling2": ("tilt_lean", "eye_left", "reflection"),
+    "goods_pain": ("eye_left", "eye_right", "close_up"),
+    "goods_usage": ("eye_left", "eye_right", "close_up"),
+    "goods_ingredient_still": ("ingredient_pile", "eye_center"),
     "goods_flatlay": ("flat_lay",),
 }
-ANY_SHOTS = tuple(k for k in SHOTS if k not in {"flat_lay", "ingredient_pile"})
+ANY_SHOTS = tuple(k for k in SHOTS if k not in {"flat_lay", "ingredient_pile"} | RETIRED_SHOTS)
 
 
 def shot_choices(slot_key: str) -> tuple[str, ...]:
@@ -61,7 +66,7 @@ def get(key: str | None) -> Shot | None:
 
 
 def options() -> list[dict]:
-    return [{"key": s.key, "name": s.name} for s in SHOTS.values()]
+    return [{"key": s.key, "name": s.name} for s in SHOTS.values() if s.key not in RETIRED_SHOTS]
 
 
 def transform(cut: Image.Image, shot: Shot | None) -> Image.Image:

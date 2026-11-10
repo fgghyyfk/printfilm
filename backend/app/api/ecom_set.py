@@ -182,6 +182,17 @@ async def set_type_style(
     return await _out(db, await _guard(db, svc.set_type_style(db, user, set_id, body.type_style)))
 
 
+# 调整顺序（影响结果页、详情长图与 zip，免费）
+@router.put("/{set_id}/order", response_model=EcomSetOut)
+async def reorder(set_id: int, body: dict, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    from app.services.ecom_set.ordering import reorder_items
+
+    raw = body.get("order")
+    if not isinstance(raw, list) or not raw or not all(isinstance(i, int) for i in raw):
+        raise HTTPException(status_code=400, detail="请提供新的图片顺序")
+    return await _out(db, await _guard(db, reorder_items(db, user, set_id, raw)))
+
+
 # 打包下载 zip
 @router.get("/{set_id}/download")
 async def download(set_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):

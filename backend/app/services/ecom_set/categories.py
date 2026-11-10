@@ -95,24 +95,25 @@ BAG = Category(
 GOODS = Category(
     "goods", "日化/标品", "",
     materials={
-        "tube": ("软管", "软管包装，管盖朝下竖立摆放", ""),
+        "tube": ("软管", "哑光软管包装，管盖朝下竖立摆放", ""),
         "bottle": ("瓶装", "瓶装（泵头或旋盖），竖立摆放", ""),
         "jar": ("罐装", "圆罐包装，平放在台面上", ""),
         "box": ("盒装", "盒装包装，正面朝向镜头摆放", ""),
         "pouch": ("袋装", "袋装包装，正面朝向镜头立放", ""),
     },
     compositions={
-        6: ("goods_cover", "goods_white", "goods_scene", "goods_selling", "goods_texture", "goods_usage"),
-        8: ("goods_cover", "goods_white", "goods_scene", "goods_selling", "goods_ingredient_still", "goods_texture",
+        # 第二张直接放卖点（不用白底）；白底图放第 5 张（淘宝主图第 5 张常要求白底）
+        6: ("goods_cover", "goods_selling", "goods_scene", "goods_texture", "goods_white", "goods_usage"),
+        8: ("goods_cover", "goods_selling", "goods_scene", "goods_ingredient_still", "goods_white", "goods_texture",
             "goods_flatlay", "goods_usage"),
-        # 10～14 张：加信息屏（免费，按商品资料排版；资料不够的那张会自动跳过并提示）与更多构图
-        10: ("goods_cover", "goods_white", "goods_scene", "goods_selling", "goods_info_points", "goods_ingredient_still",
-             "goods_texture", "goods_flatlay", "goods_usage", "goods_info_specs"),
-        12: ("goods_cover", "goods_white", "goods_scene", "goods_selling", "goods_info_points", "goods_ingredient_still",
-             "goods_info_variants", "goods_texture", "goods_info_ingredients", "goods_hand", "goods_info_usage",
+        # 10～14 张：加信息屏（免费，按商品资料排版；资料不够的那张会自动跳过并提示）、成分图与更多构图
+        10: ("goods_cover", "goods_selling", "goods_scene", "goods_info_points", "goods_white", "goods_ingredient_still",
+             "goods_texture", "goods_ingredients_photo", "goods_usage", "goods_info_specs"),
+        12: ("goods_cover", "goods_selling", "goods_pain", "goods_scene", "goods_white", "goods_info_points",
+             "goods_ingredient_still", "goods_texture", "goods_ingredients_photo", "goods_hand", "goods_info_usage",
              "goods_info_specs"),
-        14: ("goods_cover", "goods_white", "goods_scene", "goods_selling", "goods_info_points", "goods_ingredient_still",
-             "goods_info_variants", "goods_lineup", "goods_texture", "goods_info_ingredients", "goods_flatlay",
+        14: ("goods_cover", "goods_selling", "goods_pain", "goods_scene", "goods_white", "goods_info_points",
+             "goods_ingredient_still", "goods_info_variants", "goods_lineup", "goods_texture", "goods_ingredients_photo",
              "goods_hand", "goods_usage", "goods_info_specs"),
     },
     default_material="tube",
@@ -198,12 +199,14 @@ def slot_keys(category: str) -> list[str]:
 # 标品合成：参考图是已经按比例摆好的商品
 COMPOSITE_PREFIX = (
     "以参考图中已经摆放好的商品为主体，严格保持每件商品的位置、大小、形状、颜色和包装上的文字完全不变，"
-    "不要改动、不要新增或复制任何商品；只在商品周围搭建背景、台面、道具与光影"
+    "不要改动、不要新增或复制任何商品；只在商品周围搭建背景、台面、道具与光影；"
+    "商品保持参考图里的原有材质（哑光包装就是哑光），不要给商品加镜面高光、塑料反光或光滑的渐变光泽"
 )
 COMPOSITE_LOCK = "商业静物摄影，真实质感，浅景深；画面中不要出现任何额外文字、字母、logo、水印；不要出现其他品牌的商品"
 TEXTURE_PREFIX = "画面中不要出现任何包装或商品容器，只表现商品内容物本身"
 HAND_PREFIX = ("参考图是商品：画一只手握持这件商品，商品的外形、颜色、比例与包装上的文字、logo 必须与参考图完全一致，"
-               "不要改字、不要新增文字")
+               "不要改字、不要新增文字；包装质感按真实实物：哑光、细腻的印刷纸面或磨砂软管质感，"
+               "不要画成光滑反光的塑料或 3D 渲染感")
 BLANK_HINT = {"top": "画面上方约 30% 是干净的背景留白，用于排版文字", "bottom": "画面下方约 25% 是干净的留白，用于排版文字"}
 
 

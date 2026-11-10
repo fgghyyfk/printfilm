@@ -64,6 +64,8 @@ export const enEcomSet = {
       failed: 'Failed',
       editCopy: 'Edit copy',
       regenerate: 'Regenerate',
+      moveLeft: 'Move earlier',
+      moveRight: 'Move later',
       retry: 'Retry',
       download: 'Download zip',
       downloading: 'Packing…',

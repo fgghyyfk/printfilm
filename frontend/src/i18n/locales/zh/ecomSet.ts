@@ -64,6 +64,8 @@ export const zhEcomSet = {
       failed: '生成失败',
       editCopy: '改文案',
       regenerate: '重新生成',
+      moveLeft: '往前移',
+      moveRight: '往后移',
       retry: '重试',
       download: '打包下载',
       downloading: '打包中…',
