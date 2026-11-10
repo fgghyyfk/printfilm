@@ -203,10 +203,54 @@ def line_h(f: ImageFont.FreeTypeFont, gap: float) -> int:
 
 
 # ---------- 精致版式 ----------
+def _mean_rgb(img: Image.Image, box: tuple[int, int, int, int]) -> tuple[float, float, float]:
+    """区域平均颜色。"""
+    m = ImageStat.Stat(img.crop(box).convert("RGB")).mean
+    return m[0], m[1], m[2]
+
+
 def _tone(img: Image.Image, box: tuple[int, int, int, int]) -> tuple[bool, float]:
     """区域是否偏亮、纹理复杂度（亮度标准差）。"""
     st = ImageStat.Stat(img.crop(box).convert("L"))
     return st.mean[0] >= 140, st.stddev[0]
+
+
+def _lum(rgb: tuple[float, ...]) -> float:
+    """sRGB 颜色的相对亮度（WCAG）。"""
+    def ch(c: float) -> float:
+        c = c / 255
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+    r, g, b = (ch(c) for c in rgb[:3])
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def contrast(a: tuple[float, ...], b: tuple[float, ...]) -> float:
+    """两色对比度（1–21）。"""
+    la, lb = sorted((_lum(a), _lum(b)), reverse=True)
+    return (la + 0.05) / (lb + 0.05)
+
+
+def _mix(a: tuple[int, ...], b: tuple[int, ...], t: float) -> tuple[int, int, int]:
+    return tuple(round(a[i] + (b[i] - a[i]) * t) for i in range(3))  # type: ignore[return-value]
+
+
+# 次要文字（英文小标、副标题、细线）字号小，至少要到这个对比度
+MUTED_MIN_CONTRAST = 3.6
+# 主字色低于这个对比度时，文字区加一层淡雾面把背景推亮或推暗
+INK_MIN_CONTRAST = 5.0
+
+
+def pick_ink(bg: tuple[float, ...]) -> tuple[bool, tuple[int, int, int], tuple[int, int, int]]:
+    """按背景平均色选字色：深字 / 白字取对比度高的一边；次要色不够清楚时向主字色靠拢。
+
+    返回 (是否深字, 主字色, 次要色)。
+    """
+    dark = contrast(INK, bg) >= contrast(PAPER, bg)
+    ink, muted = (INK, INK_MUTED) if dark else (PAPER, PAPER_MUTED)
+    t = 0.0
+    while contrast(_mix(muted, ink, t), bg) < MUTED_MIN_CONTRAST and t < 1:
+        t = min(1.0, t + 0.1)
+    return dark, ink, _mix(muted, ink, t)
 
 
 def _scrim(img: Image.Image, box: tuple[int, int, int, int], *, light: bool, strength: float, from_top: bool) -> None:
@@ -268,15 +312,22 @@ def draw_refined(img: Image.Image, *, style: TypeStyle, layout: str, blank: str,
     top_pad = int(H * 0.05)
     top = (H - int(H * 0.05) - content_h) if at_bottom else top_pad
     zone = (0, max(0, top - top_pad), W, min(H, top + content_h + top_pad))
-    bright, busy = _tone(img, zone)
-    dark_text = bright
+    _, busy = _tone(img, zone)
+    # 字色按文字实际覆盖的区域取（左对齐时只看左侧，不被右边的商品或亮窗拉偏）
+    tx0 = margin if align == "left" else margin + inner_w // 8
+    tx1 = margin + int(inner_w * 0.7) if align == "left" else W - tx0
+    text_zone = (tx0, zone[1], tx1, zone[3])
+    dark_text, ink, _ = pick_ink(_mean_rgb(img, text_zone))
+    scrim_box = (0, 0, W, zone[3] + top_pad) if not at_bottom else (0, zone[1] - top_pad, W, H)
     if label_bar:
         _scrim(img, (0, zone[1], W, H), light=True, strength=0.86, from_top=False)
-        dark_text = True
     elif busy > 38:
-        _scrim(img, (0, 0, W, zone[3] + top_pad) if not at_bottom else (0, zone[1] - top_pad, W, H),
-               light=bright, strength=0.45 if bright else 0.28, from_top=not at_bottom)
-    ink, muted = (INK, INK_MUTED) if dark_text else (PAPER, PAPER_MUTED)
+        _scrim(img, scrim_box, light=dark_text, strength=0.45 if dark_text else 0.28, from_top=not at_bottom)
+    elif contrast(ink, _mean_rgb(img, text_zone)) < INK_MIN_CONTRAST:
+        # 中间调背景（如米驼色墙面）深字白字都不够清楚：加淡雾面拉开
+        _scrim(img, scrim_box, light=dark_text, strength=0.42 if dark_text else 0.32, from_top=not at_bottom)
+    # 雾面之后按文字实际所在的背景重新确定字色
+    dark_text, ink, muted = pick_ink(_mean_rgb(img, text_zone))
 
     draw = ImageDraw.Draw(img)
 
