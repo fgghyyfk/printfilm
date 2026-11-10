@@ -134,4 +134,5 @@ async def test_festival_flow(db_session, monkeypatch, tmp_path):
     styled = (ecom.plan or {})["styled"]
     pool = [e["key"] for e in styled["elements"]]
     assert pool[:6] == festivals.pack_keys(festivals.BY_KEY["chunjie"])[:6]
+    assert not any(k.startswith("scene_") for k in pool)  # 节日场景不再叠加场景道具
     assert "春节" in ecom.notes and "不要编造折扣" in seen["extra"] and "HAPPY NEW YEAR" in seen["extra"]

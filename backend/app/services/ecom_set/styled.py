@@ -81,6 +81,10 @@ async def _element_pool(db: AsyncSession, user: User, *, category: str, keys: li
     # 节日场景：节日包 + 商品资料命中的元素；否则按商品资料推荐
     rec = elements.snapshot(await elements.recommend(db, user, knowledge=knowledge, industry=industry, limit=8,
                                                      scene_key=(scene or {}).get("key") or ""))
+    from app.services.ecom_set import festivals
+
+    if festivals.of_scene((scene or {}).get("key")):
+        return rec  # 节日包已覆盖场景道具，再叠加会出现「红果枝」「红果枝（南天竹）」这类重复
     scene_props = variety.pool_from_scene(scene)
     names = {e["name"] for e in rec}
     return rec + [e for e in scene_props if e["name"] not in names]
