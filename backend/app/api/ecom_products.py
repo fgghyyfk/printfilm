@@ -6,6 +6,7 @@ import json
 import logging
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -107,10 +108,22 @@ async def remove_color(product_id: int, index: int, db: AsyncSession = Depends(g
     return svc.to_out(await _guard(db, svc.remove_color(db, user, product_id, index)))
 
 
-@router.post("/{product_id}/colors/{index}/cutout", summary="实拍图一键抠成透明底（本地模型，不计费，约 10~30 秒）")
-async def cutout_color(product_id: int, index: int, db: AsyncSession = Depends(get_db),
-                       user: User = Depends(get_current_user)) -> dict:
-    return svc.to_out(await _guard(db, svc.cutout_color(db, user, product_id, index)))
+@router.get("/{product_id}/colors/{index}/photo", summary="颜色款原图（浏览器抠图时同源读取）")
+async def color_photo(product_id: int, index: int, db: AsyncSession = Depends(get_db),
+                      user: User = Depends(get_current_user)) -> FileResponse:
+    row = await _guard(db, svc.get_product(db, user, product_id))
+    try:
+        path = svc.color_photo_path(row, index)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return FileResponse(path, headers={"Cache-Control": "private, max-age=600"})
+
+
+@router.put("/{product_id}/colors/{index}/cutout", summary="保存浏览器抠好的透明底 PNG（原图保留，可切回）")
+async def set_color_cutout(product_id: int, index: int, file: UploadFile = File(...), db: AsyncSession = Depends(get_db),
+                           user: User = Depends(get_current_user)) -> dict:
+    row = await _guard(db, svc.set_color_cutout(db, user, product_id, index, await file.read(), file.filename or "cutout.png"))
+    return svc.to_out(row)
 
 
 @router.delete("/{product_id}/colors/{index}/cutout", summary="不用抠图，切回上传的原图")

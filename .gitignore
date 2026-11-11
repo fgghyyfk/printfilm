@@ -83,5 +83,5 @@ frontend/dist/
 .cursor/
 .work/
 printfilm/
-# 本地抠图模型（体积大，不进仓库）
-backend/models/
+# 浏览器抠图模型（体积大，不进仓库；线上由宿主机目录挂进 web 容器）
+frontend/public/ecom-models/

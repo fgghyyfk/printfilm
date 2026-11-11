@@ -1,6 +1,6 @@
 /** 「我的商品」API：/api/tools/ecom-products/* */
 
-import { createJsonRequester } from './client'
+import { createJsonRequester, requestResponse } from './client'
 import { apiErrorMessage } from './http'
 
 const BASE = '/api/tools/ecom-products'
@@ -18,8 +18,6 @@ export type EcomProduct = {
   notes: string
   /** photo_image_url：抠过图时保留的上传原图；transparent：当前商品图是否透明底（老数据为 null） */
   colors: { name: string; image_url: string; real_image_url?: string; photo_image_url?: string; transparent?: boolean | null }[]
-  /** 服务器是否开启了本地抠图 */
-  can_cutout?: boolean
   fabric_image_url: string
   /** 参考详情图 */
   references?: { url: string; kind: 'own' | 'competitor' }[]
@@ -104,9 +102,19 @@ export function setEcomProductColorReal(id: number, index: number, file: File): 
   return request(`/${id}/colors/${index}/real`, '上传实物图失败', { method: 'PUT', body })
 }
 
-/** 实拍图一键抠成透明底（本地模型，不计费，约 10~30 秒） */
-export function cutoutEcomProductColor(id: number, index: number): Promise<EcomProduct> {
-  return request(`/${id}/colors/${index}/cutout`, '抠图失败', { method: 'POST' })
+/** 取颜色款原图（同源接口，供浏览器抠图读取像素） */
+export async function fetchEcomProductColorPhoto(id: number, index: number): Promise<Blob> {
+  const res = await requestResponse(`${BASE}/${id}/colors/${index}/photo`, undefined, (response) => {
+    throw new Error(response.status === 401 ? '未登录' : '读取商品原图失败')
+  })
+  return res.blob()
+}
+
+/** 保存浏览器抠好的透明底 PNG（原图保留，可切回） */
+export function saveEcomProductColorCutout(id: number, index: number, png: Blob): Promise<EcomProduct> {
+  const body = new FormData()
+  body.append('file', png, 'cutout.png')
+  return request(`/${id}/colors/${index}/cutout`, '保存抠图失败', { method: 'PUT', body })
 }
 
 /** 不用抠图，切回上传的原图 */
@@ -114,9 +122,9 @@ export function restoreEcomProductColor(id: number, index: number): Promise<Ecom
   return request(`/${id}/colors/${index}/cutout`, '切回原图失败', { method: 'DELETE' })
 }
 
-/** 需要自动抠图的颜色款下标：日化 / 标品、服务器开了抠图、上传的不是透明底且还没抠过 */
+/** 需要自动抠图的颜色款下标：日化 / 标品、上传的不是透明底且还没抠过 */
 export function colorsToCutout(p: EcomProduct): number[] {
-  if (p.category !== 'goods' || !p.can_cutout) return []
+  if (p.category !== 'goods') return []
   return p.colors.flatMap((c, i) => (c.transparent === false && !c.photo_image_url ? [i] : []))
 }
 

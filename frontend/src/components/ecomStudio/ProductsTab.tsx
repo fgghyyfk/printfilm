@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { ImagePlus, Loader2, Plus, Scissors, Trash2, Undo2, X } from 'lucide-react'
 import {
-  addEcomProductColor, colorsToCutout, cutoutEcomProductColor, deleteEcomProduct, restoreEcomProductColor, listEcomProducts, removeEcomProductColor, setEcomProductColorReal, setEcomProductFabric, type EcomProduct,
+  addEcomProductColor, colorsToCutout, deleteEcomProduct, fetchEcomProductColorPhoto, restoreEcomProductColor, listEcomProducts, removeEcomProductColor, saveEcomProductColorCutout, setEcomProductColorReal, setEcomProductFabric, type EcomProduct,
 } from '../../api/ecomProducts'
 import type { EcomStyledCategory } from '../../api/ecomSet'
 import { resolveToolMediaUrl } from '../../api/tools'
 import { ECOM_UPLOAD_ACCEPT } from '../../lib/ecomSet'
+import { canCutoutInBrowser, cutoutImage, type CutoutProgress } from '../../lib/ecomCutoutClient'
 import { useGenerationText } from '../../lib/generationMedia'
 import { dialog } from '../../lib/dialog'
 import KnowledgePanel from './KnowledgePanel'
@@ -27,8 +28,9 @@ export default function ProductsTab({ categories, onUse, planFen = 0, billingEna
   const [error, setError] = useState('')
   const [busy, setBusy] = useState<number | null>(null)
   const [creating, setCreating] = useState(false)
-  /* 正在抠图的颜色款（key = 商品id-下标） */
-  const [cutting, setCutting] = useState<Record<string, boolean>>({})
+  /* 正在抠图的颜色款（key = 商品id-下标，值为进度文案） */
+  const [cutting, setCutting] = useState<Record<string, string>>({})
+  const canCut = canCutoutInBrowser()
 
   useEffect(() => {
     const controller = new AbortController()
@@ -47,13 +49,24 @@ export default function ProductsTab({ categories, onUse, planFen = 0, billingEna
     finally { setBusy(null) }
   }
 
-  // 逐张抠图（本地模型每张 10~30 秒，按顺序跑，抠好一张换一张）
+  // 抠图进度文案
+  function progressText(p: CutoutProgress): string {
+    if (p.stage === 'download') return text(`首次下载抠图模型 ${Math.round((p.ratio || 0) * 100)}%`, `Downloading model ${Math.round((p.ratio || 0) * 100)}%`)
+    if (p.stage === 'load') return text('加载模型…', 'Loading model…')
+    return text('抠图中…', 'Cutting…')
+  }
+
+  // 逐张抠图：在浏览器里算（不占服务器），抠好上传透明 PNG，原图保留可切回
   async function runCutout(id: number, indexes: number[]) {
     for (const i of indexes) {
       const key = `${id}-${i}`
-      setCutting((prev) => ({ ...prev, [key]: true }))
+      const mark = (label: string) => setCutting((prev) => ({ ...prev, [key]: label }))
+      mark(text('排队中…', 'Queued…'))
       try {
-        const next = await cutoutEcomProductColor(id, i)
+        const photo = await fetchEcomProductColorPhoto(id, i)
+        const png = await cutoutImage(photo, (p) => mark(progressText(p)))
+        mark(text('保存中…', 'Saving…'))
+        const next = await saveEcomProductColorCutout(id, i, png)
         setItems((prev) => (prev || []).map((p) => (p.id === id ? next : p)))
       } catch (err) { setError(err instanceof Error ? err.message : text('抠图失败', 'Cutout failed')) }
       finally { setCutting((prev) => { const rest = { ...prev }; delete rest[key]; return rest }) }
@@ -62,7 +75,7 @@ export default function ProductsTab({ categories, onUse, planFen = 0, billingEna
 
   // 商品新增或加了颜色后：日化商品的实拍图自动抠成透明底
   function afterUpload(p: EcomProduct | null) {
-    if (p) void runCutout(p.id, colorsToCutout(p))
+    if (p && canCut) void runCutout(p.id, colorsToCutout(p))
     return p
   }
 
@@ -90,11 +103,11 @@ export default function ProductsTab({ categories, onUse, planFen = 0, billingEna
       <div className="pf-es-colors">
         {p.colors.map((c, i) => <div key={`${i}-${c.photo_image_url || c.image_url}`} className="pf-es-color">
           <img className={c.transparent ? 'pf-es-cutimg' : undefined} src={resolveToolMediaUrl(c.image_url)} alt="" /><span>{c.name}</span>
-          {cutting[`${p.id}-${i}`] ? <span className="pf-es-cutting"><Loader2 size={14} className="pf-tool-spin" />{text('抠图中…', 'Cutting…')}</span> : null}
-          {p.category === 'goods' && p.can_cutout && !cutting[`${p.id}-${i}`] ? (c.photo_image_url
+          {cutting[`${p.id}-${i}`] ? <span className="pf-es-cutting"><Loader2 size={14} className="pf-tool-spin" />{cutting[`${p.id}-${i}`]}</span> : null}
+          {p.category === 'goods' && !cutting[`${p.id}-${i}`] ? (c.photo_image_url
             ? <button type="button" className="pf-es-link" disabled={busy === p.id} title={text('不用抠图，换回上传的原图', 'Use the original photo')}
               onClick={() => void act(p.id, () => restoreEcomProductColor(p.id, i))}><Undo2 size={12} />{text('用原图', 'Original')}</button>
-            : c.transparent ? null
+            : c.transparent || !canCut ? null
               : <button type="button" className="pf-es-link" disabled={busy === p.id} title={text('把实拍图抠成透明底，白底图和场景图都用它', 'Remove background')}
                 onClick={() => void runCutout(p.id, [i])}><Scissors size={12} />{text('抠白底', 'Cut out')}</button>) : null}
           {p.colors.length > 1 ? <button type="button" className="pf-es-x" disabled={busy === p.id} aria-label={text('删除颜色', 'Remove color')}
@@ -114,7 +127,7 @@ export default function ProductsTab({ categories, onUse, planFen = 0, billingEna
               const name = (await dialog.prompt({ title: text('颜色名', 'Color name'), placeholder: text('如：湖绿', 'e.g. Teal') })) ?? ''
               await act(p.id, async () => {
                 const next = await addEcomProductColor(p.id, name || '', f)
-                if (colorsToCutout(next).includes(next.colors.length - 1)) void runCutout(next.id, [next.colors.length - 1])
+                if (canCut && colorsToCutout(next).includes(next.colors.length - 1)) void runCutout(next.id, [next.colors.length - 1])
                 return next
               })
             })()

@@ -22,4 +22,3 @@ Pillow==11.3.0
 # 生成图自动校色（color_match）
 numpy==2.2.6
 # Optional: pip install "volcengine-python-sdk[ark]" if you prefer official SDK
-onnxruntime==1.31.1

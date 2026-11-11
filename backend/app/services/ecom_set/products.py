@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import uuid
 from pathlib import Path
 
 from sqlalchemy import func, select
@@ -142,30 +141,35 @@ async def set_color_real(db: AsyncSession, user: User, product_id: int, index: i
     return row
 
 
-async def cutout_color(db: AsyncSession, user: User, product_id: int, index: int) -> EcomProduct:
-    """把颜色款的实拍图抠成透明底 PNG（本地模型，不计费）；原图留作 photo_image_*，可随时切回。"""
-    from app.services.ecom_set import matting
+def color_photo_path(row: EcomProduct, index: int) -> Path:
+    """颜色款用来抠图的原图（抠过图的取保留的原图）。"""
+    colors = list(row.colors or [])
+    if not 0 <= index < len(colors):
+        raise LookupError("颜色款不存在")
+    path = Path(colors[index].get("photo_image_path") or colors[index].get("image_path") or "")
+    if not path.is_file():
+        raise LookupError("商品图不存在，请重新上传")
+    return path
+
+
+async def set_color_cutout(db: AsyncSession, user: User, product_id: int, index: int, data: bytes, filename: str) -> EcomProduct:
+    """保存浏览器抠好的透明底 PNG 作为颜色款商品图；原图留作 photo_image_*，可随时切回。"""
     from app.services.ecom_set.composite import has_alpha
-    from app.services.ecom_set.jobs import public_url
 
     row = await get_product(db, user, product_id)
     colors = [dict(c) for c in row.colors or []]
     if not 0 <= index < len(colors):
         raise LookupError("颜色款不存在")
+    if not str(filename or "").lower().endswith(".png"):
+        raise ValueError("抠图结果需要是 PNG")
+    path, url = await asyncio.to_thread(_save, user, data, filename)
+    if not await asyncio.to_thread(has_alpha, Path(path)):
+        Path(path).unlink(missing_ok=True)
+        raise ValueError("抠图结果不是透明底，请重试")
     c = colors[index]
-    src = Path(c.get("photo_image_path") or c.get("image_path") or "")
-    if not src.is_file():
-        raise ValueError("商品图不存在，请重新上传")
-    if not c.get("photo_image_path") and await asyncio.to_thread(has_alpha, src):
-        raise ValueError("这张已经是透明底，不用再抠")
-    dest = src.parent / f"{src.stem}_cut_{uuid.uuid4().hex[:6]}.png"
-    try:
-        await asyncio.to_thread(matting.cutout_to, src, dest)
-    except matting.MattingError as exc:
-        raise ValueError(str(exc)) from exc
     c.setdefault("photo_image_path", c.get("image_path"))
     c.setdefault("photo_image_url", c.get("image_url"))
-    c["image_path"], c["image_url"], c["transparent"] = str(dest), public_url(dest), True
+    c["image_path"], c["image_url"], c["transparent"] = path, url, True
     colors[index] = c
     row.colors = colors
     await db.commit()
@@ -344,13 +348,6 @@ def knowledge_out(data: dict | None) -> dict | None:
     return {**kn.normalize(data), "warnings": list(data.get("warnings") or []), "updated_at": data.get("updated_at") or ""}
 
 
-def _can_cutout() -> bool:
-    """本机是否开启了抠图模型。"""
-    from app.services.ecom_set import matting
-
-    return matting.available()
-
-
 def to_out(row: EcomProduct) -> dict:
     """序列化给前端（不含本地路径）。"""
     return {
@@ -363,7 +360,6 @@ def to_out(row: EcomProduct) -> dict:
                     "photo_image_url": c.get("photo_image_url") or "",
                     # None = 老数据没记录（前端照样给「抠白底」按钮，后端会拦已透明的）
                     "transparent": c.get("transparent")} for c in row.colors or []],
-        "can_cutout": _can_cutout(),
         "fabric_image_url": row.fabric_image_url or "",
         "references": [{"url": r.get("url") or "", "kind": r.get("kind") or "own"} for r in row.ref_images or []],
         "knowledge": knowledge_out(row.knowledge),
