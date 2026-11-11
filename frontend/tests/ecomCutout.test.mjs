@@ -56,3 +56,12 @@ test('原图限制最长边', () => {
   assert.deepEqual(fitSize(4800, 2400), [2400, 1200])
   assert.deepEqual(fitSize(800, 600), [800, 600])
 })
+
+test('已是透明底的图识别出来，不再重复抠', async () => {
+  const { isTransparent } = await import('../src/lib/ecomCutout.ts')
+  const opaque = new Uint8ClampedArray(100 * 4).fill(255)
+  assert.equal(isTransparent(opaque), false)
+  const cut = opaque.slice()
+  for (let i = 0; i < 30; i++) cut[i * 4 + 3] = 0
+  assert.equal(isTransparent(cut), true)
+})

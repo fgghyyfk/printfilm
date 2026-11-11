@@ -4,7 +4,7 @@
  */
 import * as ort from 'onnxruntime-web/webgpu'
 import {
-  CUTOUT_CACHE, CUTOUT_INPUT, CUTOUT_MODEL_URL, fitSize, keepMain, maskBox, toInputTensor, toMask,
+  CUTOUT_CACHE, CUTOUT_INPUT, CUTOUT_MODEL_URL, fitSize, isTransparent, keepMain, maskBox, toInputTensor, toMask,
 } from '../lib/ecomCutout'
 
 /** 发给页面的消息 */
@@ -69,7 +69,9 @@ async function cut(id: number, file: Blob): Promise<CutoutEvent> {
   const small = new OffscreenCanvas(n, n).getContext('2d', { willReadFrequently: true }) as OffscreenCanvasRenderingContext2D
   small.imageSmoothingQuality = 'high'
   small.drawImage(bitmap, 0, 0, n, n)
-  const input = new ort.Tensor('float32', toInputTensor(small.getImageData(0, 0, n, n).data), [1, 3, n, n])
+  const pixels = small.getImageData(0, 0, n, n).data
+  if (isTransparent(pixels)) { bitmap.close(); throw new Error('这张已经是透明底，不用再抠') }
+  const input = new ort.Tensor('float32', toInputTensor(pixels), [1, 3, n, n])
   const { sess, backend } = await getSession(id)
   ctx.postMessage({ id, type: 'progress', stage: 'run' })
   const result = await sess.run({ [sess.inputNames[0]]: input })

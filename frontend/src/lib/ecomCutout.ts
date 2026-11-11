@@ -139,3 +139,11 @@ export function fitSize(w: number, h: number, max = CUTOUT_MAX_SIDE): [number, n
   const k = Math.min(1, max / Math.max(w, h))
   return [Math.max(1, Math.round(w * k)), Math.max(1, Math.round(h * k))]
 }
+
+/** 图片是否已经是透明底（超过 2% 的像素几乎全透明）：已抠好的图不用再抠 */
+export function isTransparent(rgba: Uint8ClampedArray): boolean {
+  let clear = 0
+  const total = rgba.length / 4
+  for (let i = 3; i < rgba.length; i += 4) if (rgba[i] < 16) clear++
+  return clear / total > 0.02
+}
