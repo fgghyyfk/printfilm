@@ -83,3 +83,5 @@ frontend/dist/
 .cursor/
 .work/
 printfilm/
+# 本地抠图模型（体积大，不进仓库）
+backend/models/

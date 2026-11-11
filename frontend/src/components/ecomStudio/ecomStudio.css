@@ -125,3 +125,7 @@
 .pf-es-dims label { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.9rem; }
 .pf-es-dims input { width: 5.5rem; text-align: center; }
 .pf-es-dims em { font-style: normal; color: var(--pf-muted, #8a8178); font-size: 0.85rem; }
+/* 抠好的透明底商品图：铺白底、完整显示；抠图中提示 */
+.pf-es-color img.pf-es-cutimg { object-fit: contain; background: #fff; }
+.pf-es-color .pf-es-link { justify-content: center; font-size: 0.75rem; }
+.pf-es-cutting { display: inline-flex; align-items: center; justify-content: center; gap: 4px; font-size: 0.72rem; color: var(--pf-muted, var(--pf-faint)); }

@@ -54,6 +54,8 @@ class Settings(BaseSettings):
     # 一图出套图：规划一次收费（分）；排版字体路径（空则按系统候选自动查找）
     ecom_set_plan_fen: int = 10
     ecom_font_path: str = ""
+    # 商品实拍图本地抠图模型（BiRefNet 轻量版 ONNX）；为空用 backend/models/birefnet-lite.onnx，文件不在则不自动抠图
+    ecom_matting_model: str = ""
     # 广告法极限词库：额外追加的自定义禁用词（逗号分隔，命中即删除）
     ad_banned_extra: str = ""
     # Seedream: 2k|3k|4k or WIDTHxHEIGHT，且总像素 >= 3686400（约 2560x1440）

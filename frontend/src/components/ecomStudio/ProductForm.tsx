@@ -105,7 +105,7 @@ export default function ProductForm({ categories, onSaved, onCancel }: Props) {
           <input type="file" hidden multiple accept={ECOM_UPLOAD_ACCEPT} disabled={busy} onChange={(e) => { addColorFiles(e.target.files); e.target.value = '' }} />
         </label>
       </div>
-      {category === 'goods' ? <p className="pf-es-tip">{text('请上传透明底 PNG 抠图：商品会原样合成进场景，不会被 AI 重画；普通照片也能用，但商品可能被重绘', 'Upload a transparent-background PNG: the product is composited into the scene as-is, not redrawn by AI. Regular photos work too, but the product may be redrawn.')}</p> : null}
+      {category === 'goods' ? <p className="pf-es-tip">{text('直接上传自己拍的商品照片就行：保存后自动抠成透明底，白底图和场景图都用它，商品不会被 AI 重画。拍的时候商品单独摆、别用手拿，正面、光线均匀、背景尽量干净；已经是透明底 PNG 的不会再抠。', 'Upload your own product photo: it is cut out automatically after saving and composited as-is. Shoot the product alone (no hands), front-facing, even light, plain background.')}</p> : null}
       <span className="pf-muted">{text('设计图越清晰、越正，生成后的图案和颜色越准。每个颜色还可以加一张「实物图」（真实拍摄的商品照片），让真实光线下的颜色和质感更准。', 'Clear designs give accurate patterns. Add a real photo per color for true-to-life color.')}</span>
     </div>
     <div className="pf-tool-field"><span>{text('② 材质实拍（强烈推荐）', '② Fabric close-up (recommended)')}</span>

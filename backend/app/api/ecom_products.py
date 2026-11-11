@@ -107,6 +107,18 @@ async def remove_color(product_id: int, index: int, db: AsyncSession = Depends(g
     return svc.to_out(await _guard(db, svc.remove_color(db, user, product_id, index)))
 
 
+@router.post("/{product_id}/colors/{index}/cutout", summary="实拍图一键抠成透明底（本地模型，不计费，约 10~30 秒）")
+async def cutout_color(product_id: int, index: int, db: AsyncSession = Depends(get_db),
+                       user: User = Depends(get_current_user)) -> dict:
+    return svc.to_out(await _guard(db, svc.cutout_color(db, user, product_id, index)))
+
+
+@router.delete("/{product_id}/colors/{index}/cutout", summary="不用抠图，切回上传的原图")
+async def restore_color_photo(product_id: int, index: int, db: AsyncSession = Depends(get_db),
+                              user: User = Depends(get_current_user)) -> dict:
+    return svc.to_out(await _guard(db, svc.restore_color_photo(db, user, product_id, index)))
+
+
 @router.put("/{product_id}/colors/{index}/real", summary="设置颜色款的实物图")
 async def set_color_real(product_id: int, index: int, file: UploadFile = File(...), db: AsyncSession = Depends(get_db),
                          user: User = Depends(get_current_user)) -> dict:

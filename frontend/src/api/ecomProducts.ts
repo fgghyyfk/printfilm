@@ -16,7 +16,10 @@ export type EcomProduct = {
   material: string
   material_label: string
   notes: string
-  colors: { name: string; image_url: string; real_image_url?: string }[]
+  /** photo_image_url：抠过图时保留的上传原图；transparent：当前商品图是否透明底（老数据为 null） */
+  colors: { name: string; image_url: string; real_image_url?: string; photo_image_url?: string; transparent?: boolean | null }[]
+  /** 服务器是否开启了本地抠图 */
+  can_cutout?: boolean
   fabric_image_url: string
   /** 参考详情图 */
   references?: { url: string; kind: 'own' | 'competitor' }[]
@@ -99,6 +102,22 @@ export function setEcomProductColorReal(id: number, index: number, file: File): 
   const body = new FormData()
   body.append('file', file)
   return request(`/${id}/colors/${index}/real`, '上传实物图失败', { method: 'PUT', body })
+}
+
+/** 实拍图一键抠成透明底（本地模型，不计费，约 10~30 秒） */
+export function cutoutEcomProductColor(id: number, index: number): Promise<EcomProduct> {
+  return request(`/${id}/colors/${index}/cutout`, '抠图失败', { method: 'POST' })
+}
+
+/** 不用抠图，切回上传的原图 */
+export function restoreEcomProductColor(id: number, index: number): Promise<EcomProduct> {
+  return request(`/${id}/colors/${index}/cutout`, '切回原图失败', { method: 'DELETE' })
+}
+
+/** 需要自动抠图的颜色款下标：日化 / 标品、服务器开了抠图、上传的不是透明底且还没抠过 */
+export function colorsToCutout(p: EcomProduct): number[] {
+  if (p.category !== 'goods' || !p.can_cutout) return []
+  return p.colors.flatMap((c, i) => (c.transparent === false && !c.photo_image_url ? [i] : []))
 }
 
 /** 删除颜色款 */
