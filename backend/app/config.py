@@ -218,6 +218,18 @@ class Settings(BaseSettings):
 
     tos_endpoint: str = ""
     tos_bucket: str = ""
+    # 充值通道：epay（易支付聚合）| stripe（Stripe Checkout，支付宝/微信走 Stripe 托管收银台）
+    payment_provider: str = "epay"
+    # Stripe（参考 Promptoll 实现，直连 REST，不依赖 stripe SDK）
+    stripe_secret_key: str = ""
+    stripe_webhook_secret: str = ""
+    # 展示币种：cny（默认，SKU 原价）或 hkd/usd 等，非 cny 时按 stripe_fx_rate 折算
+    stripe_currency: str = "cny"
+    # 1 元人民币 = 多少展示币种（stripe_currency=cny 时忽略）
+    stripe_fx_rate: float = 1.0
+    stripe_success_url: str = ""
+    stripe_cancel_url: str = ""
+
     tos_access_key: str = ""
     tos_secret_key: str = ""
     cdn_base: str = "http://localhost:8000/static"

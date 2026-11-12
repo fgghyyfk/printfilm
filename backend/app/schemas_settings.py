@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -117,6 +118,17 @@ class AdminModelSettingsOut(BaseModel):
     epay_notify_url: str = Field(default="", description="易支付异步支付通知地址")
     epay_return_url: str = Field(default="", description="易支付支付完成后的浏览器跳转地址")
     has_epay_key: bool = Field(default=False, description="是否已配置易支付商户签名密钥；实际密钥不在响应中返回")
+
+    # 充值通道与 Stripe
+    payment_provider: str = "epay"
+    stripe_secret_key: str = ""
+    stripe_webhook_secret: str = ""
+    stripe_currency: str = "cny"
+    stripe_fx_rate: float = 1.0
+    stripe_success_url: str = ""
+    stripe_cancel_url: str = ""
+    has_stripe_secret_key: bool = False
+    has_stripe_webhook_secret: bool = False
 
     # Token 计费
     billing_enabled: bool = Field(default=False, description="是否启用余额计费")
@@ -268,6 +280,16 @@ class AdminModelSettingsPatch(BaseModel):
     epay_return_url: str | None = Field(default=None, description="易支付支付完成后的浏览器跳转地址；省略或 null 时不修改")
     clear_epay_key: bool = Field(default=False, description="是否显式清空易支付商户签名密钥；默认为 false；若同时提交非空新值，以新值为准")
 
+    payment_provider: Literal["epay", "stripe"] | None = Field(default=None, description="充值通道：epay 易支付 / stripe（支付宝、微信走 Stripe Checkout）；省略或 null 时不修改")
+    stripe_secret_key: str | None = Field(default=None, description="Stripe Secret Key；省略、null 或空白字符串时保留原值；使用 clear_stripe_secret_key=true 清空")
+    stripe_webhook_secret: str | None = Field(default=None, description="Stripe Webhook 签名密钥 whsec_…；省略、null 或空白字符串时保留原值；使用 clear_stripe_webhook_secret=true 清空")
+    stripe_currency: str | None = Field(default=None, description="Stripe 收款币种，默认 cny；省略或 null 时不修改")
+    stripe_fx_rate: float | None = Field(default=None, ge=0, description="1 元人民币折合收款币种的汇率，币种为 cny 时忽略；省略或 null 时不修改")
+    stripe_success_url: str | None = Field(default=None, description="Stripe 支付成功跳转地址，留空回定价页；省略或 null 时不修改")
+    stripe_cancel_url: str | None = Field(default=None, description="Stripe 取消支付跳转地址，留空回定价页；省略或 null 时不修改")
+    clear_stripe_secret_key: bool = Field(default=False, description="是否显式清空 Stripe Secret Key")
+    clear_stripe_webhook_secret: bool = Field(default=False, description="是否显式清空 Stripe Webhook 签名密钥")
+
     billing_enabled: bool | None = Field(default=None, description="是否启用余额计费；省略或 null 时不修改")
     billing_markup: float | None = Field(default=None, ge=1.0, le=10.0, description="计费加价倍率：文字、配音等按上游成本扣费时乘以此值（1.06 即上浮 6%）；省略或 null 时不修改")
     billing_estimate_buffer: float | None = Field(default=None, description="Token 或视频时长类预扣估算的缓冲系数；按张计价的生图预扣不乘此系数；省略或 null 时不修改")
@@ -402,6 +424,13 @@ def model_config_field_names() -> tuple[str, ...]:
         "epay_key",
         "epay_notify_url",
         "epay_return_url",
+        "payment_provider",
+        "stripe_secret_key",
+        "stripe_webhook_secret",
+        "stripe_currency",
+        "stripe_fx_rate",
+        "stripe_success_url",
+        "stripe_cancel_url",
         "billing_enabled",
         "billing_markup",
         "billing_estimate_buffer",
@@ -451,6 +480,8 @@ SECRET_FIELD_FLAGS: dict[str, str] = {
     "tos_access_key": "has_tos_access_key",
     "tos_secret_key": "has_tos_secret_key",
     "epay_key": "has_epay_key",
+    "stripe_secret_key": "has_stripe_secret_key",
+    "stripe_webhook_secret": "has_stripe_webhook_secret",
     "smtp_password": "has_smtp_password",
 }
 

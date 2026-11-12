@@ -10,6 +10,7 @@ from decimal import Decimal, InvalidOperation
 
 from typing import Literal
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
@@ -21,7 +22,8 @@ from app.database import get_db
 from app.deps import get_current_user
 from app.models import Order, Project, UsageEvent, User
 from app.models_tasks import TaskRun
-from app.services import billing, epay
+from app.services import billing, epay, stripe_pay
+from app.services.billing import topup_orders
 from app.services.billing.http import http_exception_for_value_error
 from app.services.billing.settlement import (
     billing_active,
@@ -91,6 +93,7 @@ async def list_skus() -> dict:
     return {
         "skus": billing.SKUS,
         "pay_types": ["alipay", "wxpay"],
+        "provider": topup_orders.active_provider(),
         "markup": get_settings().billing_markup,
     }
 
@@ -197,14 +200,15 @@ async def create_order(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
-    # 支付未配置时不落库，避免留下无法支付的订单
-    if not epay.payment_configured():
+    # 当前通道未配置时不落库，避免留下无法支付的订单
+    if not topup_orders.provider_configured():
         raise HTTPException(status_code=503, detail="支付暂未开通，请联系管理员")
     # 下单前先清理该用户已过期的待支付单
     await billing.close_expired_pending_orders(db, user_id=user.id)
     sku = billing.sku_by_id(body.sku_id)
     if not sku:
         raise HTTPException(status_code=400, detail="未知充值包")
+    provider = topup_orders.active_provider()
     out_trade_no = f"PF{int(time.time())}{user.id:04d}{uuid.uuid4().hex[:8]}"
     order = Order(
         out_trade_no=out_trade_no,
@@ -213,10 +217,23 @@ async def create_order(
         amount_fen=int(sku["amount_fen"]),
         credit_fen=int(sku["credit_fen"]),
         pay_type=body.pay_type,
+        provider=provider,
         status="pending",
     )
     db.add(order)
     await db.commit()
+    base = {
+        "out_trade_no": out_trade_no,
+        "sku_id": sku["id"],
+        "sku_name": str(sku["name"]),
+        "pay_type": body.pay_type,
+        "provider": provider,
+        "amount_fen": order.amount_fen,
+        "credit_fen": order.credit_fen,
+        "expire_seconds": topup_orders.order_expire_seconds(provider),
+    }
+    if provider == "stripe":
+        return {**base, **await _create_stripe_checkout(db, order, str(sku["name"]))}
     money_yuan = epay.money_yuan_from_fen(int(sku["amount_fen"]))
     try:
         mapi = await epay.create_mapi_payment(
@@ -236,20 +253,46 @@ async def create_order(
     except ValueError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return {
-        "out_trade_no": out_trade_no,
-        "sku_id": sku["id"],
-        "sku_name": str(sku["name"]),
-        "pay_type": body.pay_type,
-        "amount_fen": order.amount_fen,
-        "credit_fen": order.credit_fen,
+        **base,
         "trade_no": mapi.get("trade_no") or "",
         "qrcode": mapi.get("qrcode") or "",
         "payurl": mapi.get("payurl") or "",
         "img": mapi.get("img") or "",
         "qr_payload": mapi.get("qr_payload") or "",
         "pay_mode": mapi.get("pay_mode") or ("qr" if mapi.get("qr_payload") else "redirect"),
-        "expire_seconds": billing.ORDER_EXPIRE_SECONDS,
         "submit_url": epay.submit_url(fields),
+    }
+
+
+async def _create_stripe_checkout(db: AsyncSession, order: Order, sku_name: str) -> dict:
+    """为订单创建 Stripe Checkout 会话，返回前端跳转托管收银台所需字段。"""
+    try:
+        cs = await stripe_pay.create_checkout_session(
+            out_trade_no=order.out_trade_no,
+            name=sku_name,
+            amount_fen=int(order.amount_fen),
+            pay_type=order.pay_type,
+            user_id=int(order.user_id),
+        )
+    except stripe_pay.StripeNotConfigured as exc:
+        order.status = "closed"
+        await db.commit()
+        raise HTTPException(status_code=503, detail="在线支付暂未开通") from exc
+    except (ValueError, httpx.HTTPError) as exc:
+        order.status = "closed"
+        await db.commit()
+        logger.warning("stripe checkout create failed order=%s: %s", order.out_trade_no, exc)
+        raise HTTPException(status_code=503, detail="支付通道暂不可用，请稍后重试") from exc
+    order.external_id = cs["id"]
+    await db.commit()
+    return {
+        "trade_no": cs["id"],
+        "qrcode": "",
+        "payurl": cs["url"],
+        "img": "",
+        "qr_payload": "",
+        "pay_mode": "redirect",
+        "submit_url": cs["url"],
     }
 
 
@@ -437,6 +480,7 @@ async def list_orders(
                 "amount_fen": o.amount_fen,
                 "credit_fen": o.credit_fen,
                 "pay_type": o.pay_type,
+                "provider": o.provider or "epay",
                 "status": o.status,
                 "trade_no": o.trade_no,
                 "paid_at": o.paid_at.isoformat() if o.paid_at else None,
@@ -462,14 +506,38 @@ async def get_order(
     order = result.scalar_one_or_none()
     if not order or order.user_id != user.id or order.team_id is not None:
         raise HTTPException(status_code=404, detail="订单不存在")
+    if order.status != "paid" and order.provider == "stripe" and order.external_id:
+        await _sync_stripe_order(db, order.out_trade_no)
+        await db.refresh(order)
     return {
         "out_trade_no": order.out_trade_no,
         "status": order.status,
         "amount_fen": order.amount_fen,
         "credit_fen": order.credit_fen,
         "pay_type": order.pay_type,
+        "provider": order.provider or "epay",
         "paid_at": order.paid_at.isoformat() if order.paid_at else None,
     }
+
+
+async def _sync_stripe_order(db: AsyncSession, out_trade_no: str) -> None:
+    """webhook 迟到兜底：主动查询 Stripe 会话，已付款且金额一致则入账。"""
+    order = await topup_orders.lock_order(db, out_trade_no)
+    if not order or order.status == "paid" or not order.external_id:
+        await db.rollback()
+        return
+    try:
+        sess = await stripe_pay.retrieve_session(order.external_id)
+    except (stripe_pay.StripeNotConfigured, httpx.HTTPError) as exc:
+        logger.info("stripe session sync skipped order=%s: %s", out_trade_no, exc)
+        await db.rollback()
+        return
+    if not stripe_pay.session_paid_matches(sess, int(order.amount_fen)):
+        await db.rollback()
+        return
+    pi = str(sess.get("payment_intent") or sess.get("id") or "")
+    await topup_orders.mark_order_paid(db, order, trade_no=pi, note=f"stripe:{order.pay_type}")
+    await db.commit()
 
 
 @router.post(

@@ -73,7 +73,7 @@ export default function PaymentModal({ open, checkout, onClose, onPaid, teamId }
     onClose()
   }
 
-  /** 新开易支付收银台（支付宝无原生码时） */
+  /** 新开支付收银台（易支付无原生码时 / Stripe 托管页） */
   function openCashier() {
     const url = (checkout?.payurl || '').trim()
     if (!url) {
@@ -105,7 +105,7 @@ export default function PaymentModal({ open, checkout, onClose, onPaid, teamId }
     /** 按网关返回值展示二维码图片、编码二维码或打开收银台。 */
     async function paintQr() {
       if (isRedirect) {
-        // 无原生二维码：直接新开易支付站点，弹窗仅等待到账
+        // 无原生二维码：直接新开收银台（易支付站点或 Stripe 托管页），弹窗仅等待到账
         if (!cancelled && payurl) {
           window.open(payurl, '_blank', 'noopener,noreferrer')
         }
@@ -209,7 +209,7 @@ export default function PaymentModal({ open, checkout, onClose, onPaid, teamId }
       ? '支付宝扫码支付'
       : '微信扫码支付'
   const tip = isRedirect
-    ? '已打开易支付页面，请在新窗口完成支付；完成后返回本页等待到账'
+    ? '已打开支付页面，请在新窗口完成支付；完成后返回本页等待到账'
     : isAlipay
       ? '请使用支付宝扫码完成支付'
       : '请使用微信扫码完成支付'
@@ -298,7 +298,7 @@ export default function PaymentModal({ open, checkout, onClose, onPaid, teamId }
 
         <p className="pf-pay-secure-line">
           <span className="pf-pay-shield" aria-hidden />
-          支付由易支付安全提供，到账以系统通知为准
+          支付由第三方支付平台安全处理，到账以系统通知为准
         </p>
       </div>
     </Modal>

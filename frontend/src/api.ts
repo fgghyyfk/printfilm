@@ -656,6 +656,8 @@ export const api = {
       /** qr=原生扫码；redirect=新开易支付收银台 */
       pay_mode?: 'qr' | 'redirect' | string
       expire_seconds?: number
+      /** 充值通道：epay | stripe（Stripe 为托管收银台跳转） */
+      provider?: string
     }>('/api/billing/orders', {
       method: 'POST',
       body: JSON.stringify({ sku_id, pay_type }),

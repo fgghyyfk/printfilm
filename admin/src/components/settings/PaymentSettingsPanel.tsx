@@ -12,6 +12,8 @@ import { LabeledControl, SettingsLoading, SettingsPanel, SettingsStatusBar, Sett
 import { SecretField } from "@/components/settings/SecretField";
 import { Switch } from "@/components/ui/switch";
 import { useAdminModelSettings } from "@/hooks/useAdminModelSettings";
+import { StripeSettingsSection } from "@/components/settings/StripeSettingsSection";
+import { EMPTY_STRIPE_SECRETS, stripePatchBody, stripeReady, type StripeSecretState } from "@/lib/stripeSettings";
 import { MediaPriceSettings } from "./MediaPriceSettings";
 
 const RATE_FIELDS = [
@@ -36,6 +38,7 @@ export function PaymentSettingsPanel() {
   const { form, loading, saving, patchField, save } = useAdminModelSettings();
   const [epayKeyInput, setEpayKeyInput] = useState("");
   const [clearEpayKey, setClearEpayKey] = useState(false);
+  const [stripeSecrets, setStripeSecrets] = useState<StripeSecretState>(EMPTY_STRIPE_SECRETS);
   const [smtpPasswordInput, setSmtpPasswordInput] = useState("");
   const [clearSmtpPassword, setClearSmtpPassword] = useState(false);
   const [numericDrafts, setNumericDrafts] = useState<Partial<Record<NumericKey, string>>>({});
@@ -60,6 +63,7 @@ export function PaymentSettingsPanel() {
       clear_epay_key: clearEpayKey,
       epay_notify_url: form.epay_notify_url.trim(),
       epay_return_url: form.epay_return_url.trim(),
+      ...stripePatchBody(form, stripeSecrets),
       billing_enabled: form.billing_enabled,
       billing_markup: 1.0,
       billing_estimate_buffer: form.billing_estimate_buffer,
@@ -88,6 +92,7 @@ export function PaymentSettingsPanel() {
     if (!saved) return;
     setEpayKeyInput("");
     setClearEpayKey(false);
+    setStripeSecrets(EMPTY_STRIPE_SECRETS);
     setSmtpPasswordInput("");
     setClearSmtpPassword(false);
     setNumericDrafts({});
@@ -109,7 +114,9 @@ export function PaymentSettingsPanel() {
   return <div className="space-y-5">
     <SettingsTabShell onSave={handleSave} saving={saving} saveLabel="保存支付与通知设置">
       <SettingsStatusBar title="支付与通知状态" items={[
-        { id: "epay", label: "易支付", ready: epayReady, readyText: "配置完整", pendingText: "未完成接入" },
+        form.payment_provider === "stripe"
+          ? { id: "provider", label: "充值通道 · Stripe", ready: stripeReady(form, stripeSecrets), readyText: "配置完整", pendingText: "缺少密钥" }
+          : { id: "provider", label: "充值通道 · 易支付", ready: epayReady, readyText: "配置完整", pendingText: "未完成接入" },
         { id: "billing", label: "余额计费", ready: form.billing_enabled, readyText: "已开启", pendingText: "已关闭" },
         { id: "smtp", label: "邮件发送", ready: smtpReady, readyText: "配置完整", pendingText: form.smtp_enabled ? "请补全 SMTP" : "未启用" },
       ]} />
@@ -138,6 +145,8 @@ export function PaymentSettingsPanel() {
           </div>
         </details>
       </SettingsPanel>
+
+      <StripeSettingsSection form={form} patchField={patchField} secrets={stripeSecrets} onSecretsChange={setStripeSecrets} />
 
       <SettingsPanel title="余额与计费" description="控制生成扣费及新用户赠送。图片与视频价格在下方单独发布，不随本表单保存。">
         <div className="settings-toggle-row">
