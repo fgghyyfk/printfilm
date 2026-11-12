@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
+import { Check, KeyRound, Plus } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
 import { api, type AdminLogicalModel, type AdminRoutingChannel, type AdminRoutingSettings } from "@/api/client";
@@ -42,25 +44,36 @@ export function RoutingSettingsPanel() {
   const [limitDrafts, setLimitDrafts] = useState<Record<string, Partial<Record<keyof Limits, string>>>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  // 已保存（线上实际生效）的配置 ID，与本地单选的 enabled 区分
+  const [savedActiveId, setSavedActiveId] = useState<string | null>(null);
+  // 当前展开编辑的配置 ID，只编辑不改变生效项
+  const [editingId, setEditingId] = useState<string | null>(null);
 
-  // 用服务端返回的设置刷新整页状态
-  function apply(data: AdminRoutingSettings) {
-    setChannels(editableChannels(data));
+  // 用服务端返回刷新列表，并默认展开生效中的配置
+  const applyLoaded = useCallback((data: AdminRoutingSettings, keepEditing?: string | null) => {
+    const list = editableChannels(data);
+    const active = list.find((c) => c.enabled)?.id ?? null;
+    setChannels(list);
     setModels(data.logical_models ?? []);
     setLimits(data.media_reference_limits ?? {});
     setLimitDrafts({});
-  }
+    setSavedActiveId(active);
+    setEditingId((prev) => {
+      const want = keepEditing ?? prev;
+      return want && list.some((c) => c.id === want) ? want : active ?? list[0]?.id ?? null;
+    });
+  }, []);
 
   const load = useCallback(async () => {
     try {
       const data = await api<AdminRoutingSettings>("/api/admin/settings/routing");
-      apply(data);
+      applyLoaded(data);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "加载配置失败");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [applyLoaded]);
   useEffect(() => { void load(); }, [load]);
 
   // 仅更新指定配置，不复制其他配置的 Key。
@@ -71,8 +84,10 @@ export function RoutingSettingsPanel() {
   // 每个新配置使用独立 ID，一条配置对应一把 Key。
   function add(provider: Provider) {
     const byteplus = provider === "byteplus";
+    const id = `${provider}-${crypto.randomUUID()}`;
+    setEditingId(id);
     setChannels((items) => [...items, {
-      id: `${provider}-${crypto.randomUUID()}`,
+      id,
       name: byteplus ? "BytePlus" : "TokenFree",
       base_url: byteplus ? BYTEPLUS_AP : TOKENFREE_BASE,
       api_key: "", has_api_key: false, api_format: "openai", protocol: "auto",
@@ -120,7 +135,7 @@ export function RoutingSettingsPanel() {
           media_reference_limits: limits,
         }),
       });
-      apply(res.settings);
+      applyLoaded(res.settings, editingId);
       toast.success("渠道配置已保存，所选配置已生效");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "保存失败");
@@ -129,25 +144,63 @@ export function RoutingSettingsPanel() {
     }
   }
 
+  // 单选生效项（保存后才真正切换）
+  function activate(id: string) {
+    setChannels((items) => items.map((item) => ({ ...item, enabled: item.id === id })));
+  }
+
   if (loading) return <SettingsLoading label="加载渠道配置…" />;
+  const pendingActiveId = channels.find((c) => c.enabled)?.id ?? null;
+  const switching = pendingActiveId !== savedActiveId;
+  const channel = channels.find((c) => c.id === editingId) ?? null;
   return (
     <SettingsTabShell onSave={() => void save()} saving={saving} saveLabel="保存">
-      <SettingsPanel title="模型渠道与 API Key" description="可保存多组 Key，手动选择一组并保存后生效。不会自动轮换或跨渠道回退；有未结束任务时暂不能修改。">
-        <div className="flex gap-2">
-          <button className="admin-btn admin-btn-secondary" type="button" onClick={() => add("tokenfree")}>添加 TokenFree 配置</button>
-          <button className="admin-btn admin-btn-secondary" type="button" onClick={() => add("byteplus")}>添加 BytePlus / 火山方舟配置</button>
+      <SettingsPanel title="模型渠道与 API Key" description="可保存多组 Key，但同一时间只有一组生效。点卡片查看/编辑，点「设为生效」并保存后切换。不会自动轮换或跨渠道回退；有未结束任务时暂不能修改。">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {channels.map((item) => {
+            const bp = item.advanced_config?.provider === "byteplus";
+            const isSaved = item.id === savedActiveId;
+            const isPending = item.enabled && !isSaved;
+            const isEditing = item.id === editingId;
+            return (
+              <button key={item.id} type="button" onClick={() => setEditingId(item.id)}
+                className={cn(
+                  "relative flex flex-col gap-1.5 rounded-lg border bg-white p-3 text-left transition",
+                  item.enabled ? "border-[var(--admin-forest)] bg-[#f3f8f5]" : "border-[var(--admin-border)] hover:border-[#c5d4cc]",
+                  isEditing && "ring-2 ring-[var(--admin-forest)]/30",
+                )}>
+                <div className="flex items-center gap-2">
+                  <span className="truncate font-medium">{item.name || "未命名配置"}</span>
+                  {isSaved && item.enabled && <span className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-full bg-[var(--admin-forest)] px-2 py-0.5 text-[11px] text-white"><Check className="h-3 w-3" />生效中</span>}
+                  {isPending && <span className="ml-auto shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] text-amber-800">保存后生效</span>}
+                  {isSaved && !item.enabled && <span className="ml-auto shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] text-gray-500">保存后停用</span>}
+                </div>
+                <div className="flex items-center gap-2 text-xs text-[#909399]">
+                  <span className="rounded bg-gray-100 px-1.5 py-0.5 text-gray-600">{bp ? "BytePlus / 火山方舟" : "TokenFree"}</span>
+                  <span className={cn("inline-flex items-center gap-1", item.has_api_key || item.api_key ? "text-[var(--admin-forest)]" : "text-red-500")}>
+                    <KeyRound className="h-3 w-3" />{item.api_key ? "待保存" : item.has_api_key ? "Key 已保存" : "未填 Key"}
+                  </span>
+                </div>
+                {isEditing && <span className="text-[11px] text-[var(--admin-forest)]">正在编辑 ↓</span>}
+              </button>
+            );
+          })}
         </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button className="admin-btn admin-btn-secondary" type="button" onClick={() => add("tokenfree")}><Plus className="h-3.5 w-3.5" />添加 TokenFree 配置</button>
+          <button className="admin-btn admin-btn-secondary" type="button" onClick={() => add("byteplus")}><Plus className="h-3.5 w-3.5" />添加 BytePlus / 火山方舟配置</button>
+        </div>
+        {switching && <p className="mt-3 text-xs text-amber-700">已切换生效配置，点右上角「保存」后才会应用。</p>}
       </SettingsPanel>
-      {channels.map((channel) => {
+      {channel && (() => {
         const advanced = channel.advanced_config!;
         const byteplus = advanced.provider === "byteplus";
         return (
-          <SettingsPanel key={channel.id} title={channel.name} description={byteplus ? "BytePlus ModelArk / 火山方舟：填写该区域已开通的模型或接入点 ID。" : "TokenFree New API：保留现有模型预设。"}>
-            <label className="mb-4 flex items-center gap-2">
-              <input type="radio" name="active-channel" checked={channel.enabled}
-                onChange={() => setChannels((items) => items.map((item) => ({ ...item, enabled: item.id === channel.id })))} />
-              选择此配置生效（保存后应用）
-            </label>
+          <SettingsPanel key={channel.id} title={`编辑：${channel.name || "未命名配置"}`}
+            description={byteplus ? "BytePlus ModelArk / 火山方舟：填写该区域已开通的模型或接入点 ID。" : "TokenFree New API：保留现有模型预设。"}
+            actions={channel.enabled
+              ? <span className="inline-flex items-center gap-1 text-xs text-[var(--admin-forest)]"><Check className="h-3.5 w-3.5" />{channel.id === savedActiveId ? "当前生效配置" : "保存后生效"}</span>
+              : <button type="button" className="admin-btn admin-btn-primary" onClick={() => activate(channel.id)}>设为生效</button>}>
             <div className="settings-field-grid settings-field-grid--2">
               <LabeledControl label="配置名称">
                 <input className="settings-input" value={channel.name} onChange={(e) => update(channel.id, { name: e.target.value })} />
@@ -188,7 +241,7 @@ export function RoutingSettingsPanel() {
             {byteplus && <p className="mt-3 text-xs text-[#909399]">Key、模型和接入点必须属于所选区域；区域及可用能力以 BytePlus 或火山方舟账号控制台为准。</p>}
           </SettingsPanel>
         );
-      })}
+      })()}
 
       <SettingsPanel title="模型启停" description="当前生效配置下的模型。停用后不参与生成；默认模型被停用时，自动改用同类第一个启用的模型。切换配置后请先保存，再调整这里。">
         {models.length === 0 ? <p className="text-sm text-[var(--admin-muted)]">当前生效配置还没有可用模型。</p> : (
