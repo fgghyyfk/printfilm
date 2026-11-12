@@ -100,7 +100,7 @@ export const enWorkflow = { workflow: {
   "confirming": "Confirming…",
   "credited_ce9b10": "Credited",
   "iVeCompletedPayment": "I've completed payment",
-  "paymentIsHandledByEpayCreditsAreAddedAfter": "Payment is handled by Epay. Credits are added after system confirmation.",
+  "paymentIsHandledByEpayCreditsAreAddedAfter": "Payment is processed securely by a third-party provider. Credits are added after system confirmation.",
   "hideBalance": "Hide balance",
   "showBalance": "Show balance",
   "viewTopUpHistory": "View top-up history",

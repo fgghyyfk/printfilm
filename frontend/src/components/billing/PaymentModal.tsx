@@ -73,7 +73,7 @@ export default function PaymentModal({ open, checkout, onClose, onPaid }: Props)
     onClose()
   }
 
-  /** 新开易支付收银台（支付宝无原生码时） */
+  /** 新开支付收银台（易支付无原生码时 / Stripe 托管页） */
   function openCashier() {
     const url = (checkout?.payurl || '').trim()
     if (!url) {
@@ -105,7 +105,7 @@ export default function PaymentModal({ open, checkout, onClose, onPaid }: Props)
     /** 按网关返回值展示二维码图片、编码二维码或打开收银台。 */
     async function paintQr() {
       if (isRedirect) {
-        // 无原生二维码：直接新开易支付站点，弹窗仅等待到账
+        // 无原生二维码：直接新开收银台（易支付站点或 Stripe 托管页），弹窗仅等待到账
         if (!cancelled && payurl) {
           window.open(payurl, '_blank', 'noopener,noreferrer')
         }

@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select, text
 
-from app.api import auth, billing, projects, tasks, templates, tools
+from app.api import auth, billing, billing_stripe, projects, tasks, templates, tools
 from app.api import api_keys as user_api_keys
 from app.api import project_avatar
 from app.api import ecom_hub, ecom_jobs, ecom_set
@@ -93,6 +93,7 @@ app.include_router(projects.router, prefix="/api")
 app.include_router(project_avatar.router, prefix="/api")
 app.include_router(tasks.router, prefix="/api")
 app.include_router(billing.router, prefix="/api")
+app.include_router(billing_stripe.router, prefix="/api")
 app.include_router(ecom_set.router, prefix="/api")
 app.include_router(ecom_jobs.router, prefix="/api")
 app.include_router(ecom_hub.router, prefix="/api")
@@ -239,6 +240,10 @@ async def _apply_schema_patches() -> None:
             await conn.execute(text("ALTER TABLE projects ADD COLUMN avatar_resolution VARCHAR(8) DEFAULT ''"))
 
         # User billing columns
+        # 充值订单：多通道（易支付 / Stripe）
+        await conn.execute(text("ALTER TABLE orders ADD COLUMN IF NOT EXISTS provider VARCHAR(16) NOT NULL DEFAULT 'epay'"))
+        await conn.execute(text("ALTER TABLE orders ADD COLUMN IF NOT EXISTS external_id VARCHAR(128)"))
+
         ucols = await _pg_columns(conn, "users")
         # 早期库可能无 create_all 后缺此列（模型有、补丁曾遗漏）
         if "quota_left" not in ucols:

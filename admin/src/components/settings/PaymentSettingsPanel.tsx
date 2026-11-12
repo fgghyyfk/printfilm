@@ -11,12 +11,20 @@ import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { useAdminModelSettings } from "@/hooks/useAdminModelSettings";
 import { api } from "@/api/client";
+import { StripeSettingsSection } from "@/components/settings/StripeSettingsSection";
+import {
+  EMPTY_STRIPE_SECRETS,
+  stripePatchBody,
+  stripeReady,
+  type StripeSecretState,
+} from "@/lib/stripeSettings";
 
 // 易支付与 Token 计费配置
 export function PaymentSettingsPanel() {
   const { form, loading, saving, patchField, save } = useAdminModelSettings();
   const [epayKeyInput, setEpayKeyInput] = useState("");
   const [clearEpayKey, setClearEpayKey] = useState(false);
+  const [stripeSecrets, setStripeSecrets] = useState<StripeSecretState>(EMPTY_STRIPE_SECRETS);
   const [smtpPasswordInput, setSmtpPasswordInput] = useState("");
   const [clearSmtpPassword, setClearSmtpPassword] = useState(false);
   /*
@@ -67,6 +75,7 @@ export function PaymentSettingsPanel() {
         clear_epay_key: clearEpayKey,
         epay_notify_url: form.epay_notify_url,
         epay_return_url: form.epay_return_url,
+        ...stripePatchBody(form, stripeSecrets),
         billing_enabled: form.billing_enabled,
         billing_markup: 1.0,
         billing_estimate_buffer: form.billing_estimate_buffer,
@@ -100,6 +109,7 @@ export function PaymentSettingsPanel() {
     );
     setEpayKeyInput("");
     setClearEpayKey(false);
+    setStripeSecrets(EMPTY_STRIPE_SECRETS);
     setSmtpPasswordInput("");
     setClearSmtpPassword(false);
   }
@@ -154,11 +164,11 @@ export function PaymentSettingsPanel() {
         title="支付就绪状态"
         items={[
           {
-            id: "epay",
-            label: "易支付",
-            ready: epayReady,
-            readyText: "已配置",
-            pendingText: "未完整",
+            id: "provider",
+            label: "充值通道",
+            ready: form.payment_provider === "stripe" ? stripeReady(form, stripeSecrets) : epayReady,
+            readyText: form.payment_provider === "stripe" ? "Stripe 已就绪" : "易支付已就绪",
+            pendingText: form.payment_provider === "stripe" ? "Stripe 未完整" : "易支付未完整",
           },
           {
             id: "billing",
@@ -232,6 +242,13 @@ export function PaymentSettingsPanel() {
             </LabeledControl>
           </div>
         </SettingsPanel>
+
+        <StripeSettingsSection
+          form={form}
+          patchField={patchField}
+          secrets={stripeSecrets}
+          onSecretsChange={setStripeSecrets}
+        />
 
         <SettingsPanel
           className="settings-panel--compact"

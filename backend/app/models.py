@@ -310,6 +310,10 @@ class Order(Base):
     pay_type: Mapped[str] = mapped_column(String(16))  # alipay | wxpay
     status: Mapped[str] = mapped_column(String(16), default="pending")  # pending|paid|closed
     trade_no: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # 充值通道：epay | stripe
+    provider: Mapped[str] = mapped_column(String(16), default="epay", server_default="epay")
+    # 通道侧会话号（Stripe Checkout Session cs_…），用于 webhook 迟到时主动补单
+    external_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

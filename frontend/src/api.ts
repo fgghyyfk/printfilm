@@ -636,6 +636,8 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ sku_id, pay_type }),
     })
+      /** 充值通道：epay | stripe（Stripe 为托管收银台跳转） */
+      provider?: string
   },
   getBillingOrder(outTradeNo: string) {
     return request<{

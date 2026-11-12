@@ -84,6 +84,15 @@ export type AdminModelSettings = {
   epay_notify_url: string;
   epay_return_url: string;
   has_epay_key: boolean;
+  payment_provider: "epay" | "stripe";
+  stripe_secret_key: string;
+  stripe_webhook_secret: string;
+  stripe_currency: string;
+  stripe_fx_rate: number;
+  stripe_success_url: string;
+  stripe_cancel_url: string;
+  has_stripe_secret_key: boolean;
+  has_stripe_webhook_secret: boolean;
   billing_enabled: boolean;
   billing_markup: number;
   billing_estimate_buffer: number;

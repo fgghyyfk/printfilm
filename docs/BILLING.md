@@ -5,7 +5,7 @@
 - 按上游 **真实 TokenFree 成本**（或无法拿到 usage 时的保守估价）计费。
 - 用户支付价 = TokenFree 官方成本，**不再加价**。
 - 钱包单位：**分（fen）**。
-- 充值：易支付 [pay.gitcc.com](https://pay.gitcc.com/)，支付宝 `alipay` / 微信 `wxpay`。
+- 充值：支付宝 `alipay` / 微信 `wxpay`，通道二选一（后台「支付设置」切换 `payment_provider`）：易支付 [pay.gitcc.com](https://pay.gitcc.com/) 聚合扫码，或 Stripe Checkout 托管收银台（见下文「Stripe」）。
 - **所有 AI 调用**均关联 `task_run_id`（单次聊天/API/工具调用创建轻量 TaskRun）。
 - 本地按时长估算的视频 tokens 使用 `tokens_estimated` 标记，不能被识别为上游实测用量；实际费用仍优先取上游账单。
 - 画布视频下载中断时保留原上游任务号，按退避策略重试获取成片，不重新创建视频生成请求；超过重试上限后保留原任务号供排查。
@@ -244,6 +244,32 @@ EPAY_RETURN_URL=https://your-site.example.com/pricing?paid=1
 
 下单：服务端 `POST {EPAY_API_URL}/mapi.php`（扫码），MD5 签名。异步 notify 验签成功 → 订单入账（幂等）。
 
+## Stripe（支付宝 / 微信支付）
+
+参考 Promptoll 的实现：直接调 Stripe REST，不引 SDK（`services/stripe_pay.py`，webhook 在 `api/billing_stripe.py`）。
+
+1. Stripe Dashboard → Settings → Payment methods 开通 **Alipay** 与 **WeChat Pay**（微信只支持 CNY 与账户本币，如香港账户 HKD）。
+2. Developers → Webhooks 添加端点 `{域名}/api/billing/stripe/webhook`，订阅 `checkout.session.completed`、`checkout.session.async_payment_succeeded`，把签名密钥 `whsec_…` 填进后台。
+3. 后台「支付设置 → 充值通道 · Stripe」填 Secret Key，通道切到 Stripe 保存即生效（DB overlay，无需重启）。
+
+```
+PAYMENT_PROVIDER=stripe
+STRIPE_SECRET_KEY=sk_live_***
+STRIPE_WEBHOOK_SECRET=whsec_***
+STRIPE_CURRENCY=cny        # 非 cny 时按 STRIPE_FX_RATE 折算（1 CNY = ? 目标币）
+STRIPE_FX_RATE=1.0
+STRIPE_SUCCESS_URL=        # 留空 {PUBLIC_BASE_URL}/pricing?paid=1
+STRIPE_CANCEL_URL=         # 留空 {PUBLIC_BASE_URL}/pricing
+```
+
+流程：下单 `POST /v1/checkout/sessions`（`payment_method_types` 为 `alipay` 或 `wechat_pay`）→ 前端新开 Stripe 托管页扫码 → webhook 验签（HMAC-SHA256，5 分钟防重放）→ 金额核对 → 行锁幂等入账。
+
+- 金额核对用下单时写进 session metadata 的快照（人民币分、展示金额、币种），后续改汇率不影响在途订单。
+- 金额不一致只记错误日志、不入账，返回 2xx 防止 Stripe 无限重试，需人工核对。
+- 订单查询 `GET /api/billing/orders/{no}` 在 Stripe 订单未付时会主动拉取会话补单，webhook 迟到也能到账。
+- Stripe 会话有效期 30 分钟，本地订单同步按 30 分钟过期；易支付仍为 5 分钟。本地已关闭的订单若通道确认已付款，照常入账。
+- 只处理 metadata.product=`kaikou` 的事件，同一 Stripe 账户的其他产品事件忽略。退款/拒付暂不自动回扣余额，需后台人工处理。
+
 ## API
 
 | 方法 | 路径 | 说明 |
@@ -252,6 +278,7 @@ EPAY_RETURN_URL=https://your-site.example.com/pricing?paid=1
 | GET | `/api/billing/orders` | 充值订单列表 |
 | POST | `/api/billing/orders` | `{sku_id, pay_type}` → 扫码支付 |
 | POST | `/api/billing/epay/notify` | 易支付回调 |
+| POST | `/api/billing/stripe/webhook` | Stripe 事件回调（验 `Stripe-Signature`） |
 | GET | `/api/admin/usage-events` | 管理端用量明细分页 |
 | GET | `/api/admin/tasks/{id}` | 任务详情含 `usage_lines` 与计费字段 |
 | GET | `/api/admin/stats/upstream-usage` | 近 N 日官方/本地成本对照 |

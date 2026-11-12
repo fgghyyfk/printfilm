@@ -88,7 +88,10 @@ async def test_epay_notify_duplicate_callback_credits_once(
 
 def test_epay_notify_source_locks_order_row() -> None:
     """源码守卫：回调必须用 SELECT ... FOR UPDATE 锁订单行，防并发双入账。"""
-    assert "with_for_update" in inspect.getsource(billing_api.epay_notify)
+    from app.services.billing import topup_orders
+
+    assert "topup_orders.lock_order" in inspect.getsource(billing_api.epay_notify)
+    assert "with_for_update" in inspect.getsource(topup_orders.lock_order)
 
 
 def test_epay_verify_constant_time_signature() -> None:

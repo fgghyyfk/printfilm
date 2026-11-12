@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -107,6 +108,17 @@ class AdminModelSettingsOut(BaseModel):
     epay_notify_url: str = ""
     epay_return_url: str = ""
     has_epay_key: bool = False
+
+    # 充值通道与 Stripe
+    payment_provider: str = "epay"
+    stripe_secret_key: str = ""
+    stripe_webhook_secret: str = ""
+    stripe_currency: str = "cny"
+    stripe_fx_rate: float = 1.0
+    stripe_success_url: str = ""
+    stripe_cancel_url: str = ""
+    has_stripe_secret_key: bool = False
+    has_stripe_webhook_secret: bool = False
 
     # Token 计费
     billing_enabled: bool = False
@@ -249,6 +261,16 @@ class AdminModelSettingsPatch(BaseModel):
     epay_return_url: str | None = None
     clear_epay_key: bool = False
 
+    payment_provider: Literal["epay", "stripe"] | None = None
+    stripe_secret_key: str | None = None
+    stripe_webhook_secret: str | None = None
+    stripe_currency: str | None = None
+    stripe_fx_rate: float | None = None
+    stripe_success_url: str | None = None
+    stripe_cancel_url: str | None = None
+    clear_stripe_secret_key: bool = False
+    clear_stripe_webhook_secret: bool = False
+
     billing_enabled: bool | None = None
     billing_markup: float | None = None
     billing_estimate_buffer: float | None = None
@@ -379,6 +401,13 @@ def model_config_field_names() -> tuple[str, ...]:
         "epay_key",
         "epay_notify_url",
         "epay_return_url",
+        "payment_provider",
+        "stripe_secret_key",
+        "stripe_webhook_secret",
+        "stripe_currency",
+        "stripe_fx_rate",
+        "stripe_success_url",
+        "stripe_cancel_url",
         "billing_enabled",
         "billing_markup",
         "billing_estimate_buffer",
@@ -431,6 +460,8 @@ SECRET_FIELD_FLAGS: dict[str, str] = {
     "tos_access_key": "has_tos_access_key",
     "tos_secret_key": "has_tos_secret_key",
     "epay_key": "has_epay_key",
+    "stripe_secret_key": "has_stripe_secret_key",
+    "stripe_webhook_secret": "has_stripe_webhook_secret",
     "smtp_password": "has_smtp_password",
 }
 
