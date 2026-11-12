@@ -634,6 +634,13 @@ async def _sync_active_tokenfree_defaults(db: AsyncSession, defaults: DefaultMod
     await db.flush()
 
 
+def _profile_has_key(item, previous: SystemModelChannelRow | None) -> bool:
+    """本次保存后该配置是否仍有 Key：新填的，或沿用库里已有且未勾选清除的。"""
+    if (item.api_key or "").strip():
+        return True
+    return bool(previous is not None and previous.api_key_ciphertext and not item.clear_api_key)
+
+
 async def patch_admin_routing_settings(
     db: AsyncSession,
     body: AdminRoutingSettingsPatch,
@@ -659,6 +666,8 @@ async def patch_admin_routing_settings(
     app_row = await _get_or_create_app_row(db)
     existing_rows = {row.id: row for row in (await db.execute(select(SystemModelChannelRow))).scalars()}
     if items is not None:
+        # 没有 Key 的非生效配置不入库（已有行随整组替换一并删除）
+        items = [item for item in items if item.enabled or _profile_has_key(item, existing_rows.get(item.id))]
         from sqlalchemy import text
 
         await db.execute(text("LOCK TABLE task_runs IN SHARE ROW EXCLUSIVE MODE"))

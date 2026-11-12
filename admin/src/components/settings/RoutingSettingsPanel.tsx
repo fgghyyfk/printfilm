@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Check, KeyRound, Plus } from "lucide-react";
+import { Check, KeyRound, Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
@@ -31,6 +31,11 @@ function editableChannels(data: AdminRoutingSettings): AdminRoutingChannel[] {
   }));
 }
 
+// 保存后仍有 Key 的配置才入库；生效配置始终保留（与后端规则一致）
+function keepOnSave(channel: AdminRoutingChannel): boolean {
+  return channel.enabled || Boolean(channel.api_key.trim()) || (channel.has_api_key && !channel.clear_api_key);
+}
+
 // 多组渠道和 Key 独立保存；仅单选配置生效，不自动轮换。
 export function RoutingSettingsPanel() {
   /*
@@ -48,6 +53,8 @@ export function RoutingSettingsPanel() {
   const [savedActiveId, setSavedActiveId] = useState<string | null>(null);
   // 当前展开编辑的配置 ID，只编辑不改变生效项
   const [editingId, setEditingId] = useState<string | null>(null);
+  // 已入库的配置 ID，用于提示「保存后删除」
+  const [savedIds, setSavedIds] = useState<string[]>([]);
 
   // 用服务端返回刷新列表，并默认展开生效中的配置
   const applyLoaded = useCallback((data: AdminRoutingSettings, keepEditing?: string | null) => {
@@ -58,6 +65,7 @@ export function RoutingSettingsPanel() {
     setLimits(data.media_reference_limits ?? {});
     setLimitDrafts({});
     setSavedActiveId(active);
+    setSavedIds(list.map((c) => c.id));
     setEditingId((prev) => {
       const want = keepEditing ?? prev;
       return want && list.some((c) => c.id === want) ? want : active ?? list[0]?.id ?? null;
@@ -128,7 +136,7 @@ export function RoutingSettingsPanel() {
       const res = await api<{ settings: AdminRoutingSettings }>("/api/admin/settings/routing", {
         method: "PATCH",
         body: JSON.stringify({
-          system_channels: channels.map((channel) => ({
+          system_channels: channels.filter(keepOnSave).map((channel) => ({
             ...channel, api_key: channel.api_key.trim() || undefined,
           })),
           logical_models: models,
@@ -149,10 +157,23 @@ export function RoutingSettingsPanel() {
     setChannels((items) => items.map((item) => ({ ...item, enabled: item.id === id })));
   }
 
+  // 移除一组配置（生效中的不可删）；已入库的在保存后才从数据库删除
+  function remove(id: string) {
+    const target = channels.find((c) => c.id === id);
+    if (!target || target.enabled) return;
+    if (!window.confirm(`删除配置「${target.name || "未命名配置"}」？${savedIds.includes(id) ? "保存后生效，Key 一并删除。" : ""}`)) return;
+    const rest = channels.filter((c) => c.id !== id);
+    setChannels(rest);
+    if (editingId === id) setEditingId(rest.find((c) => c.enabled)?.id ?? rest[0]?.id ?? null);
+  }
+
   if (loading) return <SettingsLoading label="加载渠道配置…" />;
   const pendingActiveId = channels.find((c) => c.enabled)?.id ?? null;
   const switching = pendingActiveId !== savedActiveId;
   const channel = channels.find((c) => c.id === editingId) ?? null;
+  // 保存时会被移除的配置数：手动删除的 + 未填 Key 将被丢弃的
+  const dropCount = savedIds.filter((id) => !channels.some((c) => c.id === id)).length
+    + channels.filter((c) => !keepOnSave(c)).length;
   return (
     <SettingsTabShell onSave={() => void save()} saving={saving} saveLabel="保存">
       <SettingsPanel title="模型渠道与 API Key" description="可保存多组 Key，但同一时间只有一组生效。点卡片查看/编辑，点「设为生效」并保存后切换。不会自动轮换或跨渠道回退；有未结束任务时暂不能修改。">
@@ -163,8 +184,10 @@ export function RoutingSettingsPanel() {
             const isPending = item.enabled && !isSaved;
             const isEditing = item.id === editingId;
             return (
-              <button key={item.id} type="button" onClick={() => setEditingId(item.id)}
+              <div key={item.id} role="button" tabIndex={0} onClick={() => setEditingId(item.id)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setEditingId(item.id); } }}
                 className={cn(
+                  "cursor-pointer",
                   "relative flex flex-col gap-1.5 rounded-lg border bg-white p-3 text-left transition",
                   item.enabled ? "border-[var(--admin-forest)] bg-[#f3f8f5]" : "border-[var(--admin-border)] hover:border-[#c5d4cc]",
                   isEditing && "ring-2 ring-[var(--admin-forest)]/30",
@@ -182,7 +205,15 @@ export function RoutingSettingsPanel() {
                   </span>
                 </div>
                 {isEditing && <span className="text-[11px] text-[var(--admin-forest)]">正在编辑 ↓</span>}
-              </button>
+                {!keepOnSave(item) && <span className="text-[11px] text-amber-700">未填 Key，保存时不会保留</span>}
+                {!item.enabled && (
+                  <button type="button" aria-label={`删除配置 ${item.name}`} title="删除此配置"
+                    className="absolute bottom-2 right-2 rounded p-1 text-[#909399] hover:bg-red-50 hover:text-red-600"
+                    onClick={(e) => { e.stopPropagation(); remove(item.id); }}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
             );
           })}
         </div>
@@ -191,6 +222,7 @@ export function RoutingSettingsPanel() {
           <button className="admin-btn admin-btn-secondary" type="button" onClick={() => add("byteplus")}><Plus className="h-3.5 w-3.5" />添加 BytePlus / 火山方舟配置</button>
         </div>
         {switching && <p className="mt-3 text-xs text-amber-700">已切换生效配置，点右上角「保存」后才会应用。</p>}
+        {dropCount > 0 && <p className="mt-1 text-xs text-amber-700">保存后将移除 {dropCount} 组配置（已删除或未填 Key）。</p>}
       </SettingsPanel>
       {channel && (() => {
         const advanced = channel.advanced_config!;

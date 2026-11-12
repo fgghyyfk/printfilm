@@ -227,3 +227,19 @@ async def test_media_download_never_sends_byteplus_key_to_other_origins(db_sessi
     monkeypatch.setattr(ark, 'resolve_tokenfree_media_download_url', resolve)
     await ArkGateway().download_result_media(url, tmp_path/'video.mp4')
     assert calls == [None]
+
+
+async def test_keyless_inactive_profiles_are_not_saved(db_session):
+    """未填 Key 的非生效配置不入库；已入库的清掉 Key 后也一并删除。"""
+    items = profiles() + [dict(id='byteplus-empty', name='空配置', base_url=AP, api_key='', enabled=False,
+                                advanced_config=dict(provider='byteplus'))]
+    out, _ = await model_settings.patch_admin_routing_settings(db_session, AdminRoutingSettingsPatch(system_channels=items))
+    assert sorted(c.id for c in out.system_channels) == ['byteplus-a', 'tokenfree']
+    again = [c.model_dump(exclude={'has_api_key'}) for c in out.system_channels]
+    for c in again:
+        c['api_key'] = None
+        c['clear_api_key'] = c['id'] == 'tokenfree'
+    out, _ = await model_settings.patch_admin_routing_settings(db_session, AdminRoutingSettingsPatch(system_channels=again))
+    assert [c.id for c in out.system_channels] == ['byteplus-a']
+    rows = list((await db_session.execute(select(SystemModelChannelRow))).scalars())
+    assert [r.id for r in rows] == ['byteplus-a']
