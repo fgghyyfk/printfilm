@@ -169,3 +169,10 @@ async def test_video_reference_cap_rejected_before_provider_or_publication(offli
         await planning.plan_items(_db(_project([_shot(1), _shot(2)])), _task())
     offline[0].assert_not_called()
     offline[1].assert_not_awaited()
+
+
+# 数字人口播：视频阶段是对口型（按秒另计价），不生成 Seedance 价目项；未配视频模型也不能报错
+@pytest.mark.asyncio
+async def test_avatar_videos_phase_skips_seedance_items(offline):
+    project = _project([_shot(1), _shot(2)], pipeline_mode="avatar", video_model="")
+    assert await planning.plan_items(_db(project), _task()) == []

@@ -123,7 +123,7 @@ async def plan_items(db, task) -> list[dict]:
         project = (await db.execute(select(Project).where(Project.id == task.project_id).options(selectinload(Project.shots), selectinload(Project.template)))).scalar_one_or_none() if task.project_id else None
         if not project:
             return []
-        from app.services.kepu_stages import normalize_kepu_pipeline_phase, shot_image_ready, shot_video_ready
+        from app.services.kepu_stages import is_avatar, normalize_kepu_pipeline_phase, shot_image_ready, shot_video_ready
         from app.services.pipeline import _image_size_for, _kepu_seedance_generate_audio, _project_output_ratio
         from app.services import seedance_segments as segplan
         phase = normalize_kepu_pipeline_phase(str(p.get("phase") or "script"), project)
@@ -147,7 +147,8 @@ async def plan_items(db, task) -> list[dict]:
                               "aspect_ratio": _project_output_ratio(project) or "1:1",
                               **_kepu_image_refs(project, shot, predecessors, pending_image_ids)},
                     model=project.image_model, target=shot.id, shot_no=shot.shot_no)
-            if phase == "videos" and (kind != "project_pipeline" or not shot_video_ready(shot)):
+            # 数字人口播的视频阶段是对口型（按秒另计价），不走 Seedance 价目，否则未配视频模型时会整步报错
+            if phase == "videos" and not is_avatar(project) and (kind != "project_pipeline" or not shot_video_ready(shot)):
                 from app.services.seedance_resolutions import project_video_resolution
                 resolution = project_video_resolution(project, settings)
                 script = (getattr(shot, "segment_script", "") or getattr(shot, "video_prompt", "") or "").strip()
