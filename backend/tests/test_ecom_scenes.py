@@ -208,3 +208,30 @@ def test_title_limit_by_slot():
     assert c["title"] == "Van Reed 香氛护手霜"
     d, _ = normalize_copy({"title": "Van Reed 香氛护手霜"}, layout="title_sub", title_max=title_limit("goods_scene"))
     assert len(d["title"]) == 10
+
+
+# 关闭启动建库时：规划用到还没补进库的内置场景，取场景时先补种再查；未知 key 不触发补种
+async def test_get_scene_seeds_missing_system_scene(db_session, monkeypatch):
+    import uuid
+
+    import pytest
+
+    from app.models_ecom import EcomScene
+
+    item = next(s for s in SYSTEM_SCENES if s["key"] == "hardware_workbench")
+    await db_session.execute(EcomScene.__table__.delete().where(EcomScene.key == item["key"]))
+    calls = []
+
+    async def fake_seed() -> None:
+        calls.append(1)
+        db_session.add(EcomScene(key=item["key"], scope="system", name=item["name"], industries=item["industries"],
+                                 description=item["description"], spec=scenes.normalize_spec(item["spec"]),
+                                 cover_url="", sort_order=0, is_active=True))
+        await db_session.flush()
+
+    monkeypatch.setattr(scenes, "ensure_seeded", fake_seed)
+    row = await scenes.get_scene(db_session, 1, "hardware_workbench")
+    assert row.key == "hardware_workbench" and calls == [1]
+    with pytest.raises(ValueError):
+        await scenes.get_scene(db_session, 1, f"nope_{uuid.uuid4().hex[:6]}")
+    assert calls == [1]
