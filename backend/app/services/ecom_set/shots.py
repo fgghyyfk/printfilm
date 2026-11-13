@@ -52,6 +52,11 @@ SLOT_SHOTS: dict[str, tuple[str, ...]] = {
     "goods_usage": ("eye_left", "eye_right", "close_up"),
     "goods_ingredient_still": ("ingredient_pile", "eye_center"),
     "goods_flatlay": ("flat_lay",),
+    "tool_cover": ("low_hero", "eye_center"),
+    "tool_power": ("low_hero", "eye_right", "eye_left"),
+    "tool_scene": ("eye_left", "eye_right", "eye_center"),
+    "tool_workbench": ("eye_center", "eye_left", "eye_right"),
+    "tool_pain": ("eye_left", "eye_right"),
 }
 ANY_SHOTS = tuple(k for k in SHOTS if k not in {"flat_lay", "ingredient_pile"} | RETIRED_SHOTS)
 

@@ -76,7 +76,7 @@ async def _element_pool(db: AsyncSession, user: User, *, category: str, keys: li
 
     if keys:
         return elements.snapshot(await elements.get_many(db, user, keys))
-    if category != "goods":
+    if category not in {"goods", "tool"}:
         return []
     industry = next(iter((scene or {}).get("industries") or []), "")
     # 节日场景：节日包 + 商品资料命中的元素；否则按商品资料推荐

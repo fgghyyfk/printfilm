@@ -15,6 +15,7 @@ CATEGORIES = {
     "water": "水与质感",
     "light": "光影氛围",
     "festival": "节日道具",
+    "workshop": "五金工坊",
 }
 
 _RAW = {
@@ -156,6 +157,17 @@ rim_light|轮廓逆光|逆光|beauty,jewelry,digital|l
 neon|霓虹光晕|霓虹,夜|digital,liquor|l
 rainbow|彩虹折射光|折射,水晶|beauty,jewelry|l
 """,
+    "workshop": """
+drill_bits|一排钻头|钻头,打孔,钻|hardware|s
+screws|几颗螺丝|螺丝,拧,起子|hardware|s
+hex_bolts|六角螺栓|螺栓,扳手|hardware|s
+wood_shavings|刨花木屑|木,木工|hardware|s
+tape_measure|卷尺|测量,装修|hardware|s
+work_gloves|一副劳保手套|手套,作业|hardware|m
+plank|一块原木板|木板,木工|hardware|m
+pegboard|洞洞板工具墙|收纳,工坊|hardware|l
+dust_light|光束中的细微粉尘|粉尘,动力|hardware|l
+""",
     "festival": """
 xmas_tree|迷你圣诞树|圣诞|festival,daily,beauty|m
 xmas_ball|圣诞彩球|圣诞|festival|s
@@ -179,6 +191,8 @@ PROMPTS = {
     "milk": "旁边有一小股牛奶溅起的奶花",
     "splash": "旁边有清澈的水花溅起，动态感",
     "rim_light": "商品边缘有一圈柔和的逆光轮廓",
+    "dust_light": "斜射光束中漂浮着细微的粉尘颗粒，有力量感",
+    "pegboard": "背景是虚化的洞洞板，挂着几件手动工具",
 }
 
 INDUSTRY_ALL = ["daily", "beauty", "food", "tea", "liquor", "digital", "jewelry"]

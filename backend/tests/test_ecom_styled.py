@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from PIL import Image
+from PIL import Image, ImageDraw, ImageOps
 
 from app.models_drama import DramaAsset, DramaProject
 from app.services.ecom_set import categories, presets
@@ -23,8 +23,10 @@ def _png(path: Path, color=(200, 120, 140)) -> Path:
 # 注册表：各品类都有材质、张数构成与槽位，槽位 key 都已登记
 def test_categories_options():
     opts = {c["id"]: c for c in categories.options()}
-    assert set(opts) == {"scarf", "apparel", "jewelry", "bag", "goods"}
+    assert set(opts) == {"scarf", "apparel", "jewelry", "bag", "goods", "tool"}
     assert opts["goods"]["uses_model"] is False and opts["goods"]["material_label"] == "包装形态"
+    assert opts["tool"]["uses_model"] is False and opts["tool"]["material_label"] == "工具形态"
+    assert opts["tool"]["composite"] is True and opts["bag"]["composite"] is False
     for c in opts.values():
         assert c["materials"] and c["counts"] and c["slots"]
         for keys in c["compositions"].values():
@@ -194,3 +196,45 @@ def test_plan_update_accepts_every_selectable_slot():
         count = len(categories.slot_keys(category))
         body = EcomPlanUpdateIn(items=[{"idx": i, "scene": "画面"} for i in range(count)])
         assert len(body.items) == count
+
+
+# 电动工具：走抠图合成，形态写进摆放；手持图用工具专用前缀；默认粗黑体、五金场景
+def test_tool_category():
+    from app.services.ecom_set import scenes, typo
+
+    assert categories.is_composite("tool") and not categories.is_composite("bag")
+    slots = presets.slots_for("tool", 8)
+    assert [s.key for s in slots][0] == "tool_cover" and "goods_white" in [s.key for s in slots]
+    assert presets.output_size("taobao_34", "tool_cover") == categories.frame_size("taobao_34")
+    p = categories.build_prompt("tool", slot_prompt="主视觉", scene="", ref="composite", size="", material="pistol",
+                                has_fabric=False)
+    assert p.startswith(categories.COMPOSITE_PREFIX) and "手枪式" in p
+    h = categories.build_prompt("tool", slot_prompt="手持", scene="", ref="hand", size="", material="pistol",
+                                has_fabric=False)
+    assert h.startswith(categories.TOOL_HAND_PREFIX)
+    assert categories.cover_copy("tool", name="SATA 20V锂电冲击钻", size="", material="pistol")["title"]
+    assert "形态：手枪式" in categories.plan_notes("tool", size="", material="pistol", notes="")
+    assert typo.default_type_style("tool", None) == "bold"
+    assert scenes.CATEGORY_INDUSTRY["tool"] == "hardware"
+    with pytest.raises(ValueError):
+        presets.slots_for("tool", 8, ["main_white"])
+
+
+# 电动工具细节图：按机头朝向取局部（朝左时镜像），四格都画出内容，不调模型
+def test_tool_detail_screen(tmp_path):
+    import numpy as np
+    from app.services.ecom_set import infoscreens, toolscreen
+
+    cut = Image.new("RGBA", (400, 400), (0, 0, 0, 0))
+    d = ImageDraw.Draw(cut)
+    d.rectangle((40, 40, 380, 150), fill=(30, 140, 100, 255))   # 机身 + 机头（朝右）
+    d.rectangle((60, 150, 160, 300), fill=(20, 20, 20, 255))    # 握把在后侧
+    d.rectangle((40, 300, 220, 380), fill=(30, 140, 100, 255))  # 电池
+    p = tmp_path / "tool.png"
+    cut.save(p)
+    assert toolscreen.head_on_right(cut) and not toolscreen.head_on_right(ImageOps.mirror(cut))
+    out = infoscreens.render_info("tool_detail", tmp_path / "d.jpg", size=(790, 1053), copy={}, styled={
+        "product_path": str(p), "material": "pistol"}, type_style="bold")
+    a = np.asarray(Image.open(out).convert("L"))
+    assert (a < 120).sum() > 2000
+    assert presets.SLOTS["tool_detail"].ref in presets.FREE_REFS

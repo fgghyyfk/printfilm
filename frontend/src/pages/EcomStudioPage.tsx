@@ -70,7 +70,8 @@ export default function EcomStudioPage() {
   const category = categories.find((c) => c.id === product?.category) || categories[0]
   const usesModel = category?.uses_model !== false
   const needsModel = usesModel && slots.some((k) => category?.slots.find((s) => s.key === k)?.ref === 'model')
-  const isGoods = category?.id === 'goods'
+  const isGoods = Boolean(category?.composite)
+  const isTool = category?.id === 'tool'
   const industries = useMemo(() => options?.industries || [], [options])
   const billable = slots.filter((k) => !category?.slots.find((s) => s.key === k)?.free).length
   const engines = options?.image_engines || []
@@ -210,9 +211,9 @@ export default function EcomStudioPage() {
                   <strong>{text('素材检查', 'Inputs')}</strong>
                   {(isGoods ? [
                     { ok: Boolean(product.colors[colorIndex]?.image_url), label: text('透明底商品图', 'Transparent product PNG'), tip: text('商品会原样合成进场景；普通照片也能用，但商品可能被重绘', 'Composited as-is into the scene') },
-                    { ok: Boolean(product.material_label), label: text('包装形态', 'Packaging'), tip: text('决定台面摆放与道具比例，可到「我的商品」补上', 'Set it in My products') },
+                    { ok: Boolean(product.material_label), label: isTool ? text('工具形态', 'Tool form') : text('包装形态', 'Packaging'), tip: text('决定台面摆放与道具比例，可到「我的商品」补上', 'Set it in My products') },
                     { ok: hasDims(dims), label: text('实际尺寸', 'Real size'), tip: text('填在下方：道具、手和商品按真实比例，不会忽大忽小', 'Fill below to keep props to scale') },
-                    { ok: Boolean(product.notes.trim() || notes.trim()), label: text('成分与卖点', 'Selling points'), tip: text('没有时文案会比较泛，建议写核心成分、功效、规格', 'Add ingredients & benefits for better copy') },
+                    { ok: Boolean(product.notes.trim() || notes.trim()), label: isTool ? text('参数与卖点', 'Specs & points') : text('成分与卖点', 'Selling points'), tip: isTool ? text('没有时文案会比较泛，建议写电压、转速、扭力、夹头范围', 'Add voltage, speed, torque, chuck range') : text('没有时文案会比较泛，建议写核心成分、功效、规格', 'Add ingredients & benefits for better copy') },
                   ] : [
                     { ok: Boolean(product.colors[colorIndex]?.image_url), label: text('设计图', 'Design image'), tip: text('出图的图案和颜色以它为准', 'Pattern & color source') },
                     { ok: Boolean(product.colors[colorIndex]?.real_image_url), label: text('实物图（选填）', 'Real photo (optional)'), tip: text('有实物图时，真实光线下的颜色和质感更准；可到「我的商品」给这个颜色加一张', 'Add one in My products for true color') },

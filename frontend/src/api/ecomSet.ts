@@ -137,8 +137,10 @@ export type EcomStyledCategory = {
   slots: { key: string; label: string; ref: 'model' | 'product' | 'flat' | 'composite' | 'texture' | 'info' | 'hand'; free: boolean }[]
   /** 是否需要模特（goods 日化标品为 false，跳过选模特） */
   uses_model?: boolean
-  /** 材质栏标签：goods 为「包装形态」，其余为「材质」 */
+  /** 材质栏标签：goods 为「包装形态」，tool 为「工具形态」，其余为「材质」 */
   material_label?: string
+  /** 是否走抠图原样合成（日化标品、电动工具） */
+  composite?: boolean
 }
 
 export type EcomSetPlanPayload = {

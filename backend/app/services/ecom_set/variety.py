@@ -16,7 +16,8 @@ SHOT_REFS = {"composite"}
 ELEMENT_REFS = {"composite", "texture", "hand", "product"}
 # 各类槽位放几个元素
 # 道具宁少勿满：原料静物 2 个、手持与陈列 1 个，其余默认 2 个
-ELEMENT_COUNT = {"goods_ingredient_still": 2, "goods_texture": 1, "goods_hand": 1, "goods_lineup": 1}
+ELEMENT_COUNT = {"goods_ingredient_still": 2, "goods_texture": 1, "goods_hand": 1, "goods_lineup": 1,
+                 "tool_usage": 1, "tool_hand": 1}
 
 
 def pool_from_scene(scene: dict | None) -> list[dict]:

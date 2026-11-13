@@ -5,6 +5,9 @@ import { apiErrorMessage } from './http'
 
 const BASE = '/api/tools/ecom-products'
 
+/** 走「抠图原样合成」的品类：上传实拍后自动抠透明底 */
+export const COMPOSITE_CATEGORIES = new Set(['goods', 'tool'])
+
 /** 商品资料 */
 export type EcomProduct = {
   id: number
@@ -124,7 +127,7 @@ export function restoreEcomProductColor(id: number, index: number): Promise<Ecom
 
 /** 需要自动抠图的颜色款下标：日化 / 标品、上传的不是透明底且还没抠过 */
 export function colorsToCutout(p: EcomProduct): number[] {
-  if (p.category !== 'goods') return []
+  if (!COMPOSITE_CATEGORIES.has(p.category)) return []
   return p.colors.flatMap((c, i) => (c.transparent === false && !c.photo_image_url ? [i] : []))
 }
 

@@ -276,10 +276,11 @@
 
 ## 12. P1 实现记录
 
-- **数据**：新表 `ecom_scenes`（`models_ecom.EcomScene`）；系统场景在 `services/ecom_set/scenes_seed.py`（7 行业 + 通用，共 45 个），启动时（`seed_ecom_scenes`）以及首次请求场景接口时（`scenes.ensure_seeded`）建表并补缺失场景，不覆盖后台改动——兼容关闭启动建库（`DATABASE_BOOTSTRAP_ENABLED=false`）的部署。封面在 `backend/static/ecom_scenes/{key}.jpg`（600×800，约 2.4MB）。
+- **数据**：新表 `ecom_scenes`（`models_ecom.EcomScene`）；系统场景在 `services/ecom_set/scenes_seed.py`（8 行业 + 通用，共 50 个；五金 5 个场景暂无封面图），启动时（`seed_ecom_scenes`）以及首次请求场景接口时（`scenes.ensure_seeded`）建表并补缺失场景，不覆盖后台改动——兼容关闭启动建库（`DATABASE_BOOTSTRAP_ENABLED=false`）的部署。封面在 `backend/static/ecom_scenes/{key}.jpg`（600×800，约 2.4MB）。
 - **接口**：`GET /api/tools/ecom-scenes?industry=&page=&page_size=`；`POST /api/tools/ecom-set/plan` 新增 `scene_key`；options 新增 `industries`、`category_industry`，品类新增 `uses_model`、`material_label`；套图 `styled` 新增 `scene_key`、`scene_name`。场景快照存进 `plan.styled.scene`。
 - **新品类 `goods`（日化/标品场景图）**：不用模特；「材质」改作包装形态（软管/瓶装/罐装/盒装/袋装）；槽位：封面·场景、白底主图（免费，程序渲染）、场景主图、卖点图、卖点图二、质地特写、使用场景、多款陈列（取商品库里所有透明底款，最多 6 款）。
 - **合成链路**（`services/ecom_set/composite.py`，在 `jobs.generate_goods_base` 调用）：按画幅与产品宽高比摆位（多款自动缩放保证间距）→ Seedream 以摆位图为参考搭景（1.5K）→ 边缘多尺度匹配定位（多款先按外轮廓定位再逐款精搜，从左到右对应）→ 原抠图贴回 + RGB 分通道低频光色迁移。定位不可信（大小异常/互相重叠/出画）时保留 AI 原图并记日志，不强行贴回。商品图不是透明底时退回「商品参考图」直出。
+- **新品类 `tool`（电动工具/五金）**（2026-11-13）：与 goods 同走「抠图原样合成」，保证机身铭牌、logo、参数不被 AI 重画；「材质」改作工具形态（手枪式/直柄式/手动工具/套装箱）。专属槽位：封面·场景、动力卖点、场景主图、细节特写、工作台陈列、痛点图、使用场景与手持展示（`ref=hand`，工具专用手部提示词）；白底图与卖点/使用方法/产品信息三张信息屏复用 `goods_white` / `goods_info_*`。可选 6/8/10/12 张，默认 8 张。新增「五金工具」行业（`hardware`，5 个系统场景 + 9 个五金元素），默认粗黑体。原图贴不回去（AI 镜像或换角度）时自动重画，最多再试 2 次，仍失败才保留 AI 原图并记日志；日化沿用原规则（不重画）。
 - **场景生效范围**：日化/标品全部槽位；其它品类只作用于纯商品槽位（`ref=product`），模特槽位沿用各自拍摄地点，避免改变现有丝巾/服饰效果。
 - **前端**：`/ecom` 新增「选场景」步骤（行业标签、场景卡、详情、记住上次选择）；goods 跳过「选模特」；选图卡片新增「原图合成」「质地特写」标签；结果页显示场景名。
 - **验证**：单测与集成测试（`tests/test_ecom_scenes.py` 11 个）；后端全量测试除 13 个与本改动无关、在原代码上同样失败的用例外全部通过；真实出图验证了「自然原木石」双支封面与「午后窗影」六款陈列；临时环境里走通了 选商品 → 选场景 → 选图 → 确认 → 规划 → 生成 的完整流程。

@@ -1,4 +1,4 @@
-"""场景库首批系统场景（7 个行业，共 45 个）。启动时只插入缺失的 key，已有记录以管理后台为准。
+"""场景库首批系统场景（8 个行业，共 50 个）。启动时只插入缺失的 key，已有记录以管理后台为准。
 
 字段见 scenes.normalize_spec；bg_color 是摆位底图的底色，尽量接近场景主色。
 """
@@ -163,8 +163,27 @@ SYSTEM_SCENES: list[dict] = [
        backdrop="浅蓝色背景，有水面反射的光斑", palette="浅蓝、银白", surface="浅水面",
        props=["细小水珠"], light="顶光透过水面形成光斑", mood="灵动、清透、闪耀", bg="CADAE2", ratio=0.4),
 
+    # ---------- 五金工具（电钻、起子机、角磨、手动工具） ----------
+    _s("hardware_dark_steel", "工业暗调", ["hardware"], "深灰钢板 + 冷暖轮廓光，硬朗有力量",
+       backdrop="深炭灰色金属质感背景，远处有虚化的暖色光斑", palette="炭灰、钢灰、少量暖橙", surface="磨砂深灰钢板台面",
+       props=["几颗散落的六角螺栓", "一小撮金属屑"], light="冷色轮廓光勾边，暖色侧光打亮机身", mood="硬朗、专业、有力量",
+       bg="2B2E33", ratio=0.42),
+    _s("hardware_workbench", "木作工作台", ["hardware"], "实木工作台 + 洞洞板工具墙，手作感",
+       backdrop="虚化的洞洞板工具墙，挂着几件手动工具", palette="原木色、墨绿、浅灰", surface="有使用痕迹的实木工作台",
+       props=["几颗木螺丝", "一卷卷尺", "少量刨花木屑"], light="明亮的自然窗光从左侧照来", mood="踏实、手作、生活化",
+       bg="CDB89A", ratio=0.42),
+    _s("hardware_renovation", "家装现场", ["hardware"], "白墙水泥地 + 梯子，装修进行时",
+       backdrop="虚化的装修中房间，白墙与木梯", palette="暖白、水泥灰、原木", surface="浅灰色水泥地面",
+       props=["一块木板", "几颗膨胀螺丝"], light="明亮的室内自然光", mood="真实、能干、居家", bg="D9D5CE", ratio=0.42),
+    _s("hardware_concrete", "水泥质感", ["hardware"], "清水混凝土 + 顶光，简洁工业风",
+       backdrop="清水混凝土墙面", palette="水泥灰、黑", surface="粗糙的水泥台面",
+       props=[], light="顶部柔和硬光，阴影利落", mood="简洁、工业、耐用", bg="A7A49F", ratio=0.45),
+    _s("hardware_garage", "车库工坊", ["hardware"], "车库工具墙 + 暖光，DIY 氛围",
+       backdrop="虚化的车库工坊，墙上挂着工具，暖色吊灯", palette="暖橙、深灰、木色", surface="深色金属工作台",
+       props=["一盒钻头", "手套"], light="暖色吊灯顶光，背景有柔和光斑", mood="DIY、热爱、男人的空间", bg="5A4A3C", ratio=0.42),
+
     # ---------- 通用 ----------
-    _s("common_studio_gray", "影棚灰", ["daily", "beauty", "food", "digital", "jewelry"], "中性灰渐变，什么商品都不出错",
+    _s("common_studio_gray", "影棚灰", ["daily", "beauty", "food", "digital", "jewelry", "hardware"], "中性灰渐变，什么商品都不出错",
        backdrop="中性灰渐变背景", palette="中性灰", surface="浅灰色无缝台面",
        props=[], light="棚拍柔光，柔和接地阴影", mood="专业、中性、百搭", bg="C8C6C2", ratio=0.55),
     _s("common_sunlit_window", "午后窗影", ["daily", "beauty", "food", "tea"], "素墙 + 斜射窗影，自然高级",
@@ -190,10 +209,10 @@ _GROUP_MEMBERS = {
     "fresh": "daily_plant_morning daily_citrus beauty_ingredient common_sunlit_window",
     "floral": "daily_floral jewelry_floral",
     "water": "daily_water beauty_serum_water jewelry_water liquor_ice",
-    "minimal": "daily_minimal_white beauty_acrylic digital_white common_studio_gray jewelry_plaster digital_geometry",
-    "luxury": "beauty_marble jewelry_velvet jewelry_black_gold liquor_luxury liquor_cellar digital_dark_tech",
+    "minimal": "hardware_concrete daily_minimal_white beauty_acrylic digital_white common_studio_gray jewelry_plaster digital_geometry",
+    "luxury": "hardware_dark_steel beauty_marble jewelry_velvet jewelry_black_gold liquor_luxury liquor_cellar digital_dark_tech",
     "oriental": "tea_zen tea_new_chinese tea_gift tea_leaf_flat liquor_banquet liquor_new_chinese",
-    "life": "beauty_vanity food_breakfast food_picnic food_office digital_desk digital_outdoor liquor_pairing tea_brew",
+    "life": "hardware_workbench hardware_renovation hardware_garage beauty_vanity food_breakfast food_picnic food_office digital_desk digital_outdoor liquor_pairing tea_brew",
     "pop": "beauty_color_block food_pop digital_neon",
     "festival": "daily_holiday food_festival",
 }

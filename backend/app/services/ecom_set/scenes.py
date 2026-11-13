@@ -24,9 +24,10 @@ INDUSTRIES: dict[str, str] = {
     "liquor": "酒类",
     "digital": "3C数码",
     "jewelry": "珠宝首饰",
+    "hardware": "五金工具",
 }
 # 品类默认打开的行业
-CATEGORY_INDUSTRY: dict[str, str] = {"goods": "daily", "jewelry": "jewelry"}
+CATEGORY_INDUSTRY: dict[str, str] = {"goods": "daily", "jewelry": "jewelry", "tool": "hardware"}
 
 SPEC_KEYS = ("backdrop", "palette", "surface", "props", "light", "mood")
 DEFAULT_BG = "D8C3A8"

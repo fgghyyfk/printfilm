@@ -62,7 +62,7 @@ TYPE_STYLES: dict[str, TypeStyle] = {
 }
 DEFAULT_TYPE_STYLE = "bold"
 # 场景行业 → 默认字体风格（日化/标品用）
-INDUSTRY_TYPE = {"food": "sans", "digital": "sans"}
+INDUSTRY_TYPE = {"food": "sans", "digital": "sans", "hardware": "bold"}
 
 NO_LINE_START = set("。，、；：！？）》」』”’,.;:!?)")
 INK = (38, 34, 30)
@@ -79,7 +79,7 @@ def normalize_type_style(value: str | None, default: str = DEFAULT_TYPE_STYLE) -
 
 def default_type_style(category: str, scene: dict | None) -> str:
     """品类与场景决定的默认字体风格：日化/标品按场景行业（食品、3C 用黑体，其余衬线）；其它品类保持粗黑体。"""
-    if category != "goods":
+    if category not in {"goods", "tool"}:
         return DEFAULT_TYPE_STYLE
     spec = (scene or {}).get("spec") or {}
     if spec.get("type_style") in TYPE_STYLES:
@@ -88,7 +88,7 @@ def default_type_style(category: str, scene: dict | None) -> str:
     for ind in industries:
         if ind in INDUSTRY_TYPE:
             return INDUSTRY_TYPE[ind]
-    return "serif"
+    return "bold" if category == "tool" else "serif"
 
 
 NO_TEXT = "none"

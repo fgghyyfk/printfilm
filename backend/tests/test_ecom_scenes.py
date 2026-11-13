@@ -28,7 +28,7 @@ def test_scene_text():
 # 系统场景：45 个、key 唯一、行业合法、字段齐全
 def test_system_scenes_data():
     keys = [s["key"] for s in SYSTEM_SCENES]
-    assert len(keys) == 45 and len(set(keys)) == 45
+    assert len(keys) == 50 and len(set(keys)) == 50
     for s in SYSTEM_SCENES:
         assert s["industries"] and set(s["industries"]) <= set(scenes.INDUSTRIES)
         spec = scenes.normalize_spec(s["spec"])

@@ -131,7 +131,7 @@ async def generate_base(db: AsyncSession, ecom: EcomSet, item: EcomSetItem) -> P
         from app.services.ecom_set import categories
 
         category = scarf.get("category") or "scarf"
-        if category == "goods" and slot.ref in {"composite", "texture"}:
+        if categories.is_composite(category) and slot.ref in {"composite", "texture"}:
             return await generate_goods_base(db, ecom, item, scarf, dest)
         if slot.ref == "ingredients":
             from app.services.ecom_set.ingredientscreen import generate_grid
@@ -179,9 +179,14 @@ async def generate_base(db: AsyncSession, ecom: EcomSet, item: EcomSetItem) -> P
     if not url:
         raise RuntimeError("生图未返回图片")
     path = await storage.ensure_local_media(url, dest)
-    if scarf is not None and (scarf.get("category") or "scarf") != "goods":
+    if scarf is not None and (scarf.get("category") or "scarf") not in {"goods", "tool"}:
         path = await asyncio.to_thread(color_fix, path, product)
     return path
+
+
+# 原图贴不回去时重画的品类与次数（日化沿用「保留 AI 所画」，工具铭牌不能由 AI 代画）
+RETRY_CATEGORIES = frozenset({"tool"})
+RETRY_ON_MISMATCH = 2
 
 
 # 标品：合成槽位（摆位 → AI 搭景 → 原图贴回）或质地槽位（只拍内容物）
@@ -198,7 +203,8 @@ async def generate_goods_base(db: AsyncSession, ecom: EcomSet, item: EcomSetItem
 
     spec = normalize_spec(((info.get("scene") or {}).get("spec")) or {})
     shot, els = item_layout(info, item)
-    prompt = categories.build_prompt("goods", slot_prompt=slot.prompt, scene=item.scene, ref=slot.ref, size=None,
+    category = info.get("category") if categories.is_composite(info.get("category")) else "goods"
+    prompt = categories.build_prompt(category, slot_prompt=slot.prompt, scene=item.scene, ref=slot.ref, size=None,
                                      material=info.get("material"), has_fabric=False,
                                      scene_card=categories.scene_of(info, with_props=not info.get("elements")),
                                      blank=item.blank, shot=f"{shot.prompt}（{shot.name}）" if shot else "",
@@ -230,42 +236,60 @@ async def generate_goods_base(db: AsyncSession, ecom: EcomSet, item: EcomSetItem
         refs = [ecom.product_image_url, *element_refs(els)]
     elif els:
         refs = element_refs(els)
-    result = await get_ark().gen_image(prompt, NEGATIVE_PROMPT, refs or None, project_id=0, shot_no=ecom.user_id,
-                                       size=f"{w}x{h}", **engine_kwargs(ecom, item))
-    await record_seedream_image_usage(
-        db, user_id=ecom.user_id, model=usage_model(ecom, item), domain="studio", image_result=result,
-        extra_raw={"tool_id": "ecomset", "set_id": ecom.id, "idx": item.idx, "mode": "composite" if use_composite else slot.ref},
-    )
-    url = result.local_url or result.remote_url or ""
-    if not url:
+    # 电动工具铭牌、logo 不能由 AI 代画：原图贴不回去（AI 镜像 / 换角度）时重画，最多再试 RETRY_ON_MISMATCH 次
+    attempts = 1 + (RETRY_ON_MISMATCH if use_composite and category in RETRY_CATEGORIES else 0)
+    # 用户只为交付的那张付费：重画产生的额外调用由平台承担，次数记在用量行 retries 里
+    result, path, out = None, dest, None
+    for attempt in range(attempts):
+        result = await get_ark().gen_image(prompt, NEGATIVE_PROMPT, refs or None, project_id=0, shot_no=ecom.user_id,
+                                           size=f"{w}x{h}", **engine_kwargs(ecom, item))
+        url = result.local_url or result.remote_url or ""
+        if not url:
+            break
+        path = await storage.ensure_local_media(url, dest)
+        if not use_composite:
+            out = path
+            break
+        out = await asyncio.to_thread(_restore_composite, path, dest, cutouts, stage_boxes, (w, h),
+                                      f"set={ecom.id} idx={item.idx} attempt={attempt}")
+        if out is not None:
+            break
+    if result is not None:
+        await record_seedream_image_usage(
+            db, user_id=ecom.user_id, model=usage_model(ecom, item), domain="studio", image_result=result,
+            extra_raw={"tool_id": "ecomset", "set_id": ecom.id, "idx": item.idx,
+                       "mode": "composite" if use_composite else slot.ref, "retries": attempt},
+        )
+    if result is None or not (result.local_url or result.remote_url):
         raise RuntimeError("生图未返回图片")
-    path = await storage.ensure_local_media(url, dest)
-    if not use_composite:
-        return path
+    return out or path
 
-    def _restore() -> Path:
-        from PIL import Image
 
-        with Image.open(path) as src:
-            ai = src.convert("RGB").resize((w, h), Image.Resampling.LANCZOS)
-        found = composite.locate(ai, cutouts, stage_boxes)
-        if not composite.plausible(found, stage_boxes, (w, h)):
-            # 定位不可信：保留 AI 原图（商品由 AI 绘制），不强行贴回造成错位
-            logger.warning("标品贴回定位不可信，保留 AI 原图 set=%s idx=%s found=%s", ecom.id, item.idx, found)
-            return path
-        # 逐支检查贴合度：AI 把商品画歪 / 换了角度时不贴回（保留 AI 所画的商品，避免出现斜影重影）
-        keep = [i for i, (c, f) in enumerate(zip(cutouts, found, strict=True))
-                if composite.match_score(ai, c, f) >= composite.MATCH_MIN]
-        if len(keep) < len(found):
-            logger.warning("标品贴回：%s/%s 支与 AI 角度不符，保留 AI 所画 set=%s idx=%s",
-                           len(found) - len(keep), len(found), ecom.id, item.idx)
-        if not keep:
-            return path
-        out = dest.with_name(dest.stem + "_cmp.jpg")
-        composite.restore(ai, [cutouts[i] for i in keep], [found[i] for i in keep]).save(out, "JPEG", quality=94)
-        return out
+def _restore_composite(path: Path, dest: Path, cutouts: list, stage_boxes: list, size: tuple[int, int],
+                       tag: str) -> Path | None:
+    """把原图商品贴回 AI 底图；定位不可信或全部角度不符时返回 None（调用方决定重画或保留 AI 原图）。"""
+    from PIL import Image
 
-    return await asyncio.to_thread(_restore)
+    from app.services.ecom_set import composite
+
+    w, h = size
+    with Image.open(path) as src:
+        ai = src.convert("RGB").resize((w, h), Image.Resampling.LANCZOS)
+    found = composite.locate(ai, cutouts, stage_boxes)
+    if not composite.plausible(found, stage_boxes, (w, h)):
+        # 定位不可信：不强行贴回造成错位
+        logger.warning("标品贴回定位不可信 %s found=%s", tag, found)
+        return None
+    # 逐支检查贴合度：AI 把商品画歪 / 换了角度时不贴回（避免出现斜影重影）
+    keep = [i for i, (c, f) in enumerate(zip(cutouts, found, strict=True))
+            if composite.match_score(ai, c, f) >= composite.MATCH_MIN]
+    if len(keep) < len(found):
+        logger.warning("标品贴回：%s/%s 支与 AI 角度不符 %s", len(found) - len(keep), len(found), tag)
+    if not keep:
+        return None
+    out = dest.with_name(dest.stem + "_cmp.jpg")
+    composite.restore(ai, [cutouts[i] for i in keep], [found[i] for i in keep]).save(out, "JPEG", quality=94)
+    return out
 
 
 # 标品合成要用的透明抠图：多款陈列取商品库里所有带透明底的款（最多 6 款），否则只用当前款

@@ -310,4 +310,6 @@ STRIPE_CANCEL_URL=         # 留空 {PUBLIC_BASE_URL}/pricing
 - 上游已受理（已有 `provider_task_id`）的任务停不下来，平台仍要付费：用户取消、批量取消、删除项目或改分镜作废时，都按预扣额计费（`billing/cancel_charge.py`），用量行 `provider=cancel_after_accept`。管理端可从任务详情追溯。
 - `BILLING_SIGNUP_GRANT_FEN` 默认 0。开启后同一 IP 每天最多 2 个账号可领，同一 IP 每小时最多注册 10 个账号（`services/register_limit.py`）。
 
+> 电商图「电动工具/五金」：计费同日化/标品。原图贴不回去时平台自动重画（最多再试 2 次），用户只为交付的那张付费，重画的额外调用由平台承担，次数记在该张用量行的 `raw.retries`。
+
 > 电商图「日化/标品场景图」：合成槽位与普通生图一样按张收费（`ecom_set_image`，按 2K 张价预扣）；实际按 1.5K 出图，上游成本约为 2K 的一半。白底主图由程序渲染，免费。场景库浏览与选择免费。信息屏（多款一览、成分说明等）与切换字体风格只排字，免费。

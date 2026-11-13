@@ -20,7 +20,7 @@ export const ECOM_COPY_LIMITS = { title: 10, subtitle: 16, bullet: 12, bullets: 
 
 /** 某张图的主标题字数上限：日化封面版式会自动换行，放宽到 16 字（与后端 title_limit 一致） */
 export function titleLimitOf(slot: string): number {
-  return slot === 'goods_cover' ? 16 : ECOM_COPY_LIMITS.title
+  return slot === 'goods_cover' || slot === 'tool_cover' ? 16 : ECOM_COPY_LIMITS.title
 }
 
 /** 生成中轮询间隔 */

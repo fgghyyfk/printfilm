@@ -246,3 +246,13 @@ def test_texture_uses_seedream_in_gpt_set():
     assert service.item_engine(ecom, EcomSetItem(slot="goods_texture")) == "seedream"
     assert service.item_engine(ecom, EcomSetItem(slot="goods_scene")) == "gpt-image-2"
     assert service.item_engine(EcomSet(plan={}), EcomSetItem(slot="goods_scene")) == "seedream"
+
+
+# 产品信息表：「20V」与「20V 2.0Ah 锂电池」「20V 锂电冲击钻」是不同参数，不能被当成重复删掉；工具形态行叫「形态」
+def test_spec_rows_tool_values():
+    styled = {"knowledge": kn.normalize({"specs": [{"label": "品名", "value": "20V 锂电冲击钻"},
+                                                   {"label": "电压", "value": "20V"},
+                                                   {"label": "电池", "value": "20V 2.0Ah 锂电池"}]}),
+              "category": "tool", "material_label": "手枪式"}
+    rows = infoscreens.spec_rows(styled, with_cautions=False)
+    assert [r[0] for r in rows] == ["品名", "电压", "电池", "形态"]

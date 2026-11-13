@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ImagePlus, Loader2, Plus, Scissors, Trash2, Undo2, X } from 'lucide-react'
 import {
-  addEcomProductColor, colorsToCutout, deleteEcomProduct, fetchEcomProductColorPhoto, restoreEcomProductColor, listEcomProducts, removeEcomProductColor, saveEcomProductColorCutout, setEcomProductColorReal, setEcomProductFabric, type EcomProduct,
+  addEcomProductColor, COMPOSITE_CATEGORIES, colorsToCutout, deleteEcomProduct, fetchEcomProductColorPhoto, restoreEcomProductColor, listEcomProducts, removeEcomProductColor, saveEcomProductColorCutout, setEcomProductColorReal, setEcomProductFabric, type EcomProduct,
 } from '../../api/ecomProducts'
 import type { EcomStyledCategory } from '../../api/ecomSet'
 import { resolveToolMediaUrl } from '../../api/tools'
@@ -104,7 +104,7 @@ export default function ProductsTab({ categories, onUse, planFen = 0, billingEna
         {p.colors.map((c, i) => <div key={`${i}-${c.photo_image_url || c.image_url}`} className="pf-es-color">
           <img className={c.transparent ? 'pf-es-cutimg' : undefined} src={resolveToolMediaUrl(c.image_url)} alt="" /><span>{c.name}</span>
           {cutting[`${p.id}-${i}`] ? <span className="pf-es-cutting"><Loader2 size={14} className="pf-tool-spin" />{cutting[`${p.id}-${i}`]}</span> : null}
-          {p.category === 'goods' && !cutting[`${p.id}-${i}`] ? (c.photo_image_url
+          {COMPOSITE_CATEGORIES.has(p.category) && !cutting[`${p.id}-${i}`] ? (c.photo_image_url
             ? <button type="button" className="pf-es-link" disabled={busy === p.id} title={text('不用抠图，换回上传的原图', 'Use the original photo')}
               onClick={() => void act(p.id, () => restoreEcomProductColor(p.id, i))}><Undo2 size={12} />{text('用原图', 'Original')}</button>
             : c.transparent || !canCut ? null

@@ -311,7 +311,10 @@ def get_strategy(model_id: str) -> MediaModelStrategy:
                                ("doubao-seedance-2-0-fast-", "seedance-2.0-fast"),
                                ("doubao-seedance-2-0-", "seedance-2.0"),
                                ("doubao-seedream-5-0-pro-", "seedream-5.0-pro"),
-                               ("doubao-seedream-5-0-", "seedream-5.0")):
+                               ("doubao-seedream-5-0-", "seedream-5.0"),
+                               # BytePlus 国际站同款模型的 dola- 前缀 ID
+                               ("dola-seedream-5-0-pro-", "seedream-5.0-pro"),
+                               ("dola-seedream-5-0-", "seedream-5.0")):
         if raw.startswith(prefix) and raw[len(prefix):].isdigit():
             return get_strategy(canonical)
     raise MediaValidationError("model", f"未注册模型策略：{model_id}")

@@ -27,6 +27,7 @@ DEFAULT_COPY = {
     "goods_info_specs": ("产品信息", "", "Product details"),
     "goods_info_story": ("品牌故事", "", "Our story"),
     "goods_info_size": ("产品尺寸", "实物测量 仅供参考", "Size"),
+    "tool_detail": ("细节做工", "实拍局部放大", "Details"),
 }
 
 
@@ -392,6 +393,10 @@ def render_info(slot_key: str, out: Path, *, size: tuple[int, int], copy: dict |
         _specs(img, y, bottom, spec_rows(styled, with_cautions=not tips), style, product)
     elif slot_key == "goods_info_story":
         _story(img, y, bottom, k, style, product)
+    elif slot_key == "tool_detail":
+        from app.services.ecom_set.toolscreen import draw_details
+
+        draw_details(img, y, bottom, product, str(styled.get("material") or ""))
     elif slot_key == SIZE_SLOT:
         from app.services.ecom_set.sizescreen import draw_size
 
@@ -409,14 +414,16 @@ def spec_rows(styled: dict, *, with_cautions: bool = True) -> list[tuple[str, st
     for r in k.get("specs") or []:
         value = str(r.get("value") or "")
         lead = re.match(r"^\s*([\d.]+\s*[A-Za-z\u4e00-\u9fff]{0,3})", value)
-        key = lead.group(1).replace(" ", "").lower() if lead else value
+        rest = value[lead.end():].strip() if lead else ""
+        # 只有「数值 + 括号注释」才按数值合并（60g / 60g（2.0 fl.oz.））；「20V」与「20V 2.0Ah 锂电池」是不同参数
+        key = (lead.group(1) if lead and (not rest or rest[0] in "（(") else value).replace(" ", "").lower()
         if value and key not in seen_vals:
             seen_vals.add(key)
             rows.append((r["label"], value))
     have = {label for label, _ in rows}
     extra = [("品名", styled.get("product_name") or ""), ("规格", styled.get("size") or ""),
              ("尺寸", dims_mod.short(styled.get("dims"))),
-             ("包装", styled.get("material_label") or "")]
+             ("形态" if styled.get("category") == "tool" else "包装", styled.get("material_label") or "")]
     values = {v for _, v in rows} | seen_vals
     for label, value in extra:
         if value and value not in values and label not in have and not any(label in h for h in have):

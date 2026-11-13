@@ -118,8 +118,36 @@ GOODS = Category(
     },
     default_material="tube",
 )
-GENERIC: dict[str, Category] = {c.id: c for c in (APPAREL, JEWELRY, BAG, GOODS)}
+# 电动工具 / 五金：同样走「抠图原样合成」，保证铭牌、参数、logo 不被 AI 重画；「材质」改作工具形态
+TOOL = Category(
+    "tool", "电动工具/五金", "",
+    materials={
+        "pistol": ("手枪式", "手枪式电动工具（电钻、起子机、扳手），握把朝下、机身水平，侧面朝向镜头立放", ""),
+        "straight": ("直柄式", "直柄式工具（角磨机、打磨机、热风枪），机身横放，侧面朝向镜头", ""),
+        "hand": ("手动工具", "手动五金工具（扳手、钳子、螺丝刀），平放或斜靠摆放", ""),
+        "kit": ("套装箱", "工具套装箱，正面朝向镜头摆放", ""),
+    },
+    compositions={
+        6: ("tool_cover", "tool_power", "tool_scene", "tool_detail", "goods_white", "tool_usage"),
+        8: ("tool_cover", "tool_power", "tool_scene", "tool_detail", "goods_white", "tool_usage", "tool_workbench",
+            "goods_info_specs"),
+        10: ("tool_cover", "tool_power", "tool_pain", "tool_scene", "goods_white", "goods_info_points", "tool_detail",
+             "tool_usage", "tool_workbench", "goods_info_specs"),
+        12: ("tool_cover", "tool_power", "tool_pain", "tool_scene", "goods_white", "goods_info_points", "tool_detail",
+             "tool_hand", "tool_usage", "tool_workbench", "goods_info_usage", "goods_info_specs"),
+    },
+    default_material="pistol",
+    default_count=8,
+)
+GENERIC: dict[str, Category] = {c.id: c for c in (APPAREL, JEWELRY, BAG, GOODS, TOOL)}
+# 走「抠图原样合成」的品类：不用模特，商品抠图贴回场景
+COMPOSITE_IDS = frozenset({"goods", "tool"})
 STYLED_IDS = ("scarf", *GENERIC)
+
+
+def is_composite(category: str | None) -> bool:
+    """是否为「抠图原样合成」类品类（日化标品、电动工具）。"""
+    return (category or "") in COMPOSITE_IDS
 
 
 def is_styled(category: str | None) -> bool:
@@ -207,6 +235,10 @@ TEXTURE_PREFIX = "画面中不要出现任何包装或商品容器，只表现�
 HAND_PREFIX = ("参考图是商品：画一只手握持这件商品，商品的外形、颜色、比例与包装上的文字、logo 必须与参考图完全一致，"
                "不要改字、不要新增文字；包装质感按真实实物：哑光、细腻的印刷纸面或磨砂软管质感，"
                "不要画成光滑反光的塑料或 3D 渲染感")
+TOOL_ORIENT = "工具的朝向、机头方向与参考图完全一致，不要左右镜像翻转，不要转动角度，机身上的铭牌与文字保持原样"
+TOOL_HAND_PREFIX = ("参考图是商品：画一只成年人的手稳稳握住这件工具的握把、食指搭在扳机上，"
+                    "工具的外形、配色、比例与机身上的铭牌、logo、文字必须与参考图完全一致，不要改字、不要新增文字；"
+                    "机身是哑光工程塑料与橡胶握把的真实质感，不要画成光滑反光的玩具或 3D 渲染感；手部比例真实，手指数量正确")
 BLANK_HINT = {"top": "画面上方约 30% 是干净的背景留白，用于排版文字", "bottom": "画面下方约 25% 是干净的留白，用于排版文字"}
 
 
@@ -232,9 +264,9 @@ def build_prompt(category: str, *, slot_prompt: str, scene: str, ref: str, size:
     from app.services.ecom_set.dims import scale_note
 
     scale = scale_note(dims, ref=ref) if category != "scarf" else ""
-    if category == "goods":
+    if category in COMPOSITE_IDS:
         text = build_goods_prompt(slot_prompt=slot_prompt, scene=scene, ref=ref, scene_card=scene_card,
-                                  blank=blank, material=material, shot=shot, elements=elements)
+                                  blank=blank, material=material, shot=shot, elements=elements, category=category)
         return f"{text}。{scale}" if scale else text
     if elements and ref == "product":
         scene_card = "。".join(x for x in (scene_card, elements) if x)
@@ -256,19 +288,22 @@ def build_prompt(category: str, *, slot_prompt: str, scene: str, ref: str, size:
 
 
 def build_goods_prompt(*, slot_prompt: str, scene: str, ref: str, scene_card: str, blank: str,
-                       material: str | None, shot: str = "", elements: str = "") -> str:
+                       material: str | None, shot: str = "", elements: str = "", category: str = "goods") -> str:
     """标品底图提示词：合成槽位围绕已摆好的商品搭景；质地槽位只拍内容物；手持槽位按商品参考图画手握商品。
 
-    shot：本张镜头构图描述；elements：本张画面元素（来自元素库，每张不同）。
+    shot：本张镜头构图描述；elements：本张画面元素（来自元素库，每张不同）；category：goods / tool。
     """
     if ref == "texture":
         parts = [TEXTURE_PREFIX, slot_prompt, scene, scene_card, elements, BLANK_HINT.get(blank, ""), COMPOSITE_LOCK]
     elif ref == "hand":
-        parts = [HAND_PREFIX, slot_prompt, scene_card, elements, scene, BLANK_HINT.get(blank, ""), COMPOSITE_LOCK]
+        prefix = TOOL_HAND_PREFIX if category == "tool" else HAND_PREFIX
+        parts = [prefix, slot_prompt, scene_card, elements, scene, BLANK_HINT.get(blank, ""), COMPOSITE_LOCK]
     else:
-        _, form, _ = GOODS.materials[normalize_material("goods", material)]
+        cat = GENERIC[category if category in COMPOSITE_IDS else "goods"]
+        _, form, _ = cat.materials[normalize_material(cat.id, material)]
         lay = "；本张商品平放在台面上" if "平放" in shot else ""
-        parts = [COMPOSITE_PREFIX, f"商品摆放：{form}{lay}", slot_prompt, shot, scene_card, elements, scene,
+        orient = TOOL_ORIENT if category == "tool" else ""
+        parts = [COMPOSITE_PREFIX, orient, f"商品摆放：{form}{lay}", slot_prompt, shot, scene_card, elements, scene,
                  BLANK_HINT.get(blank, ""), COMPOSITE_LOCK]
     return "。".join(p.strip("。 ") for p in parts if p and p.strip())
 
@@ -279,7 +314,7 @@ def plan_notes(category: str, *, size: str | None, material: str | None, notes: 
         return scarf_mod.plan_notes(size, notes, material)
     cat = GENERIC[category]
     _, texture, _ = cat.materials[normalize_material(category, material)]
-    kind = "包装" if category == "goods" else "材质"
+    kind = {"goods": "包装", "tool": "形态"}.get(category, "材质")
     head = f"品类：{cat.name}；{kind}：{material_label(category, material)}（{texture}）"
     if size:
         head += f"；规格：{size}"
@@ -291,7 +326,7 @@ def cover_copy(category: str, *, name: str, size: str | None, material: str | No
     if category == "scarf":
         return scarf_mod.cover_copy(name, size, material)
     base = (name or "").strip("《》 ")
-    if category == "goods":
+    if category in COMPOSITE_IDS:
         return goods_cover_copy(base, size)
     noun = GENERIC[category].noun
     sub = f"{material_label(category, material)} {noun}".strip() if noun else ""
@@ -338,6 +373,7 @@ def options() -> list[dict]:
             "slots": [{"key": k, "label": SLOTS[k].label, "ref": SLOTS[k].ref, "free": SLOTS[k].ref in FREE_REFS}
                       for k in slot_keys(cid)],
             "uses_model": any(SLOTS[k].ref == "model" for k in slot_keys(cid)),
-            "material_label": "包装形态" if cid == "goods" else "材质",
+            "material_label": {"goods": "包装形态", "tool": "工具形态"}.get(cid, "材质"),
+            "composite": cid in COMPOSITE_IDS,
         })
     return out

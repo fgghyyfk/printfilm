@@ -246,6 +246,32 @@ GOODS_SLOTS: dict[str, Slot] = {s.key: s for s in (
 FREE_REFS = frozenset({"flat", "info"})
 SLOTS.update(GOODS_SLOTS)
 
+# 电动工具 / 五金槽位（白底图、信息屏复用日化的 goods_white / goods_info_*）
+TOOL_SLOTS: dict[str, Slot] = {s.key: s for s in (
+    _c("tool_cover", "封面·场景", "专业电动工具主视觉，工具是画面视觉中心，硬朗有力量感的工业质感场景", "title_sub", "top", True),
+    _c("tool_power", "动力卖点", "突出工具动力与性能的氛围图：深色工业背景，冷暖对比的轮廓光勾勒机身，空气中有少量细微粉尘颗粒在光中漂浮",
+       "title_bullets", "top"),
+    _c("tool_scene", "场景主图", "工具放在真实的作业环境里（家装现场或工作台），构图稳定，主体突出", "title_corner", "top", True),
+    # 程序排版：合成模式下 AI 无法真正拉近（会整机重画、镜像），改为从实拍商品图裁局部放大
+    Slot("tool_detail", "细节特写",
+         "细节图（程序排版，从商品实拍图裁取机头、铭牌、握把、电池局部放大，不出画面）：只需写标题（≤10字）、副标题与英文小标",
+         "info", "3:4", "none", ref="info"),
+    _c("tool_workbench", "工作台陈列", "工具摆在整洁的木质工作台上，旁边有少量钻头、螺丝等配件整齐排布，生活化的手作氛围",
+       "title_sub", "top"),
+    _c("tool_pain", "痛点图",
+       "使用痛点图：标题直击用户困扰（如手拧螺丝费力、装修打孔难），画面是工具在能联想到该困扰的家装情境里，氛围克制，工具清晰为主体",
+       "title_bullets", "top"),
+    Slot("tool_usage", "使用场景",
+         "侧面视角：一只成年人的手握住握把，工具机身保持水平，夹头里装着一根钻头，钻头水平向前钻入一块竖立固定的木板，"
+         "钻孔处有少量木屑飞出；工具结构与参考图完全一致（直筒机身、夹头在机身正前方，没有任何转角或额外部件），"
+         "不能立在台面上；动作自然真实，背景是虚化的工作台环境",
+         "title_corner", "3:4", "top", ref="hand"),
+    Slot("tool_hand", "手持展示",
+         "一只成年人的手稳稳握着工具的握把，工具侧面朝向镜头，展示单手握持的轻巧感，背景为同一场景的虚化环境",
+         "title_corner", "3:4", "top", ref="hand"),
+)}
+SLOTS.update(TOOL_SLOTS)
+
 SCARF_COMPOSITION: dict[int, tuple[str, ...]] = {
     6: ("scarf_cover", "scarf_hold", "scarf_texture", "scarf_knot", "scarf_size", "scarf_back"),
     8: ("scarf_cover", "scarf_hold", "scarf_texture", "scarf_knot", "scarf_size", "scarf_closeup", "scarf_long",
@@ -254,7 +280,7 @@ SCARF_COMPOSITION: dict[int, tuple[str, ...]] = {
          "scarf_back", "scarf_street", "scarf_flat"),
 }
 CATEGORIES = {"general": "通用商品", "scarf": "丝巾详情页", "apparel": "服饰上身", "jewelry": "首饰佩戴", "bag": "包袋上身",
-              "goods": "日化/标品场景图"}
+              "goods": "日化/标品场景图", "tool": "电动工具/五金"}
 
 
 # 规整品类，未知回落通用
@@ -315,7 +341,7 @@ def slots_for_count(count: int) -> list[Slot]:
 
 # 按平台与槽位得到最终输出像素 (宽, 高)
 def output_size(platform: str, slot_key: str) -> tuple[int, int]:
-    if slot_key.split("_", 1)[0] in {"scarf", "apparel", "jewelry", "bag", "goods"}:
+    if slot_key.split("_", 1)[0] in {"scarf", "apparel", "jewelry", "bag", "goods", "tool"}:
         from app.services.ecom_set.categories import frame_size
 
         return frame_size(platform)
