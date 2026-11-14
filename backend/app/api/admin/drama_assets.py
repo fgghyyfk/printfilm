@@ -80,7 +80,11 @@ def _asset_to_out(
     )
 
 
-@router.get("/drama-assets", response_model=AdminDramaAssetListOut)
+@router.get("/drama-assets", response_model=AdminDramaAssetListOut,
+    summary="分页查询全站漫剧资产",
+    description="管理员按用户、项目、资产类型、名称或派生编号关键词以及生成状态筛选漫剧资产。",
+    response_description="操作成功，返回结果详见响应结构",
+)
 async def list_drama_assets(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -148,7 +152,11 @@ async def list_drama_assets(
     return AdminDramaAssetListOut(items=items, meta=PageMeta(page=page, page_size=page_size, total=total))
 
 
-@router.get("/drama-assets/{asset_id}", response_model=AdminDramaAssetDetailOut)
+@router.get("/drama-assets/{asset_id}", response_model=AdminDramaAssetDetailOut,
+    summary="查看漫剧资产运维详情",
+    description="管理员查看指定漫剧资产及其项目归属、用户信息、媒体地址、生成状态与完整参数。资产不存在时返回 404。",
+    response_description="操作成功，返回结果详见响应结构",
+)
 async def get_drama_asset(
     asset_id: int,
     _admin: User = Depends(get_current_admin),

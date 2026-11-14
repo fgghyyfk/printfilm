@@ -14,7 +14,7 @@
   flex-direction: column;
   justify-content: center;
   gap: 0.75rem;
-  background: #fff;
+  background: var(--pf-card);
 }
 
 .auth-panel-top {
@@ -34,14 +34,14 @@
 .auth-visual {
   position: relative;
   overflow: hidden;
-  background: #111318;
+  background: var(--pf-ink);
 }
 
 .ink-wash {
   position: absolute;
   inset: -20%;
   background:
-    radial-gradient(circle at 30% 40%, rgba(255, 106, 61, 0.35), transparent 42%),
+    radial-gradient(circle at 30% 40%, rgb(var(--pf-accent-rgb) / 0.35), transparent 42%),
     radial-gradient(circle at 72% 58%, rgba(42, 111, 122, 0.35), transparent 38%),
     repeating-linear-gradient(
       -12deg,
@@ -74,7 +74,7 @@
   background: transparent;
   color: var(--pf-ink);
   padding: 0.7rem 1.2rem;
-  border-radius: 10px;
+  border-radius: var(--pf-radius-sm);
   font-weight: 600;
 }
 
@@ -116,4 +116,33 @@
   .ink-wash {
     animation: none !important;
   }
+}
+
+/* 登录页独立于应用壳，同样避免触屏输入触发浏览器缩放。 */
+@media (hover: none) and (pointer: coarse) {
+  .auth-shell input, .auth-shell textarea, .auth-shell select { font-size: max(1em, 16px); }
+}
+
+/* 路由懒加载占位：页面代码下载中时显示 */
+.pf-page-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  min-height: 60vh;
+  color: var(--pf-muted);
+  font-size: 0.92rem;
+}
+
+.pf-page-loading-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--pf-lime);
+  animation: pf-page-loading-pulse 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes pf-page-loading-pulse {
+  from { opacity: 0.25; transform: scale(0.8); }
+  to { opacity: 1; transform: scale(1.1); }
 }

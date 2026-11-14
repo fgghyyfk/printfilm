@@ -8,11 +8,12 @@ from app.schemas_routing import (
 from app.services.media_model_presets import all_preset_channel_models, clamp_default_to_preset
 
 TOKENFREE_BASE = 'https://www.tokenfree.com/v1'
-# 国内站地址与国际站区域列表分开维护，协议判定使用完整 Ark 白名单
+# Ark 原生协议的官方区域：BytePlus（国际站）与火山方舟（国内站）接口一致
 VOLC_ARK_BEIJING = 'https://ark.cn-beijing.volces.com/api/v3'
 BYTEPLUS_BASES = {
     'https://ark.ap-southeast.bytepluses.com/api/v3',
     'https://ark.eu-west.bytepluses.com/api/v3',
+    VOLC_ARK_BEIJING,
 }
 ARK_NATIVE_BASES = BYTEPLUS_BASES | {VOLC_ARK_BEIJING}
 CAPABILITIES = ('text', 'image', 'video', 'audio')
@@ -42,7 +43,7 @@ def normalize_profiles(items: list[SystemModelChannelIn]) -> list[SystemModelCha
         })
         base = item.base_url.strip().rstrip('/')
         if advanced.provider == 'byteplus':
-            if not is_ark_native(base):
+            if base not in BYTEPLUS_BASES:
                 raise ValueError('BytePlus / 火山方舟接口地址必须选择官方区域')
             if advanced.audio_model:
                 raise ValueError('BytePlus 暂不支持独立配音模型')
@@ -70,13 +71,43 @@ def active_profile(channels: list[SystemModelChannel]) -> SystemModelChannel | N
     return next((item for item in channels if item.enabled), None)
 
 
-def profile_state(channels: list[SystemModelChannel], legacy_defaults: DefaultModels):
-    """构造所选渠道路由；旧 TokenFree 默认模型迁移一次后保留。"""
-    from app.services.model_routing_config import synchronize_logical_models_with_channels
-
+def profile_state(
+    channels: list[SystemModelChannel],
+    legacy_defaults: DefaultModels,
+    disabled: set[str] | frozenset[str] = frozenset(),
+):
+    """构造所选渠道路由；disabled 为后台停用的模型 id，停用后不参与路由，默认模型自动换成同类可用模型。"""
     active = active_profile(channels)
     if active is None:
         return [], DefaultModels()
+    models, defaults = _active_profile_state(active, legacy_defaults)
+    return _apply_disabled(models, defaults, disabled)
+
+
+def _apply_disabled(models: list[LogicalModel], defaults: DefaultModels, disabled: set[str] | frozenset[str]):
+    """标记停用模型；默认值已停用或为空时取同能力第一个可用模型，全部停用则留空。"""
+    models = [model.model_copy(update={'enabled': model.id not in disabled}) for model in models]
+    update = {}
+    for cap in CAPABILITIES:
+        current = getattr(defaults, cap+'_model')
+        enabled_ids = _preset_ordered([model.id for model in models if model.capability == cap and model.enabled], cap)
+        if current in disabled or (not current and enabled_ids):
+            update[cap+'_model'] = enabled_ids[0] if enabled_ids else ''
+    return models, defaults.model_copy(update=update) if update else defaults
+
+
+def _preset_ordered(ids: list[str], capability: str) -> list[str]:
+    """按站点预设的推荐顺序排列（预设外的模型排在后面），默认模型回退时优先选推荐款。"""
+    from app.services.media_model_presets import preset_ids
+
+    order = {mid: index for index, mid in enumerate(preset_ids(capability))}
+    return sorted(ids, key=lambda mid: order.get(mid, len(order)))
+
+
+def _active_profile_state(active: SystemModelChannel, legacy_defaults: DefaultModels):
+    """按生效配置生成逻辑模型与默认模型（未考虑停用）。"""
+    from app.services.model_routing_config import synchronize_logical_models_with_channels
+
     advanced = active.advanced_config
     if not is_ark_native(active.base_url):
         raw = advanced.model_dump() if advanced else legacy_defaults.model_dump()
@@ -91,10 +122,39 @@ def profile_state(channels: list[SystemModelChannel], legacy_defaults: DefaultMo
     for cap in CAPABILITIES:
         mid = getattr(defaults, cap+'_model')
         if mid:
-            models.append(LogicalModel(id=mid, name=mid, capability=cap, bindings=[
+            models.append(LogicalModel(id=mid, name=mid, capability=cap, strategy_id=byteplus_strategy_id(cap, mid), bindings=[
                 LogicalModelBinding(id=active.id+':'+cap, channel_id=active.id, upstream_model=mid)
             ]))
     return models, defaults
+
+
+# BytePlus 型号名 → 参数规则（媒体策略）；接入点 ID（ep-xxx）认不出型号时按能力取默认
+_BYTEPLUS_FAMILIES = (
+    ('seedance-2-0-fast', 'seedance-2.0-fast'),
+    ('seedance-2-5', 'seedance-2.5'),
+    ('seedance-2-0', 'seedance-2.0'),
+    ('seedream-5-0-pro', 'seedream-5.0-pro'),
+    ('seedream-5-0-flash', 'seedream-5.0-flash'),
+    ('seedream-5-0', 'seedream-5.0'),
+)
+_BYTEPLUS_DEFAULT_STRATEGY = {'image': 'seedream-5.0', 'video': 'seedance-2.5'}
+
+
+def byteplus_strategy_id(capability: str, model_id: str) -> str | None:
+    """BytePlus 模型对应的媒体参数规则；文字、配音不需要。"""
+    if capability not in _BYTEPLUS_DEFAULT_STRATEGY:
+        return None
+    from app.services.media_models.strategies import MediaValidationError, get_strategy
+
+    try:
+        return get_strategy(model_id).model_id
+    except MediaValidationError:
+        pass
+    raw = model_id.lower().replace('.', '-').replace('_', '-')
+    for marker, strategy_id in _BYTEPLUS_FAMILIES:
+        if marker in raw:
+            return strategy_id
+    return _BYTEPLUS_DEFAULT_STRATEGY[capability]
 
 
 def profile_overlay(flat: dict, channels: list[SystemModelChannel], defaults: DefaultModels) -> dict:

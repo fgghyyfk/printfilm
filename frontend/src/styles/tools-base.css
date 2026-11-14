@@ -1,0 +1,251 @@
+/* 工具页基础样式（pf-tool-*）：原工具中心样式，商品带货/电商图页面共用 */
+.pf-tool-run-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.pf-tool-run-media {
+  display: grid;
+  place-items: center;
+  min-height: 220px;
+  background: var(--pf-ink);
+  border-radius: var(--pf-radius);
+  overflow: hidden;
+}
+.pf-tool-run-media img,
+.pf-tool-run-media video {
+  width: 100%;
+  max-height: 420px;
+  object-fit: contain;
+}
+.pf-tool-run-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem 1rem;
+  margin: 0;
+}
+.pf-tool-run-meta > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.pf-tool-run-meta > div.is-block {
+  grid-column: 1 / -1;
+}
+.pf-tool-run-meta dt {
+  font-size: 0.78rem;
+  color: var(--pf-muted);
+}
+.pf-tool-run-meta dd {
+  margin: 0;
+  font-size: 0.92rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.pf-tool-run-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.pf-tool-run-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  width: 100%;
+}
+.pf-tool-detail {
+  max-width: 1100px;
+}
+.pf-tool-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+  color: var(--pf-muted);
+  text-decoration: none;
+  margin-bottom: 1rem;
+}
+.pf-tool-back:hover {
+  color: var(--pf-ink);
+}
+.pf-tool-detail-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  margin-bottom: 1.25rem;
+}
+.pf-tool-detail-head h1 {
+  margin: 0;
+  font-size: 1.55rem;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+.pf-tool-detail-head p {
+  margin: 0.25rem 0 0;
+}
+.pf-tool-workspace {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) 1fr;
+  gap: 1.15rem;
+  align-items: start;
+}
+.pf-tool-panel,
+.pf-tool-result {
+  background: var(--pf-card);
+  border: 1px solid var(--pf-line);
+  border-radius: var(--pf-radius-lg);
+  box-shadow: var(--pf-shadow);
+}
+.pf-tool-panel {
+  padding: 1.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+.pf-tool-panel-hint {
+  margin: 0;
+  font-size: 0.85rem;
+}
+.pf-tool-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+}
+.pf-tool-field textarea {
+  border: 1px solid var(--pf-line);
+  border-radius: var(--pf-radius);
+  padding: 0.65rem 0.75rem;
+  font: inherit;
+  resize: vertical;
+  background: var(--pf-bg);
+}
+.pf-tool-upload {
+  border: 1px dashed rgba(23, 19, 14, 0.22);
+  border-radius: var(--pf-radius);
+  padding: 1.5rem 1rem;
+  text-align: center;
+  color: var(--pf-muted);
+  background: var(--pf-bg);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.pf-tool-upload-thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  justify-content: center;
+  margin-top: 0.75rem;
+}
+.pf-tool-upload-thumbs img,
+.pf-tool-upload-thumbs video {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 8px;
+}
+.pf-tool-error {
+  margin: 0;
+  color: #b42318;
+  font-size: 0.85rem;
+}
+.pf-tool-spin {
+  animation: pf-tool-spin 0.8s linear infinite;
+}
+@keyframes pf-tool-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.pf-tool-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.pf-tool-chips button {
+  border: 1px solid var(--pf-line);
+  background: var(--pf-card);
+  border-radius: var(--pf-radius-pill);
+  padding: 0.35rem 0.75rem;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  color: var(--pf-muted);
+}
+.pf-tool-chips button.active {
+  background: var(--pf-lime-soft);
+  color: var(--pf-ink);
+  border-color: transparent;
+  font-weight: 600;
+}
+.pf-tool-chips button:disabled,
+.pf-tool-field textarea:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+.pf-tool-result {
+  min-height: 420px;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+}
+.pf-tool-result.has-media {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 0.85rem;
+  place-items: unset;
+}
+.pf-tool-result img,
+.pf-tool-result video {
+  width: 100%;
+  max-height: 560px;
+  object-fit: contain;
+  border-radius: var(--pf-radius);
+  background: var(--pf-ink);
+}
+.pf-tool-result-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+.pf-tool-download {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  align-self: flex-start;
+  font-size: 0.85rem;
+  color: var(--pf-ink);
+  text-decoration: none;
+}
+.pf-tool-download:hover {
+  text-decoration: underline;
+}
+.pf-tool-saved {
+  margin: 0;
+  font-size: 0.85rem;
+}
+.pf-tool-saved a {
+  text-decoration: underline;
+}
+.pf-tool-result-empty {
+  text-align: center;
+  display: grid;
+  justify-items: center;
+  gap: 0.35rem;
+}
+.pf-tool-result-empty p {
+  margin: 0 0 0.35rem;
+  font-weight: 650;
+}
+@media (max-width: 700px) {
+  .pf-tool-workspace,
+  .pf-create-choice {
+    grid-template-columns: 1fr;
+  }
+  .pf-tool-run-meta {
+    grid-template-columns: 1fr;
+  }
+}

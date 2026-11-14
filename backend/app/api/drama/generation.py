@@ -27,12 +27,19 @@ from app.services.billing import record_llm_chat_line, run_billed_ephemeral
 from app.services.billing.http import http_exception_for_value_error
 from app.services.drama.jobs import dispatch_asset_image_job, dispatch_asset_video_job
 from app.services.drama.voice_prompt import suggest_voice_prompt_for_character
+from app.services.drama.voice_generation_policy import ensure_voice_generation_enabled
+from app.services.drama.asset_reference_views import asset_reference_view
 
 router = APIRouter()
 logger = logging.getLogger("app.drama.generation")
 
 
-@router.post("/generation/image")
+@router.post(
+    "/generation/image",
+    summary="提交资产图片生成任务",
+    description="校验项目与可选资产归属，将非空 prompt 提交到生图任务队列后立即返回。指定 asset_id 时更新该资产，否则由任务创建资产；图片风格优先使用请求值，其次使用项目配置。可轮询资产 params.generation 或任务接口查看结果，团队项目需持有对应资产编辑租约。",
+    response_description="queued 状态、任务编号及已有资产快照；未指定资产时 asset_id 和 asset 为 null",
+)
 async def generate_image(
     body: DramaImageGenerateRequest,
     db: AsyncSession = Depends(get_db),
@@ -138,11 +145,16 @@ async def generate_image(
         "status": "queued",
         "task_id": task_id,
         "asset_id": asset.id if asset else None,
-        "asset": DramaAssetOut.model_validate(asset).model_dump() if asset else None,
+        "asset": (await asset_reference_view(db, asset, user_id=user.id, project=project)).model_dump() if asset else None,
     }
 
 
-@router.post("/generation/video")
+@router.post(
+    "/generation/video",
+    summary="提交画布资产视频生成任务",
+    description="为项目中的指定资产异步生成视频，prompt 不得为空，支持模型、画幅、分辨率、时长及参考资产配置。图片风格优先使用请求值，其次使用项目配置；立即返回任务编号，可轮询资产 params.generation。团队项目需持有对应资产编辑租约。",
+    response_description="任务入队标记、generating 状态、任务编号及更新后的资产快照",
+)
 async def generate_video(
     body: DramaVideoGenerateRequest,
     db: AsyncSession = Depends(get_db),
@@ -202,17 +214,23 @@ async def generate_video(
         "status": "generating",
         "task_id": task_id,
         "asset_id": asset.id,
-        "asset": DramaAssetOut.model_validate(asset).model_dump(),
+        "asset": (await asset_reference_view(db, asset, user_id=user.id, project=project)).model_dump(),
     }
 
 
-@router.post("/generation/voice_prompt")
+@router.post(
+    "/generation/voice_prompt",
+    summary="为角色生成音色描述提示词",
+    description="根据同项目角色资产的设定，同步生成音色提示词、建议说话人和试听文本。仅支持 character 资产，需启用音色生成功能；记录模型调用用量并返回任务编号，团队项目需持有对应资产编辑租约。",
+    response_description="音色提示词 voice_prompt、speaker、sample_text、角色资产编号及任务编号",
+)
 async def suggest_voice_prompt(
     body: DramaVoicePromptRequest,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
     """根据角色设定 AI 生成音色描述提示词。"""
+    ensure_voice_generation_enabled()
     project = await get_owned_drama_project(db, body.project_id, user, with_script=True)
     asset = await db.get(DramaAsset, body.asset_id)
     if not asset or asset.project_id != project.id:
@@ -241,6 +259,10 @@ async def suggest_voice_prompt(
             drama_project_id=project.id,
             asset_id=asset.id,
             commit=True,
+            result_payload_factory=lambda result: {
+                "kind": "text", "text_content": result[0],
+                "speaker": result[1], "sample_text": result[2],
+            },
         )
     except ValueError as exc:
         raise http_exception_for_value_error(exc) from exc
@@ -263,17 +285,24 @@ async def suggest_voice_prompt(
     }
 
 
-@router.post("/generation/voice")
+@router.post(
+    "/generation/voice",
+    summary="合成漫剧音色参考音频",
+    description="根据非空 voice_prompt 同步合成音色参考音频，等待完成后返回资产。可更新已有同项目资产，未指定 asset_id 时创建 voice 类型的音频资产；可指定同项目角色资产关联音色。需启用音色生成功能，团队项目需持有结构资源的编辑租约。",
+    response_description="合成成功标记及包含音频地址和生成状态的资产快照",
+)
 async def generate_voice(
     body: DramaVoiceGenerateRequest,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
     """按提示词合成 voice 资产参考音频（漫剧独立音色库，非科普 /api/voices）。"""
+    ensure_voice_generation_enabled()
     project = await get_owned_drama_project(db, body.project_id, user, with_script=True)
     prompt = (body.voice_prompt or "").strip()
     if not prompt:
         raise HTTPException(status_code=400, detail="缺少 voice_prompt")
+    team_mode = project.team_id is not None
 
     asset = None
     if body.asset_id:
@@ -289,15 +318,21 @@ async def generate_voice(
             params={"voicePrompt": prompt, "generation": {"status": "generating"}},
         )
         db.add(asset)
-        await db.commit()
-        await db.refresh(asset)
+        if team_mode:
+            await db.flush()
+        else:
+            await db.commit()
+            await db.refresh(asset)
 
     params = dict(asset.params or {})
     params["generation"] = {"status": "generating"}
     params["voicePrompt"] = prompt
     asset.params = params
-    await db.commit()
-    await db.refresh(asset)
+    if team_mode:
+        await db.flush()
+    else:
+        await db.commit()
+        await db.refresh(asset)
 
     character_asset = None
     if body.character_asset_id:
@@ -307,8 +342,12 @@ async def generate_voice(
         if (character_asset.type or "").lower() != "character":
             raise HTTPException(status_code=400, detail="character_asset_id 须为角色资产")
 
-    async def synthesize():
+    started = False
+
+    async def _synthesize():
         """业务仅写回资产，由外层轻量任务统一提交用量和钱包结算。"""
+        nonlocal started
+        started = True
         return await generate_voice_asset_audio(
             db,
             user,
@@ -320,24 +359,38 @@ async def generate_voice(
             character_asset=character_asset,
             commit=False,
         )
+
     try:
         task, updated = await run_billed_ephemeral(
-            db, user, domain="drama", task_type="voice_synthesis", executor=synthesize,
-            drama_project_id=project.id, asset_id=asset.id, payload={"asset_id": asset.id},
+            db,
+            user,
+            domain="drama",
+            task_type="voice_synthesis",
+            executor=_synthesize,
+            drama_project_id=project.id,
+            asset_id=asset.id,
+            payload={"asset_id": asset.id, "prompt": prompt, "sample_text": body.sample_text},
+            billable=team_mode,
             commit_before_execute=True,
+            result_payload_factory=lambda result: {
+                "kind": "audio", "urls": [result.url] if result.url else [], "asset_id": result.id,
+            },
         )
-    except ValueError as exc:
-        params = dict(asset.params or {})
-        params["generation"] = {"status": "failed", "error": public_message(exc)}
-        asset.params = params
-        await db.commit()
-        raise http_exception_for_value_error(exc) from exc
     except Exception as exc:  # noqa: BLE001
-        params = dict(asset.params or {})
-        params["generation"] = {"status": "failed", "error": public_message(exc)}
-        asset.params = params
-        await db.commit()
-        logger.exception("音色合成失败 project_id=%s asset_id=%s", project.id, asset.id)
+        project_id, asset_id = project.id, asset.id
+        if team_mode and not started:
+            # 准入未提交：新资产与排队状态随被拒的任务/预算一起回滚，不留孤儿音色资产。
+            await db.rollback()
+        else:
+            params = dict(asset.params or {})
+            params["generation"] = {"status": "failed", "error": public_message(exc)}
+            asset.params = params
+            await db.commit()
+        logger.exception("音色合成失败 project_id=%s asset_id=%s", project_id, asset_id)
+        if isinstance(exc, HTTPException):
+            raise
+        if isinstance(exc, ValueError):
+            raise http_exception_for_value_error(exc) from exc
         raise public_http_exception(exc) from exc
 
     logger.info(
@@ -349,5 +402,5 @@ async def generate_voice(
     return {
         "ok": True,
         "task_id": task.id,
-        "asset": DramaAssetOut.model_validate(updated).model_dump(),
+        "asset": (await asset_reference_view(db, updated, user_id=user.id, project=project)).model_dump(),
     }

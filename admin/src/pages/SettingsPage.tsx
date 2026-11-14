@@ -5,23 +5,27 @@ import { AvatarSettingsPanel } from "@/components/settings/AvatarSettingsPanel";
 import { OssSettingsPanel } from "@/components/settings/OssSettingsPanel";
 import { PaymentSettingsPanel } from "@/components/settings/PaymentSettingsPanel";
 import { RoutingSettingsPanel } from "@/components/settings/RoutingSettingsPanel";
+import { ImageProviderSettingsPanel } from "@/components/settings/ImageProviderSettingsPanel";
 import { RuntimeSettingsPanel } from "@/components/settings/RuntimeSettingsPanel";
 import { SiteSettingsPanel } from "@/components/settings/SiteSettingsPanel";
+import { AppearanceSettingsPanel } from "@/components/settings/AppearanceSettingsPanel";
 import {
   SettingsSaveProvider,
   useSettingsSaveSlot,
 } from "@/components/settings/SettingsSaveContext";
 import { cn } from "@/lib/utils";
 
-type SettingsTab = "routing" | "avatar" | "runtime" | "oss" | "payment" | "site" | "compliance";
+type SettingsTab = "routing" | "image" | "avatar" | "runtime" | "oss" | "payment" | "site" | "appearance" | "compliance";
 
 const TABS: { id: SettingsTab; label: string }[] = [
   { id: "routing", label: "模型" },
+  { id: "image", label: "生图" },
   { id: "avatar", label: "数字人" },
   { id: "runtime", label: "运行参数" },
   { id: "oss", label: "存储 OSS" },
   { id: "payment", label: "支付计费" },
   { id: "site", label: "站点工具" },
+  { id: "appearance", label: "外观主题" },
   { id: "compliance", label: "内容合规" },
 ];
 
@@ -33,14 +37,14 @@ function SettingsPageHeader() {
       <div className="min-w-0">
         <h1 className="settings-page-title">系统设置</h1>
         <p className="settings-head-desc">
-          模型渠道与 API Key、运行参数、OSS / 易支付 / 计费与站点配置；密钥加密存库，留空保存不修改。
+          管理生成模型、任务运行、存储连接、支付计费与站点工具。
         </p>
       </div>
       {action ? (
         <button
           type="button"
           className="admin-btn admin-btn-primary settings-save-btn"
-          disabled={action.saving}
+          disabled={action.saving || action.disabled}
           onClick={() => void action.onSave()}
         >
           {action.saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
@@ -76,11 +80,13 @@ function SettingsPageInner() {
 
       <div className="settings-main">
         {tab === "routing" ? <RoutingSettingsPanel /> : null}
+        {tab === "image" ? <ImageProviderSettingsPanel /> : null}
         {tab === "avatar" ? <AvatarSettingsPanel /> : null}
         {tab === "runtime" ? <RuntimeSettingsPanel /> : null}
         {tab === "oss" ? <OssSettingsPanel /> : null}
         {tab === "payment" ? <PaymentSettingsPanel /> : null}
         {tab === "site" ? <SiteSettingsPanel /> : null}
+        {tab === "appearance" ? <AppearanceSettingsPanel /> : null}
         {tab === "compliance" ? <ComplianceSettingsPanel /> : null}
       </div>
     </div>

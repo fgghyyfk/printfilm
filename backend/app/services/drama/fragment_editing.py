@@ -1,4 +1,6 @@
-"""分镜编辑与后台回填共用的短事务锁边界。"""
+"""分镜编辑与后台回填共用的短事务锁边界；保存时区分用户设置与服务端写入的成片运行态。"""
+from __future__ import annotations
+
 from fastapi import HTTPException
 from sqlalchemy import JSON, cast, func, select, update
 from sqlalchemy.dialects.postgresql import JSONB
@@ -7,18 +9,43 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models_drama import DramaEpisode, DramaEpisodeFragment
 
-# 此处只列服务端实际写入的运行态与成片元数据，普通创作设置仍允许用户编辑。
+# 只有服务端写这些键：成片版本、尾帧、生成状态、成片规格与参考快照。旧页面保存时不能覆盖。
 SERVER_FRAGMENT_PARAMS = frozenset({
-    'video_versions', 'lastFrameUrl', 'last_frame_url', 'generation',
-    'generation_attempts', 'aspect_ratio', 'resolution', 'video_width', 'video_height',
-    'reference_snapshot', 'video_input_snapshot',
+    "video_versions", "lastFrameUrl", "last_frame_url", "generation", "generation_attempts",
+    "aspect_ratio", "resolution", "video_width", "video_height", "video_duration_sec",
+    "reference_snapshot", "video_input_snapshot",
 })
-EDIT_CONFLICT = '内容已在别处更新，请刷新'
+EDIT_CONFLICT = "内容已在别处更新，请刷新"
 
 
 def editable_fragment_params(params: dict | None) -> dict:
     """移除客户端不能注入或覆盖的服务端生成字段。"""
     return {key: value for key, value in (params or {}).items() if key not in SERVER_FRAGMENT_PARAMS}
+
+
+def merge_saved_fragment_params(current: dict | None, submitted: dict | None) -> dict:
+    """用户设置以提交内容为准（可删除），服务端字段一律保留库里的值。"""
+    kept = {key: value for key, value in (current or {}).items() if key in SERVER_FRAGMENT_PARAMS}
+    edited = editable_fragment_params(submitted)
+    return {**edited, **kept}
+
+
+# 分镜规划进度和来源指纹只由任务写入；fragment_script_changed 是列表响应的临时计算值，不落库。
+SERVER_EPISODE_PARAMS = frozenset({
+    "fragment_plan_status", "fragment_plan_error", "fragment_plan_mode", "fragment_plan_task_id",
+    "fragment_plan_count", "fragment_plan_preserved", "fragment_plan_auto", "fragment_plan_skill_ids",
+    "fragment_source_fp",
+})
+
+
+def merge_saved_episode_params(current: dict | None, submitted: dict | None) -> dict:
+    """页面整包写回分集设置时，服务端字段一律保留库里的值，旧快照不能改回去。"""
+    kept = {key: value for key, value in (current or {}).items() if key in SERVER_EPISODE_PARAMS}
+    edited = {
+        key: value for key, value in (submitted or {}).items()
+        if key not in SERVER_EPISODE_PARAMS and key != "fragment_script_changed"
+    }
+    return {**edited, **kept}
 
 
 async def claim_episode_revision(db: AsyncSession, episode_id: int, expected: int) -> int:

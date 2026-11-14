@@ -61,6 +61,21 @@ def bind_session(db: AsyncSession) -> Iterator[None]:
     finally:
         _bound_db.reset(token)
 
+# 数字人对口型单价（分/秒成片，成本口径，结算时再乘加价倍率）：480p 用基础单价，720p 用单独单价（未设则 × 1.8）
+AVATAR_720P_FACTOR = 1.8
+
+
+def avatar_price_fen_per_sec(settings=None, resolution: str | None = None) -> int:
+    """按成片清晰度取数字人单价；resolution 为空时用后台默认清晰度。"""
+    s = settings or get_settings()
+    base = int(getattr(s, "avatar_price_fen_per_sec", 0) or 0)
+    res = (resolution or getattr(s, "avatar_resolution", "") or "480p").strip().lower()
+    if res != "720p":
+        return base
+    explicit = int(getattr(s, "avatar_price_fen_per_sec_720p", 0) or 0)
+    return explicit if explicit > 0 else int(round(base * AVATAR_720P_FACTOR))
+
+
 
 def _usd_to_fen(usd: float, settings: Settings) -> int:
     """美元折人民币分（向上取整，至少 1 分）。"""
@@ -165,7 +180,7 @@ def estimate_auto_fen(project: Project, settings: Settings | None = None, *, cha
     elif volc_tts.is_configured() and volc_tts.is_volc_speaker(project.voice_id or ""):
         cost += volc_tts_cost_fen(n_chars, s)
     total = user_charge_fen(cost, s) + charge_fen_official_llm(s.billing_est_llm_tokens, s)
-    total += math.ceil(seconds * int(s.avatar_price_fen_per_sec or 0))
+    total += math.ceil(seconds * avatar_price_fen_per_sec(s, getattr(project, "avatar_resolution", None)))
     buf = float(s.billing_estimate_buffer or 1.2)
     return max(1, math.ceil(total * buf))
 

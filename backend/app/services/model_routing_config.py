@@ -185,6 +185,7 @@ def synchronize_logical_models_with_channels(
                 id=logical_id,
                 name=(existing.name if existing and existing.name else catalog_model["upstream_model"]),
                 capability=synced_cap,
+                strategy_id=existing.strategy_id if existing else None,
                 enabled=existing.enabled if existing else True,
                 bindings=bindings,
             )
@@ -285,6 +286,15 @@ def model_routing_validation_errors(
             errors.append(f"逻辑模型 {model.name or model.id} 至少需要一个渠道绑定")
         binding_keys: set[str] = set()
         for binding in model.bindings:
+            if model.capability in {"image", "video"}:
+                from app.services.media_models import get_strategy
+                try:
+                    strategy = get_strategy(model.strategy_id or model.id)
+                    if strategy.capability != model.capability or get_strategy(binding.upstream_model).model_id != strategy.model_id:
+                        errors.append(f"逻辑模型 {model.id} 的渠道绑定必须匹配同款模型策略")
+                except ValueError:
+                    if model.strategy_id:
+                        errors.append(f"逻辑模型 {model.id} 的策略或上游模型未注册")
             binding_key = f"{binding.channel_id}:{normalize_model_name(binding.upstream_model)}"
             if binding.channel_id not in channel_ids:
                 errors.append(f"逻辑模型 {model.id} 引用了不存在的渠道 {binding.channel_id}")

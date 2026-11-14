@@ -27,6 +27,7 @@ def test_uses_tokenfree_image_on_tokenfree_host():
     assert uses_tokenfree_image(base_url=TOKENFREE_BASE_URL) is True
     assert uses_tokenfree_image(channel_id=TOKENFREE_CHANNEL_ID) is True
     assert uses_tokenfree_image(base_url="https://ark.cn-beijing.volces.com/api/v3") is False
+    assert uses_tokenfree_image(base_url="https://relay.example.com/v1") is True
 
 
 def test_build_tokenfree_image_body_matches_live_success():

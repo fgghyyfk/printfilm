@@ -88,6 +88,7 @@ async def record_seedance_video_usage(
     fallback_duration_sec: float | None = None,
     resolution: str = "",
     provider_task_id: str | None = None,
+    delivered: bool = True,
     drama_project_id: int | None = None,
     project_id: int | None = None,
     shot_id: int | None = None,
@@ -104,7 +105,9 @@ async def record_seedance_video_usage(
     tid = get_current_task_run_id()
     provider_id = (provider_task_id or "").strip()
 
-    if tid is not None:
+    from app.services.media_models.runtime import current_snapshot, operation_for
+    fixed = bool((current_snapshot.get() or {}).get("mode") == "fixed_media")
+    if tid is not None and not fixed:
         existing = (
             await db.execute(
                 select(UsageEvent)
@@ -138,8 +141,11 @@ async def record_seedance_video_usage(
         if by_provider is not None:
             return by_provider
 
-    if prepared_usage is None:
+    if prepared_usage is None or fixed:
+        # 固定价媒体须在本事务内按交付身份锁定预留，锁外预备的快照不能直接落库
         prepared_usage = await prepare_seedance_video_usage(
+            db=db,
+            delivered=delivered,
             user_id=user_id,
             billing_key=billing_key,
             model=model,
@@ -159,6 +165,9 @@ async def record_seedance_video_usage(
 
 async def prepare_seedance_video_usage(
     *,
+    db: AsyncSession | None = None,
+    lookup_db: AsyncSession | None = None,
+    delivered: bool = True,
     user_id: int,
     billing_key: str,
     model: str,
@@ -246,6 +255,14 @@ async def prepare_seedance_video_usage(
         raw = {"usage": {}}
     if provider_id:
         raw = {**(raw or {}), "provider_task_id": provider_id}
+    from app.services.media_models.runtime import current_snapshot, operation_for
+    fixed = bool((current_snapshot.get() or {}).get("mode") == "fixed_media")
+    if fixed:
+        operation = operation_for("video", target=shot_id, model=model)
+        raw = {**(raw or {}), "media_operation_id": operation["operation_id"]}
+        if delivered and task_result is not None and task_result.status == "succeeded":
+            # Callers record only after saving and associating the result.
+            raw["delivery_id"] = provider_id or getattr(task_result, "url", None)
 
     fallback_tokens = 0
     if fallback_duration_sec is not None:
@@ -279,6 +296,8 @@ async def prepare_seedance_video_usage(
 
     if total_tokens > 0 or upstream_cost:
         return await prepare_usage_line(
+            db=db,
+            lookup_db=lookup_db,
             user_id=user_id,
             billing_key=billing_key,
             model=model,
@@ -294,6 +313,8 @@ async def prepare_seedance_video_usage(
         )
 
     return await prepare_usage_line(
+        db=db,
+        lookup_db=lookup_db,
         user_id=user_id,
         billing_key=billing_key,
         model=model,
@@ -319,6 +340,7 @@ async def record_seedream_image_usage(
     drama_project_id: int | None = None,
     shot_id: int | None = None,
     extra_raw: dict[str, Any] | None = None,
+    delivered: bool = True,
 ) -> UsageEvent:
     """按 Seedream 响应 usage / 成本写入图片用量行；缺失时回退估算 token。"""
     total_tokens = int(getattr(image_result, "total_tokens", 0) or 0)
@@ -328,6 +350,8 @@ async def record_seedream_image_usage(
     upstream_cost = getattr(image_result, "upstream_cost_fen", None)
 
     raw: dict[str, Any] = dict(extra_raw or {})
+    if delivered and image_result is not None and image_result.local_url:
+        raw["delivery_id"] = image_result.local_url
     if raw_usage and isinstance(raw_usage, dict):
         nested = raw_usage.get("usage") if isinstance(raw_usage.get("usage"), dict) else None
         if nested is not None:
@@ -339,6 +363,10 @@ async def record_seedream_image_usage(
             raw["usage"] = {**(raw.get("usage") or {}), **raw_usage}
     if upstream_cost is not None:
         raw["usage"] = {**(raw.get("usage") or {}), "cost_fen": int(upstream_cost)}
+    if not delivered:
+        raw.pop("delivery_id", None)
+        if isinstance(raw.get("usage"), dict):
+            raw["usage"] = {key: value for key, value in raw["usage"].items() if key != "delivery_id"}
 
     if total_tokens > 0 or upstream_cost:
         return await record_line(

@@ -6,7 +6,6 @@ import {
   Mic,
   Palette,
   Video,
-  Webhook,
   Wrench,
   type LucideIcon,
 } from "lucide-react";
@@ -26,7 +25,6 @@ const CAPABILITY_META: Record<string, { label: string; icon: LucideIcon; tone: D
 const DOMAIN_META: Record<string, { label: string; icon: LucideIcon; tone: DashboardInsightTone }> = {
   drama: { label: "漫剧", icon: Film, tone: "teal" },
   kepu: { label: "AI短视频", icon: Clapperboard, tone: "blue" },
-  api: { label: "开放 API", icon: Webhook, tone: "purple" },
   tools: { label: "工具", icon: Wrench, tone: "sand" },
   studio: { label: "工作室", icon: Palette, tone: "mint" },
   unknown: { label: "其他", icon: Wrench, tone: "slate" },

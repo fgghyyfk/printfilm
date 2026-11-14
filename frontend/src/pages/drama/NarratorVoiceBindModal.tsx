@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AudioLines } from 'lucide-react'
 import { dramaApi, resolveDramaMediaUrl, type DramaAsset, type DramaProject } from '../../api/drama'
 import Modal from '../../components/ui/Modal'
+import { AssetCard, AssetEmpty, AssetGrid } from '../../components/assets/AssetLibrary'
 import type { VoiceBinding } from './CharacterVoiceBindModal'
 
 type Props = {
@@ -149,35 +150,19 @@ export function NarratorVoiceBindModal({ project, open, onClose, onUpdated, onEr
         {translateUi("workflow.theProjectNarratorVoiceIsIncludedInSeedanceAs")} <strong>reference_audio</strong> {translateUi("workflow.toKeepNarrationConsistentAcrossShots")}
       </p>
 
-      <div className="drama-voice-mode-tabs" style={{ marginTop: 12 }}>
-        <button type="button" className="active">
-          {translateUi("workflow.chooseExisting")}
-        </button>
-      </div>
-
-      <div className="drama-voice-list" style={{ marginTop: 10 }}>
+      <AssetGrid picker>
         {voiceAssets.length === 0 ? (
-          <p className="drama-muted">{translateUi("workflow.noVoiceAssetsYetSynthesizeANarratorVoiceIn")}</p>
+          <AssetEmpty>暂无音色资产，请先在「音色」分类合成旁白音色。</AssetEmpty>
         ) : (
           voiceAssets.map((voice) => {
             const hasAudio = Boolean(voice.url)
             const selected = selectedId === voice.id
             return (
-              <label key={voice.id} className="drama-voice-option" style={{ cursor: 'pointer' }}>
-                <input
-                  type="radio"
-                  name="drama-narrator-voice"
-                  checked={selected}
-                  onChange={() => setSelectedId(voice.id)}
-                />
-                <span>
-                  {voice.name || translateUi("workflow.voice", { v1: String(voice.id) })} <small>{hasAudio ? translateUi("workflow.synthesized") : translateUi("workflow.notSynthesized_c94784")}</small>
-                </span>
-              </label>
+              <AssetCard key={voice.id} asset={voice} selected={selected} subtitle={hasAudio ? '已合成' : '未合成'} footer="项目音色" onOpen={() => setSelectedId(voice.id)} />
             )
           })
         )}
-      </div>
+      </AssetGrid>
 
       {previewUrl ? (
         <div style={{ marginTop: 14, display: 'flex', gap: 12, alignItems: 'center' }}>

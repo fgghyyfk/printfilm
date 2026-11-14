@@ -1,0 +1,308 @@
+/* 主题「晨光」：暖白底、深松石绿、衬线标题、柔和阴影与大留白。
+   全部规则限定在 html[data-theme="daylight"] 下；结构样式复用各页面 CSS，这里只换视觉。 */
+
+html[data-theme="daylight"] {
+  --pf-lime: #0f6e5f;
+  --pf-accent-rgb: 15 110 95;
+  --pf-lime-soft: #e3f1ed;
+  --pf-accent-deep: #0b5246;
+  --pf-caption: #f6c9a8;
+  --pf-ink: #1d2624;
+  --pf-ink-soft: #44504c;
+  --pf-muted: #68736f;
+  --pf-faint: #8f9894;
+  --pf-bg: #f8f7f3;
+  --pf-card: #ffffff;
+  --pf-sunken: #f1f0ea;
+  --pf-line: rgba(29, 38, 36, 0.1);
+  --pf-line-solid: #e6e5de;
+  --pf-line-strong: #d2d3cb;
+  --pf-radius-lg: 18px;
+  --pf-radius: 12px;
+  --pf-radius-sm: 10px;
+  --pf-radius-pill: 999px;
+  --pf-shadow: 0 1px 2px rgba(29, 38, 36, 0.04), 0 14px 34px -18px rgba(29, 38, 36, 0.16);
+  --pf-hard: 0 8px 20px -10px rgba(15, 110, 95, 0.55);
+  --kk-serif: 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', 'STSong', 'Microsoft YaHei', serif;
+}
+
+html[data-theme="daylight"] body { background: var(--pf-bg); }
+html[data-theme="daylight"] ::selection { background: var(--pf-lime-soft); color: var(--pf-accent-deep); }
+html[data-theme="daylight"] .brand-logo { content: url('/logo-daylight.svg'); }
+
+/* ---------- 顶栏：通透留白 ---------- */
+html[data-theme="daylight"] body .pf-app-topbar {
+  border-bottom: 1px solid var(--pf-line);
+  background: rgba(248, 247, 243, 0.86);
+  backdrop-filter: saturate(160%) blur(14px);
+  color: var(--pf-ink);
+}
+html[data-theme="daylight"] body .pf-app-topbar .brand-word { color: var(--pf-ink); font-family: var(--kk-serif); font-weight: 700; }
+html[data-theme="daylight"] body .pf-topbar-link { color: var(--pf-muted); }
+html[data-theme="daylight"] body .pf-topbar-link:hover { color: var(--pf-ink); }
+html[data-theme="daylight"] body .pf-topbar-link.is-active { color: var(--pf-accent-deep); font-weight: 700; }
+html[data-theme="daylight"] body .pf-app-topbar .pf-topbar-link.is-active::after { height: 2px; background: var(--pf-lime); }
+html[data-theme="daylight"] body .pf-topbar-create {
+  border-color: var(--pf-lime);
+  border-radius: var(--pf-radius-pill);
+  background: var(--pf-lime);
+  color: #fff;
+  font-weight: 650;
+}
+html[data-theme="daylight"] body .pf-topbar-create:hover { border-color: var(--pf-accent-deep); background: var(--pf-accent-deep); }
+html[data-theme="daylight"] body .pf-topbar-account { border-color: var(--pf-line-solid); background: var(--pf-sunken); color: var(--pf-ink-soft); }
+html[data-theme="daylight"] body .pf-topbar-account:hover,
+html[data-theme="daylight"] body .pf-topbar-account.is-active { border-color: var(--pf-lime); box-shadow: 0 0 0 3px var(--pf-lime-soft); }
+html[data-theme="daylight"] body .pf-app-topbar .pf-nav-lang { border-color: var(--pf-line-solid); background: var(--pf-card); }
+html[data-theme="daylight"] body .pf-app-topbar .pf-nav-lang button.is-active { background: var(--pf-lime); color: #fff; }
+
+/* ---------- 按钮：柔和、不带硬投影 ---------- */
+html[data-theme="daylight"] body .pf-btn { border-radius: var(--pf-radius-sm); font-weight: 650; }
+html[data-theme="daylight"] body .pf-btn-lime {
+  border-color: var(--pf-lime);
+  background: var(--pf-lime);
+  color: #fff;
+  box-shadow: var(--pf-hard);
+}
+html[data-theme="daylight"] body .pf-btn-lime:hover:not(:disabled):not(.is-disabled) {
+  background: var(--pf-accent-deep);
+  box-shadow: 0 12px 24px -10px rgba(15, 110, 95, 0.6);
+}
+html[data-theme="daylight"] body .pf-btn-dark { background: var(--pf-ink); color: #fff; }
+html[data-theme="daylight"] body :is(.pf-btn-ghost, .pf-btn-outline) {
+  border: 1px solid var(--pf-line-strong);
+  background: var(--pf-card);
+  color: var(--pf-ink);
+}
+html[data-theme="daylight"] body :is(.pf-btn-ghost, .pf-btn-outline):hover:not(:disabled):not(.is-disabled) {
+  border-color: var(--pf-lime);
+  background: var(--pf-lime-soft);
+  color: var(--pf-accent-deep);
+}
+
+/* ---------- 选中态：浅松石绿 ---------- */
+html[data-theme="daylight"] body :is(
+  .pf-pill.active, .pf-pill.lime.active, .pf-project-list-toolbar .pf-pill.lime.active,
+  .pf-tool-chips button.active, .pf-panel-tabs button.active, .pf-help-tabs button.active,
+  .pf-library-pill.is-active, .pf-team-pill.is-active, .pf-team-project-filters .pf-team-pill.is-active,
+  .pf-avatar-chip.selected, .gen-status-tabs button.is-active, .gen-task-tabs [role=tab].is-active,
+  .drama-agent-tabs button.active, .drama-ep-side-tabs button.active, .drama-ep-mention-pop-tabs button.is-active,
+  .drama-outline-chip-btn.is-on
+) {
+  border-color: transparent;
+  background: var(--pf-lime-soft);
+  color: var(--pf-accent-deep);
+  box-shadow: none;
+}
+html[data-theme="daylight"] body :is(.pf-model-opt.selected, .pf-style-opt.selected, .pf-ecom-model.active, .pf-tpl-mini.selected) {
+  border-color: var(--pf-lime);
+  box-shadow: 0 0 0 3px var(--pf-lime-soft);
+}
+
+/* ---------- 标题：衬线 ---------- */
+html[data-theme="daylight"] body :is(.pf-page-title, .pf-project-page-header h1, .gen-hero h1, .kk-hero h1, .kk-flow h2, .kk-more h2, .kk-close h2, .kk-flow-panel h3, .auth-panel h1) {
+  font-family: var(--kk-serif);
+  font-weight: 700;
+  letter-spacing: 0.005em;
+}
+html[data-theme="daylight"] body :is(.pf-project-page-eyebrow, .pf-is-eyebrow, .pf-team-eyebrow, .pf-team-overview-eyebrow, .pf-market-kicker) {
+  background: transparent;
+  color: var(--pf-lime);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+}
+html[data-theme="daylight"] body .gen-hero h1 span { color: var(--pf-lime); }
+
+html[data-theme="daylight"] body .gen-hero-art { display: none; }
+html[data-theme="daylight"] body .pf-topbar-account .pf-user-avatar { background: var(--pf-lime-soft); color: var(--pf-accent-deep); }
+
+/* ---------- 表单 ---------- */
+html[data-theme="daylight"] body :is(.pf-shell, .pf-dialog-root, .modal-backdrop) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]), textarea, select):focus {
+  border-color: var(--pf-lime);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--pf-lime-soft);
+}
+
+/* ---------- 首页 ---------- */
+html[data-theme="daylight"] .kk-hero {
+  position: relative;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.02fr);
+}
+/* 通栏背景不能撑出横向滚动条 */
+html[data-theme="daylight"] .pf-shell-main.flush { overflow-x: clip; }
+/* 一层很淡的晨光，只在首屏出现 */
+html[data-theme="daylight"] .kk-hero::before {
+  position: absolute;
+  top: -2rem;
+  bottom: 0;
+  left: 50%;
+  z-index: -1;
+  width: 100vw;
+  transform: translateX(-50%);
+  pointer-events: none;
+  background:
+    radial-gradient(38rem 26rem at 78% 22%, rgba(246, 201, 168, 0.34), transparent 70%),
+    radial-gradient(34rem 26rem at 18% 8%, rgba(15, 110, 95, 0.1), transparent 70%);
+  content: '';
+}
+html[data-theme="daylight"] .kk-eyebrow {
+  padding: 0.32rem 0.85rem;
+  border-radius: 999px;
+  background: var(--pf-lime-soft);
+  color: var(--pf-accent-deep);
+  font-weight: 600;
+}
+html[data-theme="daylight"] .kk-eyebrow i { display: none; }
+html[data-theme="daylight"] .kk-hero h1 { gap: 0.08em; font-size: clamp(2.5rem, 5.2vw, 4.3rem); line-height: 1.2; }
+html[data-theme="daylight"] .kk-caption-line {
+  padding: 0;
+  border-radius: 0;
+  background: linear-gradient(transparent 68%, rgba(246, 201, 168, 0.75) 68%, rgba(246, 201, 168, 0.75) 92%, transparent 92%);
+  color: var(--pf-lime);
+}
+html[data-theme="daylight"] .kk-cursor { display: none; }
+html[data-theme="daylight"] .kk-sub { color: var(--pf-muted); }
+html[data-theme="daylight"] .kk-pill {
+  height: 50px;
+  border: 1px solid var(--pf-line-strong);
+  border-radius: 999px;
+  font-weight: 650;
+}
+html[data-theme="daylight"] .kk-pill.is-fill {
+  border-color: var(--pf-lime);
+  background: var(--pf-lime);
+  color: #fff;
+  box-shadow: 0 14px 28px -12px rgba(15, 110, 95, 0.6);
+}
+html[data-theme="daylight"] .kk-pill.is-fill:hover {
+  background: var(--pf-accent-deep);
+  box-shadow: 0 18px 32px -12px rgba(15, 110, 95, 0.65);
+  transform: translateY(-2px);
+}
+html[data-theme="daylight"] .kk-pill.is-fill:active { box-shadow: 0 8px 18px -10px rgba(15, 110, 95, 0.6); transform: none; }
+html[data-theme="daylight"] .kk-pill.is-line { background: var(--pf-card); }
+html[data-theme="daylight"] .kk-pill.is-line:hover { border-color: var(--pf-lime); background: var(--pf-lime-soft); color: var(--pf-accent-deep); }
+html[data-theme="daylight"] .kk-cta-note a { text-decoration-color: var(--pf-caption); }
+
+/* 产品示意：白色浮卡 */
+html[data-theme="daylight"] .kk-monitor {
+  border: 1px solid var(--pf-line);
+  border-radius: 22px;
+  background: var(--pf-card);
+  color: var(--pf-ink);
+  box-shadow: 0 34px 70px -34px rgba(29, 38, 36, 0.32);
+}
+html[data-theme="daylight"] .kk-monitor-bar { border-bottom-color: var(--pf-line); }
+html[data-theme="daylight"] :is(.kk-rec, .kk-timecode) { display: none; }
+html[data-theme="daylight"] .kk-monitor-title { color: var(--pf-ink-soft); font-weight: 600; }
+html[data-theme="daylight"] .kk-phone { border-radius: 16px; }
+html[data-theme="daylight"] .kk-phone-title { background: rgba(29, 38, 36, 0.62); backdrop-filter: blur(4px); }
+html[data-theme="daylight"] .kk-phone-title .is-top { color: #ffe3cc; }
+html[data-theme="daylight"] .kk-rows em { color: var(--pf-faint); }
+html[data-theme="daylight"] .kk-bar { border-radius: 999px; background: var(--pf-sunken); }
+html[data-theme="daylight"] .kk-bar i { border-radius: 999px; background: var(--pf-lime); }
+html[data-theme="daylight"] .kk-rows .is-done em { color: var(--pf-lime); }
+html[data-theme="daylight"] .kk-rows .is-run .kk-bar i { background: #e49a6c; }
+html[data-theme="daylight"] .kk-rows .is-run em { color: #b9663a; }
+
+html[data-theme="daylight"] .kk-platforms {
+  border-block: 1px solid var(--pf-line);
+  background: transparent;
+  color: var(--pf-ink-soft);
+}
+html[data-theme="daylight"] .kk-platforms p { color: var(--pf-faint); }
+html[data-theme="daylight"] .kk-platforms div { font-weight: 600; }
+
+/* 流程：居中标题 + 分段标签 */
+html[data-theme="daylight"] .kk-flow { text-align: center; }
+html[data-theme="daylight"] .kk-tabs {
+  display: inline-grid;
+  gap: 0.25rem;
+  padding: 0.3rem;
+  border: 1px solid var(--pf-line);
+  border-radius: 999px;
+  background: var(--pf-card);
+}
+html[data-theme="daylight"] .kk-tabs button {
+  justify-content: center;
+  height: 42px;
+  min-width: 96px;
+  border-radius: 999px;
+  line-height: 42px;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+html[data-theme="daylight"] .kk-tabs small { display: none; }
+html[data-theme="daylight"] .kk-tabs button.is-on { background: var(--pf-lime); color: #fff; }
+html[data-theme="daylight"] .kk-flow-panel { text-align: left; }
+html[data-theme="daylight"] .kk-flow-no { display: none; }
+html[data-theme="daylight"] .kk-preview {
+  border: 1px solid var(--pf-line);
+  border-radius: 22px;
+  box-shadow: var(--pf-shadow);
+}
+html[data-theme="daylight"] .kk-pv-upload img { border-radius: 14px; }
+html[data-theme="daylight"] .kk-pv-face { border-color: #fff; border-radius: 10px; box-shadow: 0 0 0 1.5px var(--pf-lime); }
+html[data-theme="daylight"] .kk-pv-script p { border-left: 0; border-radius: 12px; }
+html[data-theme="daylight"] .kk-pv-script b { color: var(--pf-lime); }
+html[data-theme="daylight"] .kk-pv-chips span { border: 1px solid var(--pf-line-strong); border-radius: 999px; }
+html[data-theme="daylight"] .kk-pv-chips .is-on { border-color: var(--pf-lime); background: var(--pf-lime); color: #fff; }
+html[data-theme="daylight"] .kk-pv-wave i { border-radius: 999px; }
+html[data-theme="daylight"] .kk-pv-play { background: #fff; }
+
+html[data-theme="daylight"] .kk-more-card {
+  border: 1px solid var(--pf-line);
+  border-radius: 18px;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+html[data-theme="daylight"] .kk-more-card:hover {
+  border-color: var(--pf-lime);
+  box-shadow: var(--pf-shadow);
+  transform: translateY(-3px);
+}
+html[data-theme="daylight"] .kk-more-go { color: var(--pf-faint); }
+
+html[data-theme="daylight"] .kk-close {
+  border-radius: 28px;
+  background: linear-gradient(135deg, #0f6e5f, #0b5246);
+}
+html[data-theme="daylight"] .kk-close .kk-caption-line { background: none; color: #fff; }
+html[data-theme="daylight"] .kk-close .kk-sub { color: rgba(255, 255, 255, 0.78); }
+html[data-theme="daylight"] .kk-close .kk-pill.is-fill { border-color: #fff; background: #fff; color: var(--pf-accent-deep); box-shadow: none; }
+html[data-theme="daylight"] .kk-close .kk-pill.is-fill:hover { background: var(--pf-lime-soft); }
+html[data-theme="daylight"] .kk-foot { border-top: 1px solid var(--pf-line); }
+
+/* ---------- 登录页 ---------- */
+html[data-theme="daylight"] body .auth-shell .btn.primary {
+  border-color: var(--pf-lime);
+  border-radius: var(--pf-radius-sm);
+  background: var(--pf-lime);
+  color: #fff;
+  font-weight: 650;
+}
+html[data-theme="daylight"] body .auth-visual {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2rem;
+  padding: clamp(2rem, 5vw, 5rem);
+  background: linear-gradient(150deg, #0f6e5f, #0a4239);
+  color: #fff;
+}
+html[data-theme="daylight"] .auth-visual-head { display: flex; flex-direction: column; align-items: flex-start; gap: 0.1em; font-family: var(--kk-serif); font-size: clamp(2.2rem, 4.2vw, 3.8rem); font-weight: 700; line-height: 1.2; }
+html[data-theme="daylight"] .auth-visual-head b { color: var(--pf-caption); font-weight: 700; }
+html[data-theme="daylight"] .auth-visual-sub { margin: 0; color: rgba(255, 255, 255, 0.75); font-size: 1.02rem; line-height: 1.75; }
+html[data-theme="daylight"] .auth-visual-wave { display: flex; align-items: center; gap: 5px; height: 48px; }
+html[data-theme="daylight"] .auth-visual-wave i { width: 5px; border-radius: 999px; background: rgba(255, 255, 255, 0.55); }
+
+@media (max-width: 1000px) {
+  html[data-theme="daylight"] .kk-hero { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 760px) {
+  html[data-theme="daylight"] .kk-tabs { display: grid; width: 100%; }
+  html[data-theme="daylight"] .kk-tabs button { min-width: 0; }
+  html[data-theme="daylight"] .kk-close { border-radius: 20px; }
+  html[data-theme="daylight"] .kk-monitor-title { display: block; }
+}

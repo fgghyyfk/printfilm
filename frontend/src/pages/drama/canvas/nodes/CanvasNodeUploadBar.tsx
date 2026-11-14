@@ -6,6 +6,8 @@ import { dramaApi, type DramaAsset } from '../../../../api/drama'
 import { CharacterVoicePreviewButton } from '../../../../components/drama/CharacterVoicePreviewButton'
 import { generateAndBindCharacterVoice } from '../../../../lib/characterVoiceGenerate'
 import { DRAMA_VOICE_BINDING_ENABLED } from '../../../../lib/dramaVoiceBinding'
+import { useCharacterVoiceGenerationEnabled } from '../../../../hooks/usePublicCapabilities'
+import { VOICE_GENERATION_DISABLED_MESSAGE } from '../../../../lib/publicCapabilities'
 import { CharacterVoiceBindModal } from '../../CharacterVoiceBindModal'
 import { useCanvasStore } from '../CanvasStore'
 import { CANVAS_UPLOADABLE_KINDS, type CanvasNodeKind } from '../canvasTypes'
@@ -35,6 +37,7 @@ export function CanvasNodeUploadBar({
   voiceUrl,
 }: CanvasNodeUploadBarProps) {
   const { t: translateUi } = useI18n()
+  const voiceGenerationEnabled = useCharacterVoiceGenerationEnabled()
   /*
    * uploading 本地上传中
    * pickerOpen 资产库弹窗
@@ -126,6 +129,7 @@ export function CanvasNodeUploadBar({
 
   /** 一键 AI 生成音色并绑定到角色节点 */
   async function handleGenerateVoice() {
+    if (!voiceGenerationEnabled) { setErrorMessage(VOICE_GENERATION_DISABLED_MESSAGE); return }
     if (voiceLoading) return
     setVoiceLoading(true)
     try {
@@ -198,7 +202,7 @@ export function CanvasNodeUploadBar({
             </>
           ) : (
             <>
-              <button
+              {voiceGenerationEnabled && <button
                 type="button"
                 className="fc-toolbar-chip"
                 disabled={toolbarBusy}
@@ -211,7 +215,7 @@ export function CanvasNodeUploadBar({
                   <AudioLines size={14} strokeWidth={1.8} />
                 )}
                 {voiceLoading ? translateUi("workflow.generating") : translateUi("workflow.generateVoice")}
-              </button>
+              </button>}
               <button
                 type="button"
                 className="fc-toolbar-chip"

@@ -22,7 +22,11 @@ from app.services.admin.stats import aggregate_usage_summary
 router = APIRouter()
 
 
-@router.get("/projects", response_model=AdminProjectListOut)
+@router.get("/projects", response_model=AdminProjectListOut,
+    summary="分页查询全站科普项目",
+    description="管理员按状态、所属用户、标题或错误消息关键词筛选科普项目，返回分镜数量和费用汇总，按项目编号倒序排列。",
+    response_description="操作成功，返回结果详见响应结构",
+)
 async def list_projects(
     status: str | None = None,
     q: str | None = None,
@@ -76,7 +80,11 @@ async def list_projects(
     )
 
 
-@router.get("/projects/{project_id}", response_model=AdminProjectDetailOut)
+@router.get("/projects/{project_id}", response_model=AdminProjectDetailOut,
+    summary="查看科普项目运维详情",
+    description="管理员查看科普项目的源文本、输出配置、用量统计、分镜摘要和最近 20 条任务记录。项目不存在时返回 404。",
+    response_description="操作成功，返回结果详见响应结构",
+)
 async def get_project(
     project_id: int,
     _admin: User = Depends(get_current_admin),

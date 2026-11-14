@@ -133,18 +133,19 @@ async def regen_avatar_scene(
         raise HTTPException(status_code=400, detail="该段没有场景描述，请先填写")
     look = await portrait_path(project)
     model = avatar_ai.resolve_image_model(project.avatar_image_model)
-    shot.image_url = project.avatar_image_url
-    project.final_video_url = None
-    await db.commit()
     try:
+        # 新图画好才替换：失败时旧场景图、该段视频和成片都保留。
         await run_billed_image(db, user, task_type="avatar_scene", project_id=project_id, model=model,
                                shot_id=shot_id,
-                               executor=lambda: ensure_scene_images(project_id, look, only_shot_ids={shot_id}))
+                               executor=lambda: ensure_scene_images(project_id, look, only_shot_ids={shot_id},
+                                                                    force=True))
     except ValueError as exc:  # 余额不足 / 限频
         await db.rollback()
         raise http_exception_for_value_error(exc) from exc
     except Exception as exc:  # noqa: BLE001
         raise _ai_error(exc) from exc
+    project.final_video_url = None
+    await db.commit()
     if project.status in {ProjectStatus.VIDEO_READY, ProjectStatus.AUDITING, ProjectStatus.DONE,
                           ProjectStatus.REJECTED, ProjectStatus.FAILED}:
         from app.services.kepu_avatar import _after_regen

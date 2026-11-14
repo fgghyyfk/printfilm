@@ -176,6 +176,10 @@ async def test_admin_usage_filter_project_ids(db_session: AsyncSession) -> None:
     assert len(by_project.items) == 1
     assert by_project.items[0].project_id == project.id
     assert by_project.items[0].provider == "ark"
+    usage_row = by_project.model_dump(mode="json")["items"][0]
+    assert usage_row["charge_fen"] == 10
+    assert "cost_fen" not in usage_row
+    assert "cost_status" not in usage_row
 
     by_drama = await list_usage_events(
         project_id=None,
@@ -196,6 +200,57 @@ async def test_admin_usage_filter_project_ids(db_session: AsyncSession) -> None:
     )
     assert len(by_drama.items) == 1
     assert by_drama.items[0].drama_project_id == 202
+
+
+@pytest.mark.asyncio
+async def test_admin_task_usage_keeps_retail_billing_without_upstream_cost(
+    db_session: AsyncSession,
+) -> None:
+    from app.api.admin.tasks import _load_usage_lines
+    from tests.conftest import make_task
+
+    user = await _valid_user(db_session)
+    task = await make_task(db_session, user)
+    billing_detail = {
+        "mode": "fixed_media",
+        "price_version": 3,
+        "operation_id": "video.generate",
+        "model_id": "video-model",
+        "resolution": "720p",
+        "duration": 5,
+        "unit_price_yuan": "0.50",
+        "delivered": True,
+        "route": {
+            "channel_id": "channel-1",
+            "channel_name": "主通道",
+            "upstream_model": "provider-video-model",
+        },
+    }
+    db_session.add(
+        UsageEvent(
+            user_id=user.id,
+            task_run_id=task.id,
+            billing_key="seedance",
+            capability="video",
+            model="video-model",
+            charge_fen=250,
+            cost_fen=130,
+            cost_status="pending",
+            total_tokens=42,
+            billing_detail=billing_detail,
+        )
+    )
+    await db_session.flush()
+
+    rows = await _load_usage_lines(db_session, task.id)
+    assert len(rows) == 1
+    usage_row = rows[0].model_dump(mode="json")
+    assert usage_row["charge_fen"] == 250
+    assert usage_row["total_tokens"] == 42
+    assert usage_row["billing_basis"] == "fixed_media"
+    assert usage_row["billing_detail"] == billing_detail
+    assert "cost_fen" not in usage_row
+    assert "cost_status" not in usage_row
 
 
 @pytest.mark.asyncio

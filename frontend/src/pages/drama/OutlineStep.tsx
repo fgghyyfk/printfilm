@@ -1,5 +1,6 @@
 import { useI18n } from '../../i18n'
 /** 剧情大纲步骤：自动摘要 + 分集剧本流水线 */
+import { isRequestAborted } from '../../api/http'
 import { useEffect, useRef, useState } from 'react'
 import {
   dramaApi,
@@ -21,6 +22,7 @@ import Modal from '../../components/ui/Modal'
 import { DramaImageStyleModal } from './DramaImageStyleModal'
 import { DramaProjectSettingsModal } from './DramaProjectSettingsModal'
 import { OutlineEpisodePanel } from './OutlineEpisodePanel'
+import { useTeamEditLock } from '../../features/teams/useTeamEditLock'
 
 type MetaModalKey = 'source' | 'summary' | 'project'
 
@@ -72,6 +74,7 @@ export function OutlineStep({
   const [sourceEditing, setSourceEditing] = useState(false)
   const [sourceDraft, setSourceDraft] = useState('')
   const [sourceSaving, setSourceSaving] = useState(false)
+  const scriptLock = useTeamEditLock({ projectId, type: 'script', resourceId: 0 }, summaryEditing || sourceEditing, async (isCurrent) => { const fresh = await dramaApi.getScript(projectId); if (isCurrent()) { setScript(fresh); if (summaryEditing) setSummaryDraft(fresh.summary || {}); if (sourceEditing) setSourceDraft(fresh.source || '') } })
   const pipelineRef = useRef(0)
   const projectRef = useRef(project)
   projectRef.current = project
@@ -153,6 +156,7 @@ export function OutlineStep({
       onProjectChange(p)
       return finished
     } catch (err) {
+      if (isRequestAborted(err)) throw err
       const msg = err instanceof Error ? err.message : translateUi("workflow.couldNotGenerateTheScriptSummary")
       setSummaryError(msg)
       onError(msg)
@@ -164,18 +168,23 @@ export function OutlineStep({
 
   // 摘要完成后等待/触发资产抽取（后端摘要任务也会自动抽；此处兜底）
   async function ensureAssetsSeeded(runToken?: number): Promise<boolean> {
-    setAssetsSeeding(true)
     try {
       let p = await dramaApi.getProject(projectId)
       onProjectChange(p)
       let st = getAssetsSeedStatus(p)
-      if (st !== 'generating' && st !== 'done') {
+      /* 已完成/已失败直接返回，不置抽取态，避免进页闪一下“抽取资产中”。 */
+      if (st === 'done' || st === 'failed') {
+        setAssetsSeeding(false)
+        return true
+      }
+      if (st !== 'generating') {
         try {
           await dramaApi.seedAssets(projectId)
         } catch {
           /* 可能已在后台抽取，继续轮询 */
         }
       }
+      setAssetsSeeding(true)
       const started = Date.now()
       while (Date.now() - started < 10 * 60 * 1000) {
         if (runToken !== undefined && runToken !== pipelineRef.current) return false
@@ -232,6 +241,7 @@ export function OutlineStep({
       const p = await dramaApi.getProject(projectId)
       onProjectChange(p)
     } catch (err) {
+      if (isRequestAborted(err)) return
       const msg = err instanceof Error ? err.message : translateUi("workflow.couldNotGenerateTheEpisodeScript")
       setEpisodeError(msg)
       onError(msg)
@@ -247,7 +257,8 @@ export function OutlineStep({
     const ok = await dialog.confirm({
       title: translateUi("workflow.regenerateEpisodeScripts"),
       message:
-        translateUi("workflow.replaceAllEpisodeScriptsUsingTheLatestDramaSummary"),
+        // 线上语义：全部成功后才替换正文，失败保留原稿（待补 i18n key）
+        '将按最新剧本摘要重新生成全部集数。全部成功后才替换当前正文，届时已有编辑将被覆盖；生成失败时保留原稿。是否继续？',
       confirmText: translateUi("ecomSet.result.regenerate"),
       tone: 'danger',
     })
@@ -377,6 +388,7 @@ export function OutlineStep({
       const p = await dramaApi.getProject(projectId)
       onProjectChange(p)
     } catch (err) {
+      if (isRequestAborted(err)) return
       onError(err instanceof Error ? err.message : translateUi("workflow.couldNotUpdateTheStyle"))
     }
   }
@@ -400,6 +412,7 @@ export function OutlineStep({
       const p = await dramaApi.getProject(projectId)
       onProjectChange(p)
     } catch (err) {
+      if (isRequestAborted(err)) return
       onError(err instanceof Error ? err.message : translateUi("workflow.couldNotSaveTheSummary"))
     } finally {
       setSummarySaving(false)
@@ -417,6 +430,7 @@ export function OutlineStep({
       setScript(updated)
       setSourceEditing(false)
     } catch (err) {
+      if (isRequestAborted(err)) return
       onError(err instanceof Error ? err.message : translateUi("workflow.couldNotSaveTheIdea"))
     } finally {
       setSourceSaving(false)
@@ -493,7 +507,7 @@ export function OutlineStep({
               <button
                 type="button"
                 className="drama-btn-primary"
-                disabled={sourceSaving}
+                disabled={sourceSaving || scriptLock.readOnly}
                 onClick={() => void saveSourceEdit()}
               >
                 {sourceSaving ? translateUi("workflow.saving") : translateUi("workflow.save")}
@@ -514,7 +528,8 @@ export function OutlineStep({
         }
       >
         <div className="drama-outline-meta-modal-body">
-          {sourceEditing ? (
+          {scriptLock.readOnly && <p className="pf-team-alert" role="status">{scriptLock.checking ? '正在取得编辑占用…' : scriptLock.error}<button type="button" onClick={scriptLock.retry}>重新取得编辑权并刷新</button></p>}
+        {sourceEditing ? (
             <textarea
               className="drama-ep-section-textarea"
               rows={16}
@@ -542,7 +557,7 @@ export function OutlineStep({
               <button
                 type="button"
                 className="drama-btn-primary"
-                disabled={summarySaving}
+                disabled={summarySaving || scriptLock.readOnly}
                 onClick={() => void saveSummaryEdit()}
               >
                 {summarySaving ? translateUi("workflow.saving") : translateUi("workflow.save")}
@@ -560,6 +575,7 @@ export function OutlineStep({
         }
       >
         <div className="drama-outline-meta-modal-body">
+          {scriptLock.readOnly && <p className="pf-team-alert" role="status">{scriptLock.checking ? '正在取得编辑占用…' : scriptLock.error}<button type="button" onClick={scriptLock.retry}>重新取得编辑权并刷新</button></p>}
           {summaryGenerating || summaryStatus === 'generating' ? (
             <p className="drama-loader">{translateUi("workflow.generatingDramaSummary")}</p>
           ) : null}

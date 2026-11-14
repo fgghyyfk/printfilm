@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import logging
 import uuid
 import zipfile
 from pathlib import Path
@@ -23,17 +24,38 @@ from app.services.billing.settlement import billing_active, ensure_balance_for_t
 from app.services.ecom_set.jobs import (
     public_url,
     reconcile_stuck_items,
+    render_flat_item,
     refresh_set_status,
     render_final,
     set_dir,
 )
 from app.services.ecom_set.planner import plan_set
+from app.services.ecom_set import categories
+from app.services.ecom_set import scenes as scenes_mod
+from app.services.ecom_set import shots as shots_mod
+from app.services.ecom_set import typo as typo_mod
+from app.services.ecom_set import variety
+from app.services.ecom_set.engines import (  # noqa: F401  出图模型（对外仍从 service 导出）
+    IMAGE_ENGINES,
+    engine_of,
+    engine_options,
+    item_engine,
+    normalize_engine,
+)
+from app.services.ecom_set.variety import add_set_elements  # noqa: F401
+from app.services.ecom_set.categories import is_styled
+from app.services.ecom_set.styled import build_long_image, create_styled_plan, recolor_set, styled_out
 from app.services.ecom_set.presets import (
-    COUNTS,
-    SLOTS,
-    LANGUAGES,
+    CATEGORIES,
     CLARITIES,
+    COUNTS,
+    FREE_REFS,
+    GENERAL_SLOTS,
+    LANGUAGES,
+    SLOTS,
+    normalize_category,
     select_slots,
+    slots_for,
     PLATFORMS,
     STYLES,
     gen_ratio,
@@ -43,7 +65,9 @@ from app.services.ecom_set.presets import (
     slot_label,
 )
 from app.services.compliance.ad_words import Hit, summarize
-from app.services.ecom_set.prompts import clip, normalize_copy, sanitize_scene
+from app.services.ecom_set.prompts import clip, normalize_copy, sanitize_scene, title_limit
+
+logger = logging.getLogger(__name__)
 
 ALLOWED_EXT = {".png", ".jpg", ".jpeg", ".webp"}
 MAX_UPLOAD = 10 * 1024 * 1024
@@ -72,9 +96,28 @@ def save_product_image(user_id: int, data: bytes, filename: str) -> Path:
 
 
 # 单张生图预估价（分）
-async def image_unit_fen(db: AsyncSession, clarity: str = "2k") -> int:
-    probe = TaskRun(domain="studio", task_type="ecom_set_image", payload={"clarity": clarity})
+async def image_unit_fen(db: AsyncSession, engine: str = "seedream", clarity: str = "2k") -> int:
+    from app.services.media_models.planning import prepare_task_media
+
+    probe = TaskRun(domain="studio", task_type="ecom_set_image", payload=image_task_payload("3:4", engine, clarity))
+    try:
+        await prepare_task_media(db, probe)
+    except ValueError as exc:
+        # 模型渠道未配置时只是报不出价，不能让选项和历史列表整页 500；真正提交生成时仍会报错。
+        logger.warning("电商图估价跳过：%s", exc)
+        return 0
     return int(await estimate_task_fen(db, probe))
+
+
+# 套图单张生图任务的计价参数（与图片生成页同一张价目表：2K）。
+# 4K 只在 Seedream 上生效：额外带 clarity=4k 供估价识别；媒体价目策略目前只收 1K/2K，resolution 保持 2K。
+def image_task_payload(ratio: str, engine: str = "seedream", clarity: str = "2k") -> dict:
+    body = {"aspect_ratio": ratio or "3:4", "resolution": "2K"}
+    if normalize_engine(engine) == "gpt-image-2":
+        body["model_id"] = "gpt-image-2"
+    elif clarity == "4k":
+        body["clarity"] = "4k"
+    return body
 
 
 # 前端选项：平台/风格/张数/价格
@@ -85,9 +128,20 @@ async def get_options(db: AsyncSession) -> dict:
         "styles": [{"id": k, "name": v[0]} for k, v in STYLES.items()],
         "counts": list(COUNTS),
         "slots": [{"id": slot.key, "name": slot.label, "description": slot.prompt,
-                   "ratio": slot.ratio, "layout": slot.layout, "is_main": slot.is_main} for slot in SLOTS.values()],
+                   "ratio": slot.ratio, "layout": slot.layout, "is_main": slot.is_main} for slot in GENERAL_SLOTS.values()],
         "languages": list(LANGUAGES), "clarities": list(CLARITIES),
-        "prices": {clarity: await image_unit_fen(db, clarity) for clarity in CLARITIES},
+        "prices": {clarity: await image_unit_fen(db, clarity=clarity) for clarity in CLARITIES},
+        "categories": [{"id": k, "name": v} for k, v in CATEGORIES.items()],
+        "styled": categories.options(),
+        "frames": [{"id": k, "name": v[0]} for k, v in categories.FRAMES.items()],
+        "industries": scenes_mod.industries_out(),
+        "category_industry": dict(scenes_mod.CATEGORY_INDUSTRY),
+        "type_styles": typo_mod.options(),
+        "image_engines": [{**e, "image_fen": await image_unit_fen(db, e["id"])} for e in engine_options()],
+        "shots": shots_mod.options(),
+        "scarf_sizes": next(c["sizes"] for c in categories.options() if c["id"] == "scarf"),
+        "scarf_counts": next(c["counts"] for c in categories.options() if c["id"] == "scarf"),
+        "scarf_materials": next(c["materials"] for c in categories.options() if c["id"] == "scarf"),
         "plan_fen": int(s.ecom_set_plan_fen),
         "translate_fen": int(s.ecom_set_plan_fen),
         "image_fen": await image_unit_fen(db),
@@ -115,17 +169,37 @@ async def _record_plan_charge(db: AsyncSession, user_id: int) -> None:
 
 
 async def create_plan(
-    db: AsyncSession, user: User, *, data: bytes, filename: str,
+    db: AsyncSession, user: User, *, data: bytes | None, filename: str,
     name: str, platform: str, style: str, count: int | str | None, notes: str,
     slot_keys: list[str] | None = None, language: str = "zh", clarity: str = "2k",
     source_job_id: int | None = None, source_item_idx: int | None = None,
+    category: str = "general", scarf_size: str | None = None, model_asset_id: int | None = None,
+    scarf_material: str | None = None, frame: str | None = None, slots_picked: list[str] | None = None,
+    product_id: int | None = None, color_index: int = 0, fabric: tuple[bytes, str] | None = None,
+    scene_key: str | None = None, image_engine: str | None = None, element_keys: list[str] | None = None,
+    dims: dict | None = None, no_text: bool = False,
 ) -> EcomSet:
-    """上传商品图 → 计费规划 → 落库套图与各张方案（status=planned）。"""
+    """上传商品图（或从商品库选）→ 计费规划 → 落库套图与各张方案（status=planned）。
+
+    丝巾 / 服饰 / 首饰 / 包袋为「模特上身」套图：模特槽位以模特库里的模特为原型，材质、尺寸、画幅与槽位可选。
+    """
+    category = normalize_category(category)
+    if is_styled(category) or product_id:
+        set_id = await create_styled_plan(
+            db, user, category=category, name=name, notes=notes, count=count, size=scarf_size,
+            material=scarf_material, model_asset_id=model_asset_id, frame=frame, slots_picked=slots_picked,
+            product_id=product_id, color_index=color_index, data=data, filename=filename, fabric=fabric,
+            scene_key=scene_key, image_engine=image_engine, element_keys=element_keys,
+            dims=dims, no_text=no_text,
+        )
+        return await get_set(db, user, set_id)
     name = clip(name, 60)
     if not name:
         raise ValueError("请填写品名")
-    platform, style, count = normalize_platform(platform), normalize_style(style), normalize_count(count)
-    slots = select_slots(count, slot_keys)
+    platform, style = normalize_platform(platform), normalize_style(style)
+    count = normalize_count(count)
+    # 通用商品：显式自定义槽位严格校验，否则按张数取默认构成
+    slots = select_slots(count, slot_keys) if slot_keys is not None else slots_for(category, count)
     count = len(slots)
     if language not in LANGUAGES or clarity not in CLARITIES:
         raise ValueError("语言或清晰度不支持")
@@ -135,6 +209,8 @@ async def create_plan(
         from app.services.ecom_set.sources import refine_product
         path = await refine_product(db, user, source_job_id, source_item_idx)
     else:
+        if not data:
+            raise ValueError("请上传商品图")
         path = save_product_image(user.id, data, filename)
 
     # 在规划计费上下文内执行，并记录固定规划费用。
@@ -167,6 +243,21 @@ async def create_plan(
         ))
     await db.commit()
     return await get_set(db, user, ecom.id)
+
+
+# 是否为不调模型的槽位（尺寸图、平铺图）
+def _is_flat(item: EcomSetItem) -> bool:
+    slot = SLOTS.get(item.slot)
+    return bool(slot and slot.ref in FREE_REFS)
+
+
+# 不调模型的槽位直接排版成图（免费、同步）
+async def _render_flat_items(ecom: EcomSet, items: list[EcomSetItem]) -> None:
+    for it in items:
+        out = await asyncio.to_thread(render_flat_item, ecom, it)
+        url = await asyncio.to_thread(public_url, out)
+        it.base_path, it.base_url, it.final_url = str(out), url, url
+        it.status, it.error, it.task_run_id = "succeeded", None, None
 
 
 # 读取当前用户的一套图（含各张）
@@ -213,9 +304,12 @@ async def update_plan(db: AsyncSession, user: User, set_id: int, items: list[dic
             scene, sh = sanitize_scene(str(body.get("scene") or ""))
             it.scene = clip(scene, 300)
             hits += sh
-        copy, ch = normalize_copy(body, layout=it.layout, language=ecom.language)
+        copy, ch = normalize_copy(_keep_en(body, it), layout=it.layout, language=ecom.language,
+                                  title_max=title_limit(it.slot))
         it.copy_json = copy
         hits += ch
+        if body.get("shot") is not None or body.get("elements") is not None:
+            variety.set_item_layout(ecom, it, shot=body.get("shot"), elements=body.get("elements"))
     _set_edit_warnings(ecom, hits)
     await db.commit()
     return await get_set(db, user, set_id)
@@ -225,14 +319,17 @@ async def update_plan(db: AsyncSession, user: User, set_id: int, items: list[dic
 async def _enqueue_items(db: AsyncSession, user: User, ecom: EcomSet, items: list[EcomSetItem]) -> None:
     from app.services.tasks.service import create_task
 
-    probe = TaskRun(domain="studio", task_type="ecom_set_image", requested_by=user.id, payload={"clarity": ecom.clarity})
+    probe = TaskRun(domain="studio", task_type="ecom_set_image", requested_by=user.id,
+                    payload=image_task_payload(items[0].ratio if items else "3:4",
+                                               item_engine(ecom, items[0]) if items else "seedream", ecom.clarity))
     await ensure_balance_for_task_batch(db, user, probe, len(items))
     for it in items:
         task = await create_task(
             db, user,
             TaskCreateRequest(
                 domain="studio", task_type="ecom_set_image",
-                payload={"set_id": ecom.id, "idx": it.idx, "slot": it.slot, "ratio": it.ratio, "clarity": ecom.clarity},
+                payload={"set_id": ecom.id, "idx": it.idx, "slot": it.slot, "ratio": it.ratio,
+                         **image_task_payload(it.ratio, item_engine(ecom, it), ecom.clarity)},
                 dedupe_key=f"ecomset:{ecom.id}:{it.idx}:{uuid.uuid4().hex[:6]}",
             ),
             commit=False,
@@ -248,26 +345,57 @@ async def start_generation(db: AsyncSession, user: User, set_id: int) -> EcomSet
     todo = [it for it in ecom.items if it.status in {"planned", "failed"}]
     if not todo:
         raise ValueError("没有需要生成的图片")
-    await _enqueue_items(db, user, ecom, todo)
-    ecom.status = "generating"
+    ai_items = [it for it in todo if not _is_flat(it)]
+    if ai_items:
+        await _enqueue_items(db, user, ecom, ai_items)
+    await _render_flat_items(ecom, [it for it in todo if _is_flat(it)])
+    ecom.status = "generating" if ai_items else "done"
     await db.commit()
     return await get_set(db, user, set_id)
 
 
-async def regenerate_item(db: AsyncSession, user: User, set_id: int, idx: int, scene: str | None) -> EcomSet:
-    """单张重新生成底图（收一张生图费），可顺带改画面描述。"""
+async def regenerate_item(db: AsyncSession, user: User, set_id: int, idx: int, scene: str | None,
+                          shot: str | None = None, elements: list[str] | None = None) -> EcomSet:
+    """单张重新生成底图（收一张生图费），可顺带改画面描述、镜头与元素。"""
     ecom = await get_set(db, user, set_id)
     it = _item(ecom, idx)
     if it.status in {"queued", "running"}:
         raise ValueError("这张图正在生成中")
+    if shot is not None or elements is not None:
+        variety.set_item_layout(ecom, it, shot=shot, elements=elements)
     if scene is not None and scene.strip():
         clean, hits = sanitize_scene(scene)
         it.scene = clip(clean, 300)
         _set_edit_warnings(ecom, hits)
-    await _enqueue_items(db, user, ecom, [it])
-    ecom.status = "generating"
+    if _is_flat(it):
+        if SLOTS[it.slot].ref == "info":
+            await _refresh_knowledge(db, user, ecom)
+        await _render_flat_items(ecom, [it])
+        await refresh_set_status(db, ecom.id)
+    else:
+        if SLOTS[it.slot].ref == "ingredients":
+            await _refresh_knowledge(db, user, ecom)  # 成分图按最新资料重画
+        await _enqueue_items(db, user, ecom, [it])
+        ecom.status = "generating"
     await db.commit()
     return await get_set(db, user, set_id)
+
+
+async def _refresh_knowledge(db: AsyncSession, user: User, ecom: EcomSet) -> None:
+    """信息屏重新生成前，用商品库里最新的资料与颜色款刷新套图快照（用户改了资料后点重新生成即生效）。"""
+    from app.services.ecom_set import products
+    from app.services.ecom_set.styled import _knowledge_of
+
+    styled = dict((ecom.plan or {}).get("styled") or {})
+    if not styled.get("product_id"):
+        return
+    try:
+        row = await products.get_product(db, user, int(styled["product_id"]))
+    except LookupError:
+        return
+    know, variants = _knowledge_of(row)
+    styled.update(knowledge=know, variants=variants)
+    ecom.plan = {**(ecom.plan or {}), "styled": styled}
 
 
 async def update_copy(db: AsyncSession, user: User, set_id: int, idx: int, body: dict) -> EcomSet:
@@ -276,11 +404,41 @@ async def update_copy(db: AsyncSession, user: User, set_id: int, idx: int, body:
     it = _item(ecom, idx)
     if not it.base_path or not Path(it.base_path).exists():
         raise ValueError("这张图还没有底图，请先生成")
-    copy, hits = normalize_copy(body, layout=it.layout, language=ecom.language)
+    copy, hits = normalize_copy(_keep_en(body, it), layout=it.layout, language=ecom.language,
+                                title_max=title_limit(it.slot))
     it.copy_json = copy
     _set_edit_warnings(ecom, hits)
     _, it.final_url = await render_final(ecom, it, Path(it.base_path))
     await refresh_set_status(db, ecom.id)
+    await db.commit()
+    return await get_set(db, user, set_id)
+
+
+def _keep_en(body: dict, it: EcomSetItem) -> dict:
+    """请求里没带英文小标（None）时沿用原值。"""
+    if body.get("en") is None:
+        return {**body, "en": (it.copy_json or {}).get("en") or ""}
+    return body
+
+
+async def set_type_style(db: AsyncSession, user: User, set_id: int, type_style: str) -> EcomSet:
+    """切换整套图的字体风格（none = 不加文字）：已出图的全部重新排字（不调模型、不收费）。"""
+    from app.services.ecom_set import typo
+
+    if type_style not in typo.TYPE_STYLES and type_style != typo.NO_TEXT:
+        raise ValueError("不支持的字体风格")
+    ecom = await get_set(db, user, set_id)
+    plan = dict(ecom.plan or {})
+    no_text = type_style == typo.NO_TEXT
+    patch = {"no_text": no_text} if no_text else {"no_text": False, "type_style": type_style}
+    if isinstance(plan.get("styled"), dict):
+        plan["styled"] = {**plan["styled"], **patch}
+    else:
+        plan.update(patch)
+    ecom.plan = plan
+    for it in ecom.items:
+        if it.status == "succeeded" and it.base_path and Path(it.base_path).exists():
+            _, it.final_url = await render_final(ecom, it, Path(it.base_path))
     await db.commit()
     return await get_set(db, user, set_id)
 
@@ -293,14 +451,39 @@ async def build_zip(db: AsyncSession, user: User, set_id: int) -> tuple[bytes, s
         raise ValueError("还没有生成好的图片")
     buf = io.BytesIO()
     workdir = set_dir(ecom.user_id, ecom.id)
+    locals_: list[Path] = []
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for it in done:
             local = storage.local_path_from_url(it.final_url or "")
             if local is None or not local.exists():
                 local = await storage.ensure_local_media(it.final_url or "", workdir / f"dl_{it.idx:02d}.jpg")
+            locals_.append(Path(local))
             zf.write(local, f"{it.idx + 1:02d}-{slot_label(it.slot)}.jpg")
+        if len(locals_) >= 2:
+            zf.writestr("00-详情长图.jpg", await asyncio.to_thread(build_long_image, locals_))
     safe = "".join(ch for ch in ecom.name if ch.isalnum())[:20] or "ecomset"
     return buf.getvalue(), f"{safe}-{ecom.id}.zip"
+
+
+async def long_image(db: AsyncSession, user: User, set_id: int) -> tuple[bytes, str]:
+    """已完成成图按顺序拼成的详情长图，返回 (JPEG 字节, 文件名)。"""
+    ecom = await get_set(db, user, set_id)
+    paths = []
+    for it in ecom.items:
+        if not it.final_url:
+            continue
+        local = storage.local_path_from_url(it.final_url)
+        if local is None or not local.exists():
+            local = await storage.ensure_local_media(it.final_url, set_dir(ecom.user_id, ecom.id) / f"dl_{it.idx:02d}.jpg")
+        paths.append(Path(local))
+    data = await asyncio.to_thread(build_long_image, paths)
+    safe = "".join(ch for ch in ecom.name if ch.isalnum())[:20] or "ecomset"
+    return data, f"{safe}-{ecom.id}-详情长图.jpg"
+
+
+async def recolor(db: AsyncSession, user: User, set_id: int, color_index: int) -> EcomSet:
+    """同款换色：新建一套沿用原方案的套图（待生成）。"""
+    return await get_set(db, user, await recolor_set(db, user, set_id, color_index))
 
 
 async def list_sets(db: AsyncSession, user: User, *, page: int, page_size: int) -> tuple[list[EcomSet], int]:
@@ -322,6 +505,7 @@ async def list_sets(db: AsyncSession, user: User, *, page: int, page_size: int) 
 # 序列化一套图给前端
 def to_out(ecom: EcomSet, *, image_fen: int) -> dict:
     plan = ecom.plan or {}
+    styled = styled_out(ecom)
     items = []
     for it in ecom.items:
         copy = it.copy_json or {}
@@ -329,14 +513,19 @@ def to_out(ecom: EcomSet, *, image_fen: int) -> dict:
             "idx": it.idx, "slot": it.slot, "slot_label": slot_label(it.slot), "layout": it.layout,
             "ratio": it.ratio, "scene": it.scene or "", "title": copy.get("title") or "",
             "subtitle": copy.get("subtitle") or "", "bullets": list(copy.get("bullets") or []),
+            "en": copy.get("en") or "",
+            **variety.item_layout_out(ecom, it),
             "base_url": it.base_url, "final_url": it.final_url, "status": it.status, "error": it.error,
+            "billable": not _is_flat(it),
         })
     return {
         "id": ecom.id, "status": ecom.status, "name": ecom.name, "platform": ecom.platform,
         "style": ecom.style, "count": ecom.count, "language": ecom.language, "clarity": ecom.clarity, "product_image_url": ecom.product_image_url,
         "product": plan.get("product") or {"name": ecom.name, "category": "", "colors": [], "selling_points": []},
         "warnings": list(plan.get("warnings") or []), "image_fen": image_fen,
-        "total_fen": image_fen * len(items), "items": items,
+        "total_fen": image_fen * sum(1 for it in items if it["billable"]), "items": items,
+        "category": styled["category"] if styled else "general",
+        "scarf": styled, "styled": styled,
         "created_at": ecom.created_at.isoformat() if ecom.created_at else "",
         "project_id": ecom.project_id,
         "source_set_id": ecom.source_set_id,

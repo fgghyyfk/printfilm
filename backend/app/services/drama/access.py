@@ -35,13 +35,14 @@ async def get_owned_drama_project(
         opts.append(selectinload(DramaProject.assets))
     if with_episodes:
         opts.append(selectinload(DramaProject.episodes).selectinload(DramaEpisode.fragments))
-    q = select(DramaProject).where(DramaProject.id == project_id, DramaProject.user_id == user.id)
+    q = select(DramaProject).where(DramaProject.id == project_id)
     if opts:
         q = q.options(*opts)
     result = await db.execute(q)
     project = result.scalar_one_or_none()
     if not project:
         raise HTTPException(status_code=404, detail="漫剧项目不存在")
+    await require_drama_project_access(db, project, user.id)
     return project
 
 
@@ -63,7 +64,7 @@ async def get_owned_episode(
     q = (
         select(DramaEpisode)
         .join(DramaProject, DramaEpisode.project_id == DramaProject.id)
-        .where(DramaEpisode.id == episode_id, DramaProject.user_id == user.id)
+        .where(DramaEpisode.id == episode_id)
     )
     if opts:
         q = q.options(*opts)
@@ -71,7 +72,39 @@ async def get_owned_episode(
     episode = result.scalar_one_or_none()
     if not episode:
         raise HTTPException(status_code=404, detail="分集不存在")
+    project = await db.get(DramaProject, episode.project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="分集不存在")
+    await require_drama_project_access(db, project, user.id)
     return episode
+
+
+async def require_drama_project_access(db: AsyncSession, project: DramaProject, user_id: int) -> None:
+    """个人所有权或实时团队成员关系统一授权，原创建者不能绕过离队限制。"""
+    if project.team_id is not None:
+        from app.services.teams.access import get_team
+
+        await get_team(db, project.team_id, user_id)
+    elif int(project.user_id) != int(user_id):
+        raise HTTPException(status_code=404, detail="漫剧项目不存在")
+
+
+async def require_drama_project_manager(db: AsyncSession, project: DramaProject, user_id: int) -> None:
+    """删除等项目级管理操作限制为个人所有者或团队所有者/管理员。"""
+    await require_drama_project_access(db, project, user_id)
+    if project.team_id is not None:
+        from app.services.teams.access import get_team
+
+        await get_team(db, project.team_id, user_id, roles=("owner", "admin"))
+
+
+async def get_owned_asset(db: AsyncSession, asset_id: int, user: User) -> DramaAsset:
+    """通过资产所属项目统一校验个人与团队访问权限。"""
+    asset = await db.get(DramaAsset, asset_id)
+    if not asset:
+        raise HTTPException(status_code=404, detail="资产不存在")
+    await get_owned_drama_project(db, asset.project_id, user)
+    return asset
 
 
 async def detach_task_fragment_refs(

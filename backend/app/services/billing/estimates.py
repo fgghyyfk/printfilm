@@ -37,11 +37,8 @@ __all__ = [
 
 def _kepu_video_resolution(project: Project | None, settings: Settings) -> str:
     """科普成片清晰度：设置项；HD 且配置为 480p 时升到 720p（与 pipeline 一致）。"""
-    raw = str(getattr(settings, "ark_video_resolution", "") or "480p")
-    mode = str(getattr(project, "resolution_mode", "") or "")
-    if mode == "hd" and raw.strip().lower() == "480p":
-        return "720p"
-    return raw
+    from app.services.seedance_resolutions import project_video_resolution
+    return project_video_resolution(project, settings)
 
 
 def _drama_video_resolution(payload: dict) -> str:
@@ -224,10 +221,21 @@ async def estimate_task_fen(db: AsyncSession, task: TaskRun, settings: Settings 
         project_id = task.project_id or (task.payload or {}).get("project_id")
         project = await db.get(Project, project_id) if project_id else None
         offline_ecom = bool(project and (project.ecom_set_id or await db.get(EcomJobVideo, project.id)))
-    if not offline_ecom:
-        await ensure_official_rates(s)
     domain = (task.domain or "").strip()
     task_type = (task.task_type or "").strip()
+    snapshot = task.billing_snapshot or {}
+    if snapshot.get("mode") == "fixed_media":
+        total = sum(item["total_fen"] for item in snapshot["items"])
+        if domain == "kepu" and task_type == "project_pipeline":
+            project = (await db.execute(select(Project).where(Project.id == task.project_id).options(selectinload(Project.shots)))).scalar_one_or_none()
+            if project and any(x["capability"] == "image" for x in snapshot["items"]) and not project_audio_ready(project):
+                _, tts = charge_fen_for_tokens(s.billing_est_tts_tokens * max(len(project.shots), 1), "tts", settings=s)
+                total += _buffered_fen(tts, s)
+        return total
+    if domain == "drama" and task_type == "episode_compose":
+        return 0
+    if not offline_ecom:
+        await ensure_official_rates(s)
     payload = task.payload if isinstance(task.payload, dict) else {}
 
     if domain == "kepu" and task_type == "project_pipeline":
@@ -253,7 +261,9 @@ async def estimate_task_fen(db: AsyncSession, task: TaskRun, settings: Settings 
             project_id = task.project_id or payload.get("project_id")
             project = await db.get(Project, int(project_id)) if project_id else None
             if project is not None and (getattr(project, "pipeline_mode", "") or "") == "avatar":
-                return max(1, int(round(max(dur, 2.0) * int(s.avatar_price_fen_per_sec or 0))))
+                from app.services.kepu_avatar_billing import avatar_price_fen_per_sec
+
+                return max(1, int(round(max(dur, 2.0) * avatar_price_fen_per_sec(s, getattr(project, "avatar_resolution", None)))))
             c = charge_fen_official_video(
                 max(dur, 2.0),
                 s,
@@ -281,7 +291,9 @@ async def estimate_task_fen(db: AsyncSession, task: TaskRun, settings: Settings 
             if project is not None:
                 return estimate_auto_fen(project, s)
             llm = charge_fen_official_llm(s.billing_est_llm_tokens, s)
-            return _buffered_fen(llm, s) + 60 * int(s.avatar_price_fen_per_sec or 0)
+            from app.services.kepu_avatar_billing import avatar_price_fen_per_sec
+
+            return _buffered_fen(llm, s) + 60 * avatar_price_fen_per_sec(s)
         if task_type in {"avatar_look", "avatar_scene"}:
             # 定妆照 / 单段场景重画：按所选改图模型的张价
             from app.services.billing.pricing import user_charge_fen
@@ -349,18 +361,24 @@ async def estimate_task_fen(db: AsyncSession, task: TaskRun, settings: Settings 
         c = charge_fen_official_llm(s.billing_est_llm_tokens, s)
         return _buffered_fen(c, s)
 
-    if domain in {"api", "studio"}:
-        if task_type in {"v1_image", "tool_image"}:
+    if domain == "studio":
+        if task_type == "tool_audio":
+            _, c = charge_fen_for_tokens(s.billing_est_tts_tokens, "tts", settings=s)
+            return _buffered_fen(c, s)
+        if task_type == "tool_image":
             return _catalog_image_fen(s, payload=payload)
         if task_type == "ecom_job_image":
             # 电商批量图按用户选择的清晰度估价。
             return _catalog_image_fen(s, size=str(payload.get("clarity") or "2k"), payload=payload)
         if task_type == "ecom_set_image":
-            # 套图按所选清晰度匹配官价目录。
+            # 套图按所选清晰度匹配官价目录（默认 2K：1920² / 1728×2304），按张官价预扣
             return _catalog_image_fen(s, size=str(payload.get("clarity") or "2k"), payload=payload)
         if task_type in {"ecom_set_plan", "ecom_set_translate"}:
             return max(1, int(s.ecom_set_plan_fen))
-        if task_type in {"v1_video", "v1_seedance", "tool_video"}:
+        if task_type == "ecom_knowledge":
+            # 参考详情整理：每批切片一次视觉调用，按规划价计
+            return max(1, int(s.ecom_set_plan_fen)) * max(1, int(payload.get("batches") or 1))
+        if task_type == "tool_video":
             dur = float(payload.get("duration") or 5)
             c = charge_fen_official_video(
                 max(dur, 2.0),
@@ -368,6 +386,8 @@ async def estimate_task_fen(db: AsyncSession, task: TaskRun, settings: Settings 
                 model=_payload_video_model(payload, s),
                 resolution=str(payload.get("resolution") or "").strip() or "480p",
             )
+            if task_type == "tool_video" and payload.get("tool_id") == "t2v" and not payload.get("video_mode"):
+                c += _catalog_image_fen(s, payload=payload)
             return _buffered_fen(c, s)
 
     c = charge_fen_official_llm(s.billing_est_llm_tokens, s)

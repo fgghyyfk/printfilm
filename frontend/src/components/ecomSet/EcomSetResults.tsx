@@ -1,8 +1,10 @@
-import { AlertCircle, Download, Loader2, Pencil, RefreshCw } from 'lucide-react'
-import type { EcomSet, EcomSetItem } from '../../api/ecomSet'
+import { useState, type ReactNode } from 'react'
+import { AlertCircle, ChevronLeft, ChevronRight, Download, Loader2, Pencil, RefreshCw } from 'lucide-react'
+import { reorderEcomSet, type EcomSet, type EcomSetItem } from '../../api/ecomSet'
 import { resolveToolMediaUrl } from '../../api/tools'
 import { useI18n } from '../../i18n'
-import { canDownloadSet, canEditCopy, countEcomItems, isItemBusy, ratioToCss } from '../../lib/ecomSet'
+import { useGenerationText } from '../../lib/generationMedia'
+import { canDownloadSet, canEditCopy, countEcomItems, isItemBusy, ratioToCss, swapOrder, ecomSlotLabel } from '../../lib/ecomSet'
 import BillingErrorNotice from '../billing/BillingErrorNotice'
 import Button from '../ui/Button'
 import EcomSetWarnings from './EcomSetWarnings'
@@ -19,14 +21,39 @@ type Props = {
   onRetry: (item: EcomSetItem) => void
   onDownload: () => void
   onNew: () => void
+  /** 额外操作（长图、同款换色等），放在下载按钮前 */
+  extraActions?: ReactNode
+  /** 调整顺序后回传新套图；不传则不显示左右移动按钮 */
+  onReordered?: (set: EcomSet) => void
 }
 
 /** 第③④步：成图网格，生成中显示占位，完成后可改文案 / 重新生成 / 打包下载 */
 export default function EcomSetResults(props: Props) {
-  const { set, busyIdx, downloading, error, onDownload, onNew } = props
+  const { set, busyIdx, downloading, error, onDownload, onNew, extraActions } = props
   const { t } = useI18n()
+  const text = useGenerationText()
+  const sceneName = set.styled?.scene_name || ''
   const progress = countEcomItems(set.items)
   const generating = set.status === 'generating'
+  /* 调整顺序：提交中的状态与错误 */
+  const [moving, setMoving] = useState(false)
+  const [moveError, setMoveError] = useState('')
+
+  /** 左移 / 右移一张（生成中不可调） */
+  const move = async (pos: number, dir: -1 | 1) => {
+    const order = swapOrder(set.items, pos, dir)
+    if (!order || !props.onReordered) return
+    setMoving(true)
+    setMoveError('')
+    try {
+      props.onReordered(await reorderEcomSet(set.id, order))
+    } catch (e) {
+      setMoveError(e instanceof Error ? e.message : text('调整顺序失败', 'Reorder failed'))
+    } finally {
+      setMoving(false)
+    }
+  }
+  const canMove = Boolean(props.onReordered) && !generating && !moving
 
   return (
     <section className="pf-ecom-section">
@@ -38,11 +65,13 @@ export default function EcomSetResults(props: Props) {
             {progress.failed ? ` · ${t('ecomSet.result.failedCount', { count: progress.failed })}` : ''}
             {generating ? ` · ${t('ecomSet.result.waitHint')}` : ''}
           </p>
+          {sceneName ? <p className="pf-muted">{text(`场景：${sceneName}`, `Scene: ${sceneName}`)}</p> : null}
         </div>
         <div className="pf-ecom-actions">
           <Button variant="text" size="sm" onClick={onNew}>
             {t('ecomSet.result.newSet')}
           </Button>
+          {extraActions}
           <Button variant="lime" size="sm" disabled={!canDownloadSet(set) || downloading} onClick={onDownload}>
             {downloading ? (
               <Loader2 size={14} className="pf-tool-spin" aria-hidden />
@@ -56,10 +85,16 @@ export default function EcomSetResults(props: Props) {
 
       <EcomSetWarnings warnings={set.warnings} />
       {error ? <BillingErrorNotice message={error} className="pf-tool-error" /> : null}
+      {moveError ? <p className="pf-tool-error">{moveError}</p> : null}
+      {props.onReordered && set.items.length > 1 ? (
+        <p className="pf-muted pf-ecom-order-hint">{text('点卡片上的 ‹ › 可调整顺序，详情长图和打包下载按新顺序排列', 'Use ‹ › on each card to reorder; the long image and zip follow the new order')}</p>
+      ) : null}
 
       <div className="pf-ecom-grid" style={{ marginTop: error ? '0.75rem' : 0 }}>
-        {set.items.map((item) => (
-          <ResultCard key={item.idx} item={item} pending={busyIdx === item.idx} {...props} />
+        {set.items.map((item, pos) => (
+          <ResultCard key={item.idx} item={item} pending={busyIdx === item.idx} {...props}
+            onMove={canMove ? (dir) => void move(pos, dir) : undefined}
+            isFirst={pos === 0} isLast={pos === set.items.length - 1} />
         ))}
       </div>
     </section>
@@ -74,7 +109,10 @@ function ResultCard({
   onEditCopy,
   onRegenerate,
   onRetry,
-}: Props & { item: EcomSetItem; pending: boolean }) {
+  onMove,
+  isFirst,
+  isLast,
+}: Props & { item: EcomSetItem; pending: boolean; onMove?: (dir: -1 | 1) => void; isFirst: boolean; isLast: boolean }) {
   const { t } = useI18n()
   const busy = isItemBusy(item)
   const image = item.final_url ? resolveToolMediaUrl(item.final_url) : ''
@@ -83,9 +121,23 @@ function ResultCard({
     <article className="pf-ecom-card">
       <div className="pf-ecom-card-head">
         <strong>
-          {item.idx + 1}. {t(`ecomSet.enhanced.slots.${item.slot}.name`)}
+          {item.idx + 1}. {ecomSlotLabel(t, item)}
         </strong>
-        <span className="pf-badge">{item.ratio}</span>
+        <span className="pf-ecom-card-tools">
+          {onMove ? (
+            <>
+              <button type="button" className="pf-ecom-move" disabled={isFirst} aria-label={t('ecomSet.result.moveLeft')}
+                title={t('ecomSet.result.moveLeft')} onClick={() => onMove(-1)}>
+                <ChevronLeft size={14} aria-hidden />
+              </button>
+              <button type="button" className="pf-ecom-move" disabled={isLast} aria-label={t('ecomSet.result.moveRight')}
+                title={t('ecomSet.result.moveRight')} onClick={() => onMove(1)}>
+                <ChevronRight size={14} aria-hidden />
+              </button>
+            </>
+          ) : null}
+          <span className="pf-badge">{item.ratio}</span>
+        </span>
       </div>
       <div className="pf-ecom-thumb" style={{ aspectRatio: ratioToCss(item.ratio) }}>
         {busy ? (
@@ -106,7 +158,7 @@ function ResultCard({
             aria-label={t('ecomSet.result.preview')}
             onClick={() => onPreview(item)}
           >
-            <img src={image} alt={t(`ecomSet.enhanced.slots.${item.slot}.name`)} loading="lazy" />
+            <img src={image} alt={ecomSlotLabel(t, item)} loading="lazy" />
           </button>
         ) : (
           <div className="pf-ecom-thumb-state">{t('ecomSet.result.noImage')}</div>

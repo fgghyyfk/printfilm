@@ -1,3 +1,4 @@
+import { USER_UPDATED_EVENT } from '../lib/userEvents'
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
@@ -130,6 +131,7 @@ export default function AuthPage() {
           ? await api.login(trimmedEmail, password)
           : await api.register(trimmedEmail, password, nickname.trim())
       localStorage.setItem('token', res.access_token)
+      window.dispatchEvent(new Event(USER_UPDATED_EVENT))
       nav(nextPath)
     } catch (err) {
       setError(err instanceof Error ? err.message : t('common.fail'))
@@ -241,7 +243,20 @@ export default function AuthPage() {
         )}
       </div>
       <div className="auth-visual" aria-hidden>
-        <div className="ink-wash" />
+        <div className="auth-visual-wave">
+          {[30, 62, 44, 88, 56, 100, 38, 72, 50, 92, 34, 66, 46, 80, 28].map((h, i) => (
+            <i key={i} style={{ height: `${h}%` }} />
+          ))}
+        </div>
+        <div className="auth-visual-head">
+          <span>{t('home.headA')}</span>
+          <b>{t('home.headB')}</b>
+        </div>
+        <p className="auth-visual-sub">
+          {t('home.sub1')}
+          <br />
+          {t('home.sub2')}
+        </p>
       </div>
     </div>
   )

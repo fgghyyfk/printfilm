@@ -66,7 +66,11 @@ def _episode_plan_status(episode: DramaEpisode) -> str | None:
     return str(raw) if raw else None
 
 
-@router.get("/drama-episodes", response_model=AdminDramaEpisodeListOut)
+@router.get("/drama-episodes", response_model=AdminDramaEpisodeListOut,
+    summary="分页查询全站漫剧分集",
+    description="管理员按用户、项目、分集名称或项目标题关键词筛选分集，返回分镜数量与拆镜状态。",
+    response_description="操作成功，返回结果详见响应结构",
+)
 async def list_drama_episodes(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -131,7 +135,11 @@ async def list_drama_episodes(
     return AdminDramaEpisodeListOut(items=items, meta=PageMeta(page=page, page_size=page_size, total=total))
 
 
-@router.get("/drama-episodes/{episode_id}", response_model=AdminDramaEpisodeDetailOut)
+@router.get("/drama-episodes/{episode_id}", response_model=AdminDramaEpisodeDetailOut,
+    summary="查看漫剧分集与分镜",
+    description="管理员查看指定分集的项目归属、拆镜状态及按顺序排列的分镜摘要，包括媒体地址、时长、生成状态和资产引用数量。分集不存在时返回 404。",
+    response_description="操作成功，返回结果详见响应结构",
+)
 async def get_drama_episode(
     episode_id: int,
     _admin: User = Depends(get_current_admin),

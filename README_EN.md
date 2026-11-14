@@ -7,7 +7,7 @@
 
 > **Turn stories into videos you can ship** — AI short drama and AI short video, from script to final cut.
 
-A template-driven creation platform: topic / script → storyboard → image gen → video gen → final compose. Voice-over is generated with Seedance at render time — no separate TTS step.
+Step-by-step short-video creation: settings → copy and storyboard → reference-guided images → image-to-video → final preview. New projects default to AI video, 3D animation, 9:16 portrait and approximately 60 seconds; still-image production is also available. Review and edit each stage before continuing.
 
 **Source:** [github.com/yi1108/printfilm](https://github.com/yi1108/printfilm) · **Version** 0.2.0
 
@@ -46,32 +46,45 @@ From a one-liner to episode-ready video, with reusable characters and scenes.
 
 ### 2. AI short video
 
-Pick a template and run the storyboard pipeline — good for marketing and explainers.
+Manage short videos as project cards at `/history`, then start a new project at `/studio/new`.
 
-- 20+ built-in style templates
-- `full` (image + video + compose) or `image_text` (stills — faster and cheaper)
-- Per-shot redraw / regenerate video; jobs keep running after you leave the page
-- Final cut composed with FFmpeg
+- Four curated styles: 3D animation, 2D anime, picture-book illustration, and ink painting
+- Generate copy from an idea or paste an existing script; edit and save it as a draft
+- Confirm the copy to generate editable storyboards; use a fixed style image and previous-shot references to guide each image
+- AI video mode generates clips and sound from each shot image, with selectable models, resolution, individual previews and retries before final composition
+- Still-image mode retains external TTS, camera motion and captions; both modes support preview and download
+- Stop production or resume missing media after a failure; saved projects and tasks recover after leaving the page
+- Existing conversations transfer to the step editor after their producers stop and settle; historical versions retain their media
 
-### 3. Tools hub
+### 3. Independent generation and Drama Skills
 
-One-shot capabilities without the full pipeline: text-to-image, image-to-image, image-to-product, text-to-video, video-to-video, e-commerce collage.
+Images, videos and audio have independent generation pages. Explore [Drama Skills](https://www.gitcc.com/ai1/film-skills) for short-drama creation skills.
 
-### 4. Admin console and open API
+### 4. Admin console
 
-Users, orders, templates, task center, model routing. Open API `/api/v1` for image / video generation (Bearer or `X-Api-Key`).
+Users, orders, templates, task center, and model routing.
 
 ## Workflow
 
 ```
-Enter a topic or script
-    → Storyboard
-    → Image generation
-    → Video generation (Seedance includes voice-over)
-    → FFmpeg final compose
+Choose a style and enter an idea or existing copy
+    → Edit and save copy → Confirm to generate storyboard cards
+    → Review storyboard → Generate images using style references
+    → AI video: Generate clips and sound from images → Review and compose
+      Still images: Generate external TTS → Compose motion and captions
+    → Preview and download the final video
 ```
 
-You can redo any single shot at each stage; progress shows on the history page.
+Each stage pauses for review until the user starts the next one. Projects, storyboards and media use cards. Drama and standalone tools retain their existing workflows.
+
+New short videos use the project APIs directly. The old conversation creation, messaging and query APIs have been removed; only `open-editor` remains for transferring historical projects into the current workspace. Historical task recovery and project handoff still require `creation_sessions`, `creation_messages`, `creation_runs` and the project conversation field; the duration field also serves the current workflow. Startup handles the schema by default. For an existing database with `DATABASE_BOOTSTRAP_ENABLED=false`, run the scoped, repeatable migration below from `backend`, then restart the backend. It creates only those three tables, two project fields and indexes; it does not seed data, change other business structures or rewrite existing rows.
+
+```bash
+python scripts/prepare_creation_schema.py
+python scripts/prepare_creation_schema.py --check
+```
+
+On Windows, use `.venv\Scripts\python.exe` in place of `python`. The command uses the existing database configuration in `backend/.env`. `--check` is read-only and exits nonzero if required structures are missing.
 
 ## Technical highlights
 

@@ -38,7 +38,10 @@ async def test_real_scope_cancel_keeps_unknown_cost_freeze(db_session, kind):
                            status="running", billing_status="frozen", provider_task_id=None if kind == "voice" else "accepted-123")
     task.billing_estimate_fen = 100
     task.cancelable = False if kind == "voice" else True
-    task.result_payload = {"voice_billing_reservation": True} if kind == "voice" else {}
+    # 视频：合并后普通“已受理再取消”按线上规则计预扣费（见 test_policy_decisions）；
+    # 只有显式标记了提交/轮询结果未知的任务取消时才保留冻结待核对。
+    task.result_payload = ({"voice_billing_reservation": True} if kind == "voice"
+                           else {"video_billing_pending": {"reason": "poll_timeout", "provider_task_id": "accepted-123"}})
     await db_session.commit()
     cancelled = await cancel_tasks_for_scope(db_session, user.id, task_type=task.task_type)
     assert [item.id for item in cancelled] == [task.id]

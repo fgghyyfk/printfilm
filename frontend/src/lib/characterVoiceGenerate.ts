@@ -2,6 +2,7 @@ import { translate as translateUi } from '../i18n/runtime'
 /** 按角色设定 AI 生成音色并绑定到 voiceAudio（无弹窗，供卡片一键生成） */
 import { dramaApi, type DramaAsset } from '../api/drama'
 import { buildBoundParams } from '../pages/drama/CharacterVoiceBindModal'
+import { ensureCharacterVoiceGenerationEnabled } from '../api/publicCapabilities'
 
 export type CharacterVoiceGenerateResult = {
   character: DramaAsset
@@ -13,6 +14,7 @@ export async function generateAndBindCharacterVoice(
   projectId: number,
   asset: DramaAsset,
 ): Promise<CharacterVoiceGenerateResult> {
+  await ensureCharacterVoiceGenerationEnabled()
   const promptResult = await dramaApi.suggestVoicePrompt({
     project_id: projectId,
     asset_id: asset.id,

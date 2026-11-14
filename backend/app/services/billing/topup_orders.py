@@ -24,6 +24,17 @@ def active_provider() -> str:
     return value if value in PROVIDERS else "epay"
 
 
+def provider_configured(provider: str | None = None) -> bool:
+    """当前（或指定）充值通道的密钥是否齐全；Stripe 需 Secret Key 与 Webhook 签名密钥。"""
+    provider = provider or active_provider()
+    if provider == "stripe":
+        s = get_settings()
+        return bool(str(s.stripe_secret_key or "").strip() and str(s.stripe_webhook_secret or "").strip())
+    from app.services import epay
+
+    return epay.payment_configured()
+
+
 def order_expire_seconds(provider: str) -> int:
     """订单本地有效期：Stripe Checkout 最短 30 分钟，易支付 5 分钟。"""
     if provider == "stripe":
@@ -36,7 +47,10 @@ def order_expire_seconds(provider: str) -> int:
 async def lock_order(db: AsyncSession, out_trade_no: str) -> Order | None:
     """行锁读取订单，串行化同一订单的并发回调。"""
     result = await db.execute(
-        select(Order).where(Order.out_trade_no == out_trade_no).with_for_update()
+        select(Order)
+        .where(Order.out_trade_no == out_trade_no)
+        .with_for_update()
+        .execution_options(populate_existing=True)
     )
     return result.scalar_one_or_none()
 

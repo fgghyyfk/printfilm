@@ -76,7 +76,10 @@ def _reference_values(value, owner: str, root: Path, audit: ReferenceAudit) -> N
 async def collect_reference_audit(db, root: Path) -> ReferenceAudit:
     """逐表主键分页扫描所有列/嵌套JSON，包含终态任务及全局配置；不截断。"""
     # 注册全部持久化模型，不以OSS上传白名单代替引用清单。
-    from app import models, models_agent, models_api, models_drama, models_ecom, models_settings, models_tasks  # noqa: F401
+    from app import (  # noqa: F401
+        models, models_agent, models_creation, models_drama, models_ecom, models_settings, models_tasks,
+        models_team_billing, models_team_locks, models_teams,
+    )
 
     audit = ReferenceAudit()
     if db.new or db.dirty or db.deleted:

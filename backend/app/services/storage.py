@@ -10,8 +10,11 @@ FFmpeg always reads local files.
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
 import logging
 import mimetypes
+import os
 from contextlib import contextmanager
 from contextvars import ContextVar
 from functools import wraps
@@ -21,6 +24,7 @@ from typing import Any, Callable, Iterator, TypeVar
 import httpx
 
 from app.config import get_settings
+from app.services.url_guard import guard_request
 
 # 科普成片文件名：仅此文件在 skip_oss_intermediates 下仍入 OSS
 _KEPU_FINAL_NAMES = frozenset({"final.mp4"})
@@ -33,8 +37,29 @@ STATIC_ROOT = Path(__file__).resolve().parents[2] / "static"
 GENERATED_ROOT = STATIC_ROOT / "generated"
 
 
+def _project_dir_token(project_id: int) -> str:
+    """由 SECRET_KEY 派生目录随机段：静态目录无需登录，路径不能被枚举。"""
+    secret = get_settings().secret_key.encode("utf-8")
+    return hmac.new(secret, f"project-media:{project_id}".encode("utf-8"), hashlib.sha256).hexdigest()[:16]
+
+
+def existing_project_dirs(project_id: int) -> list[Path]:
+    """项目已有的全部媒体目录：历史 p{id}，以及带随机段的目录（含 SECRET_KEY 轮换前的）。"""
+    legacy = GENERATED_ROOT / f"p{project_id}"
+    return ([legacy] if legacy.is_dir() else []) + sorted(GENERATED_ROOT.glob(f"p{project_id}_*"))
+
+
 def project_dir(project_id: int) -> Path:
-    path = GENERATED_ROOT / f"p{project_id}"
+    """项目媒体目录：新项目用不可猜的目录名，历史项目沿用原目录，已入库的 URL 不失效。"""
+    if int(project_id) <= 0:
+        # p0 是电商公共目录，文件名本身带 uuid
+        path = GENERATED_ROOT / f"p{project_id}"
+    else:
+        path = GENERATED_ROOT / f"p{project_id}_{_project_dir_token(project_id)}"
+        if not path.is_dir():
+            existing = existing_project_dirs(project_id)
+            if existing:
+                return existing[0]
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -55,34 +80,63 @@ def to_public_url(rel_or_abs: str) -> str:
     return f"{settings.public_base_url.rstrip('/')}{rel_or_abs}"
 
 
+def is_within_static(path: str | Path) -> bool:
+    """路径是否位于 static 内。
+
+    用词法比较而非 resolve，部署时 static/generated 可能是指向数据盘的软链。
+    """
+    root = os.path.normpath(STATIC_ROOT)
+    return os.path.normpath(os.path.join(root, path)).startswith(root + os.sep)
+
+
+def _static_child(rel: str) -> Path | None:
+    """把相对路径拼到 static 下；含 .. 或绝对路径而越出 static 时返回 None。"""
+    if not is_within_static(rel):
+        return None
+    return Path(os.path.normpath(os.path.join(os.path.normpath(STATIC_ROOT), rel)))
+
+
+def _is_configured_oss_url(url: str) -> bool:
+    """URL 是否位于当前配置的 OSS 公网基址下。"""
+    from app.services import oss as oss_svc
+
+    settings = get_settings()
+    if not (str(settings.oss_public_base or "").strip() or settings.oss_bucket):
+        return False
+    return url.startswith(oss_svc.public_base().rstrip("/") + "/")
+
+
 def local_path_from_url(url: str) -> Path | None:
-    """Resolve DB/media URL to a local filesystem path when possible."""
+    """把库内媒体 URL 映射为 static 下的本地路径；外部域名和越界路径返回 None。"""
     if not url:
         return None
     if url.startswith("/static/"):
-        return STATIC_ROOT / url.removeprefix("/static/")
+        return _static_child(url.removeprefix("/static/"))
     settings = get_settings()
     prefix = settings.public_base_url.rstrip("/") + "/static/"
     if url.startswith(prefix):
-        return STATIC_ROOT / url.removeprefix(prefix)
+        return _static_child(url.removeprefix(prefix))
 
-    # OSS public URL → kepu/generated/... → static/generated/...
+    # 只有本站和配置的 OSS 地址才对应本地副本；外部域名的同名路径不能落到 static。
     if url.startswith("http://") or url.startswith("https://"):
         from app.services import oss as oss_svc
 
-        if oss_svc.oss_enabled():
+        is_oss = _is_configured_oss_url(url)
+        if not is_oss and not is_local_static_url(url):
+            return None
+        if is_oss and oss_svc.oss_enabled():
             folder = oss_svc.folder_prefix()
             marker = f"/{folder}/"
             idx = url.find(marker)
             if idx >= 0:
                 rest = url[idx + len(marker) :].split("?", 1)[0]
-                return STATIC_ROOT / rest
+                return _static_child(rest)
         # Generic: .../generated/pN/...
         marker2 = "/generated/"
         idx2 = url.find(marker2)
         if idx2 >= 0:
             rest = url[idx2 + 1 :].split("?", 1)[0]  # generated/pN/...
-            return STATIC_ROOT / rest
+            return _static_child(rest)
     return None
 
 
@@ -174,7 +228,12 @@ async def download_to(
         try:
             if tmp.exists():
                 tmp.unlink(missing_ok=True)
-            async with httpx.AsyncClient(timeout=_download_timeout(timeout), follow_redirects=True) as client:
+            # 钩子对每一跳重定向都校验目标地址，内网地址在发请求前被拒绝。
+            async with httpx.AsyncClient(
+                timeout=_download_timeout(timeout),
+                follow_redirects=True,
+                event_hooks={"request": [guard_request]},
+            ) as client:
                 async with client.stream("GET", url, headers=headers) as resp:
                     resp.raise_for_status()
                     expected = resp.headers.get("Content-Length")

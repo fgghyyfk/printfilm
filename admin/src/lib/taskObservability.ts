@@ -103,7 +103,7 @@ export function taskBilling(task: Pick<AdminTaskRow, "billing_status" | "billing
   };
 }
 
-export type UpstreamPhase = "started" | "accepted" | "failed" | "poll";
+export type UpstreamPhase = "started" | "accepted" | "failed" | "poll" | "simulated";
 export type UpstreamRecord = {
   id: number;
   phase: UpstreamPhase;
@@ -111,6 +111,7 @@ export type UpstreamRecord = {
   requestId?: string;
   method?: string;
   endpoint?: string;
+  operation?: string;
   model?: string;
   provider?: string;
   providerTaskId?: string;
@@ -128,7 +129,7 @@ function textField(value: unknown): string | undefined {
 
 export function upstreamRecords(events: AdminTaskEvent[] | undefined): UpstreamRecord[] {
   return (events || []).flatMap((event) => {
-    const match = event.event_type.match(/^upstream\.request\.(started|accepted|failed|poll)$/);
+    const match = event.event_type.match(/^upstream\.request\.(started|accepted|failed|poll|simulated)$/);
     if (!match) return [];
     const payload = event.payload || {};
     const response = payload.response && typeof payload.response === "object" ? payload.response as Record<string, unknown> : {};
@@ -142,6 +143,7 @@ export function upstreamRecords(events: AdminTaskEvent[] | undefined): UpstreamR
       requestId: textField(payload.request_id),
       method: textField(payload.method),
       endpoint: textField(payload.endpoint),
+      operation: textField(payload.operation),
       model: textField(payload.model),
       provider: textField(payload.provider),
       providerTaskId: textField(payload.provider_task_id),
@@ -157,6 +159,7 @@ export function upstreamRecords(events: AdminTaskEvent[] | undefined): UpstreamR
 
 export const UPSTREAM_PHASE_LABELS: Record<UpstreamPhase, string> = {
   started: "开始请求", accepted: "上游响应", failed: "请求失败", poll: "查询结果",
+  simulated: "本地模拟 · 参数已记录",
 };
 
 export function upstreamStateLabel(status: string): string {
@@ -183,6 +186,7 @@ export function groupUpstreamRecords(records: UpstreamRecord[]) {
       requestId: latest.requestId,
       method: reverse.find((item) => item.method)?.method,
       endpoint: reverse.find((item) => item.endpoint)?.endpoint,
+      operation: reverse.find((item) => item.operation)?.operation,
       model: reverse.find((item) => item.model)?.model,
       provider: reverse.find((item) => item.provider)?.provider,
       providerTaskId: reverse.find((item) => item.providerTaskId)?.providerTaskId,

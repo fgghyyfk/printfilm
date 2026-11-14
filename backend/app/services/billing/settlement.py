@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, get_settings
@@ -52,18 +52,9 @@ def _require_prepared_events(
 
 
 async def finish_prepared_task_settlements(db: AsyncSession, prepared: PreparedTaskSettlements) -> None:
-    """业务提交成功后才在独立小事务检查管理员邮件；失败不反转业务结果。"""
-    if not prepared.check_admin_after_commit:
-        return
+    """业务提交成功后的收尾钩子；平台上游成本告警已移除，仅保留调用约定。"""
+    _ = db
     prepared.check_admin_after_commit = False
-    from app.services.billing.alerts import process_admin_cost_alert
-
-    try:
-        async with AsyncSession(bind=db.bind, expire_on_commit=False) as alert_db:
-            await process_admin_cost_alert(alert_db)
-            await alert_db.commit()
-    except Exception:  # noqa: BLE001
-        logger.exception("分镜变更已提交，管理员费用提醒检查失败")
 
 
 def billing_active(user: User | None = None, settings: Settings | None = None) -> bool:
@@ -98,12 +89,14 @@ async def _ledger(
 
 
 async def _lock_user(db: AsyncSession, user_id: int) -> User | None:
-    """行锁用户钱包，避免并发预扣/结算透支；populate_existing 防止会话内过期余额。"""
+    """串行化钱包写入，同时允许用量行对 users.id 的外键 KEY SHARE 校验。"""
     return (
         await db.execute(
             select(User)
             .where(User.id == int(user_id))
-            .with_for_update()
+            # 余额更新不修改用户主键；FOR UPDATE 会阻塞 usage_events 外键校验，
+            # 与资产/任务锁形成死锁。NO KEY UPDATE 仍互斥其他钱包写入。
+            .with_for_update(key_share=True)
             .execution_options(populate_existing=True)
         )
     ).scalar_one_or_none()
@@ -129,8 +122,10 @@ async def pending_task_commitment_fen(
 ) -> int:
     """汇总用户进行中、尚未预扣冻结的任务估算占用（分）。"""
     stmt = select(TaskRun).where(
-        TaskRun.requested_by == int(user_id),
-        TaskRun.billing_status == "none",
+        or_(
+            and_(TaskRun.requested_by == int(user_id), TaskRun.team_id.is_(None), TaskRun.billing_status == "none"),
+            and_(TaskRun.billing_payer_user_id == int(user_id), TaskRun.team_id.is_not(None), TaskRun.billing_status == "reserved"),
+        ),
         TaskRun.status.in_(_PENDING_BILLING_TASK_STATUSES),
     )
     if exclude_task_id is not None:
@@ -149,7 +144,14 @@ async def ensure_balance_for_task(
     db: AsyncSession, user: User, task: TaskRun, *, prepared_estimate_fen: int | None = None,
 ) -> int:
     """入队前同步校验余额（含排队中未冻结估算），不足抛 ValueError；返回本任务估算分。"""
-    if is_free_local_task(task) or not billing_active(user):
+    if is_free_local_task(task):
+        return 0
+    if task.team_id is not None:
+        from app.services.billing.team import check_team_budget
+        need = await estimate_task_fen(db, task) if billing_active(user) else 0
+        summary = await check_team_budget(db, task, need, reserve=True)
+        return summary["unit_estimate_fen"]
+    if not billing_active(user):
         return 0
     locked = await _lock_user(db, int(user.id))
     if locked is None:
@@ -179,6 +181,13 @@ async def ensure_balance_for_task_batch(
     count: int,
 ) -> dict[str, int]:
     """批量入队前校验：pending + unit*count。不足抛 ValueError。"""
+    if task.id is None and task.billing_snapshot is None:
+        from app.services.media_models.planning import prepare_task_media
+        await prepare_task_media(db, task)
+    if task.team_id is not None:
+        from app.services.billing.team import check_team_budget
+        unit = await estimate_task_fen(db, task) if billing_active(user) else 0
+        return await check_team_budget(db, task, unit, count=count)
     if not billing_active(user):
         return {"unit_estimate_fen": 0, "required_total_fen": 0}
     qty = max(1, int(count))
@@ -215,6 +224,9 @@ async def freeze_for_task(db: AsyncSession, task: TaskRun) -> int:
     if locked_task is not task:
         task.billing_status = locked_task.billing_status
         task.billing_estimate_fen = locked_task.billing_estimate_fen
+    if task.team_id is not None:
+        from app.services.billing.team import freeze_team_task
+        return await freeze_team_task(db, task)
     if task.billing_status == "frozen":
         return int(task.billing_estimate_fen or 0)
 
@@ -257,6 +269,23 @@ async def settle_task(
     task = await _lock_task(db, task_id)
     if not task:
         return {"charged": 0, "refunded": 0}
+    result_payload = task.result_payload if isinstance(task.result_payload, dict) else {}
+    tts_pending = bool(result_payload.get("tts_billing_pending"))
+    # 视频待核对只在确有冻结时生效；计费关闭时没有钱要保留，按普通失败结束。
+    video_pending = bool(result_payload.get("video_billing_pending")) and task.billing_status in {"frozen", "reserved"}
+    if tts_pending or video_pending:
+        # 已成功的付费配音尚未落账，或视频结果未知；取消、失败补偿或直接结算都不能当成零成本退款
+        task.status = "awaiting_review"
+        task.error_code = "tts_billing_pending" if tts_pending else "video_billing_pending"
+        task.error_message = ("配音已生成，计费记录待核对，请勿重新生成" if tts_pending
+                              else "视频结果和费用待核对，已保留原任务，请勿重新生成")
+        task.finished_at = None
+        task.next_action_at = None
+        task.lease_until = None
+        task.current_step_status = "awaiting_review"
+        task.progress_percent = min(int(task.progress_percent or 0), 99)
+        await db.flush()
+        return {"charged": 0, "refunded": 0}
     if task.billing_status == "settled":
         return {
             "charged": int(task.billing_charged_fen or 0),
@@ -266,7 +295,9 @@ async def settle_task(
 
     result = task.result_payload if isinstance(task.result_payload, dict) else {}
     # HTTP内音色仍在执行，或视频提交/结果未知：本地取消不代表上游停止/免费。
-    if result.get("voice_billing_reservation") or video_cost_unconfirmed(task):
+    # 与上方一致：只有确有冻结时才保留待核对；计费关闭时没有钱要保留，按普通结束。
+    if ((result.get("voice_billing_reservation") or video_cost_unconfirmed(task))
+            and task.billing_status in {"frozen", "reserved"}):
         task.status = "awaiting_review"
         task.error_code = "billing_review_pending"
         task.error_message = "上游任务结果和费用待核对，已保留冻结金额，请勿重新生成"
@@ -289,6 +320,16 @@ async def settle_task(
         await db.flush()
         return {"charged": 0, "refunded": 0}
 
+
+    from app.services.media_models.failure_costs import record_failed_costs
+    await record_failed_costs(db, task)
+    if task.team_id is not None:
+        from app.services.billing.team import settle_team_task
+        result = await settle_team_task(db, task)
+        if task.status in {"succeeded", "failed", "cancelled"}:
+            from app.services.teams.edit_locks import release_task_locks
+            await release_task_locks(db, int(task.id))
+        return result
 
     # 钱包侧幂等：已有 unfreeze/settle 流水则只对齐状态，禁止二次退还
     if task.billing_status == "frozen":
@@ -398,11 +439,7 @@ async def settle_task(
         if charged > 0:
             from app.services.billing.alerts import process_billing_alerts_after_charge
 
-            if prepared_settlements is None:
-                await process_billing_alerts_after_charge(db, user, charged_fen=charged)
-            else:
-                prepared_settlements.check_admin_after_commit = True
-                await process_billing_alerts_after_charge(db, user, charged_fen=charged, defer_admin_check=True)
+            await process_billing_alerts_after_charge(db, user, charged_fen=charged)
         return {"charged": charged, "refunded": 0}
 
     frozen_for_task = int(task.billing_estimate_fen or 0)
@@ -454,11 +491,7 @@ async def settle_task(
     if charged > 0 and user:
         from app.services.billing.alerts import process_billing_alerts_after_charge
 
-        if prepared_settlements is None:
-            await process_billing_alerts_after_charge(db, user, charged_fen=charged)
-        else:
-            prepared_settlements.check_admin_after_commit = True
-            await process_billing_alerts_after_charge(db, user, charged_fen=charged, defer_admin_check=True)
+        await process_billing_alerts_after_charge(db, user, charged_fen=charged)
     return {"charged": charged, "refunded": refund}
 
 
@@ -481,7 +514,7 @@ async def reconcile_terminal_frozen_tasks(db: AsyncSession, *, limit: int = 100)
     stmt = (
         select(TaskRun)
         .where(
-            TaskRun.billing_status == "frozen",
+            TaskRun.billing_status.in_(("frozen", "reserved")),
             TaskRun.status.in_(_RECONCILABLE_TERMINAL_STATUSES),
             TaskRun.finished_at.is_not(None),
             TaskRun.finished_at < cutoff,
@@ -525,6 +558,7 @@ async def close_expired_pending_orders(
     *,
     user_id: int | None = None,
     out_trade_no: str | None = None,
+    team_id: int | None = None,
 ) -> int:
     from datetime import datetime, timezone
 
@@ -532,8 +566,10 @@ async def close_expired_pending_orders(
 
     now = datetime.now(timezone.utc)
     stmt = select(Order).where(Order.status == "pending")
-    if user_id is not None:
-        stmt = stmt.where(Order.user_id == user_id)
+    if team_id is not None:
+        stmt = stmt.where(Order.team_id == team_id)
+    elif user_id is not None:
+        stmt = stmt.where(Order.user_id == user_id, Order.team_id.is_(None))
     if out_trade_no is not None:
         stmt = stmt.where(Order.out_trade_no == out_trade_no)
     rows = (await db.execute(stmt)).scalars().all()
@@ -553,43 +589,6 @@ async def close_expired_pending_orders(
     if closed:
         await db.commit()
     return closed
-
-
-async def settle_usage_charge(
-    db: AsyncSession,
-    user: User,
-    charge_fen: int,
-    *,
-    ref_type: str = "api",
-    ref_id: str = "",
-) -> None:
-    """即时扣费（已由 task 结算覆盖时仅作兼容）。"""
-    if not billing_active(user):
-        return
-    need = max(0, int(charge_fen))
-    if need <= 0:
-        return
-    locked = await _lock_user(db, int(user.id))
-    target = locked or user
-    available = int(target.balance_fen or 0)
-    if available < need:
-        raise InsufficientBalanceError(f"余额不足：需要 ¥{need / 100:.2f}，当前 ¥{available / 100:.2f}，请先充值")
-    await _ledger(
-        db,
-        target,
-        -need,
-        "settle",
-        ref_type=ref_type,
-        ref_id=ref_id,
-        note="api_usage",
-    )
-    if locked is not None and locked is not user:
-        user.balance_fen = locked.balance_fen
-        user.frozen_fen = locked.frozen_fen
-    await db.flush()
-    from app.services.billing.alerts import process_billing_alerts_after_charge
-
-    await process_billing_alerts_after_charge(db, target, charged_fen=need)
 
 
 async def get_task_usage_lines(db: AsyncSession, task_id: int) -> list[UsageEvent]:

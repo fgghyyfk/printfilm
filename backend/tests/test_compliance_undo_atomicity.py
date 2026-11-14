@@ -11,7 +11,7 @@ from app.config import get_settings
 from app.models import Project, Shot, Template, User
 from app.schemas import ProjectUpdate, ShotUpdate
 from app.services.compliance.changes import clean_fields
-from tests.conftest import make_user
+from tests.conftest import _resolve_test_database_url, make_user
 
 
 @pytest.mark.parametrize("owner,other_action,done_parent", [
@@ -22,7 +22,8 @@ from tests.conftest import make_user
 async def test_undo_serializes_with_committed_edits_and_other_undo(db_session, tmp_path, monkeypatch, owner, other_action, done_parent):
     """在首次owner读取后交错两个真实PG连接，核对最终文本和两条审计状态。"""
     # db_session 只初始化隔离测试schema；竞争数据在独立连接提交，最终显式删除。
-    engine = create_async_engine(get_settings().database_url)
+    # 独立连接也必须落在 <库名>_test，不能直连业务库。
+    engine = create_async_engine(_resolve_test_database_url(get_settings().database_url)[0])
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     original = "😀最新，最强"
     project_id = user_id = None
@@ -86,7 +87,9 @@ async def test_undo_serializes_with_committed_edits_and_other_undo(db_session, t
             await asyncio.wait_for(asyncio.gather(*tasks), timeout=5)
         async with sessions() as check:
             saved = await check.get(Shot if owner == "shot" else Project, shot_id if owner == "shot" else project_id)
-            assert getattr(saved, field) == (original if other_action == "undo" else "手动新稿，保留最强")
+            # 带货模板分镜手改稿按线上规则自动替换极限词；项目标题手改不做替换。
+            manual = "手动新稿，保留强劲" if owner == "shot" else "手动新稿，保留最强"
+            assert getattr(saved, field) == (original if other_action == "undo" else manual)
             flags = [change["undone"] for change in saved.compliance_changes[field]["changes"]]
             assert flags == ([True, True] if other_action == "undo" else [True, False])
     finally:

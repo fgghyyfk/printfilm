@@ -95,8 +95,14 @@ async def translate_set(db, user, set_id: int, language: str) -> EcomSet:
 
     # 将重排也纳入文本任务成功条件，避免翻译收费后却没有可用套图。
     async def execute() -> EcomSet:
-        nonlocal directory
         copies = await translate_copies(source.items, language)
+        # 失败时轻量任务会提交失败记录，新套图与用量须在保存点内一起撤销，避免留下半成品。
+        async with db.begin_nested():
+            return await build_result(copies)
+
+    # 复制出新套图并逐张重排，登记翻译用量。
+    async def build_result(copies) -> EcomSet:
+        nonlocal directory
         plan = deepcopy(source.plan or {})
         if get_settings().ark_mock:
             plan["warnings"] = list(plan.get("warnings") or []) + ["本地示意翻译，未调用模型"]

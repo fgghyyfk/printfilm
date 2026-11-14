@@ -1,19 +1,20 @@
-from fastapi import Depends, HTTPException, Header, status
+from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models import User
-from app.services.api_keys import API_KEY_PREFIX, user_from_api_key
 from app.services.auth import decode_token, get_user_by_id
 
-security = HTTPBearer(auto_error=False)
+security = HTTPBearer(
+    auto_error=False,
+    bearerFormat="JWT",
+    description="站内登录令牌：通过 POST /api/auth/login 获取 access_token，请求时发送 Authorization: Bearer <access_token>。",
+)
 
 
 async def _user_from_bearer(db: AsyncSession, token: str) -> User | None:
-    """Bearer 令牌换用户：pf_ 前缀走 API Key，否则按 JWT 解析。"""
-    if token.startswith(API_KEY_PREFIX):
-        return await user_from_api_key(db, token)
+    """站内 Bearer 登录令牌仅接受有效 JWT。"""
     sub = decode_token(token)
     if not sub:
         return None
@@ -33,23 +34,6 @@ async def get_current_user(
     user = await _user_from_bearer(db, creds.credentials)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="登录已失效")
-    return user
-
-
-async def get_api_user(
-    creds: HTTPAuthorizationCredentials | None = Depends(security),
-    db: AsyncSession = Depends(get_db),
-    x_api_key: str | None = Header(default=None, alias="X-Api-Key"),
-) -> User:
-    """对外 API：支持 JWT 或 pf_live_ API Key（Bearer / X-Api-Key）。"""
-    token = (x_api_key or "").strip()
-    if not token and creds:
-        token = creds.credentials
-    if not token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="缺少 API Key")
-    user = await _user_from_bearer(db, token)
-    if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="API Key 无效或已撤销")
     return user
 
 

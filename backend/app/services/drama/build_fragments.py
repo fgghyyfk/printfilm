@@ -38,6 +38,8 @@ FRAGMENT_DURATION_MAX = 15
 FRAGMENT_SOFT_MAX = 15
 # 单分镜总时长硬上限（短剧节奏；Seedance 仍支持更长，此处刻意收紧）
 FRAGMENT_TOTAL_MAX = 15
+# 手写分镜按 @duration 合计提交，只受 Seedance 单次上限约束（EPISODE_RULES §1、§6）
+MANUAL_FRAGMENT_TOTAL_MAX = 30
 # 整集镜数/时长：0 = 不设上限（完整呈现剧本；单镜仍受 FRAGMENT_TOTAL_MAX 约束）
 # 保留常量名供旧调用方传入显式上限；默认 trim 不再为凑预算丢内容。
 EPISODE_FRAGMENT_MAX = 0
@@ -314,6 +316,37 @@ def strip_repeat_opening_cues(content: str) -> str:
     return "\n".join(kept).strip()
 
 
+# (?!\d) 防止回溯把 @duration:15 拆成 @duration:1 和 5。
+_GLUED_DURATION_LINE = re.compile(r"^(@duration:\d+)(?!\d)[ \t]*(\S.*)$")
+_DURATION_PREFIX = "@duration:"
+
+
+def normalize_duration_lines(content: str) -> str:
+    """让以 @duration: 开头的行只剩合法标签，后面的解析才不会把正文当坏标签丢掉。
+
+    编辑器在标签后接着输入会得到 `@duration:3文字`：拆成标签行和正文行。
+    写坏的标签（如 `@duration:abc`）不是时长：去掉前缀，其余按正文保留。
+    """
+    out: list[str] = []
+    for raw in (content or "").split("\n"):
+        line = raw.strip()
+        if not line.startswith(_DURATION_PREFIX):
+            out.append(raw)
+            continue
+        while (match := _GLUED_DURATION_LINE.match(line)):
+            out.append(match.group(1))
+            line = match.group(2).strip()
+        if re.fullmatch(r"@duration:\d+", line):
+            out.append(line)
+        elif line.startswith(_DURATION_PREFIX):
+            rest = line[len(_DURATION_PREFIX):].strip()
+            if rest:
+                out.append(rest)
+        elif line:
+            out.append(line)
+    return "\n".join(out)
+
+
 def prepare_fragment_content(
     content: str,
     *,
@@ -321,10 +354,10 @@ def prepare_fragment_content(
     is_opening: bool = False,
 ) -> str:
     """读取/保存/生成前统一：去掉重复片头，并修正过碎的 @duration。"""
-    text = content or ""
+    text = normalize_duration_lines(content or "")
     if not is_opening:
         text = strip_repeat_opening_cues(text)
-    return repair_fragment_timed_layout(text, duration_sec=duration_sec)
+    return repair_fragment_timed_layout(text, duration_sec=duration_sec, manual=True)
 
 
 def _duration_body_lines(rows: list[str]) -> list[str]:
@@ -364,11 +397,13 @@ def _coalesce_continuation_blocks(
 def _coalesce_timed_blocks_to_budget(
     blocks: list[tuple[int, list[str]]],
     target: int,
+    *,
+    hard_max: int = FRAGMENT_TOTAL_MAX,
 ) -> list[tuple[int, list[str]]]:
-    """拍数过多导致合计超上限时，合并相邻拍并缩放到 target。"""
+    """拍数过多导致合计超上限时，合并相邻拍并缩放到 target（不超过 hard_max）。"""
     if not blocks:
         return blocks
-    target = min(FRAGMENT_TOTAL_MAX, max(FRAGMENT_DURATION_MIN, int(target)))
+    target = min(hard_max, max(FRAGMENT_DURATION_MIN, int(target)))
     max_beats = max(1, target // FRAGMENT_DURATION_MIN)
     packed = list(blocks)
     if len(packed) > max_beats:
@@ -1097,7 +1132,7 @@ def plan_fragments_from_scene(
 
 # 解析已有分镜正文：片头 cue + (@duration + 正文) 块
 def parse_fragment_timed_blocks(content: str) -> tuple[list[str], list[tuple[int, list[str]]]]:
-    lines = (content or "").replace("\r\n", "\n").split("\n")
+    lines = normalize_duration_lines((content or "").replace("\r\n", "\n")).split("\n")
     header: list[str] = []
     blocks: list[tuple[int, list[str]]] = []
     i = 0
@@ -1122,6 +1157,11 @@ def parse_fragment_timed_blocks(content: str) -> tuple[list[str], list[tuple[int
             i += 1
         if dur > 0:
             blocks.append((dur, block_lines))
+        elif blocks:
+            # 0 秒标签没有时长意义，但下面的文字是用户内容，并入上一段。
+            blocks[-1][1].extend(block_lines[1:])
+        else:
+            header.extend(block_lines[1:])
     return header, blocks
 
 
@@ -1164,12 +1204,14 @@ def _sum_duration_tags(content: str) -> int:
     return total
 
 
-def repair_fragment_timed_layout(content: str, *, duration_sec: int | None = None) -> str:
+def repair_fragment_timed_layout(content: str, *, duration_sec: int | None = None, manual: bool = False) -> str:
     """
     修正旧稿中 @duration 仅在末尾的问题。
     现代场记（时长标签已在各段之前）保留段内换行，不把每一行拆成 3s。
+    manual=True 用于读取、保存、提交现有分镜：15s 只约束自动拆分，
+    手写时长超过 Seedance 上限才合并；自动规划不传，仍收紧到 15s。
     """
-    text = (content or "").replace("\r\n", "\n").strip()
+    text = normalize_duration_lines((content or "").replace("\r\n", "\n")).strip()
     if not text:
         return text
 
@@ -1182,7 +1224,12 @@ def repair_fragment_timed_layout(content: str, *, duration_sec: int | None = Non
     if blocks and not header_narrative:
         packed = _coalesce_continuation_blocks(blocks)
         tagged = sum(d for d, _ in packed)
-        if tagged > target:
+        if manual:
+            if tagged > MANUAL_FRAGMENT_TOTAL_MAX:
+                packed = _coalesce_timed_blocks_to_budget(
+                    packed, MANUAL_FRAGMENT_TOTAL_MAX, hard_max=MANUAL_FRAGMENT_TOTAL_MAX,
+                )
+        elif tagged > target:
             packed = _coalesce_timed_blocks_to_budget(packed, target)
         return _join_header_and_blocks(meta, packed)
 

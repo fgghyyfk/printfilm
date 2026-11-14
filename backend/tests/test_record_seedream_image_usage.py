@@ -23,7 +23,7 @@ async def test_record_seedream_with_upstream_tokens(db_session: AsyncSession) ->
         db_session,
         user_id=user.id,
         model="seedream-test",
-        domain="api",
+        domain="studio",
         image_result=image,
     )
     await db_session.commit()
@@ -79,4 +79,4 @@ async def test_record_seedream_with_upstream_cost_fen(db_session: AsyncSession, 
     await db_session.commit()
     assert ev.estimated is False
     assert ev.cost_fen == 500
-    assert ev.charge_fen == 500
+    assert ev.charge_fen == 1000  # 扣费 = 成本 × billing_markup(2.0)

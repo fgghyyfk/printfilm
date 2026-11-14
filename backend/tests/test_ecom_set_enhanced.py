@@ -11,7 +11,7 @@ from app.services.ecom_set import presets, prompts, planner, layout
 def test_custom_slots():
     keys = ["ad_banner", "main_scene", "ad_square"]
     assert [s.key for s in presets.select_slots(6, keys)] == keys
-    assert len(presets.select_slots(6, list(presets.SLOTS))) == 10
+    assert len(presets.select_slots(6, list(presets.GENERAL_SLOTS))) == 10
     assert len(presets.select_slots(4, None)) == 4
 
 
@@ -300,7 +300,7 @@ async def test_http_plan_options_and_validation(db_session, monkeypatch, tmp_pat
             response = await client.post("/api/tools/ecom-set/plan", data={"name": "Cup", "slots": invalid})
             assert response.status_code == 400 and response.json()["detail"] == "槽位格式错误"
         response = await client.post("/api/tools/ecom-set/plan", data={"name": "Cup", "language": "en",
-            "clarity": "4k", "slots": json.dumps(list(presets.SLOTS))},
+            "clarity": "4k", "slots": json.dumps(list(presets.GENERAL_SLOTS))},
             files={"file": ("product.png", data.getvalue(), "image/png")})
         assert response.status_code == 200, response.text
         output = response.json()

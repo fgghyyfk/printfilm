@@ -9,7 +9,11 @@ from typing import Any
 import httpx
 
 from app.config import get_settings
-from app.services.logical_model_router import resolve_logical_model, resolve_logical_model_id
+from app.services.logical_model_router import (
+    resolve_logical_model,
+    resolve_logical_model_id,
+    resolve_upstream_model,
+)
 from app.services.tasks.upstream import observed_request
 
 logger = logging.getLogger(__name__)
@@ -74,6 +78,11 @@ async def chat_completions(
     response_format: dict[str, Any] | None = None,
 ) -> str:
     settings = get_settings()
+    # Apply managed model switches before falling back to environment credentials.
+    try:
+        resolve_upstream_model("text", None)
+    except ValueError as exc:
+        raise LlmUnavailableError(str(exc)) from exc
     logical_id = resolve_logical_model_id("text", None)
     route = resolve_logical_model("text", logical_id)
     if route:

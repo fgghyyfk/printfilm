@@ -2,11 +2,12 @@ import { useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import type { EcomSet, EcomSetItem } from '../../api/ecomSet'
 import { useI18n } from '../../i18n'
-import { ecomSetTotalFen, formatFen, hasCopy, isPlanDirty } from '../../lib/ecomSet'
+import { ecomSetTotalFen, formatFen, hasCopy, isPlanDirty, titleLimitOf, ecomSlotLabel } from '../../lib/ecomSet'
 import BillingErrorNotice from '../billing/BillingErrorNotice'
 import Button from '../ui/Button'
 import EcomSetCopyFields from './EcomSetCopyFields'
 import EcomSetWarnings from './EcomSetWarnings'
+import ItemLayoutEditor from './ItemLayoutEditor'
 
 /** 当前进行中的方案操作 */
 export type EcomPlanBusy = 'save' | 'generate' | null
@@ -19,10 +20,12 @@ type Props = {
   onSave: (items: EcomSetItem[]) => void
   onGenerate: (items: EcomSetItem[], dirty: boolean) => void
   onReplan: () => void
+  /** 镜头库（来自 /options） */
+  shots?: { key: string; name: string }[]
 }
 
 /** 第②步：方案卡片网格，可改画面与文案，保存 / 确认生成 / 重新规划 */
-export default function EcomSetPlan({ set, billingEnabled, busy, error, onSave, onGenerate, onReplan }: Props) {
+export default function EcomSetPlan({ set, billingEnabled, busy, error, onSave, onGenerate, onReplan, shots = [] }: Props) {
   const { t } = useI18n()
   /* draft 编辑稿（父组件以 set 版本作 key 重置） */
   const [draft, setDraft] = useState<EcomSetItem[]>(() => set.items.map((item) => ({ ...item })))
@@ -37,7 +40,8 @@ export default function EcomSetPlan({ set, billingEnabled, busy, error, onSave, 
 
   // 校验画面描述非空；返回是否通过
   function validate(): boolean {
-    const empty = draft.findIndex((item) => !item.scene.trim())
+    // 免费的信息屏、白底图不调 AI，没有画面描述
+    const empty = draft.findIndex((item) => item.billable !== false && !item.scene.trim())
     if (empty >= 0) {
       setLocalError(t('ecomSet.plan.sceneRequired', { n: empty + 1 }))
       return false
@@ -89,7 +93,7 @@ export default function EcomSetPlan({ set, billingEnabled, busy, error, onSave, 
           <article key={item.idx} className="pf-ecom-card">
             <div className="pf-ecom-card-head">
               <strong>
-                {item.idx + 1}. {t(`ecomSet.enhanced.slots.${item.slot}.name`)}
+                {item.idx + 1}. {ecomSlotLabel(t, item)}
               </strong>
               <span className="pf-badge">{item.ratio}</span>
             </div>
@@ -103,11 +107,15 @@ export default function EcomSetPlan({ set, billingEnabled, busy, error, onSave, 
                 onChange={(e) => patchItem(item.idx, { scene: e.target.value })}
               />
             </label>
+            {item.shot || item.elements?.length ? <ItemLayoutEditor shot={item.shot || ''} elements={item.elements || []}
+              shots={shots} pool={set.styled?.elements || []} disabled={Boolean(busy)}
+              onChange={(next) => patchItem(item.idx, next)} /> : null}
             {hasCopy(item) ? (
               <EcomSetCopyFields
                 language={set.language}
-                value={{ title: item.title, subtitle: item.subtitle, bullets: item.bullets }}
+                value={{ title: item.title, subtitle: item.subtitle, bullets: item.bullets, en: item.en || '' }}
                 disabled={Boolean(busy)}
+                titleMax={titleLimitOf(item.slot)}
                 onChange={(copy) => patchItem(item.idx, copy)}
               />
             ) : (

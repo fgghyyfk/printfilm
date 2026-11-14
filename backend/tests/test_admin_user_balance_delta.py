@@ -94,3 +94,31 @@ async def test_admin_patch_user_balance_delta_rejects_negative_result(
         )
     assert exc.value.status_code == 400
     assert "负" in str(exc.value.detail)
+
+
+@pytest.mark.asyncio
+async def test_admin_get_user_is_exact_by_id_and_requires_admin(db_session: AsyncSession) -> None:
+    """明细按编号精确取人：邮箱里含同样数字的新用户不能串号，缺失返回中文 404。"""
+    from fastapi import HTTPException
+    from fastapi.routing import APIRoute
+
+    from app.api.admin.users import get_user, router
+    from app.deps import get_current_admin
+
+    admin = await make_user(db_session, balance_fen=0)
+    admin.role = "admin"
+    target = await make_user(db_session, balance_fen=700)
+    target.email = f"target-{uuid.uuid4().hex[:8]}@example.com"
+    newer = await make_user(db_session, balance_fen=1)
+    newer.email = f"{target.id}-{uuid.uuid4().hex[:8]}@example.com"
+    await db_session.commit()
+
+    out = await get_user(user_id=target.id, _admin=admin, db=db_session)
+    assert out.id == target.id and out.balance_fen == 700
+
+    with pytest.raises(HTTPException) as missing:
+        await get_user(user_id=newer.id + 100000, _admin=admin, db=db_session)
+    assert missing.value.status_code == 404 and missing.value.detail == "用户不存在"
+
+    route = next(r for r in router.routes if isinstance(r, APIRoute) and r.path == "/users/{user_id}" and "GET" in r.methods)
+    assert get_current_admin in [dep.call for dep in route.dependant.dependencies]

@@ -6,7 +6,6 @@ import {
   type AdminOrder,
   type AdminUsageEvent,
   type AdminUserRow,
-  type PageResult,
 } from "@/api/client";
 import { listAdminLedger, listAdminOrders, listAdminUsageEvents } from "@/api/finance";
 import {
@@ -20,8 +19,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatAccountId } from "@/lib/admin-account";
 import { fenToYuan } from "@/lib/utils";
 import { ledgerKindLabel, orderStatusLabel } from "@/lib/statusLabels";
-
-type ListRes<T> = PageResult<T>;
 
 type UserDetailDrawerProps = {
   userId: number | null;
@@ -45,13 +42,13 @@ export function UserDetailDrawer({ userId, open, onOpenChange, initialUser }: Us
       try {
         const [userRes, orderRes, ledgerRes, usageRes] = await Promise.all([
           initialUser?.id === userId
-            ? Promise.resolve({ items: [initialUser], meta: { page: 1, page_size: 1, total: 1 } })
-            : api<ListRes<AdminUserRow>>(`/api/admin/users?page=1&page_size=1&q=${userId}`),
+            ? Promise.resolve(initialUser)
+            : api<AdminUserRow>(`/api/admin/users/${userId}`),
           listAdminOrders(1, { pageSize: 8, userId }),
           listAdminLedger(1, { pageSize: 8, userId }),
           listAdminUsageEvents(1, { pageSize: 20, userId }),
         ]);
-        setUser(userRes.items[0] ?? initialUser ?? null);
+        setUser(userRes);
         setOrders(orderRes.items);
         setLedger(ledgerRes.items);
         setUsage(usageRes.items);
@@ -176,14 +173,13 @@ export function UserDetailDrawer({ userId, open, onOpenChange, initialUser }: Us
                     <th>时间</th>
                     <th>能力</th>
                     <th>扣费</th>
-                    <th>成本</th>
                     <th>任务</th>
                   </tr>
                 </thead>
                 <tbody>
                   {usage.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="!text-center text-[var(--admin-muted)]">
+                      <td colSpan={4} className="!text-center text-[var(--admin-muted)]">
                         暂无用量
                       </td>
                     </tr>
@@ -195,7 +191,6 @@ export function UserDetailDrawer({ userId, open, onOpenChange, initialUser }: Us
                         </td>
                         <td>{row.capability || "—"}</td>
                         <td>¥{fenToYuan(row.charge_fen ?? 0)}</td>
-                        <td>¥{fenToYuan(row.cost_fen ?? 0)}</td>
                         <td>
                           {row.task_run_id ? (
                             <AdminEntityLink kind="task" id={row.task_run_id} />

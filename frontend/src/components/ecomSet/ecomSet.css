@@ -25,7 +25,7 @@
 .pf-ecom-form select,
 .pf-ecom-input {
   border: 1px solid var(--pf-line);
-  border-radius: 12px;
+  border-radius: var(--pf-radius);
   padding: 0.6rem 0.75rem;
   font: inherit;
   background: var(--pf-bg);
@@ -38,9 +38,9 @@
   max-width: 220px;
   max-height: 220px;
   margin: 0 auto 0.6rem;
-  border-radius: 10px;
+  border-radius: var(--pf-radius-sm);
   object-fit: contain;
-  background: #fff;
+  background: var(--pf-card);
 }
 
 .pf-ecom-submit-row {
@@ -60,9 +60,9 @@
 }
 
 .pf-ecom-section {
-  background: #fff;
+  background: var(--pf-card);
   border: 1px solid var(--pf-line);
-  border-radius: 16px;
+  border-radius: var(--pf-radius-lg);
   box-shadow: var(--pf-shadow);
   padding: 1.15rem;
 }
@@ -96,7 +96,7 @@
 .pf-ecom-warnings {
   margin: 0 0 1rem;
   padding: 0.65rem 0.85rem;
-  border-radius: 12px;
+  border-radius: var(--pf-radius);
   background: #fff7e6;
   color: #8a5300;
   font-size: 0.85rem;
@@ -115,7 +115,7 @@
 
 .pf-ecom-card {
   border: 1px solid var(--pf-line);
-  border-radius: 14px;
+  border-radius: var(--pf-radius);
   background: var(--pf-bg);
   padding: 0.75rem;
   display: flex;
@@ -132,6 +132,41 @@
   font-size: 0.9rem;
 }
 
+/* 卡片右上：调整顺序按钮 + 比例 */
+.pf-ecom-card-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-shrink: 0;
+}
+
+.pf-ecom-move {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border: 1px solid var(--pf-line);
+  border-radius: 999px;
+  background: var(--pf-card);
+  color: var(--pf-text);
+  cursor: pointer;
+}
+
+.pf-ecom-move:hover:not(:disabled) {
+  border-color: var(--pf-text);
+}
+
+.pf-ecom-move:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.pf-ecom-order-hint {
+  margin: 0 0 0.75rem;
+  font-size: 0.82rem;
+}
+
 .pf-ecom-card-head strong {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -140,7 +175,7 @@
 
 .pf-ecom-card .pf-tool-field textarea,
 .pf-ecom-card .pf-ecom-input {
-  background: #fff;
+  background: var(--pf-card);
 }
 
 .pf-ecom-field-label {
@@ -159,9 +194,9 @@
 .pf-ecom-thumb {
   position: relative;
   width: 100%;
-  border-radius: 10px;
+  border-radius: var(--pf-radius-sm);
   overflow: hidden;
-  background: #fff;
+  background: var(--pf-card);
   border: 1px solid var(--pf-line);
   display: grid;
   place-items: center;
@@ -207,7 +242,7 @@
   max-height: 75vh;
   object-fit: contain;
   display: block;
-  border-radius: 10px;
+  border-radius: var(--pf-radius-sm);
 }
 
 .pf-ecom-modal-hint {
@@ -237,8 +272,8 @@
   box-sizing: border-box;
   cursor: pointer;
   border: 1px solid var(--pf-line);
-  border-radius: 12px;
-  background: #fff;
+  border-radius: var(--pf-radius);
+  background: var(--pf-card);
   padding: 0.5rem;
   display: flex;
   flex-direction: column;
@@ -295,3 +330,17 @@
     align-items: stretch;
   }
 }
+
+/* 丝巾详情页：模特选择 */
+.pf-ecom-models { display: flex; flex-wrap: wrap; gap: 10px; }
+.pf-ecom-model { display: grid; gap: 4px; width: 88px; padding: 4px; border: 1px solid var(--pf-line, #e4e0db); border-radius: var(--pf-radius-sm); background: transparent; cursor: pointer; font-size: 12px; color: inherit; }
+.pf-ecom-model img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 7px; }
+.pf-ecom-model.active { border-color: var(--pf-accent, var(--pf-lime)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--pf-accent, var(--pf-lime)) 30%, transparent); }
+
+/* 结果页：字体风格切换 */
+.pf-es-type { display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; height: 32px; border: 1px solid var(--pf-line); border-radius: 999px; color: var(--pf-muted, var(--pf-faint)); font-size: 0.82rem; }
+.pf-es-type select { border: 0; background: transparent; color: var(--pf-text, inherit); font: inherit; cursor: pointer; }
+
+/* 方案卡片：镜头与画面元素 */
+.pf-ecom-layout { display: grid; gap: 0.5rem; }
+.pf-ecom-layout .pf-tool-chips button { font-size: 0.78rem; }

@@ -168,7 +168,7 @@ export function TemplatesPage() {
     setSaving(true);
     try {
       const category = form.category
-        .split(",")
+        .split(/[,，]/)
         .map((s) => s.trim())
         .filter(Boolean);
       if (editing) {
@@ -262,7 +262,7 @@ export function TemplatesPage() {
 
   return (
     <div className="admin-list-page">
-      <PageHeader
+      <PageHeader title="模板管理"
         description="风格 / 角色 / 提示词以本页为准；已创建项目需在分镜页恢复模板后才会跟随。"
         actions={
           <Button onClick={openCreate} className="gap-2">

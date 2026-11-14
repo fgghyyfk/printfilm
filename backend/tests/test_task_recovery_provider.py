@@ -10,7 +10,7 @@ from app.models_drama import DramaAsset
 from app.services.ark import ArkGateway
 from app.services.tasks import executor, poller, scheduler
 from tests.conftest import make_task
-from tests.test_drama_fragment_save import make_episode
+from tests.drama_fragment_helpers import make_episode
 from tests.test_task_recovery_limit import interrupted, recovery_session
 
 

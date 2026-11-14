@@ -19,6 +19,10 @@ def canvas_context(monkeypatch):
     user = User(id=11)
     db = MagicMock(spec=AsyncSession)
     db.commit = AsyncMock()
+    # 个人项目保存会加行锁重读资产；这里直接返回项目里的资产列表。
+    locked_assets = MagicMock()
+    locked_assets.all.side_effect = lambda: list(project.assets)
+    db.scalars = AsyncMock(return_value=locked_assets)
 
     async def owned_project(actual_db, project_id, actual_user, *, with_assets):
         """确认保存仍按当前用户加载项目及资产。"""
@@ -72,15 +76,22 @@ async def test_save_canvas_preserves_existing_asset_media(canvas_context, match_
 
     assert asset.url == latest_url
     assert asset.cover == latest_cover
-    assert asset.type == original_type
-    assert asset.asset_type == media_type
+    if original_type == "none":
+        # 未定型的画布资产允许按节点 kind 定型（合并后以线上行为为准）。
+        assert asset.type == "video"
+        assert asset.asset_type == "video"
+    else:
+        assert asset.type == original_type
+        assert asset.asset_type == media_type
     assert asset.name == "新名称"
+    # 保存的布局快照中的媒体一律取服务器当前资产，旧快照 URL 不得回写。
+    saved_node = {**node, "data": {**node["data"], "mediaUrl": latest_url, "url": latest_url, "cover": latest_cover}}
     assert asset.params == {
         "canvas_node_id": "node-1",
         "generation": {"status": "done"},
-        "canvas": node,
+        "canvas": saved_node,
     }
-    assert project.content == {"summary": "保留剧本", "canvas_nodes": [node], "canvas_edges": body.edges}
+    assert project.content == {"summary": "保留剧本", "canvas_nodes": [saved_node], "canvas_edges": body.edges}
     assert result == {"ok": True, "nodes": 1, "edges": 1}
     db.add.assert_not_called()
     db.commit.assert_awaited_once()

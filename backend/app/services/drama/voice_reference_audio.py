@@ -7,6 +7,7 @@ import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -129,11 +130,19 @@ async def resolve_voice_audio_local_path(url: str, *, dest: Path) -> Path | None
 
 # 探测参考音频时长（必要时下载）
 async def probe_voice_url_duration(url: str, *, work_dir: Path) -> float | None:
-    dest = work_dir / "probe_voice.mp3"
-    path = await resolve_voice_audio_local_path(url, dest=dest)
-    if path is None or not path.exists():
-        return None
-    return probe_duration(path)
+    # 同项目的不同分集会并行下载，独立文件避免探测到另一次请求的音频。
+    dest = work_dir / f"probe_voice_{uuid4().hex}.mp3"
+    try:
+        path = await resolve_voice_audio_local_path(url, dest=dest)
+        if path is None or not path.exists():
+            return None
+        return probe_duration(path)
+    finally:
+        # 只清理本次指定的副本，绝不删除解析器返回的原始媒体路径。
+        try:
+            dest.unlink(missing_ok=True)
+        except OSError:
+            logger.debug("参考音频探测临时文件清理失败", exc_info=True)
 
 
 def is_voice_duration_too_short(

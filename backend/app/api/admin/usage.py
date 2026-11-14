@@ -44,7 +44,6 @@ def _usage_event_out(
         provider=ev.provider,
         total_tokens=int(ev.total_tokens or 0),
         charge_fen=int(ev.charge_fen or 0),
-        cost_fen=int(ev.cost_fen or 0),
         estimated=bool(ev.estimated),
         billing_basis=basis,
         billing_basis_label=billing_basis_label(basis),
@@ -55,7 +54,11 @@ def _usage_event_out(
     )
 
 
-@router.get("/usage-events", response_model=AdminUsageEventListOut)
+@router.get("/usage-events", response_model=AdminUsageEventListOut,
+    summary="分页查询全站模型用量",
+    description="管理员按用户、任务、科普或漫剧项目、领域、计费项、能力、模型和时间范围查询用量，返回费用与关联任务状态。传入 estimated 时优先按该字段筛选，否则使用 billing_basis 筛选。",
+    response_description="操作成功，返回结果详见响应结构",
+)
 async def list_usage_events(
     user_id: int | None = None,
     task_run_id: int | None = None,

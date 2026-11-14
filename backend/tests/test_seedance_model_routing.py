@@ -81,6 +81,7 @@ def test_resolve_upstream_model_routes_seedance_2(monkeypatch):
         name="TokenFree",
         base_url="https://www.tokenfree.com/v1",
         api_key="test",
+        has_api_key=True,
         api_format="openai",
         protocol="auto",
         models=["seedance-2.5", "seedance-2.0"],

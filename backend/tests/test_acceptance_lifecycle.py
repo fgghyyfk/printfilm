@@ -12,9 +12,12 @@ from app.services.tasks.handlers import _await_kepu
 from tests.conftest import make_task, make_user
 
 
-async def test_cancelled_compose_exits_before_retry_and_siblings_keep_cancel():
+async def test_cancelled_compose_exits_before_retry_and_siblings_keep_cancel(monkeypatch):
+    # 正常完成后会冻结产出快照（读库）；本用例只验证取消信号归属
+    monkeypatch.setattr('app.services.tasks.handlers._kepu_output_snapshot', AsyncMock(return_value={}))
     entered, leave = asyncio.Event(), asyncio.Event()
-    task = SimpleNamespace(id=71, project_id=7001, cancel_requested=True)
+    # 合并后（线上规则）开始前已请求取消的任务直接跳过不执行；这里模拟“执行中才请求取消”
+    task = SimpleNamespace(id=71, project_id=7001, cancel_requested=False)
     async def work():
         entered.set()
         await leave.wait()
@@ -22,6 +25,7 @@ async def test_cancelled_compose_exits_before_retry_and_siblings_keep_cancel():
         raise pipeline.PipelineCancelled('任务已取消')
     job = asyncio.create_task(_await_kepu(task, work()))
     await entered.wait()
+    task.cancel_requested = True
     pipeline.cancel_pipeline(task.project_id)
     leave.set()
     assert (await job)['cancelled']
@@ -40,9 +44,12 @@ async def test_parallel_shots_do_not_clear_each_others_cancel():
         await gate.wait()
         assert pipeline.is_cancelled(7002)
         raise pipeline.PipelineCancelled('任务已取消')
-    jobs = [asyncio.create_task(_await_kepu(SimpleNamespace(id=i, project_id=7002, cancel_requested=True), work(gate)))
-            for i, gate in [(81, exit_first), (82, exit_second)]]
+    tasks = [SimpleNamespace(id=i, project_id=7002, cancel_requested=False) for i in (81, 82)]
+    jobs = [asyncio.create_task(_await_kepu(t, work(gate)))
+            for t, gate in [(tasks[0], exit_first), (tasks[1], exit_second)]]
     await ready.wait()
+    for t in tasks:
+        t.cancel_requested = True  # 执行中请求取消（开始前已取消的任务按线上规则直接跳过）
     pipeline.cancel_pipeline(7002)
     exit_first.set()
     await jobs[0]

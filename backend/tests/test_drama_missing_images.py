@@ -16,7 +16,7 @@ from app.models import User
 from app.models_tasks import TaskRun
 from app.schemas_drama import DramaImageGenerateRequest
 from app.services.billing.estimates import estimate_task_fen
-from tests.conftest import make_task, make_user
+from tests.conftest import _resolve_test_database_url, make_task, make_user
 
 
 # 创建真实项目与尚未出图的角色，API仍执行真实归属和任务创建。
@@ -51,8 +51,9 @@ async def test_image_estimate_uses_selected_model(db_session, monkeypatch, model
     assert await estimate_task_fen(db_session, task) == expected
 
 
+# 预检会校验已注册的媒体模型策略（线上目录无 seedream-4.5），这里用 seedream-5.0。
 @pytest.mark.parametrize("model,resolution,expected", [
-    ("seedream-4.5", "2K", 10), ("gpt-image-2", "2K", 70), ("gpt-image-2", "1K", 40),
+    ("seedream-5.0", "2K", 10), ("gpt-image-2", "2K", 70), ("gpt-image-2", "1K", 40),
 ])
 async def test_preflight_matches_enqueued_and_frozen_image_price(db_session, monkeypatch, model, resolution, expected):
     """真实HTTP预检、入队和执行预扣共享所选模型，不新增费率。"""
@@ -64,7 +65,7 @@ async def test_preflight_matches_enqueued_and_frozen_image_price(db_session, mon
 
     user, project, asset = await image_context(db_session)
     monkeypatch.setattr(estimates, "charge_fen_official_image", lambda settings, *, model, size: {
-        ("seedream-4.5", "2K"): 10, ("gpt-image-2", "2K"): 70, ("gpt-image-2", "1K"): 40,
+        ("seedream-5.0", "2K"): 10, ("gpt-image-2", "2K"): 70, ("gpt-image-2", "1K"): 40,
     }.get((model, size), 3))
     app = FastAPI()
     app.include_router(billing.router, prefix="/api")
@@ -75,7 +76,7 @@ async def test_preflight_matches_enqueued_and_frozen_image_price(db_session, mon
             "domain": "drama", "task_type": "asset_image", "count": 2,
             "model_id": model, "resolution": resolution, "aspect_ratio": "3:4",
         })
-    assert response.status_code == 200
+    assert response.status_code == 200, response.text
     assert response.json()["unit_estimate_fen"] == expected
     assert response.json()["requested_total_fen"] == expected * 2
     result = await generate_image(image_body(project, asset, model_id=model, resolution=resolution), db_session, user)
@@ -148,7 +149,7 @@ async def test_missing_only_rechecks_under_lock_after_price_preparation(db_sessi
     from app.services.billing import estimates
 
     # fixture只初始化隔离库；竞态数据在独立连接提交，最后显式清理。
-    engine = create_async_engine(get_settings().database_url)
+    engine = create_async_engine(_resolve_test_database_url(get_settings().database_url)[0])
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     entered, resume = asyncio.Event(), asyncio.Event()
     pending = []

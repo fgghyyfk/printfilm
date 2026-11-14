@@ -1,6 +1,7 @@
 import { useI18n } from '../../../i18n'
 /** 分镜故事板节点：上方视频，下方提示词；出境资产通过左侧节点连线关联 */
 import { memo, useCallback, type ChangeEvent } from 'react'
+import { useTeamReadOnly } from '../../../features/teams/readOnlyContext'
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
 import { Clapperboard, Plus } from 'lucide-react'
 import type { EpisodeFragmentNodeData } from './buildEpisodeFlow'
@@ -18,6 +19,7 @@ function EpisodeFragmentNodeComponent({
   onRequestLinkAsset,
 }: Props) {
   const { t: translateUi } = useI18n()
+  const readOnly = useTeamReadOnly()
   const hasVideo = Boolean(data.videoUrl)
   const media = data.coverUrl || data.videoUrl
 
@@ -39,6 +41,7 @@ function EpisodeFragmentNodeComponent({
             className="ep-frag-link-btn nodrag nopan"
             title={translateUi("workflow.assetsAppearingInThisShot")}
             aria-label={translateUi("workflow.assetsAppearingInThisShot")}
+            disabled={readOnly}
             onClick={() => onRequestLinkAsset?.(data.fragmentId)}
           >
             <Plus size={14} strokeWidth={2} />
@@ -74,6 +77,7 @@ function EpisodeFragmentNodeComponent({
           <textarea
             className="ep-frag-prompt-input nodrag nowheel"
             value={data.content}
+            readOnly={readOnly}
             onChange={handlePromptChange}
             placeholder={translateUi("workflow.storyboardScriptSeedancePrompt")}
             rows={5}

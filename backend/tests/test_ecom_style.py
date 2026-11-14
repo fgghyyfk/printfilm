@@ -222,7 +222,7 @@ async def test_style_gateway_preserves_all_refs(monkeypatch, model):
     monkeypatch.setattr(ark, "observed_request", capture)
     with pytest.raises(RuntimeError, match="request captured"):
         await gateway._seedream_once("复刻参考图构图", products, project_id=0, shot_no=1, size="2K",
-                                     style_ref_urls=[reference], structured_refs=True)
+                                     style_ref_urls=[reference], structured_refs=True, model=model)
     if model == "gpt-image-2.5":
         assert all(url in captured["prompt"] for url in products + [reference])
         assert "禁止抄主体与构图" not in captured["prompt"]

@@ -9,6 +9,7 @@ export type AssetImageVersion = {
   prompt?: string | null
   createdAt?: string
   source?: string
+  mediaMetadata?: Record<string, unknown>
 }
 
 // 从 params.image_versions 读取可展示的历史形象
@@ -29,6 +30,7 @@ export function readAssetImageVersions(asset: DramaAsset | null | undefined): As
       prompt: typeof row.prompt === 'string' ? row.prompt : null,
       createdAt: typeof row.createdAt === 'string' ? row.createdAt : undefined,
       source: typeof row.source === 'string' ? row.source : undefined,
+      mediaMetadata: row.media_metadata && typeof row.media_metadata === 'object' ? row.media_metadata as Record<string, unknown> : undefined,
     })
   }
   return out
@@ -39,10 +41,11 @@ export function resolveAssetImageVersionUrl(version: AssetImageVersion): string 
 }
 
 export function formatAssetImageVersionLabel(version: AssetImageVersion): string {
-  const src = (version.source || '').toLowerCase()
+  // 优先读取线上媒体元数据来源，旧版本回退到 version.source
+  const src = String(version.mediaMetadata?.source || version.source || '').toLowerCase()
   if (src === 'upload') return translateUi("workflow.upload")
   if (src === 'replaced') return translateUi("workflow.replaced")
-  if (src === 'generate') return translateUi("workflow.generate")
+  if (src === 'generate' || src === 'generated') return translateUi("workflow.generate")
   if (src === 'restored') return translateUi("workflow.restore")
   return translateUi("workflow.history")
 }

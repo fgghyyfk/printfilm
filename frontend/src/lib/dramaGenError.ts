@@ -3,6 +3,7 @@ import { translate as translateUi } from '../i18n/runtime'
 
 import { dialog } from './dialog'
 import { isBillingError } from './billingError'
+import { formatCopyrightError } from './generationError.ts'
 
 export type DramaGenErrorView = {
   /** 短标题 */
@@ -32,6 +33,7 @@ function extractContentIndex(raw: string): number | null {
 
 /** 判断文案是否像「具体根因」（优先于「重试上限」等包装句） */
 function looksLikeRootCause(text: string): boolean {
+  if (formatCopyrightError(text)) return true
   return /PrivacyInformation|InputImageSensitive|SensitiveContentDetected|参考图疑似|参考音频过短|参考音频过长|无法读取参考音频时长|may contain real person|Seedance create error|上一镜失败|无法衔接|分镜已变更|分镜上下文|InputTextSensitive|resource download failed|audio_url|audio duration|Credits insufficient|File type not supported|参考图格式不支持|invalid image format|参考图格式无效|未开通/i.test(
     text,
   )
@@ -71,6 +73,8 @@ export function formatDramaGenError(raw: string | null | undefined, code?: strin
       suggestion: translateUi("workflow.checkTheTaskRecordAndContactTheAdministrator"),
     }
   }
+  const copyright = formatCopyrightError(text)
+  if (copyright) return copyright
   if (!text) {
     return {
       title: translateUi("ecomSet.result.failed"),

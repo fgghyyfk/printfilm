@@ -166,9 +166,10 @@ async def test_poll_persistent_429_ends_in_poll_timeout(ark_client, monkeypatch)
     # 0.05s 总超时 + interval=0：持续 429 必须被 deadline 收敛，而不是首轮判 failed
     ark_client.settings.ark_video_poll_timeout = 0.05
     calls = _install_fake_http(monkeypatch, lambda: _FakeResponse(429, text="rate limited"))
-    with pytest.raises(VideoBillingPending) as exc:
+    with pytest.raises(VideoBillingPending) as caught:
         await ark_client.poll_task("task-abc")
-    assert exc.value.provider_task_id == "task-abc"
+    assert caught.value.reason == "poll_timeout"
+    assert caught.value.provider_task_id == "task-abc"
     assert len(calls) >= 2
 
 
@@ -206,11 +207,10 @@ async def test_seedance_wait_failure_does_not_recreate_task(seedance_client) -> 
     """等待阶段的非音频错误（如隐私拦截）必须立即上抛，只建过一次单。"""
     seedance_client.gen_video_seedance_body = AsyncMock(return_value="t1")
     seedance_client.wait_video_assets = AsyncMock(side_effect=RuntimeError("privacy blocked"))
-    with pytest.raises(VideoBillingPending) as exc:
+    with pytest.raises(RuntimeError, match="privacy blocked"):
         await seedance_client.gen_and_wait_seedance_body(
             _audio_body(), project_id=1, shot_no=2
         )
-    assert exc.value.provider_task_id == "t1"
     seedance_client.gen_video_seedance_body.assert_awaited_once()
 
 
@@ -228,35 +228,27 @@ async def test_seedance_submit_failure_does_not_recreate_task(seedance_client) -
     seedance_client.wait_video_assets.assert_not_awaited()
 
 
-async def test_seedance_wait_audio_error_preserves_accepted_task(seedance_client) -> None:
-    """已接受任务的参考音频失败也不能另建付费任务。"""
-    gen_mock = AsyncMock(return_value="t1")
-    seedance_client.gen_video_seedance_body = gen_mock
-    seedance_client.wait_video_assets = AsyncMock(side_effect=RuntimeError(_AUDIO_ERR))
-    with pytest.raises(VideoBillingPending) as exc:
-        await seedance_client.gen_and_wait_seedance_body(_audio_body(), project_id=1, shot_no=2)
-    assert exc.value.provider_task_id == "t1"
-    assert gen_mock.await_count == 1
-    assert seedance_client.wait_video_assets.await_count == 1
-
-
-async def test_seedance_submit_audio_error_retries_once(seedance_client) -> None:
-    """提交阶段报参考音频下载失败：剥离后重提一次，随后等待成功。"""
-    gen_mock = AsyncMock(side_effect=[RuntimeError(_AUDIO_ERR), "t2"])
-    seedance_client.gen_video_seedance_body = gen_mock
-    seedance_client.wait_video_assets = AsyncMock(return_value=_OK_RESULT)
-    await seedance_client.gen_and_wait_seedance_body(_audio_body(), project_id=1, shot_no=2)
-    assert gen_mock.await_count == 2
-    seedance_client.wait_video_assets.assert_awaited_once()
-
-
-async def test_seedance_audio_fallback_used_no_third_submit(seedance_client) -> None:
-    """剥离参考音频后仍然失败：最多两次建单，绝无第三次。"""
-    gen_mock = AsyncMock(side_effect=[RuntimeError(_AUDIO_ERR), RuntimeError(_AUDIO_ERR)])
-    seedance_client.gen_video_seedance_body = gen_mock
+async def test_seedance_wait_audio_error_preserves_original_task_and_references(seedance_client) -> None:
+    body = _audio_body()
+    seedance_client.gen_video_seedance_body = AsyncMock(return_value="t1")
     seedance_client.wait_video_assets = AsyncMock(side_effect=RuntimeError(_AUDIO_ERR))
     with pytest.raises(RuntimeError, match="resource download failed"):
-        await seedance_client.gen_and_wait_seedance_body(
-            _audio_body(), project_id=1, shot_no=2, max_attempts=2
-        )
-    assert gen_mock.await_count == 2
+        await seedance_client.gen_and_wait_seedance_body(body, project_id=1, shot_no=2)
+    seedance_client.gen_video_seedance_body.assert_awaited_once_with(body, project_id=1, content_labels=None)
+    assert any(item.get("type") == "audio_url" for item in body["content"])
+
+
+async def test_seedance_submit_audio_error_fails_without_resubmit(seedance_client) -> None:
+    seedance_client.gen_video_seedance_body = AsyncMock(side_effect=RuntimeError(_AUDIO_ERR))
+    seedance_client.wait_video_assets = AsyncMock()
+    with pytest.raises(RuntimeError, match="resource download failed"):
+        await seedance_client.gen_and_wait_seedance_body(_audio_body(), project_id=1, shot_no=2)
+    seedance_client.gen_video_seedance_body.assert_awaited_once()
+    seedance_client.wait_video_assets.assert_not_awaited()
+
+
+async def test_attempt_count_cannot_enable_automatic_resubmission(seedance_client) -> None:
+    seedance_client.gen_video_seedance_body = AsyncMock(side_effect=RuntimeError(_AUDIO_ERR))
+    with pytest.raises(RuntimeError, match="resource download failed"):
+        await seedance_client.gen_and_wait_seedance_body(_audio_body(), project_id=1, shot_no=2, max_attempts=3)
+    seedance_client.gen_video_seedance_body.assert_awaited_once()

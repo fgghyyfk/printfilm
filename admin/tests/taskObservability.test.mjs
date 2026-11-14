@@ -2,6 +2,26 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { groupUpstreamRecords, redactTaskData, taskBilling, taskDurations, taskUpstream, upstreamRecords, upstreamStateLabel } from '../src/lib/taskObservability.ts';
 
+test('existing local simulation events expose generation parameters without claiming a real HTTP request', () => {
+  const event = { id: 3717, event_type: 'upstream.request.simulated', payload: {
+    request_id: 'mock-request', operation: 'video.i2v', provider: 'local-mock', model: 'MiniMax-H3', simulated: true,
+    request: { body: { prompt: '镜头缓慢推进', image_url: 'https://example.test/ref.jpg?token=secret', duration: 15, ratio: '9:16', generate_audio: false } },
+  } };
+  const summary = taskUpstream({ upstream_events: [event], provider_task_id: 'local-media-id' });
+  assert.equal(summary.records.length, 1);
+  assert.equal(summary.phase, '本地模拟 · 参数已记录');
+  assert.equal(summary.provider, 'local-mock');
+  const record = groupUpstreamRecords(summary.records)[0];
+  assert.equal(record.operation, 'video.i2v');
+  assert.equal(record.request.body.prompt, '镜头缓慢推进');
+  assert.equal(record.request.body.duration, 15);
+  assert.equal(record.request.body.generate_audio, false);
+  assert.equal(record.httpStatus, undefined);
+  assert.equal(record.method, undefined);
+  assert.equal(record.response, undefined);
+  assert.ok(!JSON.stringify(record).includes('secret'));
+});
+
 test('request and response credentials and signed URL values never reach presentation data', () => {
   const source = {
     headers: { Authorization: 'Bearer top-secret', 'x-api-key': 'key-value', Cookie: 'session-secret' },

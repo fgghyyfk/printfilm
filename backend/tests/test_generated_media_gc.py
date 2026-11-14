@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import delete, select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.api import projects
@@ -135,7 +134,7 @@ async def test_prose_punctuation_and_encoded_filename_references_keep_original_f
 
 @pytest.mark.parametrize("database_rollback", [False, True])
 async def test_project_delete_never_removes_shared_directory_before_commit(db_session, tmp_path, monkeypatch, database_rollback):
-    """真实DELETE成功/历史分镜FK导致回滚都不触碰同号漫剧/旧媒体。"""
+    """真实DELETE成功（含历史任务引用分镜时解除 FK 后成功）都不触碰同号漫剧/旧媒体。"""
     user, project, shot = await seed_project(db_session)
     pid, sid = project.id, shot.id
     db_session.add(DramaProject(id=pid, user_id=user.id, title="共享目录漫剧"))
@@ -146,13 +145,11 @@ async def test_project_delete_never_removes_shared_directory_before_commit(db_se
     root = tmp_path / "generated"
     media = file_at(root, f"p{pid}/drama-and-old-film.mp4")
     monkeypatch.setattr("app.services.storage.GENERATED_ROOT", root)
+    # 合并后（线上规则）删除前同时解除 TaskRun.project_id/shot_id，历史分镜任务不再阻塞删除
+    assert (await projects.delete_project(pid, db_session, user))["ok"]
+    assert await db_session.get(Project, pid) is None
     if database_rollback:
-        with pytest.raises(IntegrityError):
-            await projects.delete_project(pid, db_session, user)
-        await db_session.rollback()
-        assert await db_session.get(Project, pid)
-    else:
-        assert (await projects.delete_project(pid, db_session, user))["ok"]
-        assert await db_session.get(Project, pid) is None
+        await db_session.refresh(task)
+        assert task.project_id is None and task.shot_id is None
     assert await db_session.get(DramaProject, pid)
     assert media.read_bytes() == b"preserve unless proven orphan"

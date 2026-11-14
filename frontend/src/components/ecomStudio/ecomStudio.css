@@ -1,0 +1,133 @@
+/* 电商图四步引导页（pf-es-*） */
+.pf-es-page h1 { margin: 0 0 0.25rem; font-size: 1.6rem; }
+.pf-es-tabs { margin: 0.25rem 0 1rem; }
+.pf-es-step { display: grid; gap: 1rem; }
+.pf-es-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0.75rem; }
+.pf-es-card { position: relative; display: grid; gap: 0.3rem; align-content: start; padding: 0.5rem; border: 1px solid var(--pf-line); border-radius: var(--pf-radius); background: var(--pf-card, transparent); color: inherit; text-align: left; cursor: pointer; font: inherit; }
+.pf-es-card img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: var(--pf-radius-sm); background: var(--pf-bg); }
+.pf-es-card strong { font-size: 0.92rem; }
+.pf-es-card .pf-muted { font-size: 0.78rem; }
+.pf-es-card.active { border-color: var(--pf-accent, var(--pf-lime)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--pf-accent, var(--pf-lime)) 30%, transparent); }
+.pf-es-card-new { place-items: center; text-align: center; min-height: 220px; border-style: dashed; }
+.pf-es-tag { display: inline-flex; align-items: center; gap: 3px; font-size: 0.75rem; color: var(--pf-accent, var(--pf-lime)); }
+.pf-es-link { display: inline-flex; align-items: center; gap: 4px; border: 0; background: none; padding: 0; color: var(--pf-accent, var(--pf-lime)); font: inherit; font-size: 0.85rem; cursor: pointer; text-decoration: none; }
+.pf-es-link:disabled { opacity: 0.5; cursor: default; }
+.pf-es-head-links { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+@media (max-width: 640px) { .pf-es-head-links { align-items: flex-start; } }
+.pf-es-swatches, .pf-es-colors { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+.pf-es-swatch, .pf-es-color { position: relative; display: grid; gap: 4px; width: 96px; padding: 4px; border: 1px solid var(--pf-line); border-radius: var(--pf-radius-sm); background: transparent; color: inherit; font-size: 0.78rem; text-align: center; cursor: pointer; }
+.pf-es-swatch img, .pf-es-color img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 7px; }
+.pf-es-swatch.active { border-color: var(--pf-accent, var(--pf-lime)); }
+.pf-es-color { cursor: default; }
+.pf-es-color input { width: 100%; padding: 0.3rem 0.4rem; font-size: 0.78rem; }
+.pf-es-x { position: absolute; top: 2px; right: 2px; display: grid; place-items: center; width: 20px; height: 20px; border: 0; border-radius: 50%; background: var(--pf-card, #fff); cursor: pointer; }
+.pf-es-add { display: grid; place-items: center; align-content: center; gap: 4px; width: 96px; min-height: 96px; border: 1px dashed var(--pf-line); border-radius: var(--pf-radius-sm); color: var(--pf-muted, var(--pf-faint)); font-size: 0.78rem; cursor: pointer; text-align: center; }
+.pf-es-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; }
+.pf-es-nav { justify-content: space-between; margin-top: 1.25rem; }
+.pf-es-product-form, .pf-es-gen { display: grid; gap: 0.8rem; }
+.pf-es-product-form h3 { margin: 0; }
+.pf-es-gen textarea, .pf-es-confirm textarea, .pf-es-product-form textarea { width: 100%; }
+.pf-es-check { display: inline-flex; align-items: center; gap: 6px; font-size: 0.85rem; }
+.pf-es-slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 0.7rem; }
+.pf-es-slot { position: relative; display: grid; gap: 0.25rem; padding: 0.4rem; border: 1px solid var(--pf-line); border-radius: var(--pf-radius); background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; opacity: 0.7; }
+.pf-es-slot.active { opacity: 1; border-color: var(--pf-accent, var(--pf-lime)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--pf-accent, var(--pf-lime)) 25%, transparent); }
+.pf-es-slot img, .pf-es-slot-ph { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 8px; background: var(--pf-bg); }
+.pf-es-slot-ph { display: grid; place-items: center; color: var(--pf-muted, #999); }
+.pf-es-slot strong { font-size: 0.85rem; }
+.pf-es-ref { font-size: 0.72rem; color: var(--pf-muted, var(--pf-faint)); }
+.pf-es-ref-flat { color: #2f8f5b; }
+.pf-es-ref-composite { color: #a0662e; }
+.pf-es-ref-texture { color: #4f7fa8; }
+.pf-es-tick { position: absolute; top: 8px; right: 8px; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--pf-accent, var(--pf-lime)); color: #fff; }
+.pf-es-confirm { display: grid; gap: 0.9rem; }
+.pf-es-summary { display: flex; gap: 1rem; align-items: flex-start; }
+.pf-es-summary img { width: 120px; aspect-ratio: 1; object-fit: cover; border-radius: var(--pf-radius-sm); }
+.pf-es-summary dl { display: grid; grid-template-columns: auto 1fr; gap: 0.35rem 0.8rem; margin: 0; font-size: 0.9rem; }
+.pf-es-summary dt { color: var(--pf-muted, var(--pf-faint)); }
+.pf-es-summary dd { margin: 0; }
+.pf-es-product { display: grid; gap: 0.6rem; margin-bottom: 0.75rem; }
+.pf-es-product-head { display: flex; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; }
+@media (max-width: 640px) {
+  .pf-es-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pf-es-slots { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pf-es-summary { flex-direction: column; }
+}
+.pf-es-checklist { display: grid; gap: 0.45rem; padding: 0.75rem 0.9rem; border: 1px solid var(--pf-line); border-radius: var(--pf-radius); }
+.pf-es-check-row { display: grid; grid-template-columns: auto auto 1fr; align-items: center; gap: 0.5rem; font-size: 0.9rem; color: #c27a1a; }
+.pf-es-check-row.ok { color: #2f8f5b; }
+.pf-es-check-row small { font-size: 0.8rem; }
+.pf-es-real { display: flex; align-items: center; justify-content: center; gap: 4px; min-height: 26px; border: 1px dashed var(--pf-line); border-radius: 7px; font-size: 0.72rem; color: var(--pf-muted, var(--pf-faint)); cursor: pointer; }
+.pf-es-real img { width: 22px; height: 22px; object-fit: cover; border-radius: 4px; aspect-ratio: 1; }
+/* 模特放大预览 */
+.pf-es-card { cursor: zoom-in; }
+.pf-es-card-new { cursor: pointer; }
+.pf-es-preview { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; align-content: center; gap: 0.8rem; padding: 2rem 1rem; background: rgba(0, 0, 0, 0.82); }
+.pf-es-preview img { max-width: min(92vw, 820px); max-height: 78vh; object-fit: contain; border-radius: var(--pf-radius-sm); cursor: default; }
+.pf-es-preview-bar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; width: min(92vw, 820px); padding: 0.6rem 0.8rem; border-radius: var(--pf-radius); background: var(--pf-card, #fff); color: var(--pf-ink, #222); }
+.pf-es-preview-close { position: absolute; top: 16px; right: 16px; display: grid; place-items: center; width: 40px; height: 40px; border: 0; border-radius: 50%; background: rgba(255, 255, 255, 0.15); color: #fff; cursor: pointer; }
+/* 选场景：场景卡封面占位、描述单行、详情 */
+.pf-es-card.pf-es-scene { cursor: pointer; }
+.pf-es-scene-cover { display: grid; place-items: center; width: 100%; aspect-ratio: 3 / 4; border-radius: 10px; background: var(--pf-bg); color: rgba(0, 0, 0, 0.55); font-size: 0.9rem; text-align: center; padding: 0.5rem; box-sizing: border-box; }
+.pf-es-scene-cover span { padding: 0.2rem 0.5rem; border-radius: 6px; background: rgba(255, 255, 255, 0.6); }
+.pf-es-scene-none { color: var(--pf-muted, #999); border: 1px dashed var(--pf-line); }
+.pf-es-scene-desc { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.pf-es-scene-detail dl { display: grid; gap: 0.35rem; margin: 0; font-size: 0.88rem; }
+.pf-es-scene-detail dl > div { display: grid; grid-template-columns: 3.5em 1fr; gap: 0.6rem; align-items: center; }
+.pf-es-scene-detail dt { color: var(--pf-muted, #888); }
+.pf-es-scene-detail dd { margin: 0; }
+.pf-es-scene-detail .pf-tool-chips { gap: 0.35rem; }
+.pf-es-tip { padding: 0.5rem 0.7rem; border-radius: 8px; background: color-mix(in srgb, var(--pf-accent, #ff6a3d) 10%, transparent); font-size: 0.82rem; }
+.pf-es-ref-info { color: #6b7a52; }
+
+/* 商品资料：参考详情 + 资料编辑 */
+.pf-es-kb { display: grid; gap: 0.75rem; padding-top: 0.6rem; border-top: 1px dashed var(--pf-line); }
+.pf-es-kb-refs { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.pf-es-kb-ref { position: relative; width: 72px; height: 120px; border-radius: var(--pf-radius-sm); overflow: hidden; border: 1px solid var(--pf-line); }
+.pf-es-kb-ref img { width: 100%; height: 100%; object-fit: cover; object-position: top; }
+.pf-es-kb-ref em { position: absolute; left: 4px; bottom: 4px; padding: 0 5px; border-radius: 6px; background: rgba(0, 0, 0, 0.6); color: #fff; font-size: 0.7rem; font-style: normal; }
+.pf-es-kb-ref .pf-es-x { top: 3px; right: 3px; }
+.pf-es-kb-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0.75rem; }
+.pf-es-kb-grid { align-items: start; }
+.pf-es-kb-grid label { display: grid; gap: 4px; align-content: start; font-size: 0.82rem; }
+.pf-es-kb-grid label small { color: var(--pf-muted, var(--pf-faint)); }
+.pf-es-kb-grid textarea { width: 100%; min-height: 96px; resize: vertical; font: inherit; font-size: 0.85rem; }
+.pf-es-kb-warn { margin: 0; padding-left: 1.1rem; color: #a0662e; font-size: 0.8rem; }
+
+/* 画面元素 */
+.pf-es-elements { display: grid; gap: 0.7rem; margin-top: 0.9rem; }
+.pf-es-el-row { display: flex; flex-wrap: wrap; gap: 0.45rem; }
+.pf-es-el { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--pf-line); border-radius: 999px; background: var(--pf-card, #fff); font: inherit; font-size: 0.82rem; color: inherit; cursor: pointer; }
+.pf-es-el img { width: 20px; height: 20px; border-radius: 50%; object-fit: cover; }
+.pf-es-el.active { border-color: var(--pf-accent, var(--pf-lime)); background: color-mix(in srgb, var(--pf-accent, #7a9a3a) 12%, transparent); }
+.pf-es-el svg { cursor: pointer; opacity: 0.6; }
+.pf-es-el-del:hover { opacity: 1; }
+.pf-es-el-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.5rem; align-items: center; }
+.pf-es-el-tabs { flex-wrap: wrap; }
+.pf-es-el-search { display: flex; align-items: center; gap: 6px; max-width: 280px; padding: 4px 10px; border: 1px solid var(--pf-line); border-radius: 999px; }
+.pf-es-el-search input { border: 0; outline: 0; background: transparent; font: inherit; width: 100%; color: inherit; }
+.pf-es-ref-hand { color: #8a5a7a; }
+
+/* 节日与分类快选 */
+.pf-es-groups button, .pf-es-fest-tabs button { display: inline-flex; align-items: center; gap: 4px; }
+.pf-es-fest-chip:not(.active) { border-color: #c8463a; color: #b03a2e; }
+.pf-es-card.pf-es-scene { position: relative; }
+.pf-es-fest-badge { position: absolute; top: 8px; left: 8px; padding: 2px 8px; border-radius: 999px; background: rgba(0, 0, 0, 0.55); color: #fff; font-size: 0.72rem; }
+.pf-es-fest-badge.on { background: #c8463a; }
+.pf-es-packs { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem; }
+.pf-es-packs > span { display: inline-flex; align-items: center; gap: 4px; font-size: 0.82rem; }
+.pf-es-pack { display: inline-flex; align-items: center; gap: 5px; padding: 5px 12px; border: 1px dashed var(--pf-line); border-radius: 10px; background: var(--pf-card, #fff); font: inherit; font-size: 0.82rem; color: inherit; cursor: pointer; }
+.pf-es-pack small { opacity: 0.55; }
+.pf-es-pack.fest { border-style: solid; border-color: #c8463a; color: #b03a2e; }
+.pf-es-pack.active { border-style: solid; border-color: var(--pf-accent, var(--pf-lime)); background: color-mix(in srgb, var(--pf-accent, #7a9a3a) 12%, transparent); }
+.pf-es-fest-tabs { flex-wrap: wrap; }
+.pf-es-fest-tabs small { margin-left: 4px; opacity: 0.6; font-size: 0.72rem; }
+
+/* 商品实际尺寸：高 / 宽 / 厚（厘米） */
+.pf-es-dims { display: flex; flex-wrap: wrap; gap: 0.75rem; }
+.pf-es-dims label { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.9rem; }
+.pf-es-dims input { width: 5.5rem; text-align: center; }
+.pf-es-dims em { font-style: normal; color: var(--pf-muted, #8a8178); font-size: 0.85rem; }
+/* 抠好的透明底商品图：铺白底、完整显示；抠图中提示 */
+.pf-es-color img.pf-es-cutimg { object-fit: contain; background: #fff; }
+.pf-es-color .pf-es-link { justify-content: center; font-size: 0.75rem; }
+.pf-es-cutting { display: inline-flex; align-items: center; justify-content: center; gap: 4px; font-size: 0.72rem; color: var(--pf-muted, var(--pf-faint)); }

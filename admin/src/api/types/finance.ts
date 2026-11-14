@@ -32,13 +32,13 @@ export type AdminLedger = {
 };
 
 export type AdminUsageEventBrief = {
+  billing_detail?: { mode: string; price_version: number; operation_id: string; model_id: string; resolution: string; duration?: number; unit_price_yuan: string; delivered: boolean; route: { channel_id: string; channel_name: string; upstream_model: string } } | null;
   id: number;
   billing_key: string;
   capability?: string | null;
   model?: string;
   total_tokens?: number;
   charge_fen?: number;
-  cost_fen?: number;
   estimated?: boolean;
   billing_basis?: string;
   billing_basis_label?: string;
@@ -56,7 +56,6 @@ export type AdminUsageEvent = {
   model?: string;
   total_tokens?: number;
   charge_fen?: number;
-  cost_fen?: number;
   estimated?: boolean;
   billing_basis?: string;
   billing_basis_label?: string;

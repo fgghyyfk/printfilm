@@ -78,7 +78,7 @@ export function WorksPage() {
 
   return (
     <div className="admin-list-page">
-      <PageHeader description="调整可见性与审核状态" />
+      <PageHeader title="作品审核" description="调整可见性与审核状态" />
       <AdminFilterBar>
         <AdminSearchInput
           value={q}

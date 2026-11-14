@@ -22,7 +22,7 @@ function JsonRecord({ title, value, paginated = false }: { title: string; value:
   );
 }
 
-/** Only dedicated HTTP events are treated as evidence of actual upstream requests. */
+/** 展示真实 HTTP 留痕及明确标记的本地模拟参数，模拟事件不代表实际网络请求。 */
 export function TaskUpstreamPanel({ task }: { task: AdminTaskDetail }) {
   const summary = useMemo(() => taskUpstream(task), [task]);
   const refreshToken = `${task.upstream_events_total}:${task.updated_at}:${task.status}`;
@@ -42,19 +42,20 @@ export function TaskUpstreamPanel({ task }: { task: AdminTaskDetail }) {
       {history.error ? <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700" role="alert">{history.error}<Button className="ml-3" variant="outline" size="sm" onClick={history.refresh}>重试</Button></div> : null}
 
       {history.loading ? <p className="py-8 text-center text-sm text-[var(--admin-muted)]" role="status">正在加载本页上游事件…</p> : history.error ? null : requests.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-[var(--admin-border)] px-5 py-8 text-sm text-[var(--admin-muted)]">本页未记录上游 HTTP 请求。已有上游任务 ID 或任务已完成，也不能据此还原实际请求体。</div>
+        <div className="rounded-xl border border-dashed border-[var(--admin-border)] px-5 py-8 text-sm text-[var(--admin-muted)]">本页未记录上游 HTTP 请求或模拟请求参数。已有上游任务 ID 或任务已完成，也不能据此还原实际请求体。</div>
       ) : requests.map((request) => {
         const failed = request.latest.phase === "failed" || (request.httpStatus ?? 0) >= 400;
+        const simulated = request.latest.phase === "simulated";
         return (
           <section key={request.key} className={cn("task-upstream-card", failed && "is-fail")}>
             <header className="task-upstream-head">
               <Badge variant={failed ? "destructive" : request.latest.phase === "started" ? "warning" : "info"}>{UPSTREAM_PHASE_LABELS[request.latest.phase]}</Badge>
               {request.latest.upstreamStatus ? <Badge variant="secondary">{upstreamStateLabel(request.latest.upstreamStatus)}</Badge> : null}
               <code className="task-upstream-endpoint" title={request.endpoint}>
-                <strong>{request.method || "METHOD?"}</strong> {request.endpoint ? shortEndpoint(request.endpoint) : "Endpoint未记录"}
+                <strong>{request.method || (simulated ? "本地模拟" : "METHOD?")}</strong> {request.endpoint ? shortEndpoint(request.endpoint) : simulated ? request.operation || "媒体生成" : "Endpoint未记录"}
               </code>
               <span className="ml-auto flex items-center gap-3 text-xs tabular-nums">
-                <span className={cn("task-http-chip", failed && "is-fail")}>{request.httpStatus ?? "—"}</span>
+                <span className={cn("task-http-chip", failed && "is-fail")}>{simulated ? "未发送 HTTP" : request.httpStatus ?? "—"}</span>
                 <span>{request.elapsedMs == null ? "—" : `${Math.round(request.elapsedMs)} ms`}</span>
                 <span className="text-[var(--admin-muted)]">{time(request.latest.createdAt)}</span>
               </span>
@@ -76,9 +77,10 @@ export function TaskUpstreamPanel({ task }: { task: AdminTaskDetail }) {
                 ))}
               </ol>
             ) : null}
-            <div className="grid items-start gap-2 xl:grid-cols-2">
-              <JsonRecord title="请求" value={request.request} paginated />
-              <JsonRecord title="响应" value={request.response} paginated />
+            {simulated ? <p className="mb-3 text-sm text-[var(--admin-muted)]">{request.endpoint ? "以下为完成渠道路由、模型映射和协议转换后，准备发送的实际 URL、请求头和 JSON 请求体（凭据已脱敏）。在 HTTP 发送前拦截，使用默认媒体结果。" : "历史记录仅保存了业务输入参数，不是最终 HTTP 请求体；之后新建的模拟任务会记录最终请求参数。"}</p> : null}
+            <div className={cn("grid items-start gap-2", !simulated && "xl:grid-cols-2")}>
+              <JsonRecord title={simulated ? "模拟请求参数" : "请求"} value={request.request} paginated />
+              {!simulated ? <JsonRecord title="响应" value={request.response} paginated /> : null}
             </div>
             {request.error !== undefined ? <div className="mt-2"><JsonRecord title="错误" value={request.error} paginated /></div> : null}
           </section>

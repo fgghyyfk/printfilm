@@ -39,7 +39,7 @@ function EcomVideoWorkspace() {
   }, [id, reload, t])
   const current = data?.job.id === id ? data : null
   return <AppShell active="ecom"><div className="pf-tool-detail pf-job-page">
-    <Link className="pf-tool-back" to="/ecom">{t('ecomHub.back')}</Link><h1>{t('ecomHub.makeVideo')}</h1>
+    <Link className="pf-tool-back" to="/ecom/workbench">{t('ecomHub.back')}</Link><h1>{t('ecomHub.makeVideo')}</h1>
     {error ? <div role="alert"><p className="pf-tool-error">{ecomJobErrorText(error, t)}</p><Button type="button" onClick={() => setReload((value) => value + 1)}>{t('ecomJobs.retry')}</Button></div> : !current ? <p role="status">{t('ecomJobs.loading')}</p> : <>
       <p>{current.job.title || t(`ecomHub.kinds.${current.job.kind}`)}</p>
       <Button to={ecomHistoryHref(current.job.kind as EcomKind, current.job.id)} variant="text">{t('ecomJobs.preview')}</Button>

@@ -14,6 +14,7 @@ from app.api.admin import (
     queues,
     settings,
     tasks,
+    teams,
     templates,
     usage,
     users,
@@ -27,6 +28,7 @@ router.include_router(queues.router)
 router.include_router(tasks.router)
 router.include_router(settings.router)
 router.include_router(users.router)
+router.include_router(teams.router)
 router.include_router(orders.router)
 router.include_router(ledger.router)
 router.include_router(usage.router)

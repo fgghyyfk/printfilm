@@ -15,8 +15,28 @@ from tests.test_tts_billing import _gateway, _http, _volc_audio, _tokenfree_audi
 from tests.test_tts_billing_drama import _drama_voice
 
 
+@pytest.fixture(autouse=True)
+def _voice_generation_enabled(monkeypatch):
+    """线上默认关闭显式音色生成；本文件验证开启后的持久预留边界。"""
+    from app.config import get_settings
+    monkeypatch.setattr(get_settings(), "drama_voice_generation_enabled", True)
+
+
+@pytest.fixture
+def _billable_personal_voice(monkeypatch):
+    """线上个人项目音色不计费（billable=False），持久预扣只在计费路径生效；
+    这里强制走计费路径，以个人钱包验证预扣提交边界、费用中毒与孤儿恢复语义。"""
+    from app.api.drama import generation as api_generation
+    real = api_generation.run_billed_ephemeral
+
+    async def billable(*args, **kwargs):
+        kwargs["billable"] = True
+        return await real(*args, **kwargs)
+    monkeypatch.setattr(api_generation, "run_billed_ephemeral", billable)
+
+
 @pytest.mark.parametrize("mode", ["success", "poisoned", "prior_paid", "blocked", "scan_race"])
-async def test_voice_reservation_is_durable_before_paid_http(db_session, monkeypatch, tmp_path, mode):
+async def test_voice_reservation_is_durable_before_paid_http(db_session, monkeypatch, tmp_path, mode, _billable_personal_voice):
     """独立 PG 连接必须看见冻结；计费连接故障和 stale 恢复不能退尽费用。"""
     from app.api.drama.generation import generate_voice
     from app.schemas_drama import DramaVoiceGenerateRequest

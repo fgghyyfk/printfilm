@@ -15,6 +15,15 @@ from app.schemas_tasks import TaskRunOut
 RAW = "服务异常 sk-synthetic-secret https://upstream.invalid/private?key=synthetic /private/tmp/synthetic.trace"
 
 
+async def _run_t2i(db, user):
+    """按真实表单值直调工具路由（合并后生图改走 studio_generation 任务平台入队）。"""
+    return await tools.run_tool(
+        tool_id="t2i", prompt="一只猫", negative="", ratio="", strength="", mode="", pack="", duration="",
+        motion="", voice="narrator_calm", model_id="", resolution="", video_mode="", references="[]",
+        price_version=None, model_asset_id=None, color_ref=None, files=[], db=db, user=user,
+    )
+
+
 def assert_private_absent(value):
     """用合成敏感片段核对整个公开响应。"""
     text = str(value)
@@ -33,9 +42,9 @@ def assert_private_absent(value):
 ])
 async def test_tools_errors_have_safe_message_code_and_correct_status(monkeypatch, error, status):
     """真实工具路由保留参数/上游/服务失败的区别，不能将其误报成本地钱包402。"""
-    monkeypatch.setattr(tools, "enqueue_image_tool", AsyncMock(side_effect=error))
+    monkeypatch.setattr(tools, "enqueue_generation", AsyncMock(side_effect=error))
     with pytest.raises(HTTPException) as info:
-        await tools.run_tool(tool_id="t2i", files=[], db=AsyncMock(), user=SimpleNamespace(id=1))
+        await _run_t2i(AsyncMock(), SimpleNamespace(id=1))
     assert info.value.status_code == status
     assert_private_absent(info.value.detail)
     assert info.value.headers.get("X-Error-Code")
@@ -44,9 +53,9 @@ async def test_tools_errors_have_safe_message_code_and_correct_status(monkeypatc
 
 async def test_tools_preserve_local_authentication_http_exception(monkeypatch):
     """本站明确认证异常仍为401，不能被外层except吞掉变500。"""
-    monkeypatch.setattr(tools, "enqueue_image_tool", AsyncMock(side_effect=HTTPException(401, "登录已失效")))
+    monkeypatch.setattr(tools, "enqueue_generation", AsyncMock(side_effect=HTTPException(401, "登录已失效")))
     with pytest.raises(HTTPException) as info:
-        await tools.run_tool(tool_id="t2i", files=[], db=AsyncMock(), user=SimpleNamespace(id=1))
+        await _run_t2i(AsyncMock(), SimpleNamespace(id=1))
     assert info.value.status_code == 401
     assert info.value.detail == "登录已失效"
 
@@ -67,9 +76,9 @@ async def test_real_wallet_failure_remains_402(db_session, monkeypatch):
         """调用现有实际钱包探测而非伪造余额异常。"""
         await settlement.ensure_balance_for_task(db_session, user, TaskRun(domain="studio", task_type="tool_image"))
 
-    monkeypatch.setattr(tools, "enqueue_image_tool", enqueue)
+    monkeypatch.setattr(tools, "enqueue_generation", enqueue)
     with pytest.raises(HTTPException) as info:
-        await tools.run_tool(tool_id="t2i", files=[], db=db_session, user=user)
+        await _run_t2i(db_session, user)
     assert info.value.status_code == 402
     assert "余额不足" in info.value.detail
     assert info.value.headers["X-Error-Code"] == "insufficient_balance"

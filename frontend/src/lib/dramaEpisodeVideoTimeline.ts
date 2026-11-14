@@ -26,9 +26,9 @@ function sumFragmentContentDuration(content: string): number {
 // 解析分镜在时间轴上的时长（秒）
 function resolveEpisodeFragmentTimelineDuration(fragment: DramaFragment): number {
   const fromTags = sumFragmentContentDuration(fragment.content)
-  if (fromTags > 0) return Math.min(15, Math.max(4, fromTags))
+  if (fromTags > 0) return Math.min(30, Math.max(4, fromTags))
   const fallback = fragment.duration_sec && fragment.duration_sec > 0 ? fragment.duration_sec : 8
-  return Math.min(15, Math.max(4, fallback))
+  return Math.min(30, Math.max(4, fallback))
 }
 
 // 根据分集全部分镜构建时间轴分段

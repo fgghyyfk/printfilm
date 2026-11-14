@@ -11,6 +11,8 @@ from app.database import AsyncSessionLocal
 from app.services.billing.context import billing_scope
 from app.services.billing.settlement import freeze_for_task, settle_task
 from app.services.tasks.handlers import get_task_handler
+from app.services.billing.cancel_charge import CANCEL_CHARGE_MESSAGE, record_accepted_upstream_charge
+from app.services.tasks.recovery import converge_fragment_plan_status, fragment_plan_target
 from app.services.tasks.service import append_task_event, get_task_for_runtime, set_task_step_state
 
 logger = logging.getLogger(__name__)
@@ -45,8 +47,9 @@ async def _execute_task_run(task_id: int) -> None:
             task.error_code = "handler_missing"
             task.error_message = f"未注册任务处理器: {task.domain}/{task.task_type}"
             task.finished_at = datetime.now(UTC)
-            # 未进入预扣，保持 none
-            task.billing_status = "none"
+            # Team queue reservations must be released even when a handler is unavailable.
+            if task.team_id is None:
+                task.billing_status = "none"
             await append_task_event(
                 db,
                 task.id,
@@ -55,6 +58,8 @@ async def _execute_task_run(task_id: int) -> None:
                 phase=task.current_step_key,
                 message=task.error_message,
             )
+            if task.team_id is not None:
+                await settle_task(db, task.id)
             await db.commit()
             return
 
@@ -63,6 +68,11 @@ async def _execute_task_run(task_id: int) -> None:
         step = task.steps[0] if task.steps else None
 
         try:
+            if task.team_id is not None and not task.provider_task_id:
+                from app.services.tasks.team_scope import ensure_task_may_submit
+                await ensure_task_may_submit(db, task)
+                from app.services.teams.edit_locks import validate_task_locks
+                await validate_task_locks(db, task)
             await freeze_for_task(db, task)
         except InsufficientBalanceError as exc:
             # 余额不足：可预期失败，专用错误码便于前端引导充值
@@ -88,7 +98,7 @@ async def _execute_task_run(task_id: int) -> None:
         task.status = "running"
         task.started_at = task.started_at or now
         task.next_action_at = None
-        task.lease_until = None
+        task.lease_until = now + timedelta(minutes=10)
         set_task_step_state(task, step, status="submitting", now=now)
         await append_task_event(
             db,
@@ -101,14 +111,18 @@ async def _execute_task_run(task_id: int) -> None:
         await db.commit()
 
     try:
-        async with billing_scope(task_id):
+        async with billing_scope(task_id, team_id=task.team_id, snapshot=task.billing_snapshot):
             async with AsyncSessionLocal() as db:
                 task = await get_task_for_runtime(db, task_id)
                 if not task:
                     return
                 handler = get_task_handler(task.domain, task.task_type)
-                result = await handler.executor(task) if handler else {"ok": False, "error": "missing_handler"}
-                # 重新加载（含 selectinload steps）；勿 refresh，会卸掉关系再触发懒加载。
+            # Handlers read the loaded task snapshot and own their database sessions.
+            # Release this read transaction before waiting on a provider or its semaphore.
+            result = await handler.executor(task) if handler else {"ok": False, "error": "missing_handler"}
+            async with AsyncSessionLocal() as db:
+                # A new session also observes cancellation/provider state committed by handlers.
+                # Reload steps with selectinload; refresh would unload the relationship.
                 task = await get_task_for_runtime(db, task_id)
                 if not task:
                     return
@@ -175,6 +189,8 @@ async def _complete_task(db, task, result: dict, *, commit: bool = True, prepare
         logger.exception("settle_task failed task_id=%s", task.id)
     if commit:
         await db.commit()
+        from app.services.creation import reconcile_after_task
+        await reconcile_after_task(task)
 
 
 # 预扣阶段（handler 尚未执行）失败收敛：此时 _lock_task(populate_existing) 已卸掉
@@ -187,7 +203,7 @@ async def _fail_task_before_start(db, task, step, *, error_code: str, message: s
     task.error_message = message[:500]
     task.finished_at = now
     # frozen 之后的异常（如落流水失败）保留 frozen 交 settle_task 对账；未预扣成功保持 none
-    if task.billing_status != "frozen":
+    if task.billing_status not in {"frozen", "reserved"}:
         task.billing_status = "none"
     await append_task_event(
         db,
@@ -200,11 +216,14 @@ async def _fail_task_before_start(db, task, step, *, error_code: str, message: s
     # 资产生图/视频：同步写回 asset.params.generation，避免前端只看到空的「生图失败」
     await _fail_drama_asset_generation_if_needed(db, task, task.error_message)
     await _fail_kepu_project_if_needed(db, task)
+    plan_target, plan_message = fragment_plan_target(task), task.error_message
     try:
         await settle_task(db, task.id)
     except Exception:  # noqa: BLE001
         logger.exception("settle_task failed task_id=%s", task.id)
     await db.commit()
+    if plan_target:
+        await converge_fragment_plan_status(db, *plan_target, plan_message or "分镜任务失败")
 
 
 # 预扣或执行失败时同步恢复科普项目，避免遗留无法编辑的生成状态。
@@ -309,11 +328,14 @@ async def _fail_task(db, task, exc: Exception) -> None:
             batch_index,
             "上一镜失败，无法衔接尾帧",
         )
+    plan_target, plan_message = fragment_plan_target(task), task.error_message
     try:
         await settle_task(db, task.id)
     except Exception:  # noqa: BLE001
         logger.exception("settle_task failed task_id=%s", task.id)
     await db.commit()
+    if plan_target:
+        await converge_fragment_plan_status(db, *plan_target, plan_message or "分镜任务失败")
 
 
 # 把任务收敛到取消态。
@@ -352,11 +374,19 @@ async def _mark_cancelled(db, task) -> None:
         phase=task.current_step_key,
         message="任务已取消",
     )
+    plan_target = fragment_plan_target(task)
     try:
+        if await record_accepted_upstream_charge(db, task):
+            await append_task_event(
+                db, task.id, event_type="task.cancel_charged", status=task.status,
+                phase=task.current_step_key, message=CANCEL_CHARGE_MESSAGE,
+            )
         await settle_task(db, task.id)
     except Exception:  # noqa: BLE001
         logger.exception("settle_task failed task_id=%s", task.id)
     await db.commit()
+    if plan_target:
+        await converge_fragment_plan_status(db, *plan_target, "分镜任务已取消")
 
 
 async def _fail_drama_asset_generation_if_needed(db, task, error: str) -> None:

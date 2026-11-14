@@ -68,7 +68,7 @@ async def test_history_media_snapshot_does_not_hold_episode_lock(committed_episo
 
 
 async def test_enqueue_generation_preserves_edit_saved_during_queue_lookup(committed_episode, monkeypatch):
-    """生成入队的计数等待期间发生保存，queued 写入只更新运行态。"""
+    """生成入队的计数等待期间发生保存：保存等入队提交后再落库，用户设置与 queued 运行态都保留。"""
     import asyncio
     from sqlalchemy.ext.asyncio import async_sessionmaker
     from app.api.drama.episodes import generate_episode, save_fragments
@@ -92,12 +92,19 @@ async def test_enqueue_generation_preserves_edit_saved_during_queue_lookup(commi
         """使用真实生成路由写 queued 参数。"""
         async with factory() as db:
             return await generate_episode(ep.id, DramaGenerateRequest(fragment_ids=[rows[0].id]), db, user)
+    async def save():
+        """计数等待期间并发保存；入队已持分集锁，保存须排在入队提交之后。"""
+        async with factory() as db:
+            await save_fragments(ep.id, request([item(rows[0], params={'user_setting': 'during-count'})]), db, user)
     worker = asyncio.create_task(enqueue())
     await asyncio.wait_for(entered.wait(), 5)
-    async with factory() as db:
-        await save_fragments(ep.id, request([item(rows[0], params={'user_setting': 'during-count'})]), db, user)
+    saver = asyncio.create_task(save())
+    await asyncio.sleep(0.3)
+    # 入队持分集行锁期间保存不能抢先提交（否则 queued 会基于旧快照）。
+    assert not saver.done()
     release.set()
     await asyncio.wait_for(worker, 5)
+    await asyncio.wait_for(saver, 5)
     async with factory() as db:
         row = await db.get(DramaEpisodeFragment, rows[0].id)
         assert row.params['user_setting'] == 'during-count'

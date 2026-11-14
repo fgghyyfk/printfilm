@@ -162,7 +162,8 @@ async def test_set_render_failure_atomic(db_session, monkeypatch, tmp_path):
     with pytest.raises(OSError):
         await set_translate.translate_set(db_session, user, source_id, "ja")
     assert await db_session.scalar(select(func.count()).select_from(EcomSet)) == 1
-    assert await db_session.scalar(select(func.count()).select_from(TaskRun)) == 0
+    # 线上轻量任务会持久保留失败记录（外层回滚不得抹掉），但必须已失败且未扣费。
+    assert [row.status for row in (await db_session.scalars(select(TaskRun))).all()] == ["failed"]
     assert await db_session.scalar(select(func.count()).select_from(UsageEvent)) == 0
     await db_session.refresh(user)
     assert user.balance_fen == balance and user.frozen_fen == 0

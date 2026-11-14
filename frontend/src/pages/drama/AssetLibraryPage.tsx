@@ -1,363 +1,204 @@
-import { useI18n } from '../../i18n'
-import { translate as translateUi } from '../../i18n/runtime'
-/** 全局漫剧资产库：按角色 / 场景 / 道具 / 音色分类，音色可试听 */
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Pause, Play } from 'lucide-react'
+/** 资产目录：项目素材、分镜与成片，以及无项目的独立生成结果。 */
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { Pause, Play, Image } from 'lucide-react'
+import { AssetBanner, AssetCard, AssetEmpty, AssetGrid, AssetSearch } from '../../components/assets/AssetLibrary'
+import MediaLibraryFilters, { type MediaLibraryFilter } from '../../components/assets/MediaLibraryFilters'
 import BillingErrorNotice from '../../components/billing/BillingErrorNotice'
 import AppShell from '../../components/layout/AppShell'
 import Button from '../../components/ui/Button'
 import FilterSelect from '../../components/ui/FilterSelect'
 import Pagination from '../../components/ui/Pagination'
-import PillFilter from '../../components/ui/PillFilter'
+import { api } from '../../api'
 import { CharacterVoicePreviewButton } from '../../components/drama/CharacterVoicePreviewButton'
-import {
-  dramaApi,
-  resolveDramaMediaUrl,
-  type DramaAsset,
-  type DramaProjectListItem,
-} from '../../api/drama'
+import { dramaApi, resolveDramaMediaUrl, type MediaLibraryItem, type MediaLibraryPage } from '../../api/drama'
 import { readAssetVoiceBinding } from './CharacterVoiceBindModal'
-import { DramaImageLightbox } from './DramaImageLightbox'
-import { filterDramaLibraryAssets, isDramaLibraryAsset } from '../../lib/dramaLibraryAssets'
+import { AssetDetailDialog } from '../../components/assets/AssetDetailDialog'
 import { DRAMA_VOICE_BINDING_ENABLED } from '../../lib/dramaVoiceBinding'
 import { pageCountOf } from '../../lib/pagination'
+import { subscribeWorkspace, workspaceScope } from '../../features/teams/workspaceScope'
 import RequireAuth from './RequireAuth'
+import { useI18n, type TFunction } from '../../i18n'
+import { useNavigate } from 'react-router-dom'
+import EcomSetBatches from '../../components/ecomSet/EcomSetBatches'
+import '../../styles/tools-base.css'
 import './drama.css'
 
-type AssetTabKey = 'all' | 'character' | 'scene' | 'prop' | 'voice'
-
-const PAGE_SIZE_DEFAULT = 12
 const PAGE_SIZE_OPTIONS = [12, 24, 36] as const
+type LibraryProject = { id: number; title: string; kind: 'drama' | 'short_video' }
 
-const TABS: Array<{ value: AssetTabKey; label: string }> = [
-  { value: 'all', get label() { return translateUi("workflow.all") } },
-  { value: 'character', get label() { return translateUi("workflow.character") } },
-  { value: 'scene', get label() { return translateUi("workflow.scene") } },
-  { value: 'prop', get label() { return translateUi("workflow.prop") } },
-  ...(DRAMA_VOICE_BINDING_ENABLED ? [{ value: 'voice' as const, get label() { return translateUi("daihuo.video.voice") } }] : []),
-]
-
-const KIND_LABEL: Record<string, string> = {
-  get character() { return translateUi("workflow.character") },
-  get scene() { return translateUi("workflow.scene") },
-  get prop() { return translateUi("workflow.prop") },
-  get voice() { return translateUi("daihuo.video.voice") },
+/** 漫剧与短视频使用独立项目编号空间，不能只传数字筛选。 */
+function projectSelection(value: string): { unassigned: boolean; projectId?: number; projectKind?: LibraryProject['kind'] } {
+  const [kind, rawId] = value.split(':')
+  const id = Number(rawId)
+  return {
+    unassigned: value === 'unassigned',
+    ...(Number.isInteger(id) && id > 0 && (kind === 'drama' || kind === 'short_video')
+      ? { projectId: id, projectKind: kind } : {}),
+  }
 }
 
 export default function AssetLibraryPage() {
-  return (
-    <RequireAuth>
-      <AssetLibraryInner />
-    </RequireAuth>
-  )
+  const workspaceEpoch = useSyncExternalStore(subscribeWorkspace, () => workspaceScope.epoch)
+  return <RequireAuth><AssetLibraryInner key={workspaceEpoch} /></RequireAuth>
 }
 
-// 按资产 type 归入角色 / 场景 / 道具 / 音色
-function assetKind(asset: DramaAsset): AssetTabKey | 'other' {
-  if (!isDramaLibraryAsset(asset)) return 'other'
-  const t = (asset.type || '').toLowerCase()
-  if (t === 'character' || t === 'scene' || t === 'prop' || t === 'voice') return t
-  return 'other'
+function previewAudio(asset: MediaLibraryItem): string {
+  return asset.media_kind === 'audio' ? asset.url || '' : readAssetVoiceBinding(asset)?.url || ''
 }
 
-function matchTab(asset: DramaAsset, tab: AssetTabKey): boolean {
-  if (!isDramaLibraryAsset(asset)) return false
-  if (!DRAMA_VOICE_BINDING_ENABLED && assetKind(asset) === 'voice') return false
-  if (tab === 'all') return true
-  return assetKind(asset) === tab
+/** 把当前页资产按「来源项目 + 生成时间（30 分钟内算同一批）」分组，保持原有顺序；t 用于无项目标题时的兜底文案 */
+function groupByBatch(items: MediaLibraryItem[], t: TFunction): { key: string; title: string; time: string; items: MediaLibraryItem[] }[] {
+  const groups: { key: string; title: string; time: string; items: MediaLibraryItem[] }[] = []
+  for (const item of items) {
+    const at = item.updated_at ? new Date(item.updated_at) : null
+    const bucket = at ? Math.floor(at.getTime() / (30 * 60 * 1000)) : 0
+    const key = `${item.project_kind || ''}:${item.project_id || 0}:${bucket}`
+    const last = groups[groups.length - 1]
+    if (last && last.key === key) { last.items.push(item); continue }
+    groups.push({ key, title: item.project_title || t(item.project_id ? 'assetLibraryPage.projectAsset' : 'assetLibraryPage.unassigned'),
+      time: at ? at.toLocaleString() : '', items: [item] })
+  }
+  return groups
 }
 
-function fileMeta(asset: DramaAsset): string {
-  const kind = assetKind(asset)
-  if (kind !== 'other') return KIND_LABEL[kind]
-  const url = (asset.cover || asset.url || '').toLowerCase()
-  const ext = url.match(/\.([a-z0-9]{2,5})(\?|$)/)?.[1]
-  if (ext) return `.${ext}`
-  return asset.type || translateUi("workflow.file")
-}
-
-// 音色资产或角色已绑定音色的试听地址
-function voicePreviewUrl(asset: DramaAsset): string {
-  if (assetKind(asset) === 'voice') return asset.url || ''
-  return readAssetVoiceBinding(asset)?.url || ''
-}
-
-function isImageLike(asset: DramaAsset): boolean {
-  const kind = assetKind(asset)
-  return kind === 'character' || kind === 'scene' || kind === 'prop' || kind === 'other'
-}
-
-// 渲染资产库内容
 function AssetLibraryInner() {
-  const { t: translateUi } = useI18n()
-  /*
-   * assets 当前项目范围下的资产
-   * projects 项目列表（筛选用）
-   * projectId 选中的项目 id，空串表示全部
-   * tab 角色/场景/道具/音色
-   * query 搜索词
-   * page 当前页
-   * playingId 正在试听的资产 id
-   * error 错误文案
-   * loading 加载中
-   */
-  const [assets, setAssets] = useState<DramaAsset[]>([])
-  const [projects, setProjects] = useState<DramaProjectListItem[]>([])
+  const navigate = useNavigate()
+  const { t } = useI18n()
+  // 展示方式：电商图套图（按批次）/ 资产按批次分组 / 全部平铺
+  const [view, setView] = useState<'sets' | 'batch' | 'grid'>('batch')
+  const [listing, setListing] = useState<MediaLibraryPage>({ items: [], meta: { total: 0, total_all: 0, page: 1, page_size: 12 } })
+  const [projects, setProjects] = useState<LibraryProject[]>([])
   const [projectId, setProjectId] = useState('')
-  const [tab, setTab] = useState<AssetTabKey>('all')
+  const [mediaFilter, setMediaFilter] = useState<MediaLibraryFilter>({ kind: 'image', imageType: 'all', generationStatus: 'all' })
   const [query, setQuery] = useState('')
+  const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(PAGE_SIZE_DEFAULT)
-  const [playingId, setPlayingId] = useState<number | null>(null)
-  const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null)
+  const [pageSize, setPageSize] = useState(12)
+  const [playingKey, setPlayingKey] = useState<string | null>(null)
+  const [selectedAsset, setSelectedAsset] = useState<MediaLibraryItem | null>(null)
   const [error, setError] = useState('')
+  const [playbackError, setPlaybackError] = useState('')
   const [loading, setLoading] = useState(true)
+  const [revision, setRevision] = useState(0)
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  const playbackEpoch = useRef(0)
 
   useEffect(() => {
-    dramaApi
-      .listProjects()
-      .then(setProjects)
-      .catch(() => undefined)
-  }, [])
+    let active = true
+    /** 分别读取两类项目，团队范围不列出个人短视频项目。 */
+    async function loadProjects(kind: LibraryProject['kind']) {
+      const rows: LibraryProject[] = []
+      let page = 1
+      while (active) {
+        const result = kind === 'drama' ? await dramaApi.listProjects({ page, page_size: 50 }) : await api.listProjects({ page, page_size: 50 })
+        if (!active) return []
+        rows.push(...result.items.map((project) => ({ id: project.id, title: project.title || t('assetLibraryPage.untitledProject'), kind })))
+        if (rows.length >= result.meta.total || result.items.length === 0) break
+        page += 1
+      }
+      return rows
+    }
+    const kinds: LibraryProject['kind'][] = workspaceScope.teamId === null ? ['drama', 'short_video'] : ['drama']
+    void Promise.allSettled(kinds.map(loadProjects)).then((results) => {
+      if (active) setProjects(results.flatMap((result) => result.status === 'fulfilled' ? result.value : []))
+    })
+    return () => { active = false }
+  }, [t])
 
   useEffect(() => {
-    let cancelled = false
+    const timer = window.setTimeout(() => { setSearch(query.trim().slice(0, 200)); setPage(1) }, 250)
+    return () => window.clearTimeout(timer)
+  }, [query])
+
+  useEffect(() => {
+    const controller = new AbortController()
     setLoading(true)
     setError('')
-    const pid = projectId ? Number(projectId) : undefined
-    dramaApi
-      .listAssets(Number.isFinite(pid) ? pid : undefined, { libraryOnly: true })
-      .then((rows) => {
-        if (!cancelled) setAssets(filterDramaLibraryAssets(rows))
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : translateUi("ecomSet.loadFailed"))
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [projectId])
+    dramaApi.listLibraryAssets({ type: mediaFilter.kind === 'image' && mediaFilter.imageType !== 'all' ? mediaFilter.imageType : mediaFilter.kind,
+      mediaKind: mediaFilter.kind, generationStatus: mediaFilter.generationStatus, ...projectSelection(projectId), q: search, page, pageSize }, controller.signal)
+      .then((result) => { if (!controller.signal.aborted) setListing(result) })
+      .catch((cause) => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : t('common.loadFailed')) })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false) })
+    return () => controller.abort()
+  }, [mediaFilter, projectId, search, page, pageSize, revision, t])
 
   useEffect(() => {
-    return () => {
-      audioRef.current?.pause()
-    }
-  }, [])
+    playbackEpoch.current += 1
+    audioRef.current?.pause()
+    setPlayingKey(null)
+    setPlaybackError('')
+    return () => { playbackEpoch.current += 1; audioRef.current?.pause() }
+  }, [mediaFilter, projectId, search, page, pageSize])
 
-  const projectNameById = useMemo(() => {
-    const map = new Map<number, string>()
-    for (const p of projects) map.set(p.id, p.title || translateUi("workflow.projectNumber", { v1: String(p.id) }))
-    return map
-  }, [projects])
+  const projectOptions = useMemo(() => [
+    { value: '', label: t('assetLibraryPage.allProjects') }, { value: 'unassigned', label: t('assetLibraryPage.unassigned') },
+    ...projects.map((project) => ({ value: `${project.kind}:${project.id}`, label: `${t(project.kind === 'drama' ? 'assetLibraryPage.kindDrama' : 'assetLibraryPage.kindShortVideo')} · ${project.title}` })),
+  ], [projects, t])
+  const pageCount = pageCountOf(listing.meta.total, pageSize)
 
-  const projectOptions = useMemo(
-    () => [
-      { value: '', label: translateUi("workflow.allProjects") },
-      ...projects.map((p) => ({
-        value: String(p.id),
-        label: p.title || translateUi("workflow.project", { v1: String(p.id) }),
-      })),
-    ],
-    [projects],
-  )
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    return assets.filter((asset) => {
-      if (!matchTab(asset, tab)) return false
-      if (!q) return true
-      const name = (asset.name || '').toLowerCase()
-      const type = (asset.type || '').toLowerCase()
-      const projectName = (projectNameById.get(asset.project_id) || '').toLowerCase()
-      return (
-        name.includes(q) ||
-        type.includes(q) ||
-        projectName.includes(q) ||
-        String(asset.project_id).includes(q)
-      )
-    })
-  }, [assets, tab, query, projectNameById])
-
-  const pageCount = pageCountOf(filtered.length, pageSize)
-  const safePage = Math.min(page, pageCount)
-  const pageItems = useMemo(() => {
-    const start = (safePage - 1) * pageSize
-    return filtered.slice(start, start + pageSize)
-  }, [filtered, safePage, pageSize])
-
-  useEffect(() => {
-    setPage(1)
-  }, [tab, query, projectId, pageSize])
-
-  // 卡片缩略图上试听 / 暂停音色
-  function toggleVoice(asset: DramaAsset) {
-    const src = resolveDramaMediaUrl(voicePreviewUrl(asset))
-    if (!src) {
-      setError(translateUi("workflow.thisVoiceHasNoPreviewYet"))
-      return
-    }
-    if (playingId === asset.id) {
-      audioRef.current?.pause()
-      setPlayingId(null)
-      return
-    }
-    if (!audioRef.current) audioRef.current = new Audio()
-    audioRef.current.src = src
-    audioRef.current.onended = () => setPlayingId(null)
-    void audioRef.current.play().catch(() => setError(translateUi("workflow.couldNotPlayAudio")))
-    setPlayingId(asset.id)
+  async function toggleAudio(asset: MediaLibraryItem) {
+    const epoch = ++playbackEpoch.current
+    audioRef.current?.pause()
+    setPlaybackError('')
+    if (playingKey === asset.key) { setPlayingKey(null); return }
+    const src = resolveDramaMediaUrl(previewAudio(asset))
+    if (!src) return
+    const audio = audioRef.current || new Audio()
+    audioRef.current = audio
+    audio.src = src
+    audio.onended = () => { if (epoch === playbackEpoch.current) setPlayingKey(null) }
+    setPlayingKey(asset.key)
+    try { await audio.play() }
+    catch { if (epoch === playbackEpoch.current) { setPlayingKey(null); setPlaybackError(t('assetLibraryPage.playFailed')) } }
   }
 
-  return (
-    <AppShell active="assets">
-      <div className="drama-page pf-asset-page">
-        <header className="pf-drama-list-head">
-          <div className="pf-drama-list-title-row">
-            <div>
-              <h1>{translateUi("workflow.assetManagement")}</h1>
-              <p className="pf-muted" style={{ margin: '0.35rem 0 0' }}>
-                {translateUi("workflow.browseCharactersScenesPropsAndVoices")}
-              </p>
-            </div>
-            <div className="pf-drama-list-actions">
-              <Button to="/drama" variant="ghost" size="sm">
-                {translateUi("workflow.dramaProjects")}
-              </Button>
-              <Button to="/history" variant="ghost" size="sm">
-                {translateUi("workflow.explainerHistory")}
-              </Button>
-              <Button to="/settings" variant="ghost" size="sm">
-                {translateUi("workflow.myAccount")}
-              </Button>
-            </div>
-          </div>
-
-          <div className="pf-drama-list-toolbar">
-            <PillFilter options={TABS} value={tab} onChange={setTab} ariaLabel={translateUi("workflow.assetCategories")} />
-            <div className="pf-asset-toolbar-filters">
-              <FilterSelect
-                label={translateUi("workflow.filterByProject")}
-                value={projectId}
-                options={projectOptions}
-                onChange={setProjectId}
-              />
-              <label className="pf-drama-search">
-                <span className="sr-only">{translateUi("workflow.searchAssets")}</span>
-                <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder={translateUi("workflow.searchNamesOrProjects")}
-                />
-              </label>
-            </div>
-          </div>
-        </header>
-
-        {error ? <BillingErrorNotice message={error} className="drama-error" /> : null}
-
-        <div className="pf-asset-toolbar-meta">
-          <p className="pf-muted" style={{ margin: 0 }}>
-            {loading
-              ? translateUi("ecomSet.loading")
-              : translateUi("workflow.totalMatchingPage", { v1: String(assets.length), v2: String(filtered.length), v3: String(safePage), v4: String(pageCount) })}
-          </p>
+  return <AppShell active="assets">
+    <div className="drama-page pf-library-panel">
+      <header className="pf-library-page-head">
+        <div className="pf-library-heading"><div><h1>{t('assetLibraryPage.title')}</h1><p className="pf-muted" style={{ margin: '0.35rem 0 0' }}>{t('assetLibraryPage.subtitle')}</p></div>
+          <span className="pf-library-count"><Image size={14} />{t('assetLibraryPage.count', { count: listing.meta.total })}</span>
         </div>
-
-        {!loading && filtered.length === 0 ? (
-          <div className="pf-empty-state is-compact">
-            <p className="pf-muted">{translateUi("workflow.noAssetsInThisCategory")}</p>
+        <AssetBanner>{t('assetLibraryPage.banner')}</AssetBanner>
+        <div className="pf-library-toolbar pf-library-toolbar--hierarchical">
+          <MediaLibraryFilters value={mediaFilter} onChange={value => { setMediaFilter(value); setPage(1) }} />
+          <div className="pf-library-toolbar-end">
+            <FilterSelect label={t('assetLibraryPage.projectFilter')} value={projectId} options={projectOptions} onChange={(value) => { setProjectId(value); setPage(1) }} />
+            <AssetSearch value={query} onChange={setQuery} placeholder={t('assetLibraryPage.searchPlaceholder')} />
           </div>
-        ) : (
-          <>
-            <div className="pf-asset-grid">
-              {pageItems.map((asset) => {
-                const kind = assetKind(asset)
-                const mediaSrc = resolveDramaMediaUrl(asset.cover || (kind === 'voice' ? '' : asset.url))
-                const projectLabel =
-                  projectNameById.get(asset.project_id) || translateUi("workflow.project", { v1: String(asset.project_id) })
-                const previewUrl = voicePreviewUrl(asset)
-                const isVoice = kind === 'voice'
-                const playing = playingId === asset.id
-                return (
-                  <article key={asset.id} className="pf-asset-card">
-                    <div className={`pf-asset-thumb is-${kind}`}>
-                      {isVoice ? (
-                        <button
-                          type="button"
-                          className={`pf-asset-play${playing ? ' is-playing' : ''}`}
-                          onClick={() => toggleVoice(asset)}
-                          disabled={!previewUrl}
-                          title={previewUrl ? (playing ? translateUi("workflow.stopPreview") : translateUi("workflow.previewVoice")) : translateUi("workflow.noPreviewYet")}
-                        >
-                          <span className="pf-asset-play-icon" aria-hidden>
-                            {playing ? <Pause size={20} strokeWidth={2} /> : <Play size={20} strokeWidth={2} />}
-                          </span>
-                        </button>
-                      ) : mediaSrc && isImageLike(asset) ? (
-                        <button
-                          type="button"
-                          className="pf-asset-thumb-btn"
-                          onClick={() =>
-                            setLightbox({ src: mediaSrc, alt: asset.name || fileMeta(asset) })
-                          }
-                          title={translateUi("workflow.viewFullImage")}
-                        >
-                          <img src={mediaSrc} alt={asset.name || ''} />
-                        </button>
-                      ) : (
-                        <span>{fileMeta(asset)}</span>
-                      )}
-                    </div>
-                    <h3>{asset.name || translateUi("workflow.untitled")}</h3>
-                    <p>
-                      {fileMeta(asset)} · {projectLabel}
-                    </p>
-                    <div className="pf-asset-card-actions">
-                      {DRAMA_VOICE_BINDING_ENABLED && previewUrl && !isVoice ? (
-                        <CharacterVoicePreviewButton
-                          url={previewUrl}
-                          label={asset.name || undefined}
-                          onError={setError}
-                        />
-                      ) : isVoice && !previewUrl ? (
-                        <span className="pf-muted">{translateUi("workflow.noPreviewYet")}</span>
-                      ) : null}
-                      <Button to={`/drama/projects/${asset.project_id}`} variant="ghost" size="sm">
-                        {translateUi("workflow.openProject")}
-                      </Button>
-                    </div>
-                  </article>
-                )
-              })}
-            </div>
-            <Pagination
-              page={safePage}
-              pageCount={pageCount}
-              total={filtered.length}
-              pageSize={pageSize}
-              pageSizeOptions={PAGE_SIZE_OPTIONS}
-              onPageSizeChange={(size) => {
-                setPageSize(size)
-                setPage(1)
-              }}
-              onChange={setPage}
-              ariaLabel={translateUi("workflow.assetLibraryPages")}
-            />
-          </>
-        )}
-
-        {lightbox ? (
-          <DramaImageLightbox
-            src={lightbox.src}
-            alt={lightbox.alt}
-            onClose={() => setLightbox(null)}
-          />
-        ) : null}
+        </div>
+      </header>
+      <div className="pf-library-views pf-tool-chips" role="tablist" aria-label={t('assetLibraryPage.viewsAria')}>
+        {([['batch', t('assetLibraryPage.viewBatch')], ['sets', t('assetLibraryPage.viewSets')], ['grid', t('assetLibraryPage.viewGrid')]] as const).map(([id, label]) =>
+          <button key={id} type="button" role="tab" aria-selected={view === id} className={view === id ? 'active' : ''} onClick={() => setView(id)}>{label}</button>)}
       </div>
-    </AppShell>
-  )
+      {view === 'sets' ? <EcomSetBatches onOpen={(id) => navigate(`/daihuo?id=${id}`)} /> : <>
+      {error && <div role="alert"><BillingErrorNotice message={error} className="drama-error" /><Button size="sm" onClick={() => setRevision((value) => value + 1)}>{t('assetLibraryPage.reload')}</Button></div>}
+      {playbackError && <p role="alert" className="drama-error">{playbackError}</p>}
+      <div className="pf-library-meta"><p className="pf-muted" style={{ margin: 0 }} role="status">{loading ? t('common.loading') : t('assetLibraryPage.summary', { totalAll: listing.meta.total_all, total: listing.meta.total, page: listing.meta.page, pageCount })}</p></div>
+      {loading ? <div className="pf-library-empty" aria-busy="true">{t('assetLibraryPage.loadingAssets')}</div> : error ? null : listing.items.length === 0 ? <AssetEmpty /> : <>
+        {(view === 'batch' ? groupByBatch(listing.items, t) : [{ key: 'all', title: '', time: '', items: listing.items }]).map((group) => <div key={group.key} className="pf-library-batch">
+        {view === 'batch' ? <h3>{group.title} <span className="pf-muted">· {group.time} · {t('assetLibraryPage.batchCount', { count: group.items.length })}</span></h3> : null}
+        <AssetGrid>{group.items.map((asset) => {
+          const audio = asset.media_kind === 'audio'
+          const preview = previewAudio(asset)
+          const playing = playingKey === asset.key
+          const sourceLabel = t(asset.source_kind === 'drama_fragment' ? 'assetLibraryPage.sourceFragment'
+            : asset.source_kind === 'short_video' ? 'assetLibraryPage.sourceShortVideo'
+            : asset.source_kind === 'task' ? 'assetLibraryPage.sourceTask'
+            : asset.source_kind === 'tool' && !asset.project_id ? 'assetLibraryPage.sourceStandalone' : 'assetLibraryPage.projectAsset')
+          const workspaceLabel = t(workspaceScope.teamId === null ? 'assetLibraryPage.personalAsset' : 'assetLibraryPage.teamAsset')
+          return <AssetCard key={asset.key} asset={asset} subtitle={asset.project_title || t(asset.project_id ? 'assetLibraryPage.projectAsset' : 'assetLibraryPage.unassigned')} footer={`${sourceLabel} · ${workspaceLabel}`} updatedAt={asset.updated_at} onOpen={() => setSelectedAsset(asset)}
+            status={audio ? t(playing ? 'assetLibraryPage.audioPlaying' : preview ? 'assetLibraryPage.audioReady' : 'assetLibraryPage.audioPending') : undefined}
+            actions={<>
+              {audio && preview && <button type="button" className="pf-btn pf-btn-sm" onClick={() => void toggleAudio(asset)} aria-label={t(playing ? 'assetLibraryPage.stopPreview' : 'assetLibraryPage.previewAudioAria')}>{playing ? <Pause size={14} /> : <Play size={14} />}{t(playing ? 'assetLibraryPage.stopPreview' : 'assetLibraryPage.previewAudio')}</button>}
+              {!audio && DRAMA_VOICE_BINDING_ENABLED && preview && <CharacterVoicePreviewButton url={preview} label={asset.name || undefined} onError={setPlaybackError} />}
+              {asset.project_url ? <Button to={asset.project_url} variant="ghost" size="sm">{t('assetLibraryPage.openProject')}</Button> : <Button size="sm" onClick={() => setSelectedAsset(asset)}>{t('assetLibraryPage.viewAsset')}</Button>}
+            </>} />
+        })}</AssetGrid></div>)}
+        <Pagination page={listing.meta.page} pageCount={pageCount} total={listing.meta.total} pageSize={pageSize} pageSizeOptions={PAGE_SIZE_OPTIONS} onPageSizeChange={(size) => { setPageSize(size); setPage(1) }} onChange={setPage} ariaLabel={t('assetLibraryPage.pagination')} />
+      </>}
+      </>}
+      {selectedAsset && <AssetDetailDialog asset={selectedAsset} audioUrl={selectedAsset.media_kind !== 'audio' ? previewAudio(selectedAsset) : undefined} onClose={() => setSelectedAsset(null)} actions={selectedAsset.project_url ? <Button to={selectedAsset.project_url} variant="dark">{t('assetLibraryPage.openSourceProject')}</Button> : undefined} />}
+    </div>
+  </AppShell>
 }

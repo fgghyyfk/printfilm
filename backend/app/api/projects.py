@@ -30,6 +30,7 @@ from app.schemas import (
     ProjectOut,
     ProjectUpdate,
     ShotOut,
+    ShotRegenAudioIn,
     ShotReorderIn,
     ShotUpdate,
     VoicePreviewOut,
@@ -57,10 +58,10 @@ from app.services.kepu_shot_edits import shot_video_content_changed
 router = APIRouter(tags=["projects"])
 
 
-def _demote_after_edit(project: Project) -> None:
+def _demote_after_edit(project: Project, *, recheck_stage: bool = False) -> None:
     """改镜头/配乐后作废成片，并按素材把终态打回 script/assets/videos/compose。"""
     project.final_video_url = None
-    if project.status not in {
+    if not recheck_stage and project.status not in {
         ProjectStatus.DONE,
         ProjectStatus.AUDITING,
         ProjectStatus.COMPOSING,
@@ -80,28 +81,53 @@ def _demote_after_edit(project: Project) -> None:
         project.status = ProjectStatus.VIDEO_READY
 
 
-@router.get("/voices")
+@router.get(
+    "/voices",
+    summary="获取可选配音音色",
+    description="无需登录，返回科普短片可使用的配音音色目录。",
+    response_description="可选音色列表",
+)
 async def get_voices() -> list[dict]:
     return list_voices()
 
 
-@router.get("/media-models")
-async def get_media_models() -> dict:
-    """科普前台可选图/视频模型目录（TokenFree 已勾选模型）。"""
+@router.get(
+    "/media-models",
+    summary="获取可选图像和视频模型",
+    description="无需登录，返回前台可用的图像、视频模型及对应价格目录，供项目选择生成模型。",
+    response_description="媒体模型与价格目录",
+)
+async def get_media_models(
+    scope: str = Query("", pattern=r"^(|tools)$", description="tools=图片生成页（附加已开启的 OpenAI 生图模型）"),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """无需登录，返回前台可用的图像、视频模型及对应价格目录，供项目选择生成模型。"""
     from app.services.media_catalog import catalog_payload
 
-    return catalog_payload()
+    from app.services.media_models.catalog import priced_catalog
+    return await priced_catalog(db, catalog_payload(scope))
 
 
-@router.post("/voices/preview", response_model=VoicePreviewOut)
+@router.post(
+    "/voices/preview",
+    response_model=VoicePreviewOut,
+    summary="试听配音音色",
+    description="需要登录，同步生成或复用缓存的简短音色试听，返回可播放的音频地址。本次试听记录为非计费任务。",
+    response_description="试听音频地址与音色标识",
+)
 async def preview_voice(
     body: VoicePreviewRequest,
+    db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> VoicePreviewOut:
-    """Generate a short cached TTS sample for audition."""
-    _ = user
+    """需要登录，同步生成或复用缓存的简短音色试听，返回可播放的音频地址。本次试听记录为非计费任务。"""
     try:
-        result = await ensure_voice_preview(body.voice_id, scene=body.scene)
+        _, result = await run_billed_ephemeral(
+            db, user, domain="kepu", task_type="voice_preview",
+            executor=lambda: ensure_voice_preview(body.voice_id, scene=body.scene),
+            payload={"voice_id": body.voice_id, "scene": body.scene}, billable=False,
+            result_payload_factory=lambda result: {"kind": "audio", "urls": [result.url] if result.url else []},
+        )
     except Exception as exc:  # noqa: BLE001
         logging.getLogger(__name__).exception("voice preview failed")
         raise public_http_exception(exc, fallback_status=502) from exc
@@ -109,13 +135,22 @@ async def preview_voice(
                            model=result.model, is_fallback=result.is_fallback)
 
 
-@router.post("/content/expand", response_model=ContentExpandOut)
+@router.post(
+    "/content/expand",
+    response_model=ContentExpandOut,
+    summary="扩写科普选题",
+    description=(
+        "需要登录，根据短选题同步调用 AI 生成标题及主题说明或完整文案，并按启用的计费规则记录调用。"
+        "返回扩写结果及关联任务编号；选题为空返回 400。"
+    ),
+    response_description="扩写标题、文案与任务编号",
+)
 async def expand_content(
     body: ContentExpandRequest,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> ContentExpandOut:
-    """AI-expand a short topic into a project title + theme brief or full script."""
+    """需要登录，根据短选题同步调用 AI 生成标题及主题说明或完整文案，并按启用的计费规则记录调用。返回扩写结果及关联任务编号；选题为空返回 400。"""
     topic = (body.topic or "").strip()
     if not topic:
         raise HTTPException(status_code=400, detail="请输入选题")
@@ -181,6 +216,7 @@ async def _get_owned_project(
     project.status = runtime_status
     project.progress = runtime_progress
     project.error_msg = runtime_error
+    project.native_video_audio = pipeline._kepu_seedance_native_audio(project)
     return project
 
 
@@ -206,8 +242,15 @@ _PROJECT_WIDE_TASK_TYPES = {
 }
 
 
+def _ensure_wizard_project(project: Project) -> None:
+    """Conversation projects are exclusively coordinated by their session."""
+    if getattr(project, "creation_session_id", None):
+        raise HTTPException(status_code=409, detail="请在创作对话中修改、停止或重试该短片")
+
+
 def _ensure_side_task_allowed(project: Project) -> None:
     """整片任务未终态前拒绝侧任务；单镜重绘可并行，不因残留 IMAGING 卡住。"""
+    _ensure_wizard_project(project)
     for task in getattr(project, "active_tasks", []) or []:
         if str(getattr(task, "status", "") or "") not in ACTIVE_TASK_STATUSES:
             continue
@@ -215,11 +258,26 @@ def _ensure_side_task_allowed(project: Project) -> None:
             raise HTTPException(status_code=409, detail="整片生成进行中，请稍后")
 
 
+def _ensure_shot_task_free(project: Project, shot_id: int) -> None:
+    """同一分镜已有活动任务时拒绝再提交，避免重复扣费和结果互相覆盖。"""
+    for task in getattr(project, "active_tasks", []) or []:
+        if getattr(task, "shot_id", None) == shot_id and str(getattr(task, "status", "") or "") in ACTIVE_TASK_STATUSES:
+            raise HTTPException(status_code=409, detail="该镜头正在生成，请稍后")
+
+
 # 活跃任务是忙碌真相源；旧运行状态不能阻止失败后的重试。
 def _ensure_project_idle(project: Project, *, detail: str = "生成进行中，请稍后") -> None:
     """整片操作在任何活跃任务（含取消请求）存在时拒绝执行。"""
-    if getattr(project, "active_tasks", []):
+    if getattr(project, "active_tasks", None):
         raise HTTPException(status_code=409, detail=detail)
+
+
+# 没有进行中任务时都可重试拼接，包括拼接失败后卡住的状态
+async def _ensure_compose_allowed(db: AsyncSession, user: User, project: Project) -> None:
+    _ensure_wizard_project(project)
+    active = await list_active_tasks_for_owner(db, user.id, project_id=project.id)
+    if active:
+        raise HTTPException(status_code=409, detail="生成进行中，请稍后")
 
 
 # 为科普项目/镜头创建统一任务，由平台调度器自动执行
@@ -257,14 +315,23 @@ async def _create_kepu_task(
     return int(task.id)
 
 
-@router.post("/projects", response_model=ProjectOut)
+@router.post(
+    "/projects",
+    response_model=ProjectOut,
+    summary="创建科普短片项目",
+    description="需要登录，使用启用的动画模板创建属于当前用户的草稿项目，保存文案和生成配置；创建项目后需另行发起生成。",
+    response_description="新建的草稿项目",
+)
 async def create_project(
     body: ProjectCreate,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> Project:
     from app.models import Template
+    from app.services.creation_templates import CREATION_TEMPLATE_IDS
 
+    if body.template_id not in CREATION_TEMPLATE_IDS:
+        raise HTTPException(status_code=400, detail="请选择可用的动画模板")
     tpl = await db.get(Template, body.template_id)
     if not tpl or not tpl.is_active:
         raise HTTPException(status_code=400, detail="无效模板")
@@ -274,6 +341,7 @@ async def create_project(
         title=body.title,
         source_type=body.source_type,
         source_text=body.source_text,
+        target_duration_sec=body.target_duration_sec,
         resolution_mode=body.resolution_mode,
         pipeline_mode=body.pipeline_mode,
         auto_advance=body.auto_advance and body.pipeline_mode != "avatar",
@@ -286,6 +354,8 @@ async def create_project(
         extra_prompt=(body.extra_prompt or "").strip(),
         image_model=(body.image_model or "").strip(),
         video_model=(body.video_model or "").strip(),
+        image_resolution=body.image_resolution.strip().upper(),
+        video_resolution=body.video_resolution.strip().lower(),
         ref_image_url=body.ref_image_url,
         avatar_engine=(body.avatar_engine or "").strip(),
         status=ProjectStatus.DRAFT,
@@ -299,23 +369,29 @@ async def create_project(
     return result.scalar_one()
 
 
-@router.get("/projects", response_model=ProjectListOut)
+@router.get(
+    "/projects",
+    response_model=ProjectListOut,
+    summary="分页查询科普短片项目",
+    description="需要登录，仅返回本人的项目，支持按状态、标题和制作模式筛选，并返回分页及统计信息。",
+    response_description="项目列表、分页与统计信息",
+)
 async def list_projects(
-    page: int = Query(1, ge=1),
-    page_size: int = Query(8, ge=1, le=50),
+    page: int = Query(1, ge=1, description="页码，从 1 开始"),
+    page_size: int = Query(8, ge=1, le=50, description="每页返回的记录数"),
     status: str | None = Query(
         None,
-        description="all|draft|running|done|published",
+        description="项目状态：all 全部、draft 草稿、running 生成中、done 已完成、published 已发布",
     ),
-    q: str | None = Query(None, description="title search"),
+    q: str | None = Query(None, description="项目标题搜索关键词"),
     pipeline_mode: str | None = Query(
         None,
-        description="full|image_text|avatar；空=全部类型",
+        description="制作模式：full 完整视频、image_text 图文、avatar 数字人口播；不传时查询全部",
     ),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> ProjectListOut:
-    """校验分页参数并返回当前用户的项目列表及统计。"""
+    """需要登录，仅返回本人的项目，支持按状态、标题和制作模式筛选，并返回分页及统计信息。"""
     return await list_project_page(
         db, user.id, page=page, page_size=page_size,
         status=status, q=q, pipeline_mode=pipeline_mode,
@@ -329,13 +405,24 @@ def _safe_zip_name(title: str, project_id: int) -> str:
     return f"p{project_id}_{cleaned}.mp4"
 
 
-@router.post("/projects/download-zip")
+@router.post(
+    "/projects/download-zip",
+    summary="批量下载科普成片",
+    description=(
+        "需要登录，将所选本人项目的可用成片打包为 ZIP，一次最多 50 个项目。"
+        "仅打包已完成且成片文件可读取的项目，跳过项写入 skipped.txt；"
+        "全部不可下载时返回 400。"
+    ),
+    response_description="application/zip 成片压缩包",
+    response_class=StreamingResponse,
+    responses={200: {"content": {"application/zip": {"schema": {'type': 'string', 'format': 'binary'}}}}},
+)
 async def download_projects_zip(
     body: ProjectDownloadRequest,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> StreamingResponse:
-    """Zip final videos for selected owned projects (DONE with final_video_url)."""
+    """需要登录，将所选本人项目的可用成片打包为 ZIP，一次最多 50 个项目。仅打包已完成且成片文件可读取的项目，跳过项写入 skipped.txt；全部不可下载时返回 400。"""
     ids = list(dict.fromkeys(int(i) for i in body.ids if int(i) > 0))
     if not ids:
         raise HTTPException(status_code=400, detail="请选择要下载的作品")
@@ -400,7 +487,13 @@ async def download_projects_zip(
     return StreamingResponse(buf, media_type="application/zip", headers=headers)
 
 
-@router.get("/projects/{project_id}", response_model=ProjectOut)
+@router.get(
+    "/projects/{project_id}",
+    response_model=ProjectOut,
+    summary="获取科普短片项目详情",
+    description="需要登录，仅可读取本人的项目，返回分镜、活动任务以及计算后的运行状态和进度；项目不存在返回 404。",
+    response_description="项目详情及活动任务",
+)
 async def get_project(
     project_id: int,
     db: AsyncSession = Depends(get_db),
@@ -416,16 +509,18 @@ async def project_compliance(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
+    from app.models import Template
     from app.services.compliance.ad_words import REPORT
-    from app.services.compliance.content import scan_shots
+    from app.services.compliance.content import mode_for_template, scan_shots
     from app.services.compliance.changes import change_rows
 
     project = await _get_owned_project(db, project_id, user)
+    tpl = await db.get(Template, project.template_id) if project.template_id else None
     shots = sorted(project.shots, key=lambda s: s.shot_no or 0)
     items = scan_shots(shots, title=project.title or "", title2=project.avatar_title2 or "")
     return {
-        "mode": REPORT,
-        "auto_replace": False,
+        "mode": mode_for_template(tpl),
+        "auto_replace": mode_for_template(tpl) != REPORT,
         "replacements": change_rows(project, scope="project") + [
             row for shot in shots for row in change_rows(shot, scope="shot", index=shot.shot_no)
         ],
@@ -434,7 +529,13 @@ async def project_compliance(
     }
 
 
-@router.patch("/projects/{project_id}", response_model=ProjectOut)
+@router.patch(
+    "/projects/{project_id}",
+    response_model=ProjectOut,
+    summary="修改科普短片项目",
+    description="需要登录，按请求中提供的字段更新本人的项目。生成期间及对话创作管理的项目不允许在此修改；更改制作模式、配乐或字幕预设会使现有成片失效。制作模式变更后沿用已有素材，按新模式回到待生成或待合成阶段。",
+    response_description="更新后的项目详情",
+)
 async def update_project(
     project_id: int,
     body: ProjectUpdate,
@@ -442,6 +543,7 @@ async def update_project(
     user: User = Depends(get_current_user),
 ) -> Project:
     project = await _get_owned_project(db, project_id, user, for_undo=body.compliance_undo is not None or body.compliance_apply is not None, lock=True)
+    _ensure_wizard_project(project)
     _ensure_project_idle(project, detail="生成进行中，无法修改")
 
     data = body.model_dump(exclude_unset=True)
@@ -472,7 +574,7 @@ async def update_project(
         url = str(data["cover_url"]).strip()
         if not (url.startswith("/static/") or url.startswith("http://") or url.startswith("https://")):
             raise HTTPException(status_code=400, detail="无效封面地址")
-    for key in ("style_prompt", "character_prompt", "extra_prompt", "image_model", "video_model"):
+    for key in ("style_prompt", "character_prompt", "extra_prompt", "image_model", "video_model", "image_resolution", "video_resolution"):
         if key in data:
             data[key] = str(data[key] or "").strip()
     if "image_model" in data and data["image_model"]:
@@ -493,22 +595,47 @@ async def update_project(
         data["subtitle_preset"] = str(data["subtitle_preset"] or "").strip()
     # 数字人成片烧录项目标题；撤销标题后只作废旧成片，沿用已有素材进度。
     title_undo = is_undo and project.pipeline_mode == "avatar" and any(key in data for key in ("title", "avatar_title2"))
-    if "bgm_lock" in data or "subtitle_preset" in data or title_undo:
-        _demote_after_edit(project)
+    # 按新模式判定下一阶段；保留图片/视频/配音，只作废原模式的成片。
+    mode_changed = "pipeline_mode" in data and data["pipeline_mode"] != (project.pipeline_mode or "full")
+    # 数字人口型对齐该段配音：音色实际变化时各段配音与视频都要重做（比较解析后的音色，别名不算变化）。
+    voice_changed = False
+    if "voice_id" in data and data.get("pipeline_mode", project.pipeline_mode) == "avatar":
+        from app.models import Template
+        from app.services.voices import resolve_speaker
+
+        tpl = await db.get(Template, project.template_id) if project.template_id else None
+        audio_cfg = tpl.audio_config if tpl and isinstance(tpl.audio_config, dict) else {}
+        preset = str(audio_cfg.get("voice_preset") or "")
+        voice_changed = resolve_speaker(data["voice_id"], template_preset=preset) != resolve_speaker(
+            project.voice_id, template_preset=preset
+        )
     for k, v in data.items():
         setattr(project, k, v)
+    if voice_changed:
+        for shot in project.shots:
+            shot.audio_url = None
+            shot.video_url = None
+            shot.avatar_job_id = None
+    if voice_changed or mode_changed or title_undo or "bgm_lock" in data or "subtitle_preset" in data:
+        _demote_after_edit(project, recheck_stage=voice_changed or mode_changed)
     await db.commit()
     return await _get_owned_project(db, project_id, user)
 
 
-@router.post("/projects/{project_id}/cover", response_model=ProjectOut)
+@router.post(
+    "/projects/{project_id}/cover",
+    response_model=ProjectOut,
+    summary="上传科普项目封面",
+    description="需要登录，为本人项目上传 JPG、PNG、WebP 或 GIF 封面，文件不能为空且最大 8 MB。项目生成期间不允许更换封面。",
+    response_description="包含新封面的项目详情",
+)
 async def upload_project_cover(
     project_id: int,
-    file: UploadFile = File(...),
+    file: UploadFile = File(..., description="项目封面，支持 JPG、PNG、WebP、GIF，最大 8 MB"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> Project:
-    """Upload a custom cover image for the project."""
+    """需要登录，为本人项目上传 JPG、PNG、WebP 或 GIF 封面，文件不能为空且最大 8 MB。项目生成期间不允许更换封面。"""
     project = await _get_owned_project(db, project_id, user)
     if project.status in {
         ProjectStatus.SCRIPTING,
@@ -550,24 +677,33 @@ async def upload_project_cover(
     return await _get_owned_project(db, project_id, user)
 
 
-@router.post("/projects/{project_id}/generate", response_model=ProjectOut)
+@router.post(
+    "/projects/{project_id}/generate",
+    response_model=ProjectOut,
+    summary="提交科普项目生成任务",
+    description=(
+        "需要登录，为本人分步创作项目提交后台任务。首次生成或 restart=true 时仅生成分镜脚本，之后按当前素材状态逐阶段生成素材或视频；"
+        "素材齐备时需调用合成接口。restart=true 会删除原分镜和素材。"
+        "返回当前项目，不等待生成完成。"
+    ),
+    response_description="任务提交后的项目详情",
+)
 async def generate_project(
     project_id: int,
     restart: bool = False,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> Project:
-    """Start or resume the pipeline.
-
-    - First run / restart: script stage only, then pauses at SCRIPT_READY for review.
-    - Continue: one billing stage per click — assets → videos → compose（各自预扣）。
-    - restart=true: keep the previous work until a new storyboard is ready.
-    """
+    """需要登录，为本人分步创作项目提交后台任务。首次生成或 restart=true 时仅生成分镜脚本，之后按当前素材状态逐阶段生成素材或视频；素材齐备时需调用合成接口。restart=true 时旧稿保留到新分镜写好后才替换。返回当前项目，不等待生成完成。"""
     project = await _get_owned_project(db, project_id, user, lock=True)
+    _ensure_wizard_project(project)
     _ensure_project_idle(project, detail="生成进行中，请稍后")
 
+    # 重做不在这里删旧稿：新分镜可能失败，由流水线在新稿写好后替换。
     # Resume: clear error, keep existing shots/media (pipeline skips finished stages)
     project.error_msg = None
+    if not restart:
+        project.final_video_url = None
     shots = list(project.shots or [])
     phase = "script" if (restart or not shots) else resolve_kepu_billing_phase(project)
     if phase == "compose":
@@ -611,13 +747,20 @@ async def generate_project(
     return await _get_owned_project(db, project_id, user)
 
 
-@router.post("/projects/{project_id}/cancel", response_model=ProjectOut)
+@router.post(
+    "/projects/{project_id}/cancel",
+    response_model=ProjectOut,
+    summary="取消科普项目生成",
+    description="需要登录，仅对本人的生成中项目请求取消关联任务并标记取消状态。对话创作项目需在会话内停止；后台任务仍需完成协作取消。",
+    response_description="取消请求后的项目详情",
+)
 async def cancel_project(
     project_id: int,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> Project:
     project = await _get_owned_project(db, project_id, user)
+    _ensure_wizard_project(project)
     if not project.active_tasks:
         raise HTTPException(status_code=400, detail="当前没有可取消的生成任务")
 
@@ -629,13 +772,18 @@ async def cancel_project(
     return await _get_owned_project(db, project_id, user)
 
 
-@router.delete("/projects/{project_id}")
+@router.delete(
+    "/projects/{project_id}",
+    summary="删除科普短片项目",
+    description="需要登录，删除本人项目及其素材和已发布作品，生成中的项目会先请求取消。保留历史任务及消费记录，但解除其项目关联。",
+    response_description="删除结果与项目编号",
+)
 async def delete_project(
     project_id: int,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
-    """Delete a kepu project after detaching billing/task FK rows that block CASCADE."""
+    """需要登录，删除本人项目及其素材和已发布作品，生成中的项目会先请求取消。保留历史任务及消费记录，但解除其项目关联。"""
     project = await _get_owned_project(db, project_id, user)
     running = {
         ProjectStatus.SCRIPTING,
@@ -653,8 +801,9 @@ async def delete_project(
     await db.execute(
         update(UsageEvent).where(UsageEvent.project_id == project.id).values(project_id=None)
     )
+    # shot_id 同样外键到将被级联删除的分镜，不清掉会让整个删除失败。
     await db.execute(
-        update(TaskRun).where(TaskRun.project_id == project.id).values(project_id=None)
+        update(TaskRun).where(TaskRun.project_id == project.id).values(project_id=None, shot_id=None)
     )
 
     # Remove published work if any
@@ -663,13 +812,30 @@ async def delete_project(
     if work:
         await db.delete(work)
 
-    # 共享p目录可能仍被漫剧或历史引用使用；物理回收交保留期引用审计。
     await db.delete(project)
     await db.commit()
+    # 文件不可恢复：数据库删除成功后才清，失败时项目和素材都还在。
+    # 漫剧项目与科普项目共用 storage.project_dir(id) 命名空间：同号漫剧仍在时目录是共享的，
+    # 不能整目录删除，留给保留期引用审计（generated_media_gc）按引用回收。
+    from app.models_drama import DramaProject
+
+    if await db.get(DramaProject, project_id) is None:
+        await pipeline.delete_project_assets(project_id)
     return {"ok": True, "id": project_id}
 
 
-@router.get("/projects/{project_id}/events")
+@router.get(
+    "/projects/{project_id}/events",
+    summary="订阅科普项目进度",
+    description=(
+        "需要登录，通过 SSE 订阅本人项目的生成进度。"
+        "message 事件的 data 为进度 JSON；"
+        "约 15 秒无新进度时发送 ping，接收到 done 或 failed 后结束流。"
+    ),
+    response_description="text/event-stream 项目进度事件流",
+    response_class=EventSourceResponse,
+    responses={200: {"content": {"text/event-stream": {"schema": {'type': 'string'}}}}},
+)
 async def project_events(
     project_id: int,
     db: AsyncSession = Depends(get_db),
@@ -702,13 +868,19 @@ async def project_events(
     return EventSourceResponse(event_generator())
 
 
-@router.post("/projects/{project_id}/shots", response_model=ShotOut)
+@router.post(
+    "/projects/{project_id}/shots",
+    response_model=ShotOut,
+    summary="追加科普分镜",
+    description="需要登录，在本人项目片尾追加时长为 4 秒的空白分镜，更新项目素材阶段并使现有成片失效；整片任务执行中不能追加。",
+    response_description="新增的分镜详情",
+)
 async def create_shot(
     project_id: int,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> Shot:
-    """在片尾追加一镜空白分镜。"""
+    """需要登录，在本人项目片尾追加时长为 4 秒的空白分镜，更新项目素材阶段并使现有成片失效；整片任务执行中不能追加。"""
     project = await _get_owned_project(db, project_id, user, lock=True)
     _ensure_side_task_allowed(project)
     shots = sorted(project.shots, key=lambda s: s.shot_no)
@@ -744,35 +916,60 @@ async def create_shot(
     return shot
 
 
-@router.post("/projects/{project_id}/shots/reorder", response_model=ProjectOut)
+@router.post(
+    "/projects/{project_id}/shots/reorder",
+    response_model=ProjectOut,
+    summary="调整科普分镜顺序",
+    description="需要登录，按 shot_ids 的完整列表重新编号本人的项目分镜，并使现有成片失效；遗漏或包含其他分镜时返回 400。",
+    response_description="重新排序后的项目详情",
+)
 async def reorder_shots(
     project_id: int,
     body: ShotReorderIn,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> Project:
-    """按 shot_ids 重排镜号。"""
+    """需要登录，按 shot_ids 的完整列表重新编号本人的项目分镜，并使现有成片失效；遗漏或包含其他分镜时返回 400。"""
     project = await _get_owned_project(db, project_id, user, lock=True)
     _ensure_side_task_allowed(project)
     existing = {s.id: s for s in project.shots}
     if set(body.shot_ids) != set(existing.keys()):
         raise HTTPException(status_code=400, detail="镜头列表不完整")
+    order_changed = any(existing[sid].shot_no != i for i, sid in enumerate(body.shot_ids, start=1))
     for i, sid in enumerate(body.shot_ids, start=1):
         existing[sid].shot_no = i
+    # 整片旁白按旧顺序朗读，调序后必须重配；数字人逐段配音、内置口播的声音都跟着镜头走。
+    if (
+        order_changed
+        and (project.pipeline_mode or "full") != "avatar"
+        and not pipeline._kepu_seedance_native_audio(project)
+    ):
+        (storage.project_dir(project_id) / "full_narration.mp3").unlink(missing_ok=True)
+        for shot in project.shots:
+            shot.audio_url = None
     _demote_after_edit(project)
     await db.commit()
     return await _get_owned_project(db, project_id, user)
 
 
-@router.post("/projects/{project_id}/shots/{shot_id}/image", response_model=ProjectOut)
+@router.post(
+    "/projects/{project_id}/shots/{shot_id}/image",
+    response_model=ProjectOut,
+    summary="上传替换分镜画面",
+    description=(
+        "需要登录，为本人项目的指定分镜上传 JPG、PNG、WebP 或 GIF，文件最大 8 MB，校验图片文件头。"
+        "成功后替换画面、清除该镜头视频并使成片失效。"
+    ),
+    response_description="替换画面后的项目详情",
+)
 async def upload_shot_image(
     project_id: int,
     shot_id: int,
-    file: UploadFile = File(...),
+    file: UploadFile = File(..., description="分镜画面，支持 JPG、PNG、WebP、GIF，最大 8 MB"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> Project:
-    """上传替换本镜画面。"""
+    """需要登录，为本人项目的指定分镜上传 JPG、PNG、WebP 或 GIF，文件最大 8 MB，校验图片文件头。成功后替换画面、清除该镜头视频并使成片失效。"""
     content_type = (file.content_type or "").lower()
     allowed = {
         "image/jpeg": ".jpg",
@@ -808,6 +1005,8 @@ async def upload_shot_image(
     shot.image_ark_url = None
     shot.video_url = None
     shot.last_frame_url = None
+    shot.video_skip_reason = None  # 换了画面，隐私拦截结论失效
+    shot.avatar_job_id = None  # 旧画面提交的对口型任务不能再续接
     shot.status = ShotStatus.IMAGE_READY
     shot.version += 1
     _demote_after_edit(project)
@@ -815,7 +1014,16 @@ async def upload_shot_image(
     return await _get_owned_project(db, project_id, user)
 
 
-@router.patch("/projects/{project_id}/shots/{shot_id}", response_model=ShotOut)
+@router.patch(
+    "/projects/{project_id}/shots/{shot_id}",
+    response_model=ShotOut,
+    summary="修改科普分镜",
+    description=(
+        "需要登录，修改本人项目的分镜文案、提示词、时长等字段，规范化段落脚本并限制时长。"
+        "画面或视频参数变更会清除对应下游素材，旁白变更会作废项目配音，更新后需重新生成相关素材或合成。"
+    ),
+    response_description="更新后的分镜详情",
+)
 async def update_shot(
     project_id: int,
     shot_id: int,
@@ -827,12 +1035,14 @@ async def update_shot(
     from app.services.pipeline import clamp_shot_duration
 
     project = await _get_owned_project(db, project_id, user, for_undo=body.compliance_undo is not None or body.compliance_apply is not None, shot_id=shot_id, lock=True)
-    _ensure_side_task_allowed(project)
+    _ensure_wizard_project(project)
     shot = next((s for s in project.shots if s.id == shot_id), None)
     if not shot:
         raise HTTPException(status_code=404, detail="分镜不存在")
+    # 整片任务（含合成）在读旁白和音轨，改稿会让成片和稿子对不上。
+    _ensure_side_task_allowed(project)
     data = body.model_dump(exclude_unset=True)
-    # 用户手改只报告；撤销仅依据服务端原稿重建，沿用下方素材失效规则。
+    # 撤销仅依据服务端原稿重建；采纳建议按服务端记录替换，沿用下方素材失效规则。
     from app.services.compliance.changes import prepare_undo
     from app.services.compliance.suggestions import prepare_suggestion
 
@@ -847,16 +1057,28 @@ async def update_shot(
         })
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    # 带货/获客模板：用户手改的旁白与叠字同样自动替换广告法极限词（科普模板只在编辑页提示）；
+    # 撤销替换与采纳建议是用户明确选择，不再二次替换。
+    from app.services.compliance.ad_words import REPLACE
+    from app.services.compliance.content import is_ad_template, sanitize_shot_fields
+
+    if (not is_undo and not is_suggestion and project.template_id
+            and is_ad_template(await db.get(Template, project.template_id))):
+        text_keys = ("narration", "overlay_title", "overlay_subtitle", "segment_script", "highlights")
+        picked = {k: data[k] for k in text_keys if isinstance(data.get(k), str)}
+        if picked:
+            cleaned, _ = sanitize_shot_fields(picked, mode=REPLACE)
+            data.update(cleaned)
+    narration_edited = (
+        not is_undo and not is_suggestion
+        and data.get("narration") is not None
+        and str(data["narration"]).strip() != str(shot.narration or "").strip()
+    )
     # 仅提交旁白时也同步已有制作脚本，避免重生视频仍朗读旧稿。
-    if (not is_undo and not is_suggestion and "segment_script" not in data
-            and data.get("narration") is not None
-            and str(data["narration"]).strip() != str(shot.narration or "").strip()
-            and (shot.segment_script or "").strip()):
+    if narration_edited and "segment_script" not in data and (shot.segment_script or "").strip():
         data["segment_script"] = shot.segment_script
-    # 历史仅 video_prompt 承载旁白时同步该有效输入；没有旁白的旧空脚本保持原样。
-    if (not is_undo and not is_suggestion and not (data.get("segment_script", shot.segment_script) or "").strip()
-            and data.get("narration") is not None
-            and str(data["narration"]).strip() != str(shot.narration or "").strip()):
+    # 历史镜头只有 video_prompt 承载旁白时同步它；没有旁白的旧空脚本保持原样。
+    if narration_edited and not (data.get("segment_script", shot.segment_script) or "").strip():
         from app.services.seedance_segments import narration_from_script, replace_narration_in_script
 
         effective_prompt = data.get("video_prompt", shot.video_prompt) or ""
@@ -917,10 +1139,10 @@ async def update_shot(
         "img_prompt" in data
         and str(data["img_prompt"] or "").strip() != str(shot.img_prompt or "").strip()
     )
-    # 在覆盖旧字段前比较真实制作变化，内置口播也是视频输入。
-    from app.services.pipeline import _kepu_seedance_native_audio
+    # 在覆盖旧字段前比较真实制作变化；内置口播的声音也是视频输入。
+    from app.services import pipeline as pipeline_service
 
-    native_audio = _kepu_seedance_native_audio(project)
+    native_audio = pipeline_service._kepu_seedance_native_audio(project)
     visual_video_dirty = shot_video_content_changed(shot, data)
     video_dirty = shot_video_content_changed(shot, data, native_audio=native_audio) or (native_audio and audio_dirty)
     for k, v in data.items():
@@ -952,6 +1174,7 @@ async def update_shot(
     if audio_dirty and (project.pipeline_mode or "") != "avatar":
         full_narration = storage.project_dir(project_id) / "full_narration.mp3"
         full_narration.unlink(missing_ok=True)
+        # 内置口播下姊妹镜的音轨是各自的隐私备用音，与这次改稿无关。
         for sibling in ([shot] if native_audio else project.shots):
             sibling.audio_url = None
             sibling.tts_metadata = None
@@ -963,7 +1186,13 @@ async def update_shot(
     return shot
 
 
-@router.post("/projects/{project_id}/shots/{shot_id}/regen-image", response_model=ProjectOut)
+@router.post(
+    "/projects/{project_id}/shots/{shot_id}/regen-image",
+    response_model=ProjectOut,
+    summary="提交分镜画面重绘任务",
+    description="需要登录，为本人项目的指定分镜提交后台图片重绘任务。整片任务执行中不能提交；返回项目当前状态，不等待生成完成。",
+    response_description="任务提交后的项目详情",
+)
 async def regen_image(
     project_id: int,
     shot_id: int,
@@ -972,11 +1201,16 @@ async def regen_image(
 ) -> Project:
     project = await _get_owned_project(db, project_id, user)
     _ensure_side_task_allowed(project)
+    if (project.pipeline_mode or "full") == "avatar":
+        # 普通生图不带定妆照，会把数字人换成别的人。
+        raise HTTPException(status_code=400, detail="数字人请使用重画场景")
     shot = next((s for s in project.shots if s.id == shot_id), None)
     if not shot:
         raise HTTPException(status_code=404, detail="分镜不存在")
+    _ensure_shot_task_free(project, shot_id)
     project.status = ProjectStatus.IMAGING
     project.error_msg = None
+    # 状态和任务同事务提交：建任务失败（如余额不足）时一起回滚，项目不会卡在进行中。
     await _create_kepu_task(
         db,
         user,
@@ -987,7 +1221,13 @@ async def regen_image(
     return await _get_owned_project(db, project_id, user)
 
 
-@router.post("/projects/{project_id}/shots/{shot_id}/regen-video", response_model=ProjectOut)
+@router.post(
+    "/projects/{project_id}/shots/{shot_id}/regen-video",
+    response_model=ProjectOut,
+    summary="提交分镜视频重生成任务",
+    description="需要登录，为已有画面的分镜提交后台视频生成任务；图文模式不支持此操作，整片任务执行中不能提交。返回项目当前状态，不等待视频完成。",
+    response_description="任务提交后的项目详情",
+)
 async def regen_video(
     project_id: int,
     shot_id: int,
@@ -1002,8 +1242,10 @@ async def regen_video(
     if not shot or not (shot.image_url or shot.image_ark_url):
         detail = "请先上传数字人照片并完成配音" if (project.pipeline_mode or "") == "avatar" else "请先生成该镜画面"
         raise HTTPException(status_code=400, detail=detail)
+    _ensure_shot_task_free(project, shot_id)
     project.status = ProjectStatus.VIDEOING
     project.error_msg = None
+    # 状态和任务同事务提交：建任务失败（如余额不足）时一起回滚，项目不会卡在进行中。
     await _create_kepu_task(
         db,
         user,
@@ -1014,45 +1256,71 @@ async def regen_video(
     return await _get_owned_project(db, project_id, user)
 
 
-@router.post("/projects/{project_id}/shots/{shot_id}/regen-audio", response_model=ProjectOut)
+@router.post(
+    "/projects/{project_id}/shots/{shot_id}/regen-audio",
+    response_model=ProjectOut,
+    summary="提交分镜配音重生成任务",
+    description="需要登录，为本人项目的指定分镜提交后台配音任务。整片任务执行中不能提交；返回项目当前状态，不等待配音完成。",
+    response_description="任务提交后的项目详情",
+)
 async def regen_audio(
     project_id: int,
     shot_id: int,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
+    body: ShotRegenAudioIn | None = None,
 ) -> Project:
+    """提交配音任务；body.extra_shot_ids 只对数字人生效，同一任务内一并重做这些段。"""
     project = await _get_owned_project(db, project_id, user)
     _ensure_side_task_allowed(project)
+    # 建任务前拒绝：否则任务必败，会把已完成的项目打成失败。
+    if pipeline._kepu_seedance_native_audio(project):
+        raise HTTPException(status_code=400, detail="当前为视频内置配音，请重绘该镜视频以更新口播")
     shot = next((s for s in project.shots if s.id == shot_id), None)
     if not shot:
         raise HTTPException(status_code=404, detail="分镜不存在")
+    known_ids = {s.id for s in project.shots}
+    extra_shot_ids = list(dict.fromkeys(body.extra_shot_ids)) if body else []
+    if any(sid not in known_ids for sid in extra_shot_ids):
+        raise HTTPException(status_code=400, detail="镜头列表无效")
+    extra_shot_ids = [sid for sid in extra_shot_ids if sid != shot_id]
     project.status = ProjectStatus.AUDIOING
     project.error_msg = None
+    # 状态和任务同事务提交：建任务失败（如余额不足）时一起回滚，项目不会卡在进行中。
     await _create_kepu_task(
         db,
         user,
         project_id=project_id,
         shot_id=shot_id,
         task_type="shot_regen_audio",
+        payload={"extra_shot_ids": extra_shot_ids} if extra_shot_ids else None,
     )
     return await _get_owned_project(db, project_id, user)
 
 
-@router.post("/projects/{project_id}/regen-audio", response_model=ProjectOut)
+@router.post(
+    "/projects/{project_id}/regen-audio",
+    response_model=ProjectOut,
+    summary="提交整片配音重生成任务",
+    description="需要登录，为已有分镜且未在生成中的本人项目提交后台任务，按当前音色重新生成全部配音并重新合成成片。返回项目当前状态。",
+    response_description="任务提交后的项目详情",
+)
 async def regen_all_audio(
     project_id: int,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> Project:
-    """Re-TTS all shots with current voice_id, then recompose final video."""
+    """需要登录，为已有分镜且未在生成中的本人项目提交后台任务，按当前音色重新生成全部配音并重新合成成片。返回项目当前状态。"""
     project = await _get_owned_project(db, project_id, user)
-    _ensure_project_idle(project, detail="生成进行中，请稍后")
+    _ensure_wizard_project(project)
+    _ensure_project_idle(project)
     if not project.shots:
         raise HTTPException(status_code=400, detail="暂无分镜，请先生成")
     project.status = ProjectStatus.AUDIOING
     project.progress = 80
     project.error_msg = None
     project.final_video_url = None
+    # 状态和任务同事务提交：建任务失败（如余额不足）时一起回滚，项目不会卡在进行中。
     await _create_kepu_task(
         db,
         user,
@@ -1062,15 +1330,25 @@ async def regen_all_audio(
     return await _get_owned_project(db, project_id, user)
 
 
-@router.post("/projects/{project_id}/compose", response_model=ProjectOut)
+@router.post(
+    "/projects/{project_id}/compose",
+    response_model=ProjectOut,
+    summary="提交科普成片合成任务",
+    description=(
+        "需要登录，根据本人项目已有的图片、音频和视频素材提交后台合成任务；"
+        "至少存在分镜图片或镜头视频，且没有活动生成任务。"
+        "返回项目当前状态，不等待成片完成。"
+    ),
+    response_description="任务提交后的项目详情",
+)
 async def compose_only(
     project_id: int,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> Project:
-    """Recompose final video from existing images/audio/(videos)."""
+    """需要登录，根据本人项目已有的图片、音频和视频素材提交后台合成任务；至少存在分镜图片或镜头视频，且没有活动生成任务。返回项目当前状态，不等待成片完成。"""
     project = await _get_owned_project(db, project_id, user, lock=True)
-    _ensure_project_idle(project)
+    await _ensure_compose_allowed(db, user, project)
     if not project.shots or not (
         any(s.image_url for s in project.shots) or any(s.video_url for s in project.shots)
     ):
@@ -1078,6 +1356,7 @@ async def compose_only(
     project.status = ProjectStatus.COMPOSING
     project.progress = 90
     project.error_msg = None
+    # 状态和任务同事务提交：建任务失败（如余额不足）时一起回滚，项目不会卡在进行中。
     await _create_kepu_task(
         db,
         user,
@@ -1087,7 +1366,13 @@ async def compose_only(
     return await _get_owned_project(db, project_id, user)
 
 
-@router.post("/projects/{project_id}/publish", response_model=WorkOut)
+@router.post(
+    "/projects/{project_id}/publish",
+    response_model=WorkOut,
+    summary="发布科普成片",
+    description="需要登录，将本人已完成且具有成片地址的项目发布为作品；已发布时更新同一作品的标题、封面与视频地址。",
+    response_description="发布或更新后的作品",
+)
 async def publish_work(
     project_id: int,
     db: AsyncSession = Depends(get_db),
@@ -1116,7 +1401,13 @@ async def publish_work(
     return work
 
 
-@router.get("/works", response_model=list[WorkOut])
+@router.get(
+    "/works",
+    response_model=list[WorkOut],
+    summary="获取公开作品列表",
+    description="无需登录，按作品编号倒序返回最近 50 个公开作品。",
+    response_description="公开作品列表",
+)
 async def list_works(db: AsyncSession = Depends(get_db)) -> list[Work]:
     result = await db.execute(
         select(Work).where(Work.visibility == "public").order_by(Work.id.desc()).limit(50)
@@ -1124,7 +1415,12 @@ async def list_works(db: AsyncSession = Depends(get_db)) -> list[Work]:
     return list(result.scalars().all())
 
 
-@router.get("/quota")
+@router.get(
+    "/quota",
+    summary="获取当前用户额度",
+    description="需要登录，返回剩余额度、额度及计费开关、余额、冻结金额和计费倍率。金额提供分和元两种单位。",
+    response_description="当前额度与钱包状态",
+)
 async def quota(user: User = Depends(get_current_user)) -> dict:
     from app.config import get_settings
 

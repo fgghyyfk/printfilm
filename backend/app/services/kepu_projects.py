@@ -80,6 +80,7 @@ def _scope_filters(user_id: int, mode: str, keyword: str) -> list:
 def _list_item(project: Project, *, published: bool) -> ProjectListItem:
     status, progress, error_msg = project_runtime_view(project)
     return ProjectListItem(
+        creation_session_id=getattr(project, "creation_session_id", None),
         id=project.id,
         title=project.title,
         template_id=project.template_id,

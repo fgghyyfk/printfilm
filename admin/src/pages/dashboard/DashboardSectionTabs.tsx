@@ -12,7 +12,7 @@ const SECTIONS: {
 }[] = [
   { id: "overview", label: "经营概览", desc: "核心指标与趋势", icon: LayoutDashboard },
   { id: "usage", label: "用量分析", desc: "调用与分布", icon: BarChart3 },
-  { id: "finance", label: "财务账单", desc: "充值与成本", icon: Wallet },
+  { id: "finance", label: "财务账单", desc: "充值与扣费", icon: Wallet },
   { id: "projects", label: "项目运维", desc: "生产与快捷入口", icon: Clapperboard },
 ];
 

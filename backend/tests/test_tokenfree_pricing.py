@@ -1,12 +1,10 @@
-"""TokenFree 官方价目解析、推荐名单与预估。"""
+"""TokenFree 官方价目解析与计费预估。"""
 
 from __future__ import annotations
 
 from app.config import get_settings
 from app.services.tokenfree_pricing import (
     OfficialRate,
-    RECOMMENDED_MODELS,
-    build_official_rate_rows,
     charge_fen_official_image,
     charge_fen_official_llm,
     charge_fen_official_video,
@@ -181,27 +179,6 @@ def test_openai_protocol_channel_sync_heals_minimax_h3_to_video() -> None:
         set_cached_rates(None)
 
 
-def test_recommended_models_cover_text_image_video_audio() -> None:
-    """短名单覆盖文字/图/视频/语音；图含 Seedream + GPT Image，语音仅 Qwen TTS。"""
-    caps = {row["capability"] for row in RECOMMENDED_MODELS}
-    assert caps == {"text", "image", "video", "audio"}
-    ids = {row["id"] for row in RECOMMENDED_MODELS}
-    assert {
-        "kimi-k2.6",
-        "seedream-5.0-pro",
-        "gpt-image-2",
-        "gpt-image-2.5",
-        "seedance-2.5",
-        "seedance-2.0",
-        "MiniMax-H3",
-        "qwen-tts-2025-05-22",
-    } <= ids
-    assert "gemini-3.1-flash-tts" not in ids
-    assert "elevenlabs-tts" not in ids
-    assert any(row["recommended"] and row["id"] == "kimi-k2.6" for row in RECOMMENDED_MODELS)
-    assert any(row["recommended"] and row["id"] == "seedream-5.0-pro" for row in RECOMMENDED_MODELS)
-
-
 def test_charge_official_image_uses_per_call() -> None:
     """有官方按张价时，Seedream 走价目而非 Kie 积分档。"""
     settings = get_settings()
@@ -234,7 +211,7 @@ def test_charge_official_image_uses_per_call() -> None:
 def test_charge_official_image_seedream_falls_back_without_rate() -> None:
     """Seedream 无价目时用 Kie 2K 档保守保底。"""
     settings = get_settings()
-    settings.billing_markup = 1.5
+    settings.billing_markup = 1.0
     settings.billing_usd_cny = 7.0
     set_cached_rates(None)
     assert charge_fen_official_image(settings, model="seedream-5-0-pro") == 35
@@ -252,7 +229,7 @@ def test_resolve_billing_image_size_compact_forces_1k() -> None:
 def test_charge_official_image_falls_back_without_cache() -> None:
     """无价目缓存时按 2K sunburst 积分档保底，不再退回 8 元/百万 token。"""
     settings = get_settings()
-    settings.billing_markup = 1.5
+    settings.billing_markup = 1.0
     settings.billing_usd_cny = 7.0
     settings.billing_seedream_per_m = 8.0
     settings.billing_est_seedream_tokens = 45_000
@@ -407,25 +384,6 @@ def test_charge_official_llm_uses_in_out_split() -> None:
         set_cached_rates(None)
 
 
-def test_build_official_rate_rows_marks_video_vendor() -> None:
-    """费率表视频行标 vendor_sec，结算参考含多清晰度。"""
-    settings = get_settings()
-    settings.billing_usd_cny = 7.0
-    settings.billing_markup = 1.5
-    rates = parse_pricing_payload(_sample_payload(), settings)
-    rows = build_official_rate_rows(rates, settings)
-    by_id = {row["id"]: row for row in rows}
-    assert "gpt-image-2" in by_id
-    assert "gpt-image-2.5" in by_id
-    assert by_id["seedream-5.0-pro"]["capability"] == "image"
-    assert by_id["seedance-2.5"]["basis"] == "vendor_sec"
-    assert "结算参考" in by_id["seedance-2.5"]["rate_label"]
-    assert "1080p" in by_id["seedance-2.5"]["rate_label"]
-    assert "火山" not in by_id["seedance-2.5"]["rate_label"]
-    assert "720p" in by_id["seedance-2.0"]["rate_label"]
-    assert "seedance-2.0-mini" not in by_id
-
-
 def test_parse_pricing_item_skips_bad_row() -> None:
     """脏字段跳过，不让整包价目作废。"""
     from app.services.tokenfree_pricing import parse_pricing_item
@@ -464,3 +422,15 @@ def test_canonicalize_keeps_unknown_seedance_id() -> None:
     from app.services.tokenfree_pricing import canonicalize_channel_model_id
 
     assert canonicalize_channel_model_id("seedance-1.5") == "seedance-1.5"
+
+
+def test_user_charge_applies_markup_and_rounds_up() -> None:
+    """按成本扣费时乘加价倍率（1.06 即上浮 6%），向上取整到分；倍率低于 1 按 1 处理。"""
+    from types import SimpleNamespace
+    from app.services.billing.pricing import user_charge_fen
+
+    assert user_charge_fen(100, SimpleNamespace(billing_markup=1.06)) == 106
+    assert user_charge_fen(1, SimpleNamespace(billing_markup=1.06)) == 2
+    assert user_charge_fen(50, SimpleNamespace(billing_markup=1.0)) == 50
+    assert user_charge_fen(50, SimpleNamespace(billing_markup=0.5)) == 50
+    assert user_charge_fen(0, SimpleNamespace(billing_markup=1.06)) == 0

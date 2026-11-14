@@ -55,8 +55,9 @@ async def test_save_keeps_server_media_and_runtime_params(db_session, client_par
     assert saved.video == 'https://server/new.mp4'
     assert saved.cover == 'https://server/new.jpg'
     assert {key: saved.params[key] for key in server} == server
-    assert saved.params['other_setting'] == 1
-    assert saved.params['user_setting'] == client_params.get('user_setting', 'old')
+    # 用户设置以提交内容为准（整体替换，可删除设置项；合并后采用线上语义）。
+    assert 'other_setting' not in saved.params
+    assert saved.params.get('user_setting') == client_params.get('user_setting')
     assert out.revision == 1
 
 

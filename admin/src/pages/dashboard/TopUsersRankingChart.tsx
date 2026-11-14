@@ -8,7 +8,6 @@ export function topUsersToBuckets(users: AdminTopUser[]): AdminUsageBucket[] {
     key: String(user.user_id),
     calls: user.calls,
     charge_fen: user.charge_fen,
-    cost_fen: user.cost_fen ?? 0,
   }));
 }
 

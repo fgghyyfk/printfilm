@@ -32,7 +32,6 @@ from app.services import storage
 from app.services.style_lock import (
     build_locked_image_prompt,
     merge_negative,
-    seedream_ref_urls,
     strip_lock_blocks,
     template_allow_source_names,
     template_consistency_mode,
@@ -43,8 +42,10 @@ from app.services.kepu_continuity import (
     image_refs_for_shot,
     persist_last_frame_from_video,
     previous_usable_shot,
+    video_image_ref,
     video_extra_refs_for_shot,
 )
+from app.services.kepu_image_references import project_image_references
 from app.services.voices import resolve_speaker
 from app.services import seedance_segments as segplan
 from app.services.bgm import clip_shot_bgm, resolve_bgm_path
@@ -103,6 +104,7 @@ async def _record_seedream_usage(
     image_result,
     model: str,
     shot_id: int | None = None,
+    delivered: bool = True,
 ) -> None:
     try:
         from app.services.drama.billing_util import record_seedream_image_usage
@@ -117,6 +119,7 @@ async def _record_seedream_usage(
                 model=model,
                 domain="kepu",
                 image_result=image_result,
+                delivered=delivered,
                 project_id=project_id,
                 shot_id=shot_id,
             )
@@ -133,6 +136,7 @@ async def _record_seedance_usage(
     task_result,
     fallback_duration_sec: float,
     shot_id: int | None = None,
+    delivered: bool = True,
 ) -> None:
     try:
         from app.services.drama.billing_util import record_seedance_video_usage
@@ -141,9 +145,8 @@ async def _record_seedance_usage(
             project = await db.get(Project, project_id)
             if not project:
                 return
-            res = str(getattr(get_settings(), "ark_video_resolution", "") or "480p")
-            if str(getattr(project, "resolution_mode", "") or "") == "hd" and res.strip().lower() == "480p":
-                res = "720p"
+            from app.services.seedance_resolutions import project_video_resolution
+            res = project_video_resolution(project)
             await record_seedance_video_usage(
                 db,
                 user_id=project.user_id,
@@ -151,6 +154,7 @@ async def _record_seedance_usage(
                 model=model,
                 domain="kepu",
                 task_result=task_result,
+                delivered=delivered,
                 fallback_duration_sec=fallback_duration_sec,
                 resolution=res,
                 provider_task_id=getattr(task_result, "provider_task_id", None),
@@ -205,13 +209,18 @@ def is_cancelled(project_id: int) -> bool:
     return bool(key and key[0] == project_id and key in _cancelled)
 
 
+def clear_pipeline_cancellation(project_id: int) -> None:
+    """Only explicit resume paths clear a previous user-cancellation marker."""
+    _cancelled.discard(project_id)
+
+
 def _is_image_text(project: Project) -> bool:
-    return (project.pipeline_mode or "full") == "image_text"
+    return (getattr(project, "pipeline_mode", None) or "full") == "image_text"
 
 
 def _is_avatar(project: Project) -> bool:
     """数字人口播模式（素材/视频阶段见 kepu_avatar.py）。"""
-    return (project.pipeline_mode or "full") == "avatar"
+    return (getattr(project, "pipeline_mode", None) or "full") == "avatar"
 
 
 async def _project_is_avatar(project_id: int) -> bool:
@@ -453,8 +462,9 @@ async def run_pipeline(project_id: int, *, phase: str | None = None, restart: bo
                         .options(selectinload(Project.shots))
                     )
                 ).scalar_one_or_none()
-            requested = normalize_kepu_pipeline_phase(phase, project)
+            requested = "script" if restart else normalize_kepu_pipeline_phase(phase, project)
 
+        # 重做时旧分镜还在，必须显式走写稿阶段。
         if restart or not skip_script:
             if requested and requested not in {"script", "produce"}:
                 raise RuntimeError(
@@ -471,6 +481,14 @@ async def run_pipeline(project_id: int, *, phase: str | None = None, restart: bo
                     "message": "分镜已生成，请确认修改后手动继续",
                 },
             )
+            return
+
+        if requested == "script":
+            # 文字任务直接执行时也不能因已有分镜而落入媒体生成分支。
+            await publish_progress(project_id, {
+                "event": "paused", "stage": "SCRIPT_READY", "percent": 15,
+                "message": "分镜脚本已就绪，请确认后继续生成素材",
+            })
             return
 
         logger.info(
@@ -629,9 +647,18 @@ async def run_pipeline(project_id: int, *, phase: str | None = None, restart: bo
             raise
         # 落项目态、推 SSE 后必须 re-raise：本函数由任务平台 executor 驱动，
         # 吞掉会让 TaskRun 误判 succeeded 扣费，并破坏 asyncio 任务取消语义。
-        logger.info("pipeline cancelled project=%s", project_id)
         async with AsyncSessionLocal() as db:
             project = await db.get(Project, project_id)
+            requested = (
+                isinstance(exc, PipelineCancelled)
+                or is_cancelled(project_id)
+                or (project is not None and project.status == ProjectStatus.CANCELLED)
+            )
+            if not requested:
+                # 服务中断后调度器会重排同一任务，保留成功素材及可恢复状态。
+                logger.info("pipeline interrupted; preserving resume state project=%s", project_id)
+                raise
+            logger.info("pipeline cancelled project=%s", project_id)
             if project and project.status != ProjectStatus.DONE:
                 project.status = ProjectStatus.CANCELLED
                 project.error_msg = "用户取消"
@@ -668,7 +695,7 @@ async def run_pipeline(project_id: int, *, phase: str | None = None, restart: bo
                     "code": "CANCELLED",
                 },
             )
-            return
+            raise PipelineCancelled(f"project {project_id} cancelled") from exc
         logger.exception("pipeline failed project=%s", project_id)
         from app.services.public_errors import public_error
 
@@ -697,6 +724,14 @@ async def run_pipeline(project_id: int, *, phase: str | None = None, restart: bo
         raise
 
 
+async def delete_project_assets(project_id: int) -> None:
+    """删除项目的全部本地媒体目录（含不可猜的新目录与历史 p{id} 目录）。"""
+    import shutil
+
+    for pdir in storage.existing_project_dirs(project_id):
+        shutil.rmtree(pdir, ignore_errors=True)
+
+
 async def _final_url(project_id: int) -> str | None:
     async with AsyncSessionLocal() as db:
         project = await db.get(Project, project_id)
@@ -716,12 +751,60 @@ async def _set_status(project_id: int, status: str, progress: int, stage: str) -
     await publish_progress(project_id, {"event": "progress", "stage": stage, "percent": progress})
 
 
+async def _old_shot_media(project_id: int) -> set[str]:
+    """记下旧分镜引用的媒体，等新稿写好后再清理。"""
+    async with AsyncSessionLocal() as db:
+        project = (await db.execute(
+            select(Project).where(Project.id == project_id).options(selectinload(Project.shots))
+        )).scalar_one_or_none()
+        if project is None:
+            return set()
+        return {
+            url for shot in project.shots
+            for url in (shot.image_url, shot.video_url, shot.last_frame_url, shot.audio_url) if url
+        }
+
+
+async def _remove_replaced_media(project_id: int, old_urls: set[str]) -> None:
+    """新稿已提交后清掉旧分镜独有的文件；封面和数字人照片等上传文件不在其中。"""
+    async with AsyncSessionLocal() as db:
+        project = (await db.execute(
+            select(Project).where(Project.id == project_id).options(selectinload(Project.shots))
+            .execution_options(populate_existing=True)
+        )).scalar_one_or_none()
+        kept = {
+            url for shot in (project.shots if project else [])
+            for url in (shot.image_url, shot.video_url, shot.last_frame_url, shot.audio_url) if url
+        } | {project.avatar_image_url if project else None}
+    for url in old_urls - kept:
+        path = storage.local_path_from_url(url)
+        if path is not None:
+            path.unlink(missing_ok=True)
+    # 整片音轨只按文件是否存在判断可用，留着会把旧稿配音当成新稿的。
+    (storage.project_dir(project_id) / "full_narration.mp3").unlink(missing_ok=True)
+
+
 async def _script_stage(project_id: int) -> None:
+    """写分镜；有旧稿时（重做）等新稿提交后才清旧文件，失败则旧稿原样保留。"""
+    old_urls = await _old_shot_media(project_id)
+    await _write_storyboard(project_id)
+    if old_urls:
+        await _remove_replaced_media(project_id, old_urls)
+
+
+async def _write_storyboard(project_id: int) -> None:
     await _set_status(project_id, ProjectStatus.SCRIPTING, 5, "SCRIPTING")
     # 商品带货：按关联套图写口播、建分镜（画面复用套图底图，不走通用拆镜与出图）
-    from app.services.daihuo.service import build_daihuo_shots, project_has_ecom_set
+    from app.models_ecom import EcomJobVideo
+    from app.services.daihuo.service import build_daihuo_shots
 
-    if await project_has_ecom_set(project_id):
+    # 套图或批量出图来源都走带货分支；沿用流水线会话，便于离线替身隔离。
+    async with AsyncSessionLocal() as db:
+        linked = await db.get(Project, project_id)
+        has_ecom_set = bool(linked and (
+            getattr(linked, "ecom_set_id", None) or await db.get(EcomJobVideo, project_id)
+        ))
+    if has_ecom_set:
         await build_daihuo_shots(project_id)
         await publish_progress(project_id, {"event": "progress", "stage": "SCRIPT_READY", "percent": 15})
         return
@@ -764,6 +847,11 @@ async def _script_stage(project_id: int) -> None:
 
         style = _effective_style(project)
         extra = _effective_extra(project)
+        if image_text:
+            target = int(getattr(project, "target_duration_sec", 60) or 60)
+            extra = f"{extra}\n成片目标约 {target} 秒。每镜一个清晰画面，按旁白节奏分配镜头。".strip()
+            if project.source_type == "script":
+                extra += "严格保留用户已生成文案的全部旁白，只拆分镜头，不增加或删改旁白。"
         char_hint = _effective_character_prompt(project)
         consist = template_consistency_mode(tpl)
         plans_result = await ark.chat_storyboard(
@@ -900,6 +988,9 @@ def _effective_extra(project: Project) -> str:
 
 
 def _image_size_for(project: Project) -> str | None:
+    explicit = str(getattr(project, "image_resolution", "") or "").strip().upper()
+    if explicit:
+        return explicit
     ratio = _project_output_ratio(project)
     return _IMAGE_SIZE_BY_RATIO.get(ratio)
 
@@ -911,14 +1002,6 @@ def _project_image_negative(project: Project) -> str:
         image_text=_is_image_text(project),
         photoreal=template_is_photoreal(tpl),
     )
-
-
-def _project_base_refs(project: Project) -> list[str]:
-    tpl = project.template
-    refs = list((tpl.seedream_config or {}).get("ref_images") or []) if tpl else []
-    if project.ref_image_url:
-        refs = [project.ref_image_url, *refs]
-    return seedream_ref_urls(*refs)
 
 
 def _locked_shot_prompt(project: Project, img_prompt: str) -> str:
@@ -993,7 +1076,6 @@ async def _parallel_image_and_audio(project_id: int) -> None:
         photoreal = template_is_photoreal(tpl)
         consist = template_consistency_mode(tpl)
         lock_character = consist == "character"
-        base_refs = _project_base_refs(project)
         image_size = _image_size_for(project)
         negative = _project_image_negative(project)
         voice = _project_voice(project)
@@ -1004,11 +1086,18 @@ async def _parallel_image_and_audio(project_id: int) -> None:
     if not shot_meta:
         return
 
+    # 同步发布参考图可能等待 OSS，必须释放数据库连接后执行。
+    base_refs, style_refs = (
+        await asyncio.to_thread(project_image_references, project)
+        if any(not meta["has_image"] for meta in shot_meta) else ([], [])
+    )
+
     img_sem = asyncio.Semaphore(max(1, min(cfg.pipeline_image_concurrency, cfg.tokenfree_image_concurrency)))
     done_img = 0
     progress_lock = asyncio.Lock()
     # 静图成片仍走外部 TTS；full + Seedance 内置口播则跳过
-    need_audio = (not _kepu_seedance_native_audio(project)) and (
+    native_audio = _kepu_seedance_native_audio(project)
+    need_audio = (not native_audio) and (
         not all(getattr(s, "audio_url", None) for s in shot_rows) or not _continuous_audio_ok(project_id)
     )
 
@@ -1028,7 +1117,8 @@ async def _parallel_image_and_audio(project_id: int) -> None:
                         project.status = ProjectStatus.IMAGING
                         await db.commit()
             msg = f"出图 {done_img}/{total}" + (
-                " · 整片配音生成中…" if need_audio else " · 配音已就绪"
+                " · 整片配音生成中…" if need_audio else
+                " · 声音将在视频阶段生成" if native_audio else " · 配音已就绪"
             )
             await publish_progress(
                 project_id,
@@ -1056,6 +1146,11 @@ async def _parallel_image_and_audio(project_id: int) -> None:
                     )
                 elif not shot.video_url:
                     shot.status = ShotStatus.IMAGE_READY
+                from app.services.media_models.runtime import current_snapshot
+                if (current_snapshot.get() or {}).get("mode") == "fixed_media":
+                    from app.services.drama.billing_util import record_seedream_image_usage
+                    await record_seedream_image_usage(db, user_id=project.user_id, model=image_model or get_settings().model_image,
+                        domain="kepu", image_result=img, project_id=project_id, shot_id=shot.id)
                 await db.commit()
         await bump_images(meta["shot_no"])
 
@@ -1084,15 +1179,13 @@ async def _parallel_image_and_audio(project_id: int) -> None:
                 size=image_size,
                 model=image_model,
                 aspect_ratio=output_ratio or None,
+                style_ref_urls=style_refs or None,
             )
-        s = get_settings()
-        await _record_seedream_usage(
-            project_id,
-            image_result=img,
-            model=s.model_image,
-            shot_id=meta["id"],
-        )
         await persist_image(meta, img)
+        from app.services.media_models.runtime import current_snapshot
+        if (current_snapshot.get() or {}).get("mode") != "fixed_media":
+            await _record_seedream_usage(project_id, image_result=img,
+                model=image_model or get_settings().model_image, shot_id=meta["id"])
         return SimpleNamespace(image_ark_url=img.remote_url, image_url=img.local_url)
 
     async def run_images() -> None:
@@ -1116,7 +1209,7 @@ async def _parallel_image_and_audio(project_id: int) -> None:
                 )
                 await bump_images(meta["shot_no"])
                 continue
-            refs = image_refs_for_shot(prev_proxy, base_refs)
+            refs = await asyncio.to_thread(image_refs_for_shot, prev_proxy, base_refs)
             proxy = await one_image(meta, refs)
             if proxy:
                 prev_proxy = proxy
@@ -1200,7 +1293,7 @@ async def _parallel_image_and_audio(project_id: int) -> None:
             "stage": "ASSETS_READY",
             "percent": 70 if image_text else 50,
             "message": (
-                "分镜图与整片配音已完成"
+                "分镜图已完成，下一步生成视频与声音" if native_audio else "分镜图与整片配音已完成"
             ),
         },
     )
@@ -1227,6 +1320,7 @@ async def _parallel_videos(project_id: int) -> None:
             .options(selectinload(Project.shots), selectinload(Project.template))
         )
         project = result.scalar_one()
+        project_user_id = int(project.user_id)
         tpl = project.template
         # 科普 full：默认 Seedance 内置口播；回退模式才 ambient_only + 后期 TTS
         generate_audio = _kepu_seedance_generate_audio(project)
@@ -1236,9 +1330,8 @@ async def _parallel_videos(project_id: int) -> None:
             tpl.seedance_config.get("character_consistency", True)
         )
         motion = str(tpl.seedance_config.get("motion_bias", ""))
-        resolution = cfg.ark_video_resolution
-        if project.resolution_mode == "hd" and resolution == "480p":
-            resolution = "720p"
+        from app.services.seedance_resolutions import project_video_resolution
+        resolution = project_video_resolution(project, cfg)
         ratio = _project_output_ratio(project) or cfg.ark_video_ratio
         shot_meta = [
             {
@@ -1248,7 +1341,7 @@ async def _parallel_videos(project_id: int) -> None:
                 "video_prompt": s.video_prompt,
                 "segment_script": getattr(s, "segment_script", "") or s.video_prompt or "",
                 "camera": s.camera,
-                "image_ref": s.image_ark_url or s.image_url or "",
+                "image_ref": video_image_ref(s),
                 "image_ark_url": s.image_ark_url,
                 "image_url": s.image_url,
                 "last_frame_url": getattr(s, "last_frame_url", None),
@@ -1399,15 +1492,6 @@ async def _parallel_videos(project_id: int) -> None:
         s = get_settings()
         dur = max(float(dur), 2.0)
         billing_key = "seedance2:video0" if generate_audio else "seedance2:video1"
-        await _record_seedance_usage(
-            project_id,
-            billing_key=billing_key,
-            model=s.model_video,
-            task_result=task_result,
-            fallback_duration_sec=dur,
-            shot_id=meta["id"],
-        )
-        await finish_shot_video(meta["id"])
         async with _db_write_lock():
             async with AsyncSessionLocal() as db:
                 shot = await db.get(Shot, meta["id"])
@@ -1416,7 +1500,26 @@ async def _parallel_videos(project_id: int) -> None:
                 shot.video_url = local_video
                 shot.last_frame_url = last
                 shot.status = ShotStatus.VIDEO_READY
+                from app.services.media_models.runtime import current_snapshot
+                if (current_snapshot.get() or {}).get("mode") == "fixed_media":
+                    from app.services.drama.billing_util import record_seedance_video_usage
+                    await record_seedance_video_usage(db, user_id=project_user_id, billing_key=billing_key,
+                        model=video_model or get_settings().model_video, domain="kepu", task_result=task_result,
+                        fallback_duration_sec=dur, resolution=resolution, provider_task_id=task_result.provider_task_id,
+                        project_id=project_id, shot_id=shot.id)
                 await db.commit()
+        from app.services.media_models.runtime import current_snapshot
+        if (current_snapshot.get() or {}).get("mode") != "fixed_media":
+            await _record_seedance_usage(
+                project_id,
+                billing_key=billing_key,
+                model=s.model_video,
+                task_result=task_result,
+                fallback_duration_sec=dur,
+                shot_id=meta["id"],
+            )
+        # 用量已落账后才标记本镜视频任务完成，供中断恢复判断。
+        await finish_shot_video(meta["id"])
         done += 1
         pct = 55 + int(30 * done / max(total, 1))
         async with _db_write_lock():
@@ -1466,6 +1569,8 @@ async def _parallel_videos(project_id: int) -> None:
 
 
 async def _compose_stage(project_id: int) -> None:
+    # 已取消的项目不能再为隐私镜补配音（付费 TTS），先查取消再补。
+    await _ensure_not_cancelled(project_id)
     # 历史隐私镜也必须有本镜旁白，不能拿共享整片音轨误配到单镜。
     async with AsyncSessionLocal() as db:
         privacy_ids = (await db.execute(select(Shot.id).where(Shot.project_id == project_id, Shot.video_skip_reason == "privacy"))).scalars().all()
@@ -1547,6 +1652,18 @@ async def _compose_stage(project_id: int) -> None:
             full_audio = _full_narration_path(project_id)
             if not full_audio.exists():
                 full_audio = None
+
+        if mode == "image_text":
+            if not media or any(item.image_path is None for item in media):
+                raise RuntimeError("分镜图片尚未齐备，请重试素材生成")
+            if full_audio is not None:
+                if not _continuous_audio_ok(project_id):
+                    raise RuntimeError("整片配音不可用，请重新生成配音")
+            elif any(
+                item.audio_path is None or is_near_silent_audio(item.audio_path)
+                for item in media
+            ):
+                raise RuntimeError("配音尚未齐备，请重新生成配音")
 
         sub_cfg = _merge_subtitle_preset(
             (project.template.subtitle_config if project.template else None) or {},
@@ -1690,14 +1807,18 @@ async def regen_shot_image(project_id: int, shot_id: int) -> None:
         shot = next((s for s in project.shots if s.id == shot_id), None)
         if not shot:
             raise ValueError("shot not found")
-        # 生成前先备好参考，避免长等待占着同一条 DB 连接
+        # 先读齐元数据；参考图发布与模型请求都在数据库连接释放后进行。
         shot_no = shot.shot_no
-        ref_urls = image_refs_for_shot(previous_usable_shot(list(project.shots), shot_no), _project_base_refs(project))
+        shot_rows = list(project.shots)
         negative = _project_image_negative(project)
         prompt = _locked_shot_prompt(project, shot.img_prompt)
         image_size = _image_size_for(project)
         image_model = (getattr(project, "image_model", None) or "").strip()
         aspect_ratio = _project_output_ratio(project) or None
+    base_refs, style_refs = await asyncio.to_thread(project_image_references, project)
+    ref_urls = await asyncio.to_thread(
+        lambda: image_refs_for_shot(previous_usable_shot(shot_rows, shot_no), base_refs)
+    )
     img = await ark.gen_image(
         prompt,
         negative,
@@ -1707,6 +1828,7 @@ async def regen_shot_image(project_id: int, shot_id: int) -> None:
         size=image_size,
         model=image_model,
         aspect_ratio=aspect_ratio,
+        style_ref_urls=style_refs or None,
     )
     cancelled = False
     async with AsyncSessionLocal() as db:
@@ -1731,8 +1853,9 @@ async def regen_shot_image(project_id: int, shot_id: int) -> None:
     await _record_seedream_usage(
         project_id,
         image_result=img,
-        model=s.model_image,
+        model=image_model or s.model_image,
         shot_id=shot_id,
+        delivered=not cancelled,
     )
     if cancelled:
         raise PipelineCancelled(f"project {project_id} cancelled during regen image")
@@ -1767,9 +1890,8 @@ async def regen_shot_video(project_id: int, shot_id: int) -> None:
         consistency = template_consistency_mode(project.template) == "character" and bool(
             project.template.seedance_config.get("character_consistency", True)
         )
-        resolution = cfg.ark_video_resolution
-        if project.resolution_mode == "hd" and resolution == "480p":
-            resolution = "720p"
+        from app.services.seedance_resolutions import project_video_resolution
+        resolution = project_video_resolution(project, cfg)
         script = (getattr(shot, "segment_script", "") or shot.video_prompt or "").strip()
         prompt = _kepu_video_prompt(
             script,
@@ -1786,7 +1908,7 @@ async def regen_shot_video(project_id: int, shot_id: int) -> None:
             hi=cfg.seedance_duration_max,
         )
         shot_no = shot.shot_no
-        image_ref = shot.image_ark_url or shot.image_url or ""
+        image_ref = video_image_ref(shot)
         extra_refs = video_extra_refs_for_shot(previous_usable_shot(list(project.shots), shot_no))
         video_model = (getattr(project, "video_model", None) or "").strip()
         ratio = _project_output_ratio(project) or cfg.ark_video_ratio
@@ -1832,6 +1954,7 @@ async def regen_shot_video(project_id: int, shot_id: int) -> None:
         task_result=task_result,
         fallback_duration_sec=max(float(dur), 2.0),
         shot_id=shot_id,
+        delivered=not cancelled,
     )
     await finish_shot_video(shot_id)
     if cancelled:
@@ -1839,12 +1962,15 @@ async def regen_shot_video(project_id: int, shot_id: int) -> None:
 
 
 @storage.without_intermediate_oss
-async def regen_shot_audio(project_id: int, shot_id: int) -> None:
-    """Re-TTS uses continuous full-film narration (editing one shot re-voices the whole track)."""
+async def regen_shot_audio(project_id: int, shot_id: int, *, extra_shot_ids: list[int] | None = None) -> None:
+    """Re-TTS uses continuous full-film narration (editing one shot re-voices the whole track).
+
+    extra_shot_ids：数字人批量重配音时一并重做的段；整片配音本来就覆盖全部镜头，无需使用。
+    """
     if await _project_is_avatar(project_id):
         from app.services.kepu_avatar import regen_segment_audio
 
-        await regen_segment_audio(project_id, shot_id)
+        await regen_segment_audio(project_id, shot_id, extra_shot_ids=extra_shot_ids)
         return
     async with AsyncSessionLocal() as db:
         result = await db.execute(

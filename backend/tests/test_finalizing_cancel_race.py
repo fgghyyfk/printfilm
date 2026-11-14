@@ -37,9 +37,11 @@ def _task_ns(payload: object, *, status: str = "cancel_requested") -> SimpleName
     """构造 _mark_cancelled 所需的最小任务对象（steps 为空，避免懒加载）。"""
     return SimpleNamespace(
         id=11,
+        domain="drama",
+        task_type="fragment_video",
+        episode_id=None,
         payload=payload,
         result_payload={},
-        task_type="local_test",
         provider_task_id=None,
         status=status,
         steps=[],

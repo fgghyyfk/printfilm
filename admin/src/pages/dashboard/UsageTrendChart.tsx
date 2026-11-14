@@ -17,13 +17,11 @@ type UsageTrendChartProps = {
 };
 
 function metricLabel(metric: DashboardMetric): string {
-  if (metric === "cost") return "上游成本";
   if (metric === "calls") return "调用次数";
   return "扣费金额";
 }
 
 function readMetric(row: AdminDailyUsage, metric: DashboardMetric): number {
-  if (metric === "cost") return row.cost_fen ?? 0;
   if (metric === "calls") return row.calls;
   return row.charge_fen;
 }

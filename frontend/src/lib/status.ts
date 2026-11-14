@@ -1,6 +1,14 @@
 import { translate as translateUi } from '../i18n/runtime'
 import { getActiveLocale } from '../i18n/detect'
 import { messages } from '../i18n/messages'
+import { IMAGE_TEXT_STEPS, imageTextBoardStep } from './imageTextStoryboard'
+import { kepuBillingPhase } from './kepuShotActions'
+import type { KepuBillingPhase } from './kepuShotActions'
+
+/** 线上新增文案的中英文切换（未进 i18n 词表的少量句子） */
+function localeText(zh: string, en: string): string {
+  return getActiveLocale() === 'en' ? en : zh
+}
 
 export const RUNNING = new Set([
   'SCRIPTING',
@@ -174,6 +182,15 @@ type TaskLike = {
   cancel_requested?: boolean | null
 }
 
+/** 项目是否有进行中的工作：有任务平台数据时以 active_tasks 为准；无任务的运行状态视为失败残留，可重试。 */
+export function isProjectBusy(project: { status: string; active_tasks?: TaskLike[] | null } | null): boolean {
+  if (!project) return false
+  const activeStatuses = ['pending', 'leased', 'running', 'awaiting_poll', 'awaiting_review', 'cancel_requested']
+  if (project.active_tasks?.some((task) => activeStatuses.includes(task.status))) return true
+  if (Array.isArray(project.active_tasks) && project.active_tasks.length === 0) return false
+  return isRunning(project.status)
+}
+
 /** 整片流水线 / 合成 / 整片配音进行中 */
 export function isProjectWideBusy(project: {
   status?: string
@@ -213,8 +230,8 @@ export const KEPU_STEPS = [
   { key: 'topic', get label() { return translateUi("workflow.topic") } },
   { key: 'style', get label() { return translateUi("ecomSet.form.style") } },
   { key: 'confirm', get label() { return translateUi("workflow.confirmStoryboard") } },
-  { key: 'assets', get label() { return translateUi("workflow.imagesAndVoiceover") } },
-  { key: 'videos', get label() { return translateUi("workflow.videoClips") } },
+  { key: 'assets', get label() { return localeText('参考图画面', 'Reference images') } },
+  { key: 'videos', get label() { return localeText('镜头视频', 'Shot videos') } },
   { key: 'compose', get label() { return translateUi("workflow.composeAndPreview") } },
 ]
 
@@ -231,7 +248,7 @@ export function pipelineModeLabel(mode?: string | null) {
 /** 静图成片跳过「镜头视频」步；数字人口播改两步的名称 */
 export function kepuSteps(pipelineMode?: string | null) {
   if (pipelineMode === 'image_text') {
-    return KEPU_STEPS.filter((s) => s.key !== 'videos')
+    return IMAGE_TEXT_STEPS
   }
   if (pipelineMode === 'avatar') {
     return KEPU_STEPS.map((s) =>
@@ -243,24 +260,8 @@ export function kepuSteps(pipelineMode?: string | null) {
 
 export type KepuWizardPage = 'create' | 'style' | 'board'
 
-export type KepuBillingPhase = 'script' | 'assets' | 'videos' | 'compose'
-
-/** 与后端 resolve_kepu_billing_phase 对齐（前端不做近静音文件检测）。 */
-export function kepuBillingPhase(project: {
-  pipeline_mode?: string | null
-  shots?: Array<{ image_url?: string | null; audio_url?: string | null; video_url?: string | null }>
-}): KepuBillingPhase {
-  const shots = project.shots || []
-  if (!shots.length) return 'script'
-  const full = project.pipeline_mode !== 'image_text'
-  // 数字人：每段都要有自己的配音（视频内置口播只在 AI 视频模式）
-  const separateAudio = !full || project.pipeline_mode === 'avatar'
-  const needImages = shots.some((s) => !s.image_url)
-  const needAudio = separateAudio && shots.some((s) => !s.audio_url)
-  if (needImages || needAudio) return 'assets'
-  if (full && shots.some((s) => !s.video_url)) return 'videos'
-  return 'compose'
-}
+export { kepuBillingPhase }
+export type { KepuBillingPhase }
 
 export function shotsByNo<T extends { shot_no: number }>(shots: T[] | null | undefined): T[] {
   return [...(shots || [])].sort((a, b) => a.shot_no - b.shot_no)
@@ -278,6 +279,10 @@ export function kepuStepIndex(
     shots?: Array<{ image_url?: string | null; audio_url?: string | null; video_url?: string | null }>
   } | null,
 ): number {
+  if (project?.pipeline_mode === 'image_text') {
+    if (page === 'create' || page === 'style') return 0
+    return imageTextBoardStep(project)
+  }
   const steps = kepuSteps(project?.pipeline_mode)
   const idx = (key: string) => {
     const n = steps.findIndex((s) => s.key === key)
@@ -308,6 +313,13 @@ export function kepuPhaseHint(project: {
   pipeline_mode?: string | null
   shots?: Array<{ image_url?: string | null; audio_url?: string | null; video_url?: string | null }>
 }): string {
+  if (project.pipeline_mode === 'image_text') {
+    if (isRunning(effectiveStatus(project))) return localeText('当前步骤正在制作，完成后可查看结果并继续下一步。', 'This step is in progress. Check the result and continue when it finishes.')
+    const phase = kepuBillingPhase(project)
+    if (phase === 'script') return localeText('保存文案后生成分镜，确认每张卡片里的旁白和画面。', 'Save the copy to generate storyboards, then confirm the narration and visual on each card.')
+    if (phase === 'assets') return localeText('确认分镜后生成图片与配音；已完成的素材会继续保留。', 'After confirming storyboards, generate images and voiceover; finished assets are kept.')
+    return localeText('图片与配音已齐，可以试听后合成带运镜和字幕的成片。', 'Images and voiceover are ready. Preview them, then compose a film with camera motion and subtitles.')
+  }
   if (isRunning(effectiveStatus(project))) {
     return translateUi("workflow.generationIsRunningSeeStageProgressOnTheRight")
   }
@@ -319,7 +331,7 @@ export function kepuPhaseHint(project: {
     return translateUi("workflow.talkingHeadClipsAreReadyCompositionAddsTitleBars")
   }
   if (phase === 'script') return translateUi("workflow.chooseGenerateStoryboardsOnTheStylePageThisStage")
-  if (phase === 'assets') return translateUi("workflow.reviewNarrationAndVisualsThenGenerateImagesInShot")
-  if (phase === 'videos') return translateUi("workflow.imagesAndNarrationAreReadyNextGenerateVideoClips")
-  return translateUi("workflow.assetsAreReadyComposeTheVideoWithNarrationSubtitles")
+  if (phase === 'assets') return localeText('确认分镜后，使用画风参考图逐镜生成图片，并参考前镜画面保持角色与风格一致。', 'After confirming the storyboard, generate each shot image from the style reference, using the previous shot to keep characters and style consistent.')
+  if (phase === 'videos') return localeText('图片已齐。使用每镜图片生成视频与声音，后镜参考上一镜尾帧延续画面。', 'Images are ready. Generate video and sound from each shot image; later shots continue from the previous last frame.')
+  return localeText('镜头视频已齐。检查各镜头画面与声音后，即可合成成片。', 'Shot videos are ready. Check each shot\'s picture and sound, then compose the film.')
 }

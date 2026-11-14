@@ -1,5 +1,7 @@
 import { translate as translateMessage } from '../../i18n/runtime'
 import { applyComplianceSuggestion } from '../../lib/complianceChanges'
+import { useTeamReadOnly } from '../../features/teams/readOnlyContext'
+import { TeamEpisodeEditingBoundary } from '../../features/teams/TeamEditingBoundary'
 /** 分集编辑：复刻原项目四栏布局（资产 / 脚本 / 预览 / 故事板） */
 import { MyTasksButton } from '../../components/MyTasks'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -47,7 +49,6 @@ import {
   collectDramaGenerateGateIssues,
   formatDramaGateMessage,
 } from '../../lib/dramaEpisodeScriptValidate'
-import { isMinimaxH3Model } from '../../lib/dramaMediaModelMeta'
 import { DRAMA_VOICE_BINDING_ENABLED } from '../../lib/dramaVoiceBinding'
 import BillingErrorNotice from '../../components/billing/BillingErrorNotice'
 import ComplianceNotice from '../../components/compliance/ComplianceNotice'
@@ -65,7 +66,7 @@ import { FragmentPlanSkillModal } from '../../components/drama/FragmentPlanSkill
 import { DramaGenTaskDetail } from '../../components/drama/DramaGenTaskDetail'
 import { CircleAlert } from 'lucide-react'
 import { useDramaImageGenQueue } from '../../hooks/useDramaImageGenQueue'
-import { useMediaModelsCatalog } from '../../hooks/useMediaModelsCatalog'
+import { resolveCatalogModelSelection, useMediaModelsCatalog } from '../../hooks/useMediaModelsCatalog'
 import { enqueueDramaImageGen } from '../../lib/dramaImageGenQueue'
 import { defaultOptionsForAssetKind } from '../../lib/dramaGenerationOptions'
 import { dramaAssetImageGenButtonLabel } from '../../lib/dramaAssetImage'
@@ -85,7 +86,7 @@ import {
   applySubtitleModeToFragments,
   subtitleModeUsesModelOutput,
   type DramaSubtitleMode,
-} from '../../lib/dramaSubtitleBoard'
+} from '../../lib/dramaSubtitleSettings'
 import {
   applyCharacterIntroModeToFragments,
   characterIntroModeEnabled,
@@ -99,7 +100,7 @@ import {
   CharacterVoiceBindModal,
   readAssetVoiceBinding,
 } from './CharacterVoiceBindModal'
-import { DramaAssetDetailModal } from './DramaAssetDetailModal'
+import { EditableAssetDetailDialog } from '../../components/assets/EditableAssetDetailDialog'
 import { buildEpisodeDirItems, DramaEpisodeDir } from './DramaEpisodeDir'
 import RequireAuth from './RequireAuth'
 import './drama.css'
@@ -107,7 +108,7 @@ import './drama.css'
 export default function EpisodeEditPage() {
   return (
     <RequireAuth>
-      <EpisodeEditInner />
+      <TeamEpisodeEditingBoundary><EpisodeEditInner /></TeamEpisodeEditingBoundary>
     </RequireAuth>
   )
 }
@@ -141,6 +142,7 @@ function coerceProjectBool(value: unknown, defaultValue: boolean): boolean {
 
 // 分集编辑页主体
 function EpisodeEditInner() {
+  const readOnly = useTeamReadOnly()
   const { projectId, episodeId } = useParams()
   const pid = Number(projectId)
   const eid = Number(episodeId)
@@ -186,6 +188,7 @@ function EpisodeEditInner() {
   const [planModalOpen, setPlanModalOpen] = useState(false)
   const [previewVersionId, setPreviewVersionId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [planning, setPlanning] = useState(false)
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
   const [characterVoiceBusyIds, setCharacterVoiceBusyIds] = useState<Set<number>>(() => new Set())
@@ -240,9 +243,7 @@ function EpisodeEditInner() {
   useEffect(() => {
     // 目录到达后，把旧 Kie/方舟 id 换成后台默认视频模型
     if (!mediaCatalog) return
-    const ids = mediaCatalog.video_models.map((m) => m.id)
-    if (!ids.length) return
-    setModelId((prev) => (ids.includes(prev) ? prev : mediaCatalog.defaults.video_model || ids[0]))
+    setModelId(previous => resolveCatalogModelSelection(mediaCatalog, 'video', previous))
   }, [mediaCatalog])
 
   const selected = fragments[selectedIndex] || null
@@ -295,10 +296,10 @@ function EpisodeEditInner() {
   const previewVideoUrl = previewVersion ? resolveDramaMediaUrl(previewVersion.video) : null
   const previewPosterUrl = previewVersion?.cover ? resolveDramaMediaUrl(previewVersion.cover) : null
   // generateAllLocked 仅提交入队时锁定，生成过程不阻塞编辑
-  const generateAllLocked = busy
+  const generateAllLocked = readOnly || busy
   // planFragmentsLocked 仅本集有视频生成或 AI 分镜进行中时锁定
   const planFragmentsLocked =
-    busy || anyFragmentGenerating || readFragmentPlanStatus(episode) === 'generating'
+    readOnly || busy || anyFragmentGenerating || readFragmentPlanStatus(episode) === 'generating'
   const selectedRefIds = useMemo(
     () => new Set(collectFragmentAssetIds(selected)),
     [selected],
@@ -369,6 +370,7 @@ function EpisodeEditInner() {
 
   // selectedGenerateLocked 锁当前镜「生成」：忙/生成中/衔接/缺参考图等硬门禁
   const selectedGenerateLocked =
+    readOnly ||
     busy ||
     selectedIsGenerating ||
     Boolean(continuityBlockedReason) ||
@@ -376,6 +378,7 @@ function EpisodeEditInner() {
 
   // 持久化镜间衔接开关到项目 params，并让后端重排未开始任务
   async function handleLinkLastFrameChange(enabled: boolean) {
+    if (readOnly) return
     const prevEnabled = linkLastFrame
     const prevParams = projectParams
     const nextParams = { ...projectParams, linkLastFrame: enabled }
@@ -416,6 +419,7 @@ function EpisodeEditInner() {
     nextParams: Record<string, unknown>,
     opts?: { quiet?: boolean },
   ) {
+    if (readOnly) return
     const prevRatio = readEpisodeAspectRatio(episodeParams, projectParams)
     const prevRes = readEpisodeResolution(episodeParams, projectParams)
     const nextRatio = readEpisodeAspectRatio(nextParams, projectParams)
@@ -483,6 +487,7 @@ function EpisodeEditInner() {
 
   // 设置与创作输入共享同一 epoch；等待设置时不提交旧的分镜快照。
   async function saveContentSetting(nextParams: Record<string, unknown>, transform: (rows: DramaFragment[]) => DramaFragment[], message: string) {
+    if (readOnly) return
     const editor = autosave
     const prevParams = episodeParamsRef.current
     const prevRows = editor.rows()
@@ -525,6 +530,7 @@ function EpisodeEditInner() {
   }
 
   async function handleEpisodeSubtitleChange(mode: DramaSubtitleMode) {
+    if (readOnly) return
     if (mode === subtitleMode) return
     await saveContentSetting({ ...episodeParamsRef.current, subtitleMode: mode, subtitleEnabled: subtitleModeUsesModelOutput(mode) },
       (rows) => applySubtitleModeToFragments(rows, mode),
@@ -532,6 +538,7 @@ function EpisodeEditInner() {
   }
 
   async function handleEpisodeCharacterIntroChange(mode: DramaCharacterIntroMode) {
+    if (readOnly) return
     if (mode === characterIntroMode) return
     await saveContentSetting({ ...episodeParamsRef.current, characterIntroMode: mode, characterIntroEnabled: characterIntroModeEnabled(mode) },
       (rows) => applyCharacterIntroModeToFragments(rows, mode),
@@ -629,11 +636,14 @@ function EpisodeEditInner() {
 
   // 进页检查是否有进行中的生成任务或 AI 分镜
   async function resumeGenerateIfNeeded() {
+    let resumingPlan = false
     try {
       const ep = await dramaApi.getEpisode(eid)
       if (!autosave.isActive()) return
       if (readFragmentPlanStatus(ep) === 'generating') {
         const planEpoch = autosave.epoch()
+        resumingPlan = true
+        setPlanning(true)
         setBusy(true)
         setStatus(translateUi("workflow.waitingForGeneration"))
         const started = Date.now()
@@ -652,6 +662,9 @@ function EpisodeEditInner() {
             rememberVideoBaselines(cur.fragments || [], true)
             autosave.load(cur)
             setEpisode(cur)
+            const nextParams = (cur.params as Record<string, unknown>) || {}
+            setEpisodeParams(nextParams)
+            episodeParamsRef.current = nextParams
             setSelectedIndex(0)
             setStatus(translateUi("workflow.storyboardCompleteClips", { v1: String((cur.fragments || []).length) }))
             setBusy(false)
@@ -673,6 +686,8 @@ function EpisodeEditInner() {
       if (st.running > 0) ensureEpisodeVideoStatusPoll()
     } catch {
       /* ignore */
+    } finally {
+      if (resumingPlan) { setPlanning(false); setBusy(false) }
     }
   }
 
@@ -763,6 +778,7 @@ function EpisodeEditInner() {
 
   // 更新当前分镜
   function updateSelected(patch: Partial<DramaFragment>) {
+    if (readOnly) return
     editFragments((prev) =>
       prev.map((f, i) => (i === selectedIndex ? { ...f, ...patch } : f)),
     )
@@ -786,6 +802,7 @@ function EpisodeEditInner() {
 
   // 插入空白分镜
   function insertFrag(at: number) {
+    if (readOnly) return
     editFragments((prev) => {
       const next = [...prev]
       next.splice(at, 0, {
@@ -806,6 +823,7 @@ function EpisodeEditInner() {
 
   // 复制分镜
   function duplicateFrag(index: number) {
+    if (readOnly) return
     const source = fragments[index]
     if (!source) return
     editFragments((prev) => {
@@ -821,6 +839,7 @@ function EpisodeEditInner() {
 
   // 删除分镜
   function deleteFrag(index: number) {
+    if (readOnly) return
     if (fragments.length <= 1) return
     editFragments((prev) => prev.filter((_, i) => i !== index))
     setSelectedIndex((cur) => {
@@ -832,6 +851,7 @@ function EpisodeEditInner() {
 
   // 手动保存、自动保存、生成和导航都等待同一份最新稿（包括在途新增的 B）。
   async function save() {
+    if (readOnly) throw new Error('当前只读，无法保存分镜')
     const editor = autosave
     setError('')
     try {
@@ -878,6 +898,7 @@ function EpisodeEditInner() {
 
   // 仅生成当前选中分镜（保存按 id 更新，生成前仍用保存后返回的 id）
   async function generateSelected() {
+    if (readOnly) return
     if (!selected) {
       setError(translateUi("workflow.selectAStoryboardShotFirst"))
       return
@@ -983,6 +1004,7 @@ function EpisodeEditInner() {
 
   // 切换历史成片为当前预览视频
   async function activateVideoVersion(versionId: string) {
+    if (readOnly) return
     if (!selected?.id || selectedIsGenerating) return
     const ok = await dialog.confirm({
       title: translateUi("workflow.switchVideoVersion"),
@@ -1031,6 +1053,7 @@ function EpisodeEditInner() {
 
   // 批量生成：入队本集分镜（forceRegen 覆盖已有成片；入口仅 MiniMax-H3）
   async function generateAll(opts?: { forceRegen?: boolean; skipConfirm?: boolean }) {
+    if (readOnly) return
     if (fragments.length === 0) {
       setError(translateUi("workflow.noStoryboardShotsAvailableToGenerate"))
       return
@@ -1156,6 +1179,7 @@ function EpisodeEditInner() {
 
   // 单集 LLM 重新分镜：确认并勾选 Skill 后入队
   function planFragmentsWithLlm() {
+    if (readOnly) return
     if (planFragmentsLocked) {
       setError(translateUi("workflow.waitForActiveVideoJobsToFinishBeforeReplanning"))
       return
@@ -1163,10 +1187,12 @@ function EpisodeEditInner() {
     setPlanModalOpen(true)
   }
 
-  // 入队后轮询至完成（字幕方式沿用顶栏当前设置）
+  // 文字 LLM 立即执行，页面轮询规划进度（字幕方式沿用顶栏当前设置）。
   async function startPlanFragments(skillIds: number[]) {
+    if (readOnly) return
     setPlanModalOpen(false)
     setBusy(true)
+    setPlanning(true)
     setError('')
     setStatus(translateUi("workflow.waitingForGeneration"))
     try {
@@ -1222,11 +1248,15 @@ function EpisodeEditInner() {
       if (!autosave.isActive()) return
       setError(err instanceof Error ? err.message : translateUi("workflow.aiStoryboardPlanningFailed"))
       setBusy(false)
+    } finally {
+      setPlanning(false)
+      setBusy(false)
     }
   }
 
   // 点击资产插入 @ 引用
   function mentionAsset(asset: DramaAsset) {
+    if (readOnly) return
     if (!selected) return
     const mention = `@asset:${asset.id}`
     const raw = selected.content || ''
@@ -1254,6 +1284,7 @@ function EpisodeEditInner() {
 
   // 自定义新建角色 / 场景 / 道具
   async function handleCreateSideAsset() {
+    if (readOnly) return
     const kind = resolveCreateAssetTab()
     const label = kind === 'scene' ? translateUi("workflow.scene") : kind === 'prop' ? translateUi("workflow.prop") : translateUi("workflow.character")
     const name = await dialog.prompt({
@@ -1284,6 +1315,7 @@ function EpisodeEditInner() {
 
   // 从全局资产库导入到本项目并挂到当前分镜
   async function handleImportSideAsset(source: DramaAsset) {
+    if (readOnly) return
     const kind = normalizeAssetTab(source.type) || resolveCreateAssetTab()
     setAssetCreateBusy(true)
     setError('')
@@ -1302,6 +1334,7 @@ function EpisodeEditInner() {
 
   // 仅取消当前分镜对该资产的关联（不删除项目资产）
   function unlinkSelectedAsset(assetId: number) {
+    if (readOnly) return
     if (!selected) return
     const content = (selected.content || '')
       .replace(new RegExp(`\\s*@asset:${assetId}(?!\\d)`, 'g'), ' ')
@@ -1368,6 +1401,7 @@ function EpisodeEditInner() {
 
   // 将资产生图加入全局队列
   function enqueueAssetImage(asset: DramaAsset) {
+    if (readOnly) return
     if (imageBusyIds.has(asset.id)) return
     const options = {
       ...defaultOptionsForAssetKind(asset.type),
@@ -1411,6 +1445,7 @@ function EpisodeEditInner() {
 
   // 一键 AI 生成角色音色并绑定（各角色独立 busy，互不阻塞）
   async function handleGenerateCharacterVoice(asset: DramaAsset) {
+    if (readOnly) return
     if (characterVoiceBusyIds.has(asset.id)) return
     setCharacterVoiceBusyIds((prev) => new Set(prev).add(asset.id))
     setError('')
@@ -1459,6 +1494,13 @@ function EpisodeEditInner() {
         </div>
         <div className="drama-ep-header-controls">
           <MyTasksButton />
+          <button
+            type="button"
+            className="drama-ep-btn-ghost"
+            onClick={() => void openEpisodeStoryboard()}
+          >
+            进入画布
+          </button>
           <EpisodeEditHeaderControls
             styleId={videoStyleId}
             modelId={modelId}
@@ -1473,7 +1515,7 @@ function EpisodeEditInner() {
             onLinkLastFrameChange={(enabled) => void handleLinkLastFrameChange(enabled)}
             onSubtitleModeChange={(mode) => void handleEpisodeSubtitleChange(mode)}
             onCharacterIntroModeChange={(mode) => void handleEpisodeCharacterIntroChange(mode)}
-            disabled={busy}
+            disabled={readOnly || busy}
             globalSettingsReadOnly
           />
           <button
@@ -1482,25 +1524,21 @@ function EpisodeEditInner() {
             disabled={planFragmentsLocked}
             onClick={() => void planFragmentsWithLlm()}
           >
-            {busy && (status.includes(translateUi("workflow.storyboard")) || status.includes(translateUi("workflow.waitingForGeneration_436346")))
-              ? translateUi("workflow.waitingForGeneration")
+            {planning
+              ? 'AI 分镜中…'
               : translateUi("workflow.replanStoryboardsWithAi")}
           </button>
-          {/* MiniMax-H3 支持一次入队本集剩余分镜；其它视频模型仍只走单镜生成 */}
-          {isMinimaxH3Model(modelId) ? (
-            <>
-            <label><input type="checkbox" checked={includeUpdatedImages} disabled={busy}
-              onChange={(event) => setIncludeUpdatedImages(event.target.checked)} />{translateUi("workflow.includeShotsWithUpdatedImages")}</label>
-            <button
-              type="button"
-              className="drama-ep-btn-dark drama-ep-header-gen-all"
-              disabled={generateAllLocked || fragments.length === 0}
-              onClick={() => void generateAll()}
-            >
-              {busy ? translateUi("workflow.queuing") : translateUi("ecomSet.steps.2")}
-            </button>
-            </>
-          ) : null}
+          {/* 线上已对所有视频模型开放批量生成；保留本地「含已更新参考图的镜头」选项 */}
+          <label><input type="checkbox" checked={includeUpdatedImages} disabled={readOnly || busy}
+            onChange={(event) => setIncludeUpdatedImages(event.target.checked)} />{translateUi("workflow.includeShotsWithUpdatedImages")}</label>
+          <button
+            type="button"
+            className="drama-ep-btn-dark drama-ep-header-gen-all"
+            disabled={generateAllLocked || fragments.length === 0}
+            onClick={() => void generateAll()}
+          >
+            {busy && !planning ? translateUi("workflow.queuing") : translateUi("ecomSet.steps.2")}
+          </button>
         </div>
       </header>
 
@@ -1520,6 +1558,7 @@ function EpisodeEditInner() {
         />
         <div className="drama-ep-workspace">
         <EpisodeEditAssetPanel
+          readOnly={readOnly}
           scope={assetScope}
           tab={assetTab}
           assets={filteredAssets}
@@ -1547,6 +1586,7 @@ function EpisodeEditInner() {
           <div className="drama-ep-editor-head">
             <div>
               <strong>{formatFragLabel(selectedIndex, selectedDuration)}</strong>
+              <MediaCostNotice modelId={modelId} resolution={readEpisodeResolution(episodeParams, projectParams)} seconds={selectedDuration} />
               <p>
                 {translateUi("workflow.referencesAppearAboveTypeToAddAnAssetOr", { v1: ' ', v2: formatProjectOutputLabel(
                   readEpisodeAspectRatio(episodeParams, projectParams),
@@ -1557,10 +1597,10 @@ function EpisodeEditInner() {
               {translateUi("workflow.duration")}
               <input
                 type="number"
-                min={4}
-                max={15}
+                min={mediaCatalog?.video_models.find(item => item.id === modelId)?.duration_min ?? 4}
+                max={mediaCatalog?.video_models.find(item => item.id === modelId)?.duration_max ?? 30}
                 value={selectedDuration}
-                disabled={!editing && !selected}
+                disabled={readOnly || (!editing && !selected)}
                 onChange={(e) =>
                   updateSelected({ duration_sec: Number(e.target.value) || 8 })
                 }
@@ -1579,7 +1619,7 @@ function EpisodeEditInner() {
               content={selected?.content || ''}
               assets={assets}
               referencedIds={referencedIds}
-              editing={editing}
+              editing={editing && !readOnly}
               onOpenAsset={focusLinkedAsset}
               onContentChange={(nextContent) => {
                 const fromContent = extractAssetIds(nextContent)
@@ -1653,7 +1693,7 @@ function EpisodeEditInner() {
                 <button
                   type="button"
                   className="drama-ep-btn-ghost"
-                  disabled={busy}
+                  disabled={readOnly || busy}
                   onClick={() => { void save().then(() => { if (autosave.isActive()) setEditing(false) }).catch(() => undefined) }}
                 >
                   {translateUi("workflow.finishEditing")}
@@ -1661,7 +1701,7 @@ function EpisodeEditInner() {
                 <button
                   type="button"
                   className="drama-ep-btn-dark"
-                  disabled={busy}
+                  disabled={readOnly || busy}
                   onClick={() => void save().catch(() => undefined)}
                 >
                   {busy ? translateUi("workflow.saving") : translateUi("workflow.save")}
@@ -1672,7 +1712,7 @@ function EpisodeEditInner() {
                 <button
                   type="button"
                   className="drama-ep-btn-ghost"
-                  disabled={!selected || selectedIsGenerating || busy}
+                  disabled={readOnly || !selected || selectedIsGenerating || busy}
                   onClick={() => setEditing(true)}
                 >
                   {translateUi("workflow.edit")}
@@ -1757,8 +1797,8 @@ function EpisodeEditInner() {
           onPlayingFragmentChange={handlePlayingFragmentChange}
           aspectRatio={aspectRatio}
           episodeId={episode?.id}
+          projectId={projectId}
           episodeName={episode?.name || translateUi("workflow.thisEpisode")}
-          subtitleMode={subtitleMode}
           onOpenStoryboard={openEpisodeStoryboard}
           previewVideoUrl={previewVideoUrl}
           previewPosterUrl={previewPosterUrl}
@@ -1772,7 +1812,7 @@ function EpisodeEditInner() {
           }
           onClearPreview={() => setPreviewVersionId(null)}
           onActivatePreview={
-            previewVersionId
+            previewVersionId && !readOnly
               ? () => {
                   void activateVideoVersion(previewVersionId)
                 }
@@ -1786,7 +1826,7 @@ function EpisodeEditInner() {
         <ComplianceNotice
           fetchReport={() => getEpisodeCompliance(eid)}
           refreshKey={complianceKey}
-          applyDisabled={busy || saveState.conflict}
+          applyDisabled={readOnly || busy || saveState.conflict}
           onApply={async (item, hit) => {
             const current = autosave.rows().find((row) => row.id === item.fragment_id)
             if (!current) throw new Error(translateUi("workflow.theTextHasChangedRunTheCheckAgainBefore"))
@@ -1807,6 +1847,7 @@ function EpisodeEditInner() {
             type="button"
             className="drama-ep-insert"
             aria-label={translateUi("workflow.insertStoryboardShotAtTheStart")}
+            disabled={readOnly}
             onClick={() => insertFrag(0)}
           >
             +
@@ -1899,16 +1940,16 @@ function EpisodeEditInner() {
                 ) : null}
               </div>
               <div className="drama-ep-clip-ops">
-                <button type="button" aria-label={translateUi("workflow.insert")} onClick={() => insertFrag(index + 1)} disabled={busy}>
+                <button type="button" aria-label={translateUi("workflow.insert")} onClick={() => insertFrag(index + 1)} disabled={readOnly || busy}>
                   +
                 </button>
-                <button type="button" aria-label={translateUi("workflow.duplicate")} onClick={() => duplicateFrag(index)} disabled={busy}>
+                <button type="button" aria-label={translateUi("workflow.duplicate")} onClick={() => duplicateFrag(index)} disabled={readOnly || busy}>
                   ⧉
                 </button>
                 <button
                   type="button"
                   aria-label={translateUi("workflow.delete")}
-                  disabled={busy || fragments.length <= 1}
+                  disabled={readOnly || busy || fragments.length <= 1}
                   onClick={() => deleteFrag(index)}
                 >
                   ⌫
@@ -1921,15 +1962,16 @@ function EpisodeEditInner() {
       </footer>
 
       <FragmentPlanSkillModal
-        open={planModalOpen}
+        open={planModalOpen && !readOnly}
         message={translateUi("workflow.aiWillReplanThisEpisodeSStoryboardReplacingExisting")}
         onCancel={() => setPlanModalOpen(false)}
         onConfirm={(skillIds) => void startPlanFragments(skillIds)}
       />
 
       {detailAsset && (detailAsset.type || '').toLowerCase() !== 'voice' ? (
-        <DramaAssetDetailModal
+        <EditableAssetDetailDialog
           asset={detailAsset}
+          readOnly={readOnly}
           open
           busy={imageBusyIds.has(detailAsset.id)}
           genLabel={assetImageGenLabel(detailAsset)}
@@ -1941,7 +1983,7 @@ function EpisodeEditInner() {
         />
       ) : null}
 
-      {DRAMA_VOICE_BINDING_ENABLED && voiceBindAsset ? (
+      {!readOnly && DRAMA_VOICE_BINDING_ENABLED && voiceBindAsset ? (
         <CharacterVoiceBindModal
           asset={voiceBindAsset}
           projectId={pid}
@@ -1956,7 +1998,7 @@ function EpisodeEditInner() {
       ) : null}
 
       <GlobalAssetPickerModal
-        open={libraryPickerOpen}
+        open={libraryPickerOpen && !readOnly}
         onClose={() => setLibraryPickerOpen(false)}
         projectId={pid}
         defaultTab={resolveCreateAssetTab()}
@@ -1978,3 +2020,4 @@ function EpisodeEditInner() {
     </div>
   )
 }
+import { MediaCostNotice } from '../../components/billing/MediaCostNotice'

@@ -46,6 +46,7 @@ export type AdminModelSettings = {
   avatar_poll_timeout: number;
   avatar_segment_max_sec: number;
   avatar_price_fen_per_sec: number;
+  avatar_price_fen_per_sec_720p: number;
   avatar_ai_base_url: string;
   avatar_ai_api_key: string;
   has_avatar_ai_api_key: boolean;
@@ -55,6 +56,17 @@ export type AdminModelSettings = {
   volc_tts_base_url: string;
   volc_tts_api_key: string;
   has_volc_tts_api_key: boolean;
+  /** 生图改走 OpenAI（可选） */
+  openai_image_enabled: boolean;
+  openai_image_api_key: string;
+  has_openai_image_api_key: boolean;
+  openai_image_model: string;
+  openai_image_quality: string;
+  openai_image_scope: string;
+  /** 生图渠道：openai 官方 | promptoll 自有网关 */
+  openai_image_provider: string;
+  promptoll_api_key: string;
+  has_promptoll_api_key: boolean;
   volc_tts_resource_id: string;
   volc_tts_speech_rate: number;
   volc_tts_instruction: string;
@@ -111,12 +123,6 @@ export type AdminModelSettings = {
   new_user_quota: number;
   billing_user_alert_enabled: boolean;
   billing_user_alert_interval_fen: number;
-  billing_admin_cost_alert_enabled: boolean;
-  billing_admin_cost_alert_threshold_fen: number;
-  billing_admin_cost_alert_emails: string;
-  billing_admin_cost_alert_period: string;
-  billing_admin_cost_alert_last_period_key: string;
-  billing_admin_cost_alert_last_level: number;
   smtp_enabled: boolean;
   smtp_host: string;
   smtp_port: number;
@@ -128,6 +134,7 @@ export type AdminModelSettings = {
   public_base_url: string;
   ffmpeg_path: string;
   ffprobe_path: string;
+  marketplace_enabled: boolean;
   /** 自定义广告法禁用词（逗号/顿号/空白分隔，命中即删除） */
   ad_banned_extra: string;
   /** 视觉理解模型 ID（电商套图看商品图） */
@@ -173,6 +180,7 @@ export type AdminLogicalModel = {
   id: string;
   name: string;
   capability: "text" | "image" | "video" | "audio";
+  strategy_id?: string | null;
   enabled: boolean;
   bindings: AdminLogicalModelBinding[];
 };
@@ -188,6 +196,7 @@ export type AdminRoutingSettings = {
   system_channels: AdminRoutingChannel[];
   logical_models: AdminLogicalModel[];
   default_models: AdminDefaultModels;
+  media_reference_limits: Record<string, { images: number; videos: number; audios: number }>;
   validation_errors: string[];
   updated_at?: string | null;
 };

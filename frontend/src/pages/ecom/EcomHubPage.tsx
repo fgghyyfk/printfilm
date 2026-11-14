@@ -8,7 +8,7 @@ import { ECOM_GROUPS, ECOM_PATHS } from '../../lib/ecomHub'
 /** 电商工作台登录守卫，保留任务入口回跳地址。 */
 export default function EcomHubPage() {
   const location = useLocation()
-  if (!localStorage.getItem('token')) return <Navigate to={`/auth?next=${encodeURIComponent('/ecom' + location.search)}`} replace />
+  if (!localStorage.getItem('token')) return <Navigate to={`/auth?next=${encodeURIComponent('/ecom/workbench' + location.search)}`} replace />
   return <EcomHubWorkspace />
 }
 

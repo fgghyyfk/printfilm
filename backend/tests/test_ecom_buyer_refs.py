@@ -54,7 +54,7 @@ async def test_buyer_gateway_all_roles(monkeypatch, model):
     monkeypatch.setattr(ark, "observed_request", capture)
     with pytest.raises(RuntimeError, match="captured"):
         await gateway._seedream_once("模特仅作外形参考，不复制真人身份", refs, project_id=0, shot_no=1,
-                                     size="2K", structured_refs=True, reference_roles=roles)
+                                     size="2K", structured_refs=True, reference_roles=roles, model=model)
     if model == "gpt-image-2.5":
         assert all(url in captured["prompt"] for url in refs)
         assert "图10（model）" in captured["prompt"] and "图12（source）" in captured["prompt"]

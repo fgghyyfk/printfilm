@@ -43,7 +43,7 @@ export function DramaEpisodesPage() {
 
   return (
     <div className="admin-list-page">
-      <PageHeader description="全站漫剧分集：按项目与用户筛选，可进入分镜明细" />
+      <PageHeader title="分集管理" description="全站漫剧分集：按项目与用户筛选，可进入分镜明细" />
       <AdminFilterBar>
         <Input placeholder="集名 / 项目标题" value={q} onChange={(e) => setQ(e.target.value)} />
         <AdminUserSearchSelect value={userId} onChange={setUserId} />

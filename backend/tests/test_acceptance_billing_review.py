@@ -1,4 +1,8 @@
-"""人工核对必须保留既有费用、只补缺失费用且重复请求不重复扣退。"""
+"""人工核对必须保留既有费用、只补核定收费且重复请求不重复扣退。
+
+合并后核对接口采用线上 /billing-review（cost_fen / charge_fen / note）：核对依据只写在管理员可见的
+manual_review 用量行；处理完成后任务离开 awaiting_review，同一核对重复提交返回 409，不会二次扣退。
+"""
 import json
 from unittest.mock import AsyncMock
 
@@ -7,7 +11,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 
 from app.api.admin import tasks as api
-from app.models import UsageEvent, WalletLedger
+from app.models import UsageEvent
 from tests.conftest import make_task, make_user
 
 
@@ -17,6 +21,7 @@ async def test_review_keeps_known_usage_and_replays_once(db_session, monkeypatch
     user = await make_user(db_session, balance_fen=900, frozen_fen=100)
     admin = await make_user(db_session)
     admin.is_admin = True
+    admin_id = admin.id
     task = await make_task(db_session, user, status='awaiting_review', billing_status='frozen', provider_task_id='original-provider')
     task.billing_estimate_fen = 100
     task.result_payload = {'video_billing_pending': {'reason': 'timeout'}, 'preview_url': 'existing-media'}
@@ -24,9 +29,12 @@ async def test_review_keeps_known_usage_and_replays_once(db_session, monkeypatch
     db_session.add(usage)
     await db_session.commit()
     monkeypatch.setattr('app.services.billing.alerts.process_billing_alerts_after_charge', AsyncMock())
-    body = AdminTaskBillingReviewRequest(missing_cost_fen=missing, final_cost_confirmed=True, note='已按原任务核对收费凭证')
+    body = AdminTaskBillingReviewRequest(cost_fen=missing, charge_fen=missing, note='已按原任务核对收费凭证')
     await api.admin_review_task_billing(task.id, body, admin, db_session)
-    await api.admin_review_task_billing(task.id, body, admin, db_session)
+    # 同一核对重复提交（双击/重放）：已不在待核对状态，409 且不再扣退
+    with pytest.raises(HTTPException) as replay:
+        await api.admin_review_task_billing(task.id, body, admin, db_session)
+    assert replay.value.status_code == 409
     await db_session.refresh(task)
     await db_session.refresh(user)
     assert task.billing_status == 'settled'
@@ -35,19 +43,24 @@ async def test_review_keeps_known_usage_and_replays_once(db_session, monkeypatch
     assert task.provider_task_id == 'original-provider'
     assert task.result_payload['preview_url'] == 'existing-media'
     assert '已按原任务核对' not in json.dumps(task.result_payload, ensure_ascii=False)
-    audit = list(await db_session.scalars(select(WalletLedger).where(WalletLedger.kind == 'billing_review', WalletLedger.ref_id == str(task.id))))
+    audit = list(await db_session.scalars(select(UsageEvent).where(UsageEvent.billing_key == 'manual_review', UsageEvent.task_run_id == task.id)))
     assert len(audit) == 1
-    assert str(admin.id) in audit[0].note
+    assert f'"admin_id": {admin_id}' in audit[0].raw_usage_json and '已按原任务核对' in audit[0].raw_usage_json
+    assert audit[0].charge_fen == audit[0].cost_fen == missing
+    task_id = task.id
+    await db_session.refresh(admin)  # 上次 409 已回滚、对象过期；真实请求每次都有新会话
     with pytest.raises(HTTPException) as conflict:
-        await api.admin_review_task_billing(task.id, AdminTaskBillingReviewRequest(missing_cost_fen=missing+1, final_cost_confirmed=True, note=body.note), admin, db_session)
+        await api.admin_review_task_billing(task_id, AdminTaskBillingReviewRequest(cost_fen=missing + 1, charge_fen=missing + 1, note=body.note), admin, db_session)
     assert conflict.value.status_code == 409
+    await db_session.refresh(user)
+    assert (user.balance_fen, user.frozen_fen) == (970 - missing, 0)
 
 
 async def test_review_refuses_live_request_and_historical_settlement(db_session, monkeypatch):
     from app.schemas_tasks import AdminTaskBillingReviewRequest
     user = await make_user(db_session)
     task = await make_task(db_session, user, status='awaiting_review', billing_status='frozen')
-    body = AdminTaskBillingReviewRequest(missing_cost_fen=0, final_cost_confirmed=True, note='核对依据')
+    body = AdminTaskBillingReviewRequest(note='核对依据')
     monkeypatch.setattr('app.services.billing.ephemeral.durable_voice_request_alive', lambda _: True)
     with pytest.raises(HTTPException) as live:
         await api.admin_review_task_billing(task.id, body, user, db_session)
@@ -101,7 +114,7 @@ async def test_admin_review_http_rejects_regular_user():
     app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(id=1, role='user')
     app.dependency_overrides[api.get_db] = lambda: object()
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://local.test') as client:
-        response = await client.post('/api/admin/tasks/1/billing-review', json={'missing_cost_fen': 0, 'final_cost_confirmed': True, 'note': '已核对'})
+        response = await client.post('/api/admin/tasks/1/billing-review', json={'cost_fen': 0, 'charge_fen': 0, 'note': '已核对'})
     assert response.status_code == 403
 
 
@@ -125,7 +138,7 @@ async def test_two_connections_review_records_one_missing_charge(committed_episo
         await db.commit()
     monkeypatch.setattr('app.services.billing.alerts.process_billing_alerts_after_charge', AsyncMock())
     ready = asyncio.Event()
-    body = AdminTaskBillingReviewRequest(missing_cost_fen=23, final_cost_confirmed=True, note='核对原调用未记账23分')
+    body = AdminTaskBillingReviewRequest(cost_fen=23, charge_fen=23, note='核对原调用未记账23分')
     async def attempt(task_id):
         async with AsyncSession(engine, expire_on_commit=False) as db:
             await ready.wait()
@@ -137,17 +150,22 @@ async def test_two_connections_review_records_one_missing_charge(committed_episo
     jobs = [asyncio.create_task(attempt(task_ids[0])), asyncio.create_task(attempt(task_ids[-1]))]
     ready.set()
     results = await asyncio.wait_for(asyncio.gather(*jobs), timeout=10)
-    # NOWAIT 碰撞短暂返回409；已提交后相同授权请求重放仍只产生一份费用。
+    # NOWAIT 碰撞或已处理均短暂返回409；仍待核对的任务重试后完成，已处理的重放仍409且不重复扣费。
     for task_id, result in zip([task_ids[0], task_ids[-1]], results):
         if isinstance(result, HTTPException):
             async with AsyncSession(engine, expire_on_commit=False) as db:
-                await api.admin_review_task_billing(task_id, body, user, db)
+                pending = (await db.get(TaskRun, task_id)).status == 'awaiting_review'
+                if pending:
+                    await api.admin_review_task_billing(task_id, body, user, db)
+                else:
+                    with pytest.raises(HTTPException) as replay:
+                        await api.admin_review_task_billing(task_id, body, user, db)
+                    assert replay.value.status_code == 409
     async with AsyncSession(engine) as db:
         owner = await db.get(type(user), user.id)
         assert (owner.balance_fen, owner.frozen_fen) == (1000 - count * 23, 0)
         usages = list(await db.scalars(select(UsageEvent).where(UsageEvent.task_run_id.in_(task_ids))))
-        audits = list(await db.scalars(select(WalletLedger).where(WalletLedger.ref_id.in_([str(value) for value in task_ids]), WalletLedger.kind == 'billing_review')))
-        assert len(usages) == len(audits) == count
+        assert len(usages) == count and all(usage.billing_key == 'manual_review' for usage in usages)
         assert all(usage.cost_fen == usage.charge_fen == 23 for usage in usages)
 
 
@@ -188,7 +206,7 @@ async def test_late_unknown_poll_cannot_reopen_review_after_manual_settlement(co
         task.status = 'awaiting_review'
         task.result_payload = {'video_billing_pending': {'reason': 'earlier-timeout'}}
         await db.commit()
-        await api.admin_review_task_billing(task_id, AdminTaskBillingReviewRequest(missing_cost_fen=0, final_cost_confirmed=True, note='原任务明确无新增费用'), user, db)
+        await api.admin_review_task_billing(task_id, AdminTaskBillingReviewRequest(note='原任务明确无新增费用'), user, db)
     resume.set()
     await asyncio.wait_for(job, 5)
     async with AsyncSession(engine) as db:
@@ -198,12 +216,16 @@ async def test_late_unknown_poll_cannot_reopen_review_after_manual_settlement(co
 
 
 async def test_serialized_audit_limit_rejects_without_any_write(db_session):
+    """核对依据超长在请求校验阶段拒绝；空白依据 422；两者都不写任何费用。转义字符多的依据完整入账。"""
+    from pydantic import ValidationError
     from app.schemas_tasks import AdminTaskBillingReviewRequest
     user = await make_user(db_session, balance_fen=900, frozen_fen=100)
     task = await make_task(db_session, user, status='awaiting_review', billing_status='frozen')
     await db_session.commit()
+    with pytest.raises(ValidationError):
+        AdminTaskBillingReviewRequest(cost_fen=11, charge_fen=11, note='x' * 201)
     with pytest.raises(HTTPException) as rejected:
-        await api.admin_review_task_billing(task.id, AdminTaskBillingReviewRequest(missing_cost_fen=11, final_cost_confirmed=True, note='"' * 120), user, db_session)
+        await api.admin_review_task_billing(task.id, AdminTaskBillingReviewRequest(cost_fen=11, charge_fen=0, note=' ' * 3), user, db_session)
     assert rejected.value.status_code == 422
     assert user.balance_fen == 900 and user.frozen_fen == 100
     assert not list(await db_session.scalars(select(UsageEvent).where(UsageEvent.task_run_id == task.id)))
@@ -219,7 +241,7 @@ async def test_review_finishes_bound_tool_record_without_erasing_media(db_sessio
     tool = ToolRun(user_id=user.id, tool_id='video', kind='video', status='awaiting_review', task_id='original-tool', params={'billing_task_id': task.id}, urls=['existing.mp4'], preview_url='preview.jpg')
     db_session.add(tool)
     await db_session.commit()
-    await api.admin_review_task_billing(task.id, AdminTaskBillingReviewRequest(missing_cost_fen=0, final_cost_confirmed=True, note='明确无未记账费用'), user, db_session)
+    await api.admin_review_task_billing(task.id, AdminTaskBillingReviewRequest(note='明确无未记账费用'), user, db_session)
     await db_session.refresh(tool)
     assert tool.status == 'failed'
     assert tool.urls == ['existing.mp4'] and tool.preview_url == 'preview.jpg'
@@ -241,7 +263,7 @@ async def test_manual_review_closes_fragment_gate_without_overwriting_new_genera
         newer = await make_task(db_session, user, domain='drama', task_type='fragment_video', status='succeeded')
         newer.fragment_id, newer.episode_id, newer.drama_project_id = fragment.id, episode.id, project.id
     await db_session.commit()
-    await api.admin_review_task_billing(task.id, AdminTaskBillingReviewRequest(missing_cost_fen=0, final_cost_confirmed=True, note='原费用已全部核对'), user, db_session)
+    await api.admin_review_task_billing(task.id, AdminTaskBillingReviewRequest(note='原费用已全部核对'), user, db_session)
     await db_session.refresh(fragment)
     assert fragment.params['generation']['status'] == ('running' if new_owner else 'failed')
     assert fragment.video == 'keep-old.mp4' and fragment.params['video_versions'] == [{'url': 'keep-history.mp4'}]
@@ -259,7 +281,7 @@ async def test_manual_review_recovers_kepu_local_status_and_step(db_session):
     step = TaskStep(task_id=task.id, step_key='video', status='submitting')
     db_session.add(step)
     await db_session.commit()
-    await api.admin_review_task_billing(task.id, AdminTaskBillingReviewRequest(missing_cost_fen=0, final_cost_confirmed=True, note='当前所有调用费用均已核对'), user, db_session)
+    await api.admin_review_task_billing(task.id, AdminTaskBillingReviewRequest(note='当前所有调用费用均已核对'), user, db_session)
     await db_session.refresh(project)
     await db_session.refresh(step)
     assert project.status == ProjectStatus.FAILED
@@ -285,7 +307,7 @@ async def test_review_lock_conflict_rolls_back_target_lock_without_deadlock(comm
         await holder.execute(statement.with_for_update())
         async with AsyncSession(engine) as db:
             with pytest.raises(HTTPException) as conflict:
-                await asyncio.wait_for(api.admin_review_task_billing(task_id, AdminTaskBillingReviewRequest(missing_cost_fen=10, final_cost_confirmed=True, note='明确原费用已核对'), user, db), timeout=2)
+                await asyncio.wait_for(api.admin_review_task_billing(task_id, AdminTaskBillingReviewRequest(cost_fen=10, charge_fen=0, note='明确原费用已核对'), user, db), timeout=2)
             assert conflict.value.status_code == 409
         # 失败已回滚目标锁；其他事务立即可锁定分集。
         async with AsyncSession(engine) as probe:

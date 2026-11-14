@@ -233,7 +233,7 @@ async def test_plan_failure_patch_releases_task_lock_and_preserves_new_force(rec
     original = executor._fail_task
 
     async def pause(db, task, exc):
-        """停在标准失败 commit 后、分集补丁前。"""
+        """停在标准失败结算及分集收敛均已提交、任务锁释放之后。"""
         await original(db, task, exc)
         failed.set()
         await asyncio.wait_for(release.wait(), 5)

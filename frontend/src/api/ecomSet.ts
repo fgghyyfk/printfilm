@@ -7,6 +7,7 @@ import { parseDispositionFilename } from '../lib/ecomSet'
 import { createJsonRequester, requestResponse } from './client'
 import { apiErrorMessage } from './http'
 import type { ApiErrorHandler } from './http'
+import { appendDims, type EcomDims } from './ecomProducts'
 
 const BASE = '/api/tools/ecom-set'
 
@@ -26,10 +27,18 @@ export interface EcomSetItem {
   title: string
   subtitle: string
   bullets: string[]
+  /** 标题上方的英文小标（可空） */
+  en?: string
+  /** 本张镜头（构图）与画面元素 */
+  shot?: string
+  shot_name?: string
+  elements?: { key: string; name: string }[]
   base_url: string | null
   final_url: string | null
   status: EcomSetItemStatus
   error: string | null
+  /** 是否调模型收费（丝巾尺寸图、平铺图为 false） */
+  billable?: boolean
 }
 
 export interface EcomSet {
@@ -52,6 +61,10 @@ export interface EcomSet {
   /** 翻译来源套图，原始套图为 null */
   source_set_id: number | null
   created_at: string
+  /** general 通用商品；scarf 丝巾详情页 */
+  category?: string
+  styled?: EcomStyledInfo | null
+  scarf?: { size: string; size_label: string; material?: string; model_asset_id: number | null; model_name: string; model_url: string } | null
 }
 
 export interface EcomSetOptions {
@@ -63,6 +76,22 @@ export interface EcomSetOptions {
   clarities: EcomClarity[]
   prices: Record<EcomClarity, number>
   translate_fen: number
+  categories?: { id: string; name: string }[]
+  scarf_sizes?: { id: string; name: string }[]
+  scarf_counts?: number[]
+  scarf_materials?: { id: string; name: string }[]
+  styled?: EcomStyledCategory[]
+  frames?: { id: string; name: string }[]
+  /** 场景库行业标签 */
+  industries?: { id: string; name: string }[]
+  /** 品类默认打开的行业，如 goods → daily */
+  category_industry?: Record<string, string>
+  /** 字体风格：serif 典雅衬线 / sans 简约黑体 / bold 促销醒目 */
+  type_styles?: { id: string; name: string; hint: string }[]
+  /** 出图模型（GPT Image 2 仅在后台开通后出现），带各自单价（分） */
+  image_engines?: { id: string; name: string; hint: string; image_fen: number }[]
+  /** 镜头库 */
+  shots?: { key: string; name: string }[]
   plan_fen: number
   image_fen: number
   billing_enabled: boolean
@@ -75,12 +104,64 @@ export type EcomSetList = {
   page_size: number
 }
 
+/** 「模特上身」套图信息（丝巾 / 服饰 / 首饰 / 包袋） */
+export type EcomStyledInfo = {
+  category: string
+  size: string
+  size_label: string
+  material: string
+  material_label?: string
+  frame?: string
+  model_asset_id: number | null
+  model_name: string
+  model_url: string
+  product_id?: number | null
+  color_index?: number
+  color_name?: string
+  fabric_url?: string
+  real_url?: string
+  /** 场景库场景（未指定为空） */
+  scene_key?: string | null
+  scene_name?: string | null
+  /** 当前字体风格 */
+  type_style?: string
+  /** 出图模型 */
+  image_engine?: string
+  /** 本套元素池（单张可从中改选） */
+  elements?: { key: string; name: string; image_url: string }[]
+  /** 商品实际尺寸（厘米） */
+  dims?: EcomDims
+  /** 成图不加文字 */
+  no_text?: boolean
+}
+
+/** 品类选项（来自 /options 的 styled） */
+export type EcomStyledCategory = {
+  id: string
+  name: string
+  materials: { id: string; name: string }[]
+  sizes: { id: string; name: string }[]
+  default_material: string
+  default_size: string
+  counts: number[]
+  default_count: number
+  compositions: Record<string, string[]>
+  slots: { key: string; label: string; ref: 'model' | 'product' | 'flat' | 'composite' | 'texture' | 'info' | 'hand'; free: boolean }[]
+  /** 是否需要模特（goods 日化标品为 false，跳过选模特） */
+  uses_model?: boolean
+  /** 材质栏标签：goods 为「包装形态」，tool 为「工具形态」，其余为「材质」 */
+  material_label?: string
+  /** 是否走抠图原样合成（日化标品、电动工具） */
+  composite?: boolean
+}
+
 /** 规划请求参数（multipart） */
 export type EcomSetPlanPayload = {
-  file?: File
+  file?: File | null
+  /** 从电商任务结果图取商品图（不上传文件时） */
   source_job_id?: number
   source_item_idx?: number
-  slots?: string[]
+  /** 目标文案语言与输出清晰度 */
   language?: EcomLanguage
   clarity?: EcomClarity
   name: string
@@ -88,10 +169,34 @@ export type EcomSetPlanPayload = {
   style: string
   count: number
   notes?: string
+  /** 丝巾详情页：品类、尺寸与模特（留空用默认模特） */
+  category?: string
+  scarfSize?: string
+  scarfMaterial?: string
+  modelAssetId?: number | null
+  /** 产品化流程：画幅、勾选槽位、商品库商品与颜色款、面料实拍 */
+  frame?: string
+  slots?: string[]
+  productId?: number | null
+  colorIndex?: number
+  fabric?: File | null
+  /** 出图模型：seedream（默认）| gpt-image-2 */
+  imageEngine?: string
+  /** 画面元素 key（最多 12 个；不传自动推荐） */
+  elementKeys?: string[]
+  /** 场景库场景 key；留空 = 按品类默认画面 */
+  sceneKey?: string
+  /** 商品实际尺寸（厘米），留空用商品库里的 */
+  dims?: EcomDims
+  /** 成图不加文字（纯画面） */
+  noText?: boolean
 }
 
 /** 方案编辑：单张可改字段 */
-export type EcomSetPlanItemPatch = Pick<EcomSetItem, 'idx' | 'scene' | 'title' | 'subtitle' | 'bullets'>
+export type EcomSetPlanItemPatch = Pick<EcomSetItem, 'idx' | 'scene' | 'title' | 'subtitle' | 'bullets' | 'en'> & {
+  shot?: string
+  elements?: string[]
+}
 
 /** 带货视频画幅 */
 export type DaihuoRatio = '9:16' | '16:9' | '1:1' | '4:3'
@@ -100,7 +205,7 @@ export type DaihuoRatio = '9:16' | '16:9' | '1:1' | '4:3'
 export type DaihuoProjectPayload = { output_ratio: DaihuoRatio; voice_id?: string; create_new?: boolean; request_id?: string }
 
 /** 文案编辑：单张排版文字 */
-export type EcomSetCopyPatch = Pick<EcomSetItem, 'title' | 'subtitle' | 'bullets'>
+export type EcomSetCopyPatch = Pick<EcomSetItem, 'title' | 'subtitle' | 'bullets' | 'en'>
 
 // 错误策略：认证由统一客户端处理，收费入口额外触发余额不足充值引导
 function errorHandler(fallback: string, notifyBilling: boolean): ApiErrorHandler {
@@ -126,7 +231,6 @@ export function planEcomSet(payload: EcomSetPlanPayload): Promise<EcomSet> {
   if (payload.file) body.append('file', payload.file)
   if (payload.source_job_id !== undefined) body.append('source_job_id', String(payload.source_job_id))
   if (payload.source_item_idx !== undefined) body.append('source_item_idx', String(payload.source_item_idx))
-  if (payload.slots) body.append('slots', JSON.stringify(payload.slots))
   body.append('language', payload.language || 'zh')
   body.append('clarity', payload.clarity || '2k')
   body.append('name', payload.name)
@@ -134,6 +238,24 @@ export function planEcomSet(payload: EcomSetPlanPayload): Promise<EcomSet> {
   body.append('style', payload.style)
   body.append('count', String(payload.count))
   body.append('notes', payload.notes || '')
+  body.append('category', payload.category || 'general')
+  if (payload.category && payload.category !== 'general') {
+    body.append('scarf_size', payload.scarfSize || '')
+    body.append('scarf_material', payload.scarfMaterial || '')
+    if (payload.modelAssetId) body.append('model_asset_id', String(payload.modelAssetId))
+  }
+  if (payload.frame) body.append('frame', payload.frame)
+  if (payload.slots?.length) body.append('slots', payload.slots.join(','))
+  if (payload.productId) {
+    body.append('product_id', String(payload.productId))
+    body.append('color_index', String(payload.colorIndex || 0))
+  }
+  if (payload.fabric) body.append('fabric', payload.fabric)
+  if (payload.sceneKey) body.append('scene_key', payload.sceneKey)
+  if (payload.imageEngine) body.append('image_engine', payload.imageEngine)
+  if (payload.elementKeys?.length) body.append('element_keys', payload.elementKeys.join(','))
+  appendDims(body, payload.dims)
+  if (payload.noText) body.append('no_text', 'true')
   return requestEcom('/plan', translateUi("workflow.couldNotGenerateThePlan"), { method: 'POST', body }, true)
 }
 
@@ -159,8 +281,9 @@ export function listEcomSets(page = 1, pageSize = 12): Promise<EcomSetList> {
 }
 
 // 单张重新生成，可选改画面描述（收一张生图费）
-export function regenerateEcomSetItem(id: number, idx: number, scene?: string): Promise<EcomSet> {
-  const body = scene === undefined ? {} : { scene }
+export function regenerateEcomSetItem(id: number, idx: number, scene?: string,
+  layout?: { shot?: string; elements?: string[] }): Promise<EcomSet> {
+  const body = { ...(scene === undefined ? {} : { scene }), ...(layout || {}) }
   return requestEcom(
     `/${id}/items/${idx}/regenerate`,
     translateUi("workflow.couldNotRegenerate"),
@@ -175,6 +298,11 @@ export function updateEcomSetItemCopy(id: number, idx: number, copy: EcomSetCopy
     method: 'PUT',
     body: JSON.stringify(copy),
   })
+}
+
+// 调整套图顺序（order 为现有序号按新顺序排列；免费，长图与 zip 跟着变）
+export function reorderEcomSet(id: number, order: number[]): Promise<EcomSet> {
+  return requestEcom(`/${id}/order`, '调整顺序失败', { method: 'PUT', body: JSON.stringify({ order }) })
 }
 
 // 带鉴权下载套图 zip 并触发浏览器保存
@@ -210,4 +338,26 @@ export function translateEcomSet(id: number, language: Exclude<EcomLanguage, 'no
   return requestEcom(`/${id}/translate`, translateUi('ecomSet.translate.failed'), {
     method: 'POST', body: JSON.stringify({ language }),
   }, true)
+}
+
+// 下载详情长图（已完成的图按顺序竖向拼接）
+export async function downloadEcomSetLong(id: number, fallbackName: string): Promise<void> {
+  const response = await requestResponse(`${BASE}/${id}/long`, undefined, errorHandler('下载长图失败', false))
+  const blob = await response.blob()
+  triggerBlobDownload(blob, parseDispositionFilename(response.headers.get('Content-Disposition')) || fallbackName)
+}
+
+// 同款换色：沿用方案换另一个颜色款，返回新建的待生成套图
+export function recolorEcomSet(id: number, colorIndex: number): Promise<EcomSet> {
+  return requestEcom(`/${id}/recolor`, '换色失败', { method: 'POST', body: JSON.stringify({ color_index: colorIndex }) })
+}
+
+/** 切换整套图的字体风格（已出图的全部重新排字，免费） */
+export function setEcomSetTypeStyle(id: number, typeStyle: string): Promise<EcomSet> {
+  return requestEcom(`/${id}/type-style`, '切换字体失败', { method: 'PUT', body: JSON.stringify({ type_style: typeStyle }) })
+}
+
+/** 往本套元素池追加元素（单张换元素前用） */
+export function addEcomSetElements(id: number, keys: string[]): Promise<EcomSet> {
+  return requestEcom(`/${id}/elements`, '添加元素失败', { method: 'POST', body: JSON.stringify({ keys }) })
 }

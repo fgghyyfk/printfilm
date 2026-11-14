@@ -21,10 +21,41 @@ class EcomSetItemOut(BaseModel):
     title: str
     subtitle: str
     bullets: list[str]
+    en: str = ""
+    shot: str = ""
+    shot_name: str = ""
+    elements: list[dict] = []
     base_url: str | None = None
     final_url: str | None = None
     status: str
     error: PublicErrorText | None = None
+    billable: bool = True
+
+
+class EcomScarfOut(BaseModel):
+    """「模特上身」套图信息：品类、尺寸、材质、画幅、模特、商品库颜色款与面料图。"""
+
+    category: str = "scarf"
+    size: str = ""
+    size_label: str = ""
+    material: str = "silk"
+    material_label: str = ""
+    frame: str = "taobao_34"
+    model_asset_id: int | None = None
+    model_name: str = ""
+    model_url: str = ""
+    product_id: int | None = None
+    color_index: int = 0
+    color_name: str = ""
+    fabric_url: str = ""
+    real_url: str = ""
+    scene_key: str = ""
+    scene_name: str = ""
+    type_style: str = "bold"
+    image_engine: str = "seedream"
+    elements: list[dict] = []
+    dims: dict = {}
+    no_text: bool = False
 
 
 class EcomProductOut(BaseModel):
@@ -56,6 +87,9 @@ class EcomSetOut(BaseModel):
     created_at: str
     project_id: int | None = None
     source_set_id: int | None = None
+    category: str = "general"
+    scarf: EcomScarfOut | None = None
+    styled: EcomScarfOut | None = None
 
 
 class EcomSetListOut(BaseModel):
@@ -89,12 +123,24 @@ class EcomSetOptionsOut(BaseModel):
     platforms: list[EcomOptionOut]
     styles: list[EcomOptionOut]
     counts: list[int]
-    slots: list[EcomSlotOut]
-    languages: list[str]
-    clarities: list[str]
-    prices: dict[str, int]
+    # 通用商品自定义模块、多语言与清晰度（get_options 总会返回；默认值只为兼容旧调用）
+    slots: list[EcomSlotOut] = []
+    languages: list[str] = []
+    clarities: list[str] = []
+    prices: dict[str, int] = {}
+    categories: list[EcomOptionOut] = []
+    scarf_sizes: list[EcomOptionOut] = []
+    scarf_counts: list[int] = []
+    scarf_materials: list[EcomOptionOut] = []
+    styled: list[dict] = []
+    frames: list[EcomOptionOut] = []
+    industries: list[EcomOptionOut] = []
+    category_industry: dict[str, str] = {}
+    type_styles: list[dict] = []
+    image_engines: list[dict] = []
+    shots: list[dict] = []
     plan_fen: int
-    translate_fen: int
+    translate_fen: int = 0
     image_fen: int
     billing_enabled: bool
 
@@ -107,18 +153,25 @@ class EcomPlanItemIn(BaseModel):
     title: str = Field(default="", max_length=40)
     subtitle: str = Field(default="", max_length=60)
     bullets: list[str] = Field(default_factory=list, max_length=3)
+    # 英文小标；不传（None）表示保持原值
+    en: str | None = Field(default=None, max_length=60)
+    shot: str | None = Field(default=None, max_length=32)
+    elements: list[str] | None = Field(default=None, max_length=6)
 
 
 class EcomPlanUpdateIn(BaseModel):
     """修改方案请求。"""
 
-    items: list[EcomPlanItemIn] = Field(max_length=10)
+    # 上限须覆盖各品类的全部可选槽位（丝巾 11 个，日化 14 个）
+    items: list[EcomPlanItemIn] = Field(max_length=16)
 
 
 class EcomRegenerateIn(BaseModel):
-    """单张重做请求（可改画面描述）。"""
+    """单张重做请求（可改画面描述、镜头与元素）。"""
 
     scene: str | None = Field(default=None, max_length=300)
+    shot: str | None = Field(default=None, max_length=32)
+    elements: list[str] | None = Field(default=None, max_length=6)
 
 
 class EcomCopyIn(BaseModel):
@@ -127,6 +180,13 @@ class EcomCopyIn(BaseModel):
     title: str = Field(default="", max_length=40)
     subtitle: str = Field(default="", max_length=60)
     bullets: list[str] = Field(default_factory=list, max_length=3)
+    en: str | None = Field(default=None, max_length=60)
+
+
+class EcomTypeStyleIn(BaseModel):
+    """切换整套图的字体风格（只重新排字，免费）。"""
+
+    type_style: str = Field(max_length=16)
 
 
 class EcomToProjectIn(BaseModel):

@@ -8,6 +8,7 @@ import {
   getEcomSetOptions,
   planEcomSet,
   regenerateEcomSetItem,
+  addEcomSetElements,
   saveEcomSetPlan,
   updateEcomSetItemCopy,
   type EcomSet,
@@ -29,11 +30,15 @@ import Button from '../components/ui/Button'
 import Stepper from '../components/ui/Stepper'
 import { useEcomSetPolling } from '../hooks/useEcomSetPolling'
 import { useI18n } from '../i18n'
+import EcomSetExtras from '../components/ecomSet/EcomSetExtras'
+import { createEcomElement } from '../api/ecomElements'
+import '../styles/tools-base.css'
 import { dialog } from '../lib/dialog'
 import {
   canMakeDaihuoVideo,
   daihuoStepIndex,
   defaultZipName,
+  ecomReplanPath,
   ecomSetTotalFen,
   formatFen,
   needsPolling,
@@ -76,7 +81,8 @@ function EcomSetWorkspace() {
   /* 操作状态：formBusy 规划中；planBusy 方案保存/生成；busyIdx 单张重试中；downloading 打包下载 */
   const [formBusy, setFormBusy] = useState(false)
   const [formError, setFormError] = useState('')
-  const [formInitial, setFormInitial] = useState<EcomSetFormInitial | undefined>(undefined)
+  // 链接带 ?category=scarf 时直接进入「丝巾详情页」
+  const [formInitial, setFormInitial] = useState<EcomSetFormInitial | undefined>(() => (params.get('category') === 'scarf' ? { category: 'scarf' } : undefined))
   const [planBusy, setPlanBusy] = useState<EcomPlanBusy>(null)
   const [busyIdx, setBusyIdx] = useState<number | null>(null)
   const [downloading, setDownloading] = useState(false)
@@ -255,13 +261,21 @@ function EcomSetWorkspace() {
       tone: 'danger',
     })
     if (!ok) return
-    backToForm({ name: set.name, platform: set.platform, style: set.style, count: set.count, slots: set.items.map((item) => item.slot), language: set.language, clarity: set.clarity })
+    // 从商品库建的、或服饰/首饰/包袋套图回电商图重选，保留原商品和品类
+    const replanPath = ecomReplanPath(set)
+    if (replanPath) {
+      nav(replanPath)
+      return
+    }
+    backToForm({ name: set.name, platform: set.platform, style: set.style, count: set.count,
+      slots: set.items.map((item) => item.slot), language: set.language, clarity: set.clarity,
+      ...(set.category === 'scarf' && set.scarf ? { category: 'scarf' as const, scarfSize: set.scarf.size, scarfMaterial: set.scarf.material, modelAssetId: set.scarf.model_asset_id } : {}) })
   }
 
   // ③ 失败单张直接重试（收费时确认）
   async function onRetry(item: EcomSetItem) {
     if (!set) return
-    if (billingEnabled) {
+    if (billingEnabled && item.billable !== false) {
       const ok = await dialog.confirm({
         title: t('ecomSet.confirm.retryTitle'),
         message: t('ecomSet.confirm.retry', { label: item.slot_label, price: formatFen(set.image_fen) }),
@@ -287,12 +301,12 @@ function EcomSetWorkspace() {
   }
 
   // ④ 重新生成（弹层内可改画面）
-  async function onRegenConfirm(scene: string | undefined) {
+  async function onRegenConfirm(scene: string | undefined, layout?: { shot?: string; elements?: string[] }) {
     if (!set || !regenItem) return
     setModalBusy(true)
     setModalError('')
     try {
-      commitSet(await regenerateEcomSetItem(set.id, regenItem.idx, scene))
+      commitSet(await regenerateEcomSetItem(set.id, regenItem.idx, scene, layout))
       setRegenItem(null)
     } catch (err) {
       failWith(err, setModalError)
@@ -367,6 +381,7 @@ function EcomSetWorkspace() {
           onSave={onSavePlan}
           onGenerate={onGenerate}
           onReplan={onReplan}
+          shots={options?.shots}
         />
       )
     }
@@ -384,6 +399,9 @@ function EcomSetWorkspace() {
             onRetry={onRetry}
             onDownload={onDownload}
             onNew={() => backToForm()}
+            onReordered={setSet}
+            extraActions={<EcomSetExtras set={set} onOpenSet={(id) => setParams({ id: String(id) })} onError={setActionError}
+              typeStyles={options?.type_styles} onUpdated={setSet} />}
           />
           {set.status === 'done' ? <EcomSetTranslate key={set.id} set={set} options={options} optionsError={optionsError} onReloadOptions={() => setOptionsKey((value) => value + 1)} onTranslated={(next) => { commitSet(next); setHistoryKey((value) => value + 1) }} /> : null}
           {canMakeDaihuoVideo(set) ? <DaihuoVideoPanel key={set.id} set={set} /> : null}
@@ -416,9 +434,9 @@ function EcomSetWorkspace() {
   const stepIndex = daihuoStepIndex(set)
 
   return (
-    <AppShell active="ecom">
+    <AppShell active="image">
       <div className="pf-tool-detail pf-ecom-page">
-        <Link to="/ecom" className="pf-tool-back">
+        <Link to="/ecom/workbench" className="pf-tool-back">
           <ArrowLeft size={16} strokeWidth={2} aria-hidden />
           {t('ecomHub.back')}
         </Link>
@@ -456,11 +474,20 @@ function EcomSetWorkspace() {
           key={`regen-${regenItem.idx}`}
           item={regenItem}
           imageFen={set.image_fen}
-          billingEnabled={billingEnabled}
+          billingEnabled={billingEnabled && regenItem.billable !== false}
           busy={modalBusy}
           error={modalError}
           onClose={() => setRegenItem(null)}
           onConfirm={onRegenConfirm}
+          shots={options?.shots}
+          pool={set.styled?.elements}
+          onAddElement={async (name) => {
+            try {
+              const el = await createEcomElement({ name, category: 'vessel' })
+              commitSet(await addEcomSetElements(set.id, [el.key]))
+              return { key: el.key, name: el.name }
+            } catch (err) { failWith(err, setModalError); return null }
+          }}
         />
       ) : null}
       {previewItem ? <EcomSetPreviewModal item={previewItem} onClose={() => setPreviewItem(null)} /> : null}

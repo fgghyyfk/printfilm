@@ -1,6 +1,8 @@
 import { useI18n } from '../../../i18n'
 import { translate as translateMessage } from '../../../i18n/runtime'
 import { MyTasksButton } from '../../../components/MyTasks'
+import { TeamEpisodeEditingBoundary } from '../../../features/teams/TeamEditingBoundary'
+import { useTeamReadOnly } from '../../../features/teams/readOnlyContext'
 /** 分集分镜故事板全屏画布：按分镜连线，节点含视频 / 出境资产 / 提示词 */
 import { createFragmentAutosave, type FragmentSaveState } from '../../../lib/dramaFragmentAutosave'
 import { useFragmentNavigationGuard } from '../../../lib/useFragmentNavigationGuard'
@@ -41,6 +43,7 @@ import {
 } from './buildEpisodeFlow'
 import { EpisodeAssetNode } from './EpisodeAssetNode'
 import { EpisodeFragmentNode } from './EpisodeFragmentNode'
+import '../drama.css'
 import './episodeCanvas.css'
 
 const SAVE_DEBOUNCE_MS = 800
@@ -67,7 +70,7 @@ export default function EpisodeStoryboardPage() {
   return (
     <RequireAuth>
       <ReactFlowProvider>
-        <EpisodeStoryboardInner />
+        <TeamEpisodeEditingBoundary><EpisodeStoryboardInner /></TeamEpisodeEditingBoundary>
       </ReactFlowProvider>
     </RequireAuth>
   )
@@ -76,6 +79,9 @@ export default function EpisodeStoryboardPage() {
 // 加载分集并渲染全屏故事板
 function EpisodeStoryboardInner() {
   const { t: translateUi } = useI18n()
+  const readOnly = useTeamReadOnly()
+  const readOnlyRef = useRef(readOnly)
+  readOnlyRef.current = readOnly
   const { projectId, episodeId } = useParams()
   const pid = Number(projectId)
   const eid = Number(episodeId)
@@ -176,6 +182,7 @@ function EpisodeStoryboardInner() {
   // 刷新单个分镜节点提示词（关联资产变化靠 structureKey 重建）
   const patchFragmentPrompt = useCallback(
     (fragmentId: number, content: string) => {
+      if (readOnlyRef.current) return
       setNodes((prev) =>
         prev.map((node) => {
           if (node.type !== 'episodeFragment') return node
@@ -191,6 +198,7 @@ function EpisodeStoryboardInner() {
   // 改提示词
   const handlePromptChange = useCallback(
     (fragmentId: number, content: string) => {
+      if (readOnlyRef.current) return
       autosave.edit((prev) =>
         prev.map((f) => {
           if (f.id !== fragmentId) return f
@@ -206,6 +214,7 @@ function EpisodeStoryboardInner() {
   // 取消关联出境资产
   const handleUnlinkAsset = useCallback(
     (fragmentId: number, assetId: number) => {
+      if (readOnlyRef.current) return
       autosave.edit((prev) =>
         prev.map((f) => {
           if (f.id !== fragmentId) return f
@@ -220,12 +229,14 @@ function EpisodeStoryboardInner() {
 
   // 打开关联选择
   const handleRequestLinkAsset = useCallback((fragmentId: number) => {
+      if (readOnlyRef.current) return
     setLinkTargetFragId(fragmentId)
   }, [])
 
   // 确认关联资产
   const handlePickAsset = useCallback(
     (asset: DramaAsset) => {
+      if (readOnlyRef.current) return
       if (linkTargetFragId == null) return
       const fragmentId = linkTargetFragId
       autosave.edit((prev) =>
@@ -296,7 +307,7 @@ function EpisodeStoryboardInner() {
           <button
             type="button"
             className="ep-storyboard-btn dark"
-            disabled={busy || saveState.saving || !dirty}
+            disabled={readOnly || busy || saveState.saving || !dirty}
             onClick={() => void autosave.flush().catch(() => undefined)}
           >
             {busy || saveState.saving ? translateUi("workflow.saving") : translateUi("workflow.save")}
@@ -318,6 +329,8 @@ function EpisodeStoryboardInner() {
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           nodeTypes={nodeTypes}
+          nodesDraggable={!readOnly}
+          nodesConnectable={!readOnly}
           fitView
           minZoom={0.35}
           maxZoom={1.6}

@@ -29,7 +29,7 @@ async def setup_project(db, monkeypatch, mode):
     monkeypatch.setattr(pipeline, "_set_status", AsyncMock())
     monkeypatch.setattr(pipeline, "_ensure_not_cancelled", AsyncMock())
     monkeypatch.setattr(pipeline, "publish_progress", AsyncMock())
-    monkeypatch.setattr(pipeline, "_project_base_refs", lambda _: ["https://cdn.test/base.png"])
+    monkeypatch.setattr(pipeline, "project_image_references", lambda _: (["https://cdn.test/base.png"], []))
     usage = AsyncMock()
     monkeypatch.setattr(pipeline, "_record_seedream_usage", usage)
     monkeypatch.setattr(get_settings(), "kepu_seedance_native_audio", True)

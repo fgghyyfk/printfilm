@@ -1,5 +1,9 @@
 # PRINTFILM 计费说明
 
+> 图视频现支持模型策略与站内固定价格版本。后台发布价格后，新任务按成功交付图片张数、提交视频秒数结算；上游费用只更新成本，失败不自动切换路由。未发布价格及旧历史任务沿用下述原计费规则。部署、启停和接口详见 [模型策略与站内定价](MEDIA_MODEL_STRATEGIES.md)。
+
+团队模式使用独立钱包和按成员的上海自然月额度，任务受理时预留、执行时冻结、完成后按实结算。个人钱包不为团队垫付，充值订单与费用始终固定原团队归属。详见 [TEAM_MODE.md](./TEAM_MODE.md)。
+
 ## 原则
 
 - 按上游 **真实 TokenFree 成本**（或无法拿到 usage 时的保守估价）计费。
@@ -9,6 +13,8 @@
 - **所有 AI 调用**均关联 `task_run_id`（单次聊天/API/工具调用创建轻量 TaskRun）。
 - 本地按时长估算的视频 tokens 使用 `tokens_estimated` 标记，不能被识别为上游实测用量；实际费用仍优先取上游账单。
 - 画布视频下载中断时保留原上游任务号，按退避策略重试获取成片，不重新创建视频生成请求；超过重试上限后保留原任务号供排查。
+- 钱包余额写入使用 PostgreSQL `FOR NO KEY UPDATE` 行锁，保持扣款互斥，同时允许 `usage_events` 对用户主键的外键校验，避免与画布资产、任务状态写入形成循环等待。资产生图/视频落库失败后先回滚，再记录原始异常和失败状态。
+- 视频提交结果未知（请求已发出但没等到响应）、轮询超时、中断后已有上游任务号但无法继续跟进时，任务转 `awaiting_review` 并保留冻结，不按零成本退款；连接超时和上游明确拒绝仍按普通失败退款。管理员在任务详情里填写核定成本、用户收费和核对依据后结算，成本只进平台账；本次收费与任务已记录未结算的用量合计不超过预扣额（已有用量已超预扣时只能填 0）。
 - 任务执行中断回收由 `TASK_RUNTIME_MAX_RECOVERIES` 限制，默认第三次中断即失败，前两次安排恢复；调度扫描和执行器停机中断共用累计次数。失败按实际已发生用量结算后退回剩余冻结金额（如冻结 100 分、已用 30 分，只退 70 分），不会忽略已发生费用直接全退；费用待核对的音色请求仍保留冻结。
 - 漫剧 `episode_compose` 仅在本地统一编码、拼接已有视频，不调用 AI，估价和实扣均为 0；不依赖上游价目、不冻结钱包，也不受其他付费排队任务的余额承诺限制。浏览器正常无损拼接路径保留，编码不兼容才使用后台任务；任务不提供中途取消，离页不会停止后台合成。
 
@@ -84,7 +90,9 @@ billing_expr USD sell = official_CNY / 7.3 * 1.5
 
 漫剧资产生图的报价与预扣使用本次选定的模型、清晰度；批量确认与提交固定同一份选项，沿用既有费率。「一键生成未出图」提交时重新检查：已有可用参考图则跳过，在途任务（含取消处理中、费用待核对）则复用，不另建收费任务；界面分别汇总新增、复用与跳过数量。
 
-管理端「官方用量对照」复用模型页 TokenFree API Key，拉取 New API 日消耗（`/api/data/self` 或 billing usage，日期无效时按累计额度差分记到当天）并与本地成本对照。
+管理端财务按日汇总用户扣费、调用次数与 Token 用量，不再同步上游日消耗、展示成本对照或计算利润。
+
+项目、漫剧和个人用量接口同样只返回扣费与用量；后端已移除成本报表聚合、上游账户/日用量查询和日报快照模型。结算所需的费用换算与单次消费记录继续用于核实实际扣费。
 
 ### 数字人口播（自建 GPU）
 
@@ -122,6 +130,8 @@ billing_expr USD sell = official_CNY / 7.3 * 1.5
 排队：`avatar_auto` 与数字人项目的视频阶段走 **GPU 长任务槽位池**（`services/tasks/gpu_pool.py`），不占全站 Worker 槽位；默认全站 2 个、单用户 1 个，可在后台「系统设置 → 运行时」调整（`task_gpu_max_concurrency` / `task_gpu_user_max_concurrency`）。各用户的分段轮流进入 GPU 队列。
 
 ## TaskRun 计费流程
+
+AI 短视频的图片与镜头视频分阶段预占，只计尚未交付的素材。视频快照与执行共用分镜 `segment_script` 的段落时长、站点时长边界、声音开关、清晰度及画幅；不再只按旧 `shot.duration` 截整后预占。图片任务同时预留固定画风图、用户图与前镜引用槽位，视频任务预留本镜图片与前镜尾帧槽位，超过模型参考图上限时在受理阶段拒绝，不等付费调用后才发现参数不兼容。
 
 任务中心分别展示「预估」「冻结状态」「实扣」「退款」与用量计费依据；未结算时实扣应显示未结算，而不是已消费 0 元。冻结是任务的预留金额，不是额外收费；总费用不能把冻结和实扣相加。取消/失败后按既有结算逻辑释放冻结，并保留真实已发生的上游用量。
 
@@ -180,15 +190,15 @@ sequenceDiagram
 | 科普选题扩写 | `run_billed_ephemeral(domain=kepu, content_expand)` |
 | 漫剧资产 seed（轻量同步） | `run_billed_ephemeral(domain=drama, seed_assets)` |
 | 工作室工具 | `run_billed_ephemeral(domain=studio, tool_image/tool_video)` |
+| 电商图·参考详情整理 | `run_billed_ephemeral(domain=studio, ecom_knowledge)`：按实际视觉调用批次计，每批 `ECOM_SET_PLAN_FEN`（默认 10 分），预扣按切片批数估；一张长详情约 1～3 批 |
 | 一图出套图·规划 | `run_billed_ephemeral(domain=studio, ecom_set_plan)`：**固定价**，写一条 `billing_key=ecom_set_plan`、`charge_fen=ECOM_SET_PLAN_FEN`（默认 10 分）的用量行，不按 token 计；规划失败不扣 |
 | 一图出套图·翻译 | `run_billed_ephemeral(domain=studio, ecom_set_translate)`；翻译全部文案后复用底图 PIL 重排，生成独立套图并记录 `source_set_id` / `language`；仅一次固定文本费用 `ECOM_SET_PLAN_FEN`（默认 10 分），写 `billing_key=ecom_set_translate` 的 llm 用量行，无新生图费用；翻译或排版失败整笔回滚 |
 | 外部图片翻译 | `kind=translate`，1–20 张；先视觉识字并翻译，识字不另收费。明确无字项为 `skipped`（无可翻译文字），无 TaskRun、无冻结及扣费；仅有文字的图片进入 `ecom_job_image`，按 2K 图像目录整批校验余额、逐张预扣，记录 `tool_id=ecom_translate` 用量后结算，生图失败不扣。识字整批总限时 480 秒，超时或 JSON 无效则回滚本批、不进入生图队列；可减少图片重试；缺视觉模型时拒绝建任务，mock 全程本地且标记为示意结果 |
-| 一图出套图·生图 | `create_task(domain=studio, ecom_set_image)`，按 `clarity=2k/4k` 匹配生图目录估价（沿用模型能力钳制），每张独立预扣与结算；预设 4/6/8 或自定义 3–10 槽位按实际张数计价；语言及广告版式不另收费；复用任意电商成功结果仅收新套图的规划和生图费用；本地 mock 不联网。一张一个 TaskRun，executor 自动 freeze/settle，handler 内 `record_seedream_image_usage`；入队前 `ensure_balance_for_task_batch` 一次校验 N 张；单张失败不扣；改文案（重新排版）不调模型、免费 |
+| 一图出套图·生图 | `create_task(domain=studio, ecom_set_image)`，一张一个 TaskRun；payload 带 `aspect_ratio` 与 `resolution=2K`，**与图片生成页同走后台媒体价目表（fixed_media）**，按张固定价预扣并结算；4K（`clarity=4k`，仅 Seedream）按 4K 价；未启用媒体价目表时按 `clarity=2k/4k` 匹配生图目录估价；预设 4/6/8 或自定义 3–10 槽位按实际张数计价；尺寸图、平铺图、纹样细节等免模型槽位不建任务、不收费 |
 | 电商买家秀 / 种草图 | 复用 `create_task(domain=studio, ecom_job_image)`；`kind=buyer_show` 按 `count=1–8` 张计价，产品 / 模特 / 场景参考不另计费；整批校验余额后逐张预扣，按 `clarity=2k/4k` 目录估价，记录 `tool_id=ecom_buyer_show` 并结算；失败重抛不扣费，本地 mock 不联网。通用裂变接口为已完成结果创建独立同类 job，按新输出张数重新预扣与结算，保留原任务和结果 |
 | 电商 SKU 替换 | 复用 `create_task(domain=studio, ecom_job_image)`；`kind=sku` 每张产品图对应 1 张输出（1–20 张），场景参考不另计费；整批校验余额，逐张预扣并按 `clarity=2k/4k` 目录估价，记录 `tool_id=ecom_sku` 后结算；失败重抛不扣费，本地 mock 不联网 |
 | 电商风格复刻 | 复用 `create_task(domain=studio, ecom_job_image)`；`kind=style` 单图模式按 `count=1–4` 张计价，批量模式按产品图数量（最多 20 张）计价，参考设计图不另计费；整批校验余额后逐张预扣，按 `clarity=2k/4k` 目录估价，记录 `tool_id=ecom_style` 并结算；失败重抛不扣费，本地 mock 不联网 |
 | 电商批量精修 | `create_task(domain=studio, ecom_job_image)`，每张独立 TaskRun；整批入队前校验可用余额，按 `clarity=2k/4k` 复用图像目录估价（沿用模型清晰度钳制），生成后记录 `tool_id=ecom_refine` 用量并结算；失败重抛不扣费，重试仅允许失败图片并重新检查余额；透明底 Pillow 后处理不另收费；本地 mock 不调用上游 |
-| 开放 API | `run_billed_ephemeral(domain=api, v1_image/v1_video/v1_seedance)` |
 
 ### LLM 操作全清单（`billing_key=llm_chat`）
 
@@ -281,28 +291,27 @@ STRIPE_CANCEL_URL=         # 留空 {PUBLIC_BASE_URL}/pricing
 | POST | `/api/billing/stripe/webhook` | Stripe 事件回调（验 `Stripe-Signature`） |
 | GET | `/api/admin/usage-events` | 管理端用量明细分页 |
 | GET | `/api/admin/tasks/{id}` | 任务详情含 `usage_lines` 与计费字段 |
-| GET | `/api/admin/stats/upstream-usage` | 近 N 日官方/本地成本对照 |
-| POST | `/api/admin/stats/upstream-usage/sync` | 手动刷新官方用量快照 |
-| GET | `/api/admin/settings/billing/model-rates` | 推荐模型 TokenFree 官方价（/api/pricing） |
-| GET | `/api/admin/settings/tokenfree/quota` | 查询 TokenFree 账户剩余额度 |
+| GET | `/api/admin/stats` | 充值、扣费、调用趋势与用户排行 |
+| GET | `/api/admin/finance/daily` | 近 N 日用户扣费、调用次数与 Token 用量 |
 
 ## 管理端
 
-- **设置 → 支付与计费**：按 TokenFree 官方成本 1:1 扣费；可查看模型费率表与查询 TokenFree 余额。
+- **设置 → 支付与计费**：配置支付接入、用户计费及消费提醒；图片与视频价格独立发布。
 - **订单与流水** → 「用量明细」Tab：按用户/任务/领域筛选 `usage_events`。
 - **任务队列** → 列表「费用」列显示 `billing_charged_fen`（冻结中显示预扣）。
 - **任务详情** → 「计费」Tab：预扣/实扣/退回 + 用量行列表。
-- **仪表盘** → 「TokenFree 官方用量对照」：本地成本 vs New API 用量（需在「模型」填写 TokenFree API Key）。
+- **仪表盘 → 财务账单**：充值、用户扣费与最近已支付订单。
+- **财务列表**：按日展示用户扣费、调用次数、Token 及汇总，无需配置上游查询密钥。
 
 ## 验收清单
 
 1. 科普：确认分镜只冻出图+配音；继续生成视频另冻视频段；合成走 compose。各阶段任务结束按实际用量结算。
 2. 漫剧分镜视频/资产生成：有 `task_run_id` 的用量行，任务结束扣费。
-3. 漫剧聊天 / 选题扩写 / Skill 优化 / 音色描述 / 开放 API / 工作室工具：响应含 `task_id`（轻量 TaskRun），余额变化正确。
+3. 漫剧聊天 / 选题扩写 / Skill 优化 / 音色描述 / 工作室工具：响应含 `task_id`（轻量 TaskRun），余额变化正确。
 4. 管理端可按 `task_run_id` 或 `billing_key=llm_chat` 查到每条 LLM/图/视频/TTS 费用。
 5. Seedance 视频成功后 `usage_events.estimated=false` 且 `total_tokens` 与官方任务查询一致。
-6. 配置 TokenFree API Key 后，管理端可刷新并查看近 30 日官方/本地成本对照。
-7. 单次调用若带 New API `quota` / `quota_consumed`，按额度折人民币后按官方成本 1:1 扣费；管理端可查询 TokenFree 余额。
+6. 财务列表支持按时间范围汇总本地扣费与用量，仪表盘和订单用量不显示上游成本、利润或官方对照。
+7. 单次调用若带 New API `quota` / `quota_consumed`，原计费规则仍按额度折人民币结算；图片与视频启用站内价格时按已发布价格扣费。
 
 漫剧分镜批量生成默认跳过输入未改且已有成片的镜头；资产换图仅提示形象更新，须显式勾选「含形象更新镜头」才加入重做。保存后按最终未在途分镜集合、各镜实际时长、模型及清晰度逐项估价并确认，入队沿用同一规格计算，每条 TaskRun 仍各自预扣及按实际用量结算；原费率不变。资产改名或画布布局不构成媒体更新，来源版本未知的历史视频不被默认强制重做。
 
@@ -351,3 +360,21 @@ E6 的聚合历史、结果菜单、引用现有成图、创建带货草稿和�
 `ARK_MOCK=true` 时电商出图、参考图复用和带货写稿使用本地素材，不请求模型、OSS 或目录价网络；mock 产物只供联调，不表示真实模型质量验收。
 
 带货入口通过 `POST /api/tools/ecom/projects/{id}/script` 仅授权脚本阶段：在项目锁内检查已有分镜与活动任务，重复提交只返回原项目，不自动推进配音等下一收费阶段。
+
+
+团队模式现按所有者个人账户统一付款，同时限制团队总月额度与成员月额度；任务保存受理时付款人，转让不改变旧任务扣款对象。团队充值/独立调账入口已停用，历史账目兼容规则见 [TEAM_MODE.md](TEAM_MODE.md)。
+
+
+### 电商图（/ecom）补充
+- 生成模特（`/api/tools/models/generate`）：`run_billed_ephemeral(domain=studio, tool_image)`，按 2K 张价收一次
+- 同款换色（`/{id}/recolor`）沿用原方案，不收规划费；生成时按张收费
+
+## 取消与注册赠金
+
+- 上游尚未受理的任务取消后全额退回预扣。
+- 上游已受理（已有 `provider_task_id`）的任务停不下来，平台仍要付费：用户取消、批量取消、删除项目或改分镜作废时，都按预扣额计费（`billing/cancel_charge.py`），用量行 `provider=cancel_after_accept`。管理端可从任务详情追溯。
+- `BILLING_SIGNUP_GRANT_FEN` 默认 0。开启后同一 IP 每天最多 2 个账号可领，同一 IP 每小时最多注册 10 个账号（`services/register_limit.py`）。
+
+> 电商图「电动工具/五金」：计费同日化/标品。原图贴不回去时平台自动重画（最多再试 2 次），用户只为交付的那张付费，重画的额外调用由平台承担，次数记在该张用量行的 `raw.retries`。
+
+> 电商图「日化/标品场景图」：合成槽位与普通生图一样按张收费（`ecom_set_image`，按 2K 张价预扣）；实际按 1.5K 出图，上游成本约为 2K 的一半。白底主图由程序渲染，免费。场景库浏览与选择免费。信息屏（多款一览、成分说明等）与切换字体风格只排字，免费。

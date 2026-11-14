@@ -23,7 +23,7 @@ def test_charge_fen_for_usage_prefers_upstream_cost():
     )
     assert used is True
     assert cost == 1000
-    assert charge == 1000
+    assert charge == 1500  # 扣费 = 成本 × billing_markup
 
 
 def test_charge_fen_for_usage_falls_back_to_official_per_call():
@@ -41,7 +41,7 @@ def test_charge_fen_for_usage_falls_back_to_official_per_call():
     assert used is False
     # 2K sunburst 10 积分 × 3.5 分 = 35 分，而不是 8 元/百万 token
     assert cost == 35
-    assert charge == 35
+    assert charge == 53  # 35 × 1.5 向上取整
 
 
 def test_charge_fen_for_usage_uses_raw_image_size():

@@ -26,7 +26,10 @@ async def _drama_voice(db):
 
 
 async def test_explicit_drama_voice_creates_task_and_settles_once(db_session, monkeypatch, tmp_path):
-    """显式音色先提交预扣，再独立记账结算，资产 helper 不提交业务事务。"""
+    """个人项目显式音色按线上规则免费（billable=False）：仍走持久任务，不预扣不扣费，资产 helper 不在计费域内提交。"""
+    # 线上默认关闭显式音色生成，用例显式开启
+    from app.config import get_settings
+    monkeypatch.setattr(get_settings(), "drama_voice_generation_enabled", True)
     from app.api.drama.generation import generate_voice
     from app.schemas_drama import DramaVoiceGenerateRequest
     from app.services.drama import voice_synthesis
@@ -50,12 +53,12 @@ async def test_explicit_drama_voice_creates_task_and_settles_once(db_session, mo
     task = await db_session.get(TaskRun, result["task_id"])
     rows = await _events(db_session, task)
     assert task.domain == "drama" and task.task_type == "voice_synthesis"
-    assert task.status == "succeeded" and task.billing_status == "settled"
+    assert task.status == "succeeded" and task.billing_status == "skipped"
+    # 用量行照常留痕（便于对账上游成本），但任务计费为 skipped，不会结算进钱包
     assert len(rows) == 1
     assert rows[0].provider == "volc" and rows[0].drama_project_id == project.id
-    assert rows[0].settled is True
-    assert task.billing_charged_fen == rows[0].charge_fen > 0
-    assert int(user.balance_fen) == 100_000 - task.billing_charged_fen
+    assert int(task.billing_charged_fen or 0) == 0
+    assert int(user.balance_fen) == 100_000
     assert int(user.frozen_fen) == 0
     assert commits and all(value is None for value in commits)
 
@@ -113,22 +116,45 @@ async def test_reference_local_failure_does_not_rollback_paid_usage(db_session, 
     assert len(rows) == 1 and rows[0].provider == "volc"
 
 
-async def test_explicit_drama_voice_insufficient_balance_does_not_call_upstream(db_session, monkeypatch, tmp_path):
-    """显式音色合成用现有估价校验余额，预扣不足返回 402 且不调用上游。"""
-    from fastapi import HTTPException
+async def test_explicit_drama_voice_personal_project_needs_no_balance(db_session, monkeypatch, tmp_path):
+    """线上规则：个人项目显式音色不计费（billable=False），余额为 0 也能合成且钱包不变。
+
+    团队项目仍按团队预算准入；原“个人余额不足 402”语义随线上免费策略取消。
+    """
+    from app.config import get_settings
+    monkeypatch.setattr(get_settings(), "drama_voice_generation_enabled", True)
     from app.api.drama.generation import generate_voice
     from app.schemas_drama import DramaVoiceGenerateRequest
     from app.services.drama import voice_synthesis
     user, project, asset = await _drama_voice(db_session)
     user.balance_fen = 0
+    await db_session.commit()
+    gateway = _gateway(monkeypatch, tmp_path)
+    _http(monkeypatch, lambda request: _volc_audio())
+    monkeypatch.setattr(voice_synthesis, "get_ark", lambda: gateway)
+    monkeypatch.setattr(voice_synthesis, "finalize_voice_reference_url", lambda url, **kwargs: url)
+    result = await generate_voice(DramaVoiceGenerateRequest(
+        project_id=project.id, asset_id=asset.id, voice_prompt="青年男声", speaker="narrator_calm",
+    ), db=db_session, user=user)
+    task = await db_session.get(TaskRun, result["task_id"])
+    assert task.status == "succeeded" and task.billing_status == "skipped"
+    assert user.balance_fen == 0 and user.frozen_fen == 0
+
+
+async def test_explicit_drama_voice_disabled_by_default_does_not_call_upstream(db_session, monkeypatch, tmp_path):
+    """线上默认关闭显式音色合成：未开启时直接拒绝，不调用付费接口。"""
+    from app.config import get_settings
+    monkeypatch.setattr(get_settings(), "drama_voice_generation_enabled", False)
+    from fastapi import HTTPException
+    from app.api.drama.generation import generate_voice
+    from app.schemas_drama import DramaVoiceGenerateRequest
+    from app.services.drama import voice_synthesis
+    user, project, asset = await _drama_voice(db_session)
     gateway = _gateway(monkeypatch, tmp_path)
     monkeypatch.setattr(voice_synthesis, "get_ark", lambda: gateway)
-    _http(monkeypatch, lambda request: pytest.fail("余额不足不应请求付费接口"))
+    _http(monkeypatch, lambda request: pytest.fail("功能关闭时不应请求付费接口"))
     with pytest.raises(HTTPException) as info:
         await generate_voice(DramaVoiceGenerateRequest(
             project_id=project.id, asset_id=asset.id, voice_prompt="青年男声",
         ), db=db_session, user=user)
-    assert info.value.status_code == 402
-    assert user.balance_fen == 0 and user.frozen_fen == 0
-
-
+    assert info.value.status_code >= 400

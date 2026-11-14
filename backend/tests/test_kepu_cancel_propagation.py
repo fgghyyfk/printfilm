@@ -50,9 +50,11 @@ async def test_await_kepu_reraises_without_request() -> None:
         await _await_kepu(_fake_task(cancel_requested=False), _boom())
 
 
-async def test_await_kepu_success_payload() -> None:
+async def test_await_kepu_success_payload(monkeypatch) -> None:
+    snapshot = AsyncMock(return_value={"kind": "image", "urls": ["/static/shot.png"]})
+    monkeypatch.setattr("app.services.tasks.handlers._kepu_output_snapshot", snapshot)
     out = await _await_kepu(_fake_task(cancel_requested=False), _ok(), shot_id=3)
-    assert out == {"ok": True, "project_id": 7, "shot_id": 3}
+    assert out == {"ok": True, "project_id": 7, "shot_id": 3, "kind": "image", "urls": ["/static/shot.png"]}
 
 
 def test_run_pipeline_reraises_after_cancel_side_effects() -> None:
@@ -134,4 +136,6 @@ async def test_queued_cancel_never_enters_handler_and_retry_has_no_signal(db_ses
     await projects.compose_only(project.id, db_session, user)
     async def retry():
         assert not pipeline.is_cancelled(project.id)
+    # 收尾产物快照与取消信号无关，隔离掉其独立会话。
+    monkeypatch.setattr("app.services.tasks.handlers._kepu_output_snapshot", AsyncMock(return_value={}))
     await _await_kepu(SimpleNamespace(id=task.id + 1, project_id=project.id, cancel_requested=False), retry())

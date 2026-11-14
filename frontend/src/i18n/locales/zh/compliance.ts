@@ -11,6 +11,7 @@ export const zhCompliance = {
     edited: '此字段后来已编辑，旧记录仅供复核，请对照原稿手动修改。',
     original: '查看生成原稿',
     empty: '（空）',
+    autoReplaced: '带货文案已自动替换极限词；仍有 {count} 处需人工确认',
     expand: '展开',
     collapse: '收起',
     recheck: '重新检查',

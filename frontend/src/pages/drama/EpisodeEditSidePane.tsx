@@ -3,8 +3,9 @@ import { translate as translateUi } from '../../i18n/runtime'
 /** 分集编辑右侧：分段视频预览 + 入口打开全屏分镜画布 */
 import { useState } from 'react'
 import { Download, Loader2 } from 'lucide-react'
+import DramaPublishModal from '../../features/marketplace/DramaPublishModal'
+import { useMarketplace } from '../../features/marketplace/hooks'
 import type { DramaFragment } from '../../api/drama'
-import { DramaSubtitleBoard } from '../../components/drama/DramaSubtitleBoard'
 import { DramaFragmentSegmentedVideoPlayer } from '../../components/drama/DramaFragmentSegmentedVideoPlayer'
 import { triggerBlobDownload } from '../../lib/clientDownload'
 import {
@@ -14,7 +15,6 @@ import {
   type EpisodeComposeProgress,
 } from '../../lib/composeEpisodeVideoClient'
 import { dialog } from '../../lib/dialog'
-import type { DramaSubtitleMode } from '../../lib/dramaSubtitleBoard'
 
 type Props = {
   fragments: DramaFragment[]
@@ -22,8 +22,8 @@ type Props = {
   onPlayingFragmentChange: (fragmentId: number) => void
   aspectRatio: string
   episodeId?: number
+  projectId?: string
   episodeName?: string
-  subtitleMode: DramaSubtitleMode
   onOpenStoryboard: () => void
   /** 预览历史版本时覆盖当前镜 video src */
   previewVideoUrl?: string | null
@@ -49,8 +49,8 @@ export function EpisodeEditSidePane({
   onPlayingFragmentChange,
   aspectRatio,
   episodeId,
+  projectId,
   episodeName = translateUi("workflow.thisEpisode"),
-  subtitleMode,
   onOpenStoryboard,
   previewVideoUrl = null,
   previewPosterUrl = null,
@@ -65,6 +65,8 @@ export function EpisodeEditSidePane({
    * composeProgress 拉取/拼接进度
    * composeError 失败原因
    */
+  const { capabilities } = useMarketplace()
+  const [publishOpen, setPublishOpen] = useState(false)
   const [composeBusy, setComposeBusy] = useState(false)
   const [composeProgress, setComposeProgress] = useState<EpisodeComposeProgress | null>(null)
   const [composeError, setComposeError] = useState('')
@@ -127,6 +129,15 @@ export function EpisodeEditSidePane({
           )}
           {composeProgressLabel(composeProgress, composeBusy)}
         </button>
+        {capabilities?.enabled && projectId && episodeId ? (
+          <button
+            type="button"
+            className="drama-ep-compose-btn drama-ep-compose-btn--header"
+            onClick={() => setPublishOpen(true)}
+          >
+            发布到数字资产市场
+          </button>
+        ) : null}
       </div>
       {composeError ? <p className="drama-ep-compose-error drama-ep-compose-error--header">{composeError}</p> : null}
 
@@ -151,29 +162,23 @@ export function EpisodeEditSidePane({
       {!hasSelection || fragments.length === 0 ? (
         <p className="drama-ep-empty">{translateUi("workflow.selectAShotBelow")}</p>
       ) : (
-        <>
-          <div className="drama-ep-preview-inner">
-            <DramaFragmentSegmentedVideoPlayer
-              fragments={fragments}
-              playingFragmentId={playingFragmentId}
-              onPlayingFragmentChange={onPlayingFragmentChange}
-              aspectRatio={aspectRatio}
-              overrideVideoUrl={previewVideoUrl}
-              overridePosterUrl={previewPosterUrl}
-            />
-            {!fragments.some((f) => f.video) && (
-              <button type="button" className="drama-ep-open-canvas" onClick={onOpenStoryboard}>
-                {translateUi("workflow.openStoryboardCanvas_96778f")}
-              </button>
-            )}
-          </div>
-          <DramaSubtitleBoard
+        <div className="drama-ep-preview-inner">
+          <DramaFragmentSegmentedVideoPlayer
             fragments={fragments}
-            episodeName={episodeName}
-            subtitleMode={subtitleMode}
+            playingFragmentId={playingFragmentId}
+            onPlayingFragmentChange={onPlayingFragmentChange}
+            aspectRatio={aspectRatio}
+            overrideVideoUrl={previewVideoUrl}
+            overridePosterUrl={previewPosterUrl}
           />
-        </>
+          {!fragments.some((f) => f.video) && (
+            <button type="button" className="drama-ep-open-canvas" onClick={onOpenStoryboard}>
+              {translateUi("workflow.openStoryboardCanvas_96778f")}
+            </button>
+          )}
+        </div>
       )}
+      {publishOpen && capabilities?.enabled && projectId && <DramaPublishModal projectId={Number(projectId)} initialEpisodeId={episodeId} onClose={() => setPublishOpen(false)} />}
     </aside>
   )
 }

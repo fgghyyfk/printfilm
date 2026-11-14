@@ -111,6 +111,24 @@ export function nextCanvasNodeLabel(
   return `${base} ${i}`
 }
 
+/**
+ * 新节点名称同时避开项目已有资产：从画布移除的节点资产仍保留，
+ * 同名创建会被后端去重复用，新节点就会变成旧资产。
+ */
+export function nextCanvasNodeLabelInProject(
+  kind: CanvasNodeKind,
+  nodes: Array<{ data: { kind: CanvasNodeKind; label?: string } }>,
+  assets: Array<{ type?: string | null; name?: string | null }>,
+): string {
+  const retained = assets.map((asset) => ({
+    data: {
+      kind: String(asset.type || '').toLowerCase() as CanvasNodeKind,
+      label: asset.name || '',
+    },
+  }))
+  return nextCanvasNodeLabel(kind, [...nodes, ...retained])
+}
+
 /** 节点卡片尺寸（宽 × 高，用于落点居中；含页脚约 +40） */
 export const CANVAS_NODE_SIZE: Record<CanvasNodeKind, { width: number; height: number }> = {
   character: { width: 200, height: 280 },

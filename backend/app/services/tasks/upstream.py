@@ -45,9 +45,21 @@ def _append_event(
 ) -> None:
     """仅修改内存对象并 add 事件，不查询、不 flush、不 commit。"""
     provider_id = payload.get("provider_task_id")
+    if task is not None:
+        task.provider_name = str(payload.get("provider") or "tokenfree")
+        response = payload.get("response") or {}
+        body = response.get("body") if isinstance(response, dict) else None
+        state = body.get("status") if isinstance(body, dict) else None
+        task.provider_status = str(state or ("failed" if event_type.endswith("failed") else "accepted"))[:32]
+    if step is not None:
+        step.provider_name = str(payload.get("provider") or "tokenfree")
     if event_type == "upstream.request.accepted" and payload.get("is_video_submit") and provider_id:
         if task is not None:
             task.provider_task_id = str(provider_id)
+            from app.services.media_models.runtime import current_operation
+            operation = current_operation.get()
+            if operation and operation["capability"] == "video":
+                task.media_provider_tasks = {**(task.media_provider_tasks or {}), operation["operation_id"]: str(provider_id)}
         if step is not None:
             step.provider_task_id = str(provider_id)
             step.provider_name = str(payload.get("provider") or "tokenfree")
@@ -148,7 +160,7 @@ async def observed_request(
 ) -> Any:
     """透明包装一次真实 HTTP 调用，保留参数、返回对象、异常和原重试策略。"""
     # 延迟导入：billing 包 __init__ 会反向导入本模块，模块级导入会形成循环
-    from app.services.billing.context import get_current_task_run_id
+    from app.services.billing.context import get_current_task_run_id, get_current_team_id
 
     method = method.upper()
     send = getattr(client, method.lower())
@@ -156,6 +168,14 @@ async def observed_request(
     if task_id is None:
         return await send(endpoint, **kwargs)
     is_submit, is_poll, provider_id = _video_request(method, endpoint)
+    if get_current_team_id() is not None and method not in {"GET", "HEAD", "OPTIONS"}:
+        from app.services.tasks.team_scope import ensure_upstream_submission_allowed
+        caller_db = _event_session.get()
+        if caller_db is not None:
+            await ensure_upstream_submission_allowed(caller_db, task_id)
+        else:
+            async with AsyncSessionLocal() as authorization_db:
+                await ensure_upstream_submission_allowed(authorization_db, task_id)
     body = kwargs.get("json", kwargs.get("data", kwargs.get("content")))
     model = str(body.get("model") or "") if isinstance(body, dict) else None
     payload = {
@@ -167,6 +187,10 @@ async def observed_request(
                     "params": kwargs.get("params"), "files": kwargs.get("files")},
         "response": None, "error": None,
     }
+    from app.services.media_models.runtime import current_operation
+    media_operation = current_operation.get()
+    if media_operation is not None:
+        payload["media_operation_id"] = media_operation["operation_id"]
     if not is_poll:
         await _safe_record(task_id, "upstream.request.started", payload)
     started = time.perf_counter()

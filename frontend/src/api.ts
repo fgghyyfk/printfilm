@@ -1,7 +1,9 @@
 import { translate as translateUi } from './i18n/runtime'
 import type { ComplianceAudit } from './api/compliance'
+import { workspaceScope } from './features/teams/workspaceScope'
 import { API_BASE, createJsonRequester, requestResponse, uploadFile } from './api/client'
 import { apiErrorMessage } from './api/http'
+import { curatedCreationTemplates } from './lib/creationTemplates'
 
 /** 科普、账号和计费 API 共用 JSON 传输层。 */
 const request = createJsonRequester()
@@ -91,6 +93,7 @@ export function defaultsFromTemplate(t: Template): {
 export type Shot = {
   tts_metadata?: { audio_url: string; provider: string; model: string; is_fallback: boolean; fingerprint: string } | null
   compliance_changes?: ComplianceAudit
+  video_skip_reason?: string | null
   id: number
   shot_no: number
   duration: number
@@ -134,6 +137,8 @@ export function resolveVoiceId(raw: string, voices: VoicePreset[]): string {
 export type Project = {
   compliance_changes?: ComplianceAudit
   id: number
+  target_duration_sec?: number
+  creation_session_id?: number | null
   template_id: string
   title: string
   source_type: string
@@ -157,6 +162,8 @@ export type Project = {
   extra_prompt?: string
   image_model?: string
   video_model?: string
+  image_resolution?: string
+  video_resolution?: string
   ref_image_url: string | null
   avatar_image_url?: string | null
   avatar_engine?: AvatarEngine
@@ -177,6 +184,8 @@ export type Project = {
   ecom_set_id?: number | null
   created_at: string
   updated_at: string
+  /** 声音由视频模型内置生成，没有可单独重配的配音。 */
+  native_video_audio?: boolean
   shots: Shot[]
   active_tasks?: Array<{
     id: number
@@ -202,6 +211,15 @@ export type MediaModelOption = {
   description: string
   provider: string
   recommended?: boolean
+  strategy_id?: string
+  strategy_version?: number
+  billing_unit?: 'image' | 'second'
+  prices?: Record<string, string>
+  price_version?: number | null
+  available?: boolean
+  available_resolutions?: string[]
+  reference_limits?: { images: number; audios: number; videos: number }
+  defaults?: { resolution: string; aspect_ratio: string; duration?: number; count: number }
   /** 该模型允许的清晰度 */
   allowed_resolutions?: string[]
   /** 该模型允许的画幅比例 */
@@ -217,6 +235,9 @@ export type MediaModelOption = {
 }
 
 export type MediaModelsCatalog = {
+  generation_defaults?: { image_resolution: string; video_resolution: string }
+  price_version?: number | null
+  billing_mode?: 'fixed_media' | 'legacy'
   image_models: MediaModelOption[]
   video_models: MediaModelOption[]
   defaults: {
@@ -263,7 +284,6 @@ export type UsageSummary = {
   tokens: number
   charge_fen: number
   charge_yuan: number
-  cost_fen: number
   calls: number
   balance_fen: number
   balance_yuan: number
@@ -382,13 +402,17 @@ export const api = {
     })
   },
   templates() {
-    return request<Template[]>('/api/templates')
+    return request<Template[]>('/api/templates').then(curatedCreationTemplates)
+  },
+  getTemplate(id: string) {
+    return request<Template>(`/api/templates/${encodeURIComponent(id)}`)
   },
   createProject(body: {
     template_id: string
     title: string
     source_type: 'theme' | 'script'
     source_text: string
+    target_duration_sec?: number
     resolution_mode?: 'preview' | 'hd'
     pipeline_mode?: PipelineMode
     auto_advance?: boolean
@@ -398,6 +422,10 @@ export const api = {
     style_prompt?: string
     character_prompt?: string
     extra_prompt?: string
+    image_model?: string
+    video_model?: string
+    image_resolution?: string
+    video_resolution?: string
   }) {
     return request<Project>('/api/projects', { method: 'POST', body: JSON.stringify(body) })
   },
@@ -407,8 +435,11 @@ export const api = {
       title?: string
       source_type?: 'theme' | 'script'
       source_text?: string
+      target_duration_sec?: number
       template_id?: string
       pipeline_mode?: PipelineMode
+      auto_advance?: boolean
+      image_reference_mode?: 'chain' | 'independent'
       output_ratio?: string
       resolution_mode?: 'preview' | 'hd'
       voice_id?: string
@@ -417,6 +448,8 @@ export const api = {
       extra_prompt?: string
       image_model?: string
       video_model?: string
+      image_resolution?: string
+      video_resolution?: string
       bgm_lock?: string
       subtitle_preset?: string
       cover_url?: string | null
@@ -435,8 +468,9 @@ export const api = {
       body: JSON.stringify(body),
     })
   },
-  mediaModels() {
-    return request<MediaModelsCatalog>('/api/media-models')
+  /** 图/视频模型目录；scope=tools 时附加图片生成页可用的 OpenAI 生图模型 */
+  mediaModels(scope: '' | 'tools' = '') {
+    return request<MediaModelsCatalog>(scope ? `/api/media-models?scope=${scope}` : '/api/media-models')
   },
   /** 上传科普项目封面并返回项目。 */
   uploadCover(id: number, file: File) {
@@ -586,9 +620,11 @@ export const api = {
       method: 'POST',
     })
   },
-  regenAudio(projectId: number, shotId: number) {
+  /** 重配音；extraShotIds 为数字人批量重配时随同一任务重做的其它段。 */
+  regenAudio(projectId: number, shotId: number, extraShotIds: number[] = []) {
     return request<Project>(`/api/projects/${projectId}/shots/${shotId}/regen-audio`, {
       method: 'POST',
+      ...(extraShotIds.length ? { body: JSON.stringify({ extra_shot_ids: extraShotIds }) } : {}),
     })
   },
   regenAllAudio(projectId: number) {
@@ -632,12 +668,12 @@ export const api = {
       /** qr=原生扫码；redirect=新开易支付收银台 */
       pay_mode?: 'qr' | 'redirect' | string
       expire_seconds?: number
+      /** 充值通道：epay | stripe（Stripe 为托管收银台跳转） */
+      provider?: string
     }>('/api/billing/orders', {
       method: 'POST',
       body: JSON.stringify({ sku_id, pay_type }),
     })
-      /** 充值通道：epay | stripe（Stripe 为托管收银台跳转） */
-      provider?: string
   },
   getBillingOrder(outTradeNo: string) {
     return request<{
@@ -690,6 +726,7 @@ export const api = {
     if (params.model_id) q.set('model_id', params.model_id)
     if (params.resolution) q.set('resolution', params.resolution)
     if (params.aspect_ratio) q.set('aspect_ratio', params.aspect_ratio)
+    if (workspaceScope.teamId !== null && params.domain === 'drama') q.set('team_id', String(workspaceScope.teamId))
     return request<BillingPreflight>(`/api/billing/preflight?${q.toString()}`)
   },
   eventsUrl(projectId: number) {

@@ -101,3 +101,14 @@ def test_multiline_preserved():
     assert len(lines) == 3 and lines[0] == "@duration:5"
     assert lines[1].startswith("【旁白·自然语速】") and "最好" not in lines[1]
     assert lines[2].startswith("  角色（vo）：")
+
+
+# 化妆品功效宣称（需功效评价报告）：屏障修护、抗敏、零刺激等替换为不含功效承诺的说法；普通「修复」不误伤
+def test_cosmetic_efficacy_claims():
+    from app.services.compliance.ad_words import check_text
+
+    out, hits = check_text("苦参根提取物：增强肌肤屏障，亲和人体皮脂")
+    assert out == "苦参根提取物：呵护肌肤，亲和人体皮脂" and hits[0].category == "化妆品功效"
+    assert check_text("零刺激配方，抗敏舒缓")[0] == "温和配方，舒缓"
+    assert check_text("头发修复精华")[1] == []
+    assert check_text("温和远离刺激")[1] == []

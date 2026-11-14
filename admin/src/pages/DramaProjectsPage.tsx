@@ -43,7 +43,7 @@ export function DramaProjectsPage() {
 
   return (
     <div className="admin-list-page">
-      <PageHeader description="漫剧项目：集数、资产、生产状态与费用；点击详情进入二级页" />
+      <PageHeader title="漫剧项目" description="漫剧项目：集数、资产、生产状态与费用；点击详情进入二级页" />
       <AdminFilterBar>
         <Input placeholder="标题 / 描述" value={q} onChange={(e) => setQ(e.target.value)} />
         <AdminUserSearchSelect value={userId} onChange={(id) => setUserId(id)} />

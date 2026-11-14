@@ -110,10 +110,10 @@ export default function HelpCenter({ open, onClose }: Props) {
           <div className="pf-help-tools-note">
             <p>{t('help.toolsNote')}</p>
             <div className="pf-help-tools-actions">
-              <Link to="/tools" className="pf-btn pf-btn-lime pf-btn-sm" onClick={onClose}>
+              <Link to="/tools/image" className="pf-btn pf-btn-lime pf-btn-sm" onClick={onClose}>
                 {t('help.openTools')}
               </Link>
-              <Link to="/settings?tab=tools" className="pf-btn pf-btn-ghost pf-btn-sm" onClick={onClose}>
+              <Link to="/tasks" className="pf-btn pf-btn-ghost pf-btn-sm" onClick={onClose}>
                 {t('help.toolRecords')}
               </Link>
             </div>

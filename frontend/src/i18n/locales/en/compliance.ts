@@ -11,6 +11,7 @@ export const enCompliance = {
     edited: 'This field was edited later. Review the original and adjust it manually.',
     original: 'View generated original',
     empty: '(empty)',
+    autoReplaced: 'Superlatives in sales copy were replaced automatically; {count} still need review',
     expand: 'Show',
     collapse: 'Hide',
     recheck: 'Re-check',

@@ -114,7 +114,7 @@ async def test_gateway_protocol_keeps_fallback_url(monkeypatch, tmp_path, model,
     monkeypatch.setattr(ark, "observed_request", capture)
     ref = storage.to_public_url("/static/product.png")
     with pytest.raises(RuntimeError, match="request captured"):
-        await gateway._seedream_once("精修", [ref], project_id=0, shot_no=1, size="2K", structured_refs=structured)
+        await gateway._seedream_once("精修", [ref], project_id=0, shot_no=1, size="2K", structured_refs=structured, model=model)
     body = captured["body"]
     if model == "gpt-image-2.5":
         assert captured["url"].endswith("/images/generations")
@@ -123,5 +123,6 @@ async def test_gateway_protocol_keeps_fallback_url(monkeypatch, tmp_path, model,
         assert captured["url"].endswith("/responses")
         assert body["input"][0]["content"][2]["image_url"].startswith("data:image/jpeg;base64,")
     else:
-        # 旧通路仍过滤 localhost 引用，不能因新模式改变默认行为。
-        assert ref not in body["input"] and "base64" not in body["input"]
+        # 普通通路沿用线上策略（参考图以文本 URL 传递），结构化模式的压缩内嵌不得影响它。
+        assert captured["url"].endswith("/responses")
+        assert isinstance(body["input"], str) and "base64" not in body["input"]

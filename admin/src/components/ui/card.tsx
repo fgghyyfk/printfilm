@@ -6,7 +6,7 @@ export function Card({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       className={cn(
-        "rounded-2xl border border-[#ebeef5] bg-white text-[#303133] shadow-[0_1px_2px_rgba(16,24,40,0.04)]",
+        "rounded-2xl border border-[var(--admin-border)] bg-white text-[var(--admin-text)] shadow-[0_2px_4px_rgba(25,34,30,0.025)]",
         className,
       )}
       {...props}
@@ -19,11 +19,11 @@ export function CardHeader({ className, ...props }: React.ComponentProps<"div">)
 }
 
 export function CardTitle({ className, ...props }: React.ComponentProps<"h3">) {
-  return <h3 className={cn("text-base font-semibold tracking-tight text-[#303133]", className)} {...props} />;
+  return <h3 className={cn("text-[15px] font-semibold tracking-tight text-[var(--admin-text)]", className)} {...props} />;
 }
 
 export function CardDescription({ className, ...props }: React.ComponentProps<"p">) {
-  return <p className={cn("text-sm text-[#909399]", className)} {...props} />;
+  return <p className={cn("text-[13px] leading-relaxed text-[var(--admin-muted)]", className)} {...props} />;
 }
 
 export function CardContent({ className, ...props }: React.ComponentProps<"div">) {

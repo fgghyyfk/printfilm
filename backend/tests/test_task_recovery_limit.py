@@ -100,8 +100,7 @@ async def test_null_counter_and_configured_limit(recovery_session, monkeypatch):
     db = recovery_session
     user = await make_user(db)
     task = await make_task(db, user, status="running")
-    # 本用例外层事务内模拟升级旧表；结束回滚恢复新库 NOT NULL。
-    await db.execute(text("ALTER TABLE task_runs ALTER COLUMN recovery_count DROP NOT NULL"))
+    # additive DDL 的旧表列允许 NULL，直接 SQL 模拟历史数据。
     await db.execute(text("UPDATE task_runs SET recovery_count=NULL WHERE id=:id"), {"id": task.id})
     await db.commit()
     monkeypatch.setattr(get_settings(), "task_runtime_max_recoveries", 1)
@@ -136,10 +135,12 @@ async def test_locally_alive_work_is_never_counted(recovery_session, monkeypatch
 @pytest.mark.parametrize("domain,task_type,expected", [("drama", "fragment_video", "awaiting_poll"),
                                                        ("drama", "asset_video", "pending"),
                                                        ("drama", "voice_synthesis", "failed"),
-                                                       ("api", "v1_video", "awaiting_review"),
+                                                       ("api", "v1_video", "failed"),
+                                                       ("studio", "tool_video", "pending"),
+                                                       ("kepu", "shot_regen_video", "failed"),
                                                        ("studio", "video", "failed")])
 async def test_provider_id_recovery_uses_only_supported_consumer(recovery_session, entry, domain, task_type, expected):
-    """保留原上游号；已有消费者安全恢复，未知费用待核对而非盲目退款。"""
+    """payload 中已有上游号也必须保留；不支持恢复的类型失败而非挂在无人轮询状态。"""
     db = recovery_session
     user = await make_user(db)
     task = await make_task(db, user, domain=domain, task_type=task_type, status="running")
@@ -202,7 +203,7 @@ async def test_recovery_does_not_count_protected_states(recovery_session, entry,
 @pytest.mark.parametrize("legacy", [False, True])
 async def test_fragment_plan_limit_updates_only_current_owner(recovery_session, new_owner, legacy):
     """同 revision 的旧 force 任务到限不能覆盖当前任务；自己的 generating 必须失败可见。"""
-    from tests.test_drama_fragment_save import make_episode
+    from tests.drama_fragment_helpers import make_episode
     db = recovery_session
     user, project, ep, _ = await make_episode(db)
     task = await make_task(db, user, domain="drama", task_type="fragment_plan", status="running")
@@ -227,12 +228,35 @@ async def test_fragment_plan_limit_updates_only_current_owner(recovery_session, 
         assert "中断" in ep.params["fragment_plan_error"]
 
 
+@pytest.mark.parametrize("has_newer", [False, True])
+async def test_fragment_plan_limit_keeps_newer_plan_generating(recovery_session, has_newer):
+    """无 revision 归属的旧规划任务到限不能覆盖新任务；没有新任务时 generating 必须失败可见。"""
+    from tests.drama_fragment_helpers import make_episode
+    db = recovery_session
+    user, project, ep, _ = await make_episode(db)
+    task = await make_task(db, user, domain="drama", task_type="fragment_plan", status="running")
+    task.drama_project_id, task.episode_id = project.id, ep.id
+    task.recovery_count = 2
+    if has_newer:
+        newer = await make_task(db, user, domain="drama", task_type="fragment_plan")
+        newer.episode_id, newer.drama_project_id = ep.id, project.id
+    ep.params = {"fragment_plan_status": "generating", "user_setting": "keep"}
+    await db.commit()
+    await interrupted(db, task.id)
+    assert await scheduler.recover_orphaned_tasks() == 1
+    await db.refresh(ep)
+    assert ep.params["fragment_plan_status"] == ("generating" if has_newer else "failed")
+    assert ep.params["user_setting"] == "keep"
+    if not has_newer:
+        assert "中断" in ep.params["fragment_plan_error"]
+
+
 @pytest.mark.parametrize("entry", ["api", "auto"])
 async def test_plan_enqueue_records_distinct_owner_in_same_commit(recovery_session, monkeypatch, entry):
     """相同 revision 两次 force 入队仍有不同 owner，每次提交都包含任务和 owner。"""
     from app.api.drama.episodes import plan_episode_fragments
     from app.schemas_drama import DramaPlanFragmentsRequest
-    from tests.test_drama_fragment_save import make_episode
+    from tests.drama_fragment_helpers import make_episode
     db = recovery_session
     user, _, ep, _ = await make_episode(db)
     await db.commit()
@@ -260,8 +284,8 @@ async def test_plan_enqueue_records_distinct_owner_in_same_commit(recovery_sessi
 @pytest.mark.parametrize("target", ["kepu", "asset", "fragment"])
 async def test_exhausted_recovery_keeps_existing_failure_projection(recovery_session, target):
     """到限复用标准失败路径，科普和漫剧资产/分镜的错误都可见。"""
-    from tests.test_drama_fragment_save import make_episode
-    from tests.test_kepu_task_recovery import seed_project
+    from tests.drama_fragment_helpers import make_episode
+    from tests.drama_fragment_helpers import seed_project
     from app.models import ProjectStatus
     db = recovery_session
     if target == "kepu":

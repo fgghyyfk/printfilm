@@ -27,9 +27,9 @@ export function stripeReady(form: AdminModelSettings, secrets: StripeSecretState
 export function stripePatchBody(form: AdminModelSettings, secrets: StripeSecretState): Record<string, unknown> {
   return {
     payment_provider: form.payment_provider,
-    stripe_secret_key: secrets.secretKey.trim() || undefined,
+    stripe_secret_key: secrets.clearSecretKey ? undefined : secrets.secretKey.trim() || undefined,
     clear_stripe_secret_key: secrets.clearSecretKey,
-    stripe_webhook_secret: secrets.webhookSecret.trim() || undefined,
+    stripe_webhook_secret: secrets.clearWebhookSecret ? undefined : secrets.webhookSecret.trim() || undefined,
     clear_stripe_webhook_secret: secrets.clearWebhookSecret,
     stripe_currency: (form.stripe_currency || "cny").trim().toLowerCase(),
     stripe_fx_rate: form.stripe_fx_rate,

@@ -1,0 +1,24 @@
+# 开口播 KaiKou
+User-agent: *
+Allow: /$
+Allow: /pricing
+Allow: /help
+Allow: /terms
+Allow: /privacy
+Allow: /contact
+Disallow: /api/
+Disallow: /admin/
+Disallow: /auth
+Disallow: /studio
+Disallow: /history
+Disallow: /drama
+Disallow: /canvas
+Disallow: /tools
+Disallow: /tasks
+Disallow: /assets
+Disallow: /settings
+Disallow: /teams
+Disallow: /team-invitations
+Disallow: /marketplace
+
+Sitemap: https://kaikou.haituike.com/sitemap.xml

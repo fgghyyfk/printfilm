@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import "@/styles/admin-primitives.css";
 
 type PageSectionProps = {
   title: string;
@@ -20,7 +21,7 @@ export function PageSection({
   bodyClassName,
 }: PageSectionProps) {
   return (
-    <section className={cn("admin-panel admin-section", className)}>
+    <section className={cn("admin-panel admin-section admin-ui-section", className)}>
       <div className="admin-section-header">
         <div>
           <h3 className="admin-section-title">{title}</h3>

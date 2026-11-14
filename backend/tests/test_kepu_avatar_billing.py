@@ -138,3 +138,18 @@ async def test_record_avatar_ai_outside_task_is_skipped(monkeypatch):
     monkeypatch.setattr(billing, "record_line", record)
     await kb.record_avatar_ai("avatar_image", model="gpt-image-2", cost_fen=189)
     record.assert_not_awaited()
+
+
+def test_avatar_price_by_resolution():
+    """480p 用基础单价；720p 用单独单价，未设时按 × 1.8；清晰度为空时取后台默认。"""
+    from types import SimpleNamespace
+    from app.services.kepu_avatar_billing import avatar_price_fen_per_sec
+
+    s = SimpleNamespace(avatar_price_fen_per_sec=28, avatar_price_fen_per_sec_720p=0, avatar_resolution="480p")
+    assert avatar_price_fen_per_sec(s, "480p") == 28
+    assert avatar_price_fen_per_sec(s, "720p") == 50
+    assert avatar_price_fen_per_sec(s, None) == 28
+    s.avatar_price_fen_per_sec_720p = 52
+    assert avatar_price_fen_per_sec(s, "720p") == 52
+    s.avatar_resolution = "720p"
+    assert avatar_price_fen_per_sec(s, "") == 52

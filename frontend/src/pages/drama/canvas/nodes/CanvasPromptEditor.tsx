@@ -233,6 +233,7 @@ export function CanvasPromptEditor({
         role="textbox"
         aria-multiline="true"
         aria-label={translateUi("workflow.generationPrompt")}
+        aria-disabled={disabled}
         contentEditable={!disabled}
         suppressContentEditableWarning
         data-placeholder={placeholder}

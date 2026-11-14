@@ -7,6 +7,7 @@ from typing import Any
 from app.config import get_settings
 from app.schemas_routing import DefaultModels, LogicalModel, LogicalModelCapability, SystemModelChannel
 from app.services.model_routing_config import infer_model_capability, normalize_model_name
+from app.services.model_availability import has_managed_models, is_model_enabled
 
 
 def _row(
@@ -94,6 +95,10 @@ def build_media_catalog(
 
     default_image = _canon((defaults.image_model or "").strip())
     default_video = _canon((defaults.video_model or "").strip())
+    if not is_model_enabled("image", default_image, logical_models):
+        default_image = ""
+    if not is_model_enabled("video", default_video, logical_models):
+        default_video = ""
 
     def _append(
         *,
@@ -102,7 +107,7 @@ def build_media_catalog(
         capability: LogicalModelCapability,
     ) -> None:
         mid = _canon(model_id)
-        if not mid:
+        if not mid or not is_model_enabled(capability, mid, logical_models):
             return
         key = normalize_model_name(mid)
         if capability == "image":
@@ -159,9 +164,9 @@ def build_media_catalog(
             if cap in {"image", "video"}:
                 _append(model_id=mid, label=mid, capability=cap)  # type: ignore[arg-type]
 
-    if not default_image:
+    if not default_image and not has_managed_models("image", logical_models):
         default_image = images[0]["id"] if images else _canon((fallback_image or "").strip())
-    if not default_video:
+    if not default_video and not has_managed_models("video", logical_models):
         default_video = videos[0]["id"] if videos else _canon((fallback_video or "").strip())
 
     def _ensure_default_in_list(
@@ -222,19 +227,39 @@ def build_media_catalog(
     }
 
 
-def catalog_payload() -> dict[str, Any]:
-    """公开目录 JSON，供前台 /api/media-models。"""
+def catalog_payload(scope: str = "") -> dict[str, Any]:
+    """公开目录 JSON，供前台 /api/media-models。scope=tools（图片生成页）时附加已开启的 OpenAI 生图模型并设为默认。"""
     from app.services.model_settings import get_routing_snapshot
 
     snap = get_routing_snapshot()
     settings = get_settings()
-    return build_media_catalog(
+    payload = build_media_catalog(
         logical_models=list(snap.logical_models),
         channels=list(snap.channels),
         defaults=snap.default_models,
         fallback_image=settings.model_image,
         fallback_video=settings.model_video,
     )
+    if scope == "tools":
+        _add_openai_image_option(payload, settings)
+    return payload
+
+
+def _add_openai_image_option(payload: dict[str, Any], settings) -> None:
+    """图片生成页：后台开启 OpenAI 生图时，把它放在模型列表第一位并设为默认。"""
+    from app.services.openai_image import openai_image_configured
+
+    if not openai_image_configured(settings):
+        return
+    mid = (settings.openai_image_model or "gpt-image-2").strip()
+    images = [row for row in payload["image_models"] if normalize_model_name(str(row.get("id") or "")) != normalize_model_name(mid)]
+    row = _row(model_id=mid, label=mid, recommended=True, capability="image")
+    row["provider"] = "openai"
+    row["label"] = f"OpenAI · {row['label']}"
+    for other in images:
+        other["recommended"] = False
+    payload["image_models"] = [row, *images]
+    payload["defaults"]["image_model"] = mid
 
 
 def is_valid_project_media_model(model_id: str | None, capability: LogicalModelCapability) -> bool:
@@ -242,6 +267,9 @@ def is_valid_project_media_model(model_id: str | None, capability: LogicalModelC
     mid = (model_id or "").strip()
     if not mid:
         return True
+    from app.services.model_settings import get_routing_snapshot
+    if not is_model_enabled(capability, mid, get_routing_snapshot().logical_models):
+        return False
     from app.services.logical_model_router import resolve_logical_model_candidates
 
     cat = catalog_payload()

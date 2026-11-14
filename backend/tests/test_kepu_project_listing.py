@@ -27,6 +27,7 @@ def _project(project_id):
 async def test_listing_batches_tasks_and_projects_runtime_once(monkeypatch):
     """列表一次获取整页任务，运行态与已发布标记保持原响应语义。"""
     rows = [_project(12), _project(20)]
+    rows[0].creation_session_id = 91
     task = SimpleNamespace(
         id=99, domain="kepu", task_type="project_pipeline", status="running",
         progress_percent=60, error_message=None, payload={"phase": "videos"},
@@ -45,6 +46,7 @@ async def test_listing_batches_tasks_and_projects_runtime_once(monkeypatch):
     assert page.stats.model_dump() == {"total": 10, "generating": 2, "done": 5, "published": 1}
     assert (page.items[0].status, page.items[0].progress, page.items[0].error_msg) == (ProjectStatus.VIDEOING, 60, None)
     assert [item.published for item in page.items] == [False, True]
+    assert [item.creation_session_id for item in page.items] == [91, None]
     assert page.items[1].error_msg == "旧错误"
 
     compiled = [call.args[0].compile(dialect=postgresql.dialect()) for call in db.execute.await_args_list]
@@ -70,3 +72,23 @@ async def test_empty_page_skips_task_and_publish_queries(monkeypatch):
     assert page.stats.total == 0
     batch.assert_not_awaited()
     assert db.execute.await_count == 6
+
+
+async def test_listing_preserves_projects_without_a_template(monkeypatch):
+    """历史项目模板为空时仍返回完整列表，使用空字符串表示未选模板。"""
+    rows = [_project(12), _project(20)]
+    rows[0].template_id = None
+    monkeypatch.setattr(
+        kepu_projects, "list_active_tasks_for_projects",
+        AsyncMock(return_value={12: [], 20: []}),
+    )
+    db = SimpleNamespace(execute=AsyncMock(
+        side_effect=[_result(value) for value in [2, rows, [], 2, 0, 2, 0]],
+    ))
+
+    page = await kepu_projects.list_project_page(db, 7, page=1, page_size=8)
+
+    assert [item.id for item in page.items] == [12, 20]
+    assert [item.template_id for item in page.items] == ["", "test"]
+    assert rows[0].template_id is None
+    assert page.meta.total == page.stats.total == 2

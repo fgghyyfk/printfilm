@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -134,3 +134,83 @@ class EcomJobVideo(Base):
     name: Mapped[str] = mapped_column(String(128), default="")
     notes: Mapped[str] = mapped_column(Text, default="")
     frames: Mapped[list] = mapped_column(JSON, default=list)
+
+
+class EcomProduct(Base):
+    """「我的商品」：一款商品录一次（多个颜色款、材质、尺寸、卖点），以后出图直接选。"""
+
+    __tablename__ = "ecom_products"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(128), default="")
+    category: Mapped[str] = mapped_column(String(16), default="scarf")
+    size: Mapped[str] = mapped_column(String(32), default="")
+    # 实际尺寸（厘米）：{"h": 高, "w": 宽, "d": 厚}，出图时约束道具与手的比例
+    dims: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    material: Mapped[str] = mapped_column(String(32), default="")
+    notes: Mapped[str] = mapped_column(Text, default="")
+    # 颜色款：[{"name": "米白", "image_path": "...", "image_url": "..."}]
+    colors: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # 面料/材质实拍（可选），作为质感参考
+    fabric_image_path: Mapped[str] = mapped_column(String(1024), default="")
+    fabric_image_url: Mapped[str] = mapped_column(String(1024), default="")
+    # 参考详情图：[{"path", "url", "kind": "own" 品牌自己的 | "competitor" 竞品}]
+    ref_images: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # 商品资料（读参考详情整理 + 用户修改）：结构见 services/ecom_set/knowledge.py
+    knowledge: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class EcomScene(Base):
+    """电商图场景库：系统场景（行业预设，启动时只补缺失）与用户自己的场景。"""
+
+    __tablename__ = "ecom_scenes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    key: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    # system 系统预设 | user 我的场景（品牌场景包后续扩展）
+    scope: Mapped[str] = mapped_column(String(16), default="system", index=True)
+    owner_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    name: Mapped[str] = mapped_column(String(64), default="")
+    industries: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    description: Mapped[str] = mapped_column(String(255), default="")
+    cover_url: Mapped[str] = mapped_column(String(1024), default="")
+    # 场景卡字段：backdrop / palette / surface / props / light / mood / bg_color / product_ratio / blank / prompt
+    spec: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class EcomElement(Base):
+    """电商图元素库：系统预置元素（启动只补缺失）与用户自定义元素（文字或实物照片）。"""
+
+    __tablename__ = "ecom_elements"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    key: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    # system 系统预置 | user 我的元素
+    scope: Mapped[str] = mapped_column(String(16), default="system", index=True)
+    owner_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    name: Mapped[str] = mapped_column(String(32), default="")
+    # plant / produce / natural / vessel / fabric / water / light / festival
+    category: Mapped[str] = mapped_column(String(16), default="plant", index=True)
+    # 给 AI 的画面描述
+    prompt: Mapped[str] = mapped_column(String(200), default="")
+    keywords: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    industries: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # s 小 / m 中 / l 大（氛围类）
+    scale: Mapped[str] = mapped_column(String(4), default="s")
+    # 用户上传的实物照（生成时作为额外参考图）
+    image_path: Mapped[str] = mapped_column(String(1024), default="")
+    image_url: Mapped[str] = mapped_column(String(1024), default="")
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -74,8 +74,8 @@ async def _project_with_changes(db, tmp_path):
     return user, project, shot
 
 
-async def test_manual_edits_only_report_and_keep_generation_original(db_session, tmp_path, monkeypatch):
-    """用户保留极限词时不再静默替换，扫描不误报为已处理。"""
+async def test_manual_edits_auto_replace_and_keep_generation_original(db_session, tmp_path, monkeypatch):
+    """带货模板手改稿按线上规则自动替换极限词，生成原稿审计仍保留且不误报为当前稿。"""
     from app.api.projects import update_shot, project_compliance
     from app.schemas import ShotUpdate
 
@@ -83,11 +83,11 @@ async def test_manual_edits_only_report_and_keep_generation_original(db_session,
     monkeypatch.setattr("app.services.storage.project_dir", lambda _id: tmp_path)
     await update_shot(project.id, shot.id, ShotUpdate(narration="这是顶级设计"), db=db_session, user=user)
     await db_session.refresh(shot)
-    assert shot.narration == "这是顶级设计"
+    assert shot.narration == "这是高端设计"
     assert shot.compliance_changes["narration"]["original"] == "😀最好用的暖壶，顶级设计"
     report = await project_compliance(project.id, db=db_session, user=user)
-    assert report["mode"] == "report" and report["auto_replace"] is False
-    assert report["count"] > 0
+    assert report["mode"] == "replace" and report["auto_replace"] is True
+    assert report["count"] == 0
     assert report["replacements"][0]["matches_current"] is False
 
 

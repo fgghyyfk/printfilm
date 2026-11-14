@@ -18,7 +18,7 @@ import {
   type ImageStyleId,
 } from '../../lib/dramaImageStyles'
 
-import { subtitleModeUsesModelOutput, type DramaSubtitleMode } from '../../lib/dramaSubtitleBoard'
+import { subtitleModeUsesModelOutput, type DramaSubtitleMode } from '../../lib/dramaSubtitleSettings'
 import {
   characterIntroModeEnabled,
   type DramaCharacterIntroMode,

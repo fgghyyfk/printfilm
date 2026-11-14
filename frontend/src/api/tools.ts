@@ -4,6 +4,8 @@ import { translate as translateUi } from '../i18n/runtime'
 import { throwApiError } from '../lib/apiError'
 import { API_BASE, createJsonRequester } from './client'
 import { apiErrorMessage } from './http'
+import type { DramaAsset } from './drama'
+import type { AssetDetailReference } from '../lib/assetDetailReferences'
 
 /** 工具请求复用统一认证处理；仅生成入口沿用全局计费提示。 */
 function requestToolJson<T>(
@@ -36,6 +38,12 @@ export type ToolTaskResult = {
 
 export type ToolRunRecord = {
   id: number
+  source?: 'task' | 'tool'
+  record_key?: string
+  domain?: string | null
+  task_type?: string | null
+  text_content?: string | null
+  billing_status?: string | null
   tool_id: string
   kind: string
   status: string
@@ -43,9 +51,18 @@ export type ToolRunRecord = {
   preview_url?: string | null
   urls: string[]
   task_id?: string | null
-  params?: Record<string, string> | null
+  params?: Record<string, unknown> | null
+  references?: AssetDetailReference[]
   error?: string | null
   created_at: string
+  platform_task_id?: number | null
+  provider_task_id?: string | null
+  provider_name?: string | null
+  provider_status?: string | null
+  queue_type?: string | null
+  started_at?: string | null
+  finished_at?: string | null
+  billing_charged_fen?: number | null
 }
 
 export type ToolRunList = {
@@ -53,6 +70,7 @@ export type ToolRunList = {
   total: number
   page: number
   page_size: number
+  counts?: Record<string, number>
 }
 
 // 将 /static 相对路径补全为可访问地址
@@ -66,6 +84,12 @@ export function resolveToolMediaUrl(url?: string | null): string {
 }
 
 export type ToolRunPayload = {
+  /** 图生图自动校色的色板参考序号（资产在前、上传在后） */
+  colorRef?: number
+  /** 固定模特的资产 id（须同时是 references 第 1 项） */
+  modelAssetId?: number
+  modelId?: string
+  resolution?: string
   toolId: string
   prompt?: string
   negative?: string
@@ -75,13 +99,89 @@ export type ToolRunPayload = {
   pack?: string
   duration?: string
   motion?: string
+  voice?: string
   files?: File[]
+  videoMode?: 'text_to_video' | 'first_last_frame' | 'omni_reference'
+  references?: ToolReferenceInput[]
+  priceVersion?: number
+}
+
+/** 上传仅提交文件索引，资产仅提交 ID；媒体地址由服务端校验归属后读取。 */
+export type ToolReferenceInput = {
+  role: 'first_frame' | 'last_frame' | 'reference_image' | 'reference_video' | 'reference_audio'
+  file_index?: number
+  asset_id?: number
+}
+
+export type ToolReferenceAsset = DramaAsset & { media_kind: 'image' | 'video' | 'audio' }
+export type StudioToolEstimatePayload = {
+  tool_id: string
+  model_id: string
+  resolution: string
+  ratio: string
+  duration: string
+  video_mode: NonNullable<ToolRunPayload['videoMode']>
+  references: ToolReferenceInput[]
+}
+export type StudioToolEstimate = {
+  estimate_fen: number
+  estimate_yuan: number | string
+  billing_enabled: boolean
+  billing_mode: 'fixed_media' | 'legacy'
+  price_version: number | null
+}
+
+/** 生成前只读报价，不上传媒体、不创建任务或冻结余额。 */
+export function estimateStudioTool(payload: StudioToolEstimatePayload, signal?: AbortSignal): Promise<StudioToolEstimate> {
+  return requestToolJson('/api/tools/estimate', '预计消耗暂不可用', { method: 'POST', body: JSON.stringify(payload), signal })
+}
+
+/** 服务端分页查询当前用户可引用的资产媒体。 */
+export function listToolReferenceAssets({ kind, q = '', page = 1, pageSize = 24 }: {
+  kind?: 'image' | 'video' | 'audio'; q?: string; page?: number; pageSize?: number
+}, signal?: AbortSignal): Promise<{ items: ToolReferenceAsset[]; total: number; page: number; page_size: number }> {
+  const qs = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
+  if (kind) qs.set('kind', kind)
+  if (q) qs.set('q', q)
+  return requestToolJson(`/api/tools/reference-assets?${qs}`, '加载资产库失败', { signal })
+}
+
+/** 模特库条目：个人图片资产 + 是否默认模特 */
+export type ToolModel = ToolReferenceAsset & { is_default: boolean }
+
+/** 读取本人模特库（默认模特排第一）。 */
+export function listToolModels(signal?: AbortSignal): Promise<{ items: ToolModel[] }> {
+  return requestToolJson('/api/tools/models', '加载模特库失败', { signal })
+}
+
+/** 加入/移出模特库，或设为默认；返回更新后的模特库。 */
+export function updateToolModel(assetId: number, body: { is_model: boolean; is_default?: boolean }): Promise<{ items: ToolModel[] }> {
+  return requestToolJson(`/api/tools/models/${assetId}`, '保存模特失败', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  })
+}
+
+/** 一句话生成新模特（收一张生图费），返回更新后的模特库 */
+export function generateToolModel(body: { description: string; name?: string; make_default?: boolean }): Promise<{ items: ToolModel[] }> {
+  return requestToolJson('/api/tools/models/generate', '生成模特失败', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  }, true)
+}
+
+/** 上传模特照片（免费），返回更新后的模特库 */
+export function uploadToolModel(file: File, makeDefault: boolean): Promise<{ items: ToolModel[] }> {
+  const body = new FormData()
+  body.append('file', file)
+  body.append('make_default', makeDefault ? 'true' : 'false')
+  return requestToolJson('/api/tools/models/upload', '上传模特失败', { method: 'POST', body })
 }
 
 // 提交工具生成（multipart）
 export async function runStudioTool(payload: ToolRunPayload): Promise<ToolRunResult> {
   const body = new FormData()
   body.append('tool_id', payload.toolId)
+  body.append('model_id', payload.modelId || '')
+  body.append('resolution', payload.resolution || '')
   body.append('prompt', payload.prompt || '')
   body.append('negative', payload.negative || '')
   body.append('ratio', payload.ratio || '')
@@ -90,6 +190,12 @@ export async function runStudioTool(payload: ToolRunPayload): Promise<ToolRunRes
   body.append('pack', payload.pack || '')
   body.append('duration', payload.duration || '')
   body.append('motion', payload.motion || '')
+  body.append('voice', payload.voice || 'narrator_calm')
+  if (payload.videoMode) body.append('video_mode', payload.videoMode)
+  if (payload.references) body.append('references', JSON.stringify(payload.references))
+  if (payload.priceVersion !== undefined) body.append('price_version', String(payload.priceVersion))
+  if (payload.colorRef !== undefined) body.append('color_ref', String(payload.colorRef))
+  if (payload.modelAssetId) body.append('model_asset_id', String(payload.modelAssetId))
   for (const file of payload.files || []) {
     body.append('files', file)
   }
@@ -102,9 +208,16 @@ export async function pollStudioToolTask(taskId: string): Promise<ToolTaskResult
 }
 
 // 个人中心：分页拉取工具创作记录
-export async function listToolRuns(page = 1, pageSize = 8, signal?: AbortSignal): Promise<ToolRunList> {
+export type ToolRunFilters = { kind?: string; status?: string; task_id?: string; created_from?: string; created_to?: string }
+
+export async function listToolRuns(page = 1, pageSize = 8, filters: ToolRunFilters = {}, signal?: AbortSignal): Promise<ToolRunList> {
   const qs = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
+  for (const [key, value] of Object.entries(filters)) if (value) qs.set(key, value)
   return requestToolJson(`/api/tools/runs?${qs}`, translateUi("ecomSet.loadFailed"), { signal })
+}
+
+export async function getGenerationConfig(): Promise<{ models: Record<string, string> }> {
+  return requestToolJson('/api/tools/config', '加载模型配置失败')
 }
 
 // 个人中心：单条创作详情（含 OSS 结果地址）

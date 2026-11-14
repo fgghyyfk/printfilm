@@ -19,6 +19,7 @@ from app.services.ecom_set.prompts import (
     clip,
     normalize_copy,
     sanitize_scene,
+    title_limit,
 )
 from app.services.compliance.ad_words import Hit, summarize
 from app.services.llm_client import chat_completions, chat_completions_vision
@@ -30,13 +31,12 @@ VISION_MAX_EDGE = 1024
 
 # 把商品图缩到长边 ≤1024 并转成 JPEG data URI，节省视觉 token
 def image_data_uri(path: Path) -> str:
-    from PIL import Image, ImageOps
+    from app.services.ecom_set.composite import flatten_white
 
-    with Image.open(path) as im:
-        im = ImageOps.exif_transpose(im).convert("RGB")
-        im.thumbnail((VISION_MAX_EDGE, VISION_MAX_EDGE))
-        buf = io.BytesIO()
-        im.save(buf, format="JPEG", quality=88)
+    im = flatten_white(path)  # 透明底 PNG 铺白，避免透明区域变黑影响视觉识别
+    im.thumbnail((VISION_MAX_EDGE, VISION_MAX_EDGE))
+    buf = io.BytesIO()
+    im.save(buf, format="JPEG", quality=88)
     return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
 
 
@@ -74,13 +74,14 @@ def align_items(raw_items: Any, slots: list[Slot], *, name: str, language: str =
             # 只有该位置的项没标已知槽位时才按位置兜底，避免错配别的槽位的文案
             pos = ordered[i] if i < len(ordered) else {}
             src = pos if str(pos.get("slot") or "") not in valid else {}
-        copy, h = normalize_copy(src, layout=slot.layout, language=language)
+        copy, h = normalize_copy(src, layout=slot.layout, language=language, title_max=title_limit(slot.key))
         hits += h
-        if language == "zh" and slot.layout != "none" and not copy["title"]:
+        if language == "zh" and slot.layout not in {"none", "info"} and not copy["title"]:
             copy["title"] = clip(name, COPY_LIMITS[language][0])
         scene, sh = sanitize_scene(str(src.get("scene") or ""))
         hits += sh
-        items.append({"slot": slot.key, "scene": clip(scene, 300), "copy": copy})
+        items.append({"slot": slot.key, "scene": clip(scene, 300), "copy": copy,
+                      "shot": str(src.get("shot") or ""), "elements": list(src.get("elements") or [])[:6]})
     return items, hits
 
 
@@ -126,15 +127,18 @@ async def plan_set(
     style: str,
     slots: list[Slot],
     language: str = "zh",
+    knowledge: str = "",
+    extra: str = "",
 ) -> dict:
-    """规划整套图。返回 {"product", "items":[{slot, scene, copy}], "warnings", "vision"}。
+    """规划整套图（knowledge 为商品资料摘要，文案只用其中事实）。返回 {"product", "items":[{slot, scene, copy}], "warnings", "vision"}。
 
     优先用视觉模型看图；视觉不可用或失败时退化为纯文字规划并写入 warnings。
     """
     settings = get_settings()
     platform_name = PLATFORMS[normalize_platform(platform)][0]
     user_text = build_plan_user_text(
-        name=name, notes=notes, platform_name=platform_name, style=style, slots=slots, language=language
+        name=name, notes=notes, platform_name=platform_name, style=style, slots=slots, language=language,
+        knowledge=knowledge, extra=extra,
     )
     warnings: list[str] = []
     vision = False

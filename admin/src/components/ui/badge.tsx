@@ -11,17 +11,17 @@ export function Badge({
 }) {
   const variants = {
     default: "border-transparent bg-[var(--admin-text)] text-white",
-    secondary: "border-transparent bg-[#f1f5f9] text-[var(--admin-muted)]",
+    secondary: "border-[#e4e8e0] bg-[#f3f5f0] text-[#626e63]",
     outline: "border-[var(--admin-border)] bg-white text-[var(--admin-muted)]",
-    destructive: "border-transparent bg-[#fef2f2] text-[#dc2626]",
-    success: "border-transparent bg-[var(--admin-accent-soft)] text-[var(--admin-forest)]",
-    warning: "border-transparent bg-[#fff7ed] text-[#c2410c]",
-    info: "border-transparent bg-[var(--admin-tag-bg)] text-[var(--admin-tag-text)]",
+    destructive: "border-[#f0d9d5] bg-[#fcf0ee] text-[#aa3d37]",
+    success: "border-[#d5e6d1] bg-[var(--admin-accent-soft)] text-[var(--admin-forest)]",
+    warning: "border-[#eddfc4] bg-[#fcf6e9] text-[#8e621d]",
+    info: "border-[#d8e3e8] bg-[#eff5f7] text-[#456578]",
   };
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold tracking-wide",
+        "inline-flex min-h-6 items-center gap-1.5 whitespace-nowrap rounded-md border px-2 py-0.5 text-[11px] font-semibold leading-4",
         variants[variant],
         className,
       )}

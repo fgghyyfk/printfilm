@@ -14,7 +14,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_name: str = "PRINTFILM"
+    app_name: str = "开口播 KaiKou"
     debug: bool = True
     # 是否打印 SQLAlchemy 原始 SQL（默认关，避免刷屏；需要排查 SQL 时设 SQL_ECHO=true）
     sql_echo: bool = False
@@ -25,9 +25,9 @@ class Settings(BaseSettings):
     database_url_sync: str = "postgresql+psycopg2://printfilm:change-me-strong-db-password@127.0.0.1:15432/printfilm"
     # 连接已初始化的共享库时可关闭建表/补列/种子数据；仍加载数据库中的模型配置。
     database_bootstrap_enabled: bool = True
-    # Postgres 连接池（统一任务平台 / API 共用）
-    db_pool_size: int = 5
-    db_max_overflow: int = 5
+    # 每个 API 进程与任务平台共用；默认最多 70，PG 上限 100 时保留 30 给其他连接。
+    db_pool_size: int = 50
+    db_max_overflow: int = 20
     db_pool_recycle_sec: int = 1800
     db_pool_timeout_sec: int = 30
     redis_url: str = "redis://127.0.0.1:6379/0"
@@ -75,6 +75,8 @@ class Settings(BaseSettings):
     drama_user_video_job_limit: int = 12
     # 单个分镜视频最大尝试次数；超过后直接失败，避免长时间卡在同一镜
     drama_fragment_max_attempts: int = 3
+    # 角色新音色设计暂未开放；已有音色和普通项目配音继续可用。
+    drama_voice_generation_enabled: bool = False
     # 科普 full：Seedance 视频内置口播+环境音，后期不再叠外部 TTS
     kepu_seedance_native_audio: bool = True
     # 仅当 native_audio=false 时生效：Seedance 只要操作音效，口播改后期 TTS（默认开）
@@ -93,6 +95,8 @@ class Settings(BaseSettings):
     avatar_segment_max_sec: int = 20
     # 计费：每秒成片预扣/结算的分（自建 GPU 默认 0）
     avatar_price_fen_per_sec: int = 0
+    # 720p 成片单价（分/秒）；0 表示按 480p 单价 × 1.8
+    avatar_price_fen_per_sec_720p: int = 0
     # 数字人形象/场景/文案：OpenAI 兼容服务（默认 promptoll），与主流水线的 TokenFree 渠道互不影响
     avatar_ai_base_url: str = "https://promptoll.com/v1"
     avatar_ai_api_key: str = ""
@@ -104,6 +108,16 @@ class Settings(BaseSettings):
     # 火山引擎豆包语音合成（直连）：配了 Key 时豆包音色优先走这里
     volc_tts_base_url: str = "https://openspeech.bytedance.com"
     volc_tts_api_key: str = ""
+    # 生图改走 OpenAI（可选旁路）：开启并填 Key 后，按作用范围（tools=仅工具中心 / all=全站）用 gpt-image 生图
+    openai_image_enabled: bool = False
+    openai_image_api_key: str = ""
+    openai_image_base_url: str = "https://api.openai.com/v1"
+    openai_image_model: str = "gpt-image-2"
+    openai_image_quality: str = "high"
+    openai_image_scope: str = "tools"
+    # 生图渠道：openai 官方 | promptoll（自有网关 https://api.promptoll.com/v1，Key 以 zai_ 开头）
+    openai_image_provider: str = "openai"
+    promptoll_api_key: str = ""
     # 非 2.0 音色用的资源（2.0 音色自动用 seed-tts-2.0）
     volc_tts_resource_id: str = "seed-tts-1.0"
     # 语速 -50~100（0 正常，10 约 1.1 倍）
@@ -114,16 +128,24 @@ class Settings(BaseSettings):
     volc_tts_fen_per_10k_chars: int = 500
 
     ark_mock: bool = False
+    # 本地媒体联调：文字仍请求真实 LLM，图片/视频/语音仅留痕并返回默认素材。
+    local_media_mock: bool = False
     # 本地连接共享测试库时关闭，避免本机和服务器同时消费、恢复同一队列。
     task_runtime_enabled: bool = True
-    # 内置任务平台的进程内并发上限（全站 Worker 槽位）。
+    # 未单独配置队列时，每个队列使用的并发上限。
     task_runtime_max_concurrency: int = 4
-    # 单用户同时进行中的 Worker 槽位（不含 awaiting_poll 注册项）。
+    # 三个独立队列；None 沿用 task_runtime_max_concurrency 作为各队列容量。
+    task_queue_text_concurrency: int | None = None
+    task_queue_image_concurrency: int | None = None
+    task_queue_video_concurrency: int | None = None
+    # 单用户在每个队列的并发上限；视频包含等待上游完成的任务。
     task_user_max_concurrency: int = 4
     # 数字人对口型这类长时 GPU 任务单独一个槽位池，不占上面的全站槽位（单条要跑 1–3 小时）。
     task_gpu_max_concurrency: int = 2
     # 单用户同时进行中的 GPU 长任务数；各用户的分段轮流进 GPU 队列，一人批量不会堵住别人。
     task_gpu_user_max_concurrency: int = 1
+    # 团队共用生成槽位，不取代单用户与全站上限。
+    task_team_max_concurrency: int = 4
     # Selector 每轮并发非阻塞查询上游的上限（类似 NIO select 就绪 channel 批处理）。
     task_poll_max_concurrency: int = 20
     # 孤儿恢复：leased/running 超过该秒数无更新、且本进程无执行协程时重排队。
@@ -145,7 +167,7 @@ class Settings(BaseSettings):
     # Legacy flag; prefer billing_enabled
     quota_enabled: bool = False
 
-    # Token 计费：用户扣费 = TokenFree 官方成本（billing_markup 保留兼容，不再乘）
+    # Token 计费：用户扣费 = 上游官方成本 × billing_markup（1.06 即上浮 6%）；生图/视频发布固定价目后按价目表
     billing_enabled: bool = False
     billing_markup: float = 1.0
     # token / 视频时长估价缓冲；按张生图官价不再乘此系数（否则 5 元赠金冻不住一张图）
@@ -168,21 +190,13 @@ class Settings(BaseSettings):
     billing_est_tts_tokens: int = 5_000
     billing_est_seedance_tokens_per_sec: int = 32_000
     # Signup grant (fen)
-    billing_signup_grant_fen: int = 500
+    billing_signup_grant_fen: int = 0
 
     # 用户消费里程碑弹窗（累计扣费每达 interval 分提醒一次；默认 10000 = ¥100）
     billing_user_alert_enabled: bool = True
     billing_user_alert_interval_fen: int = 10000
 
-    # 平台总费用邮件告警（按上游 cost_fen 聚合）
-    billing_admin_cost_alert_enabled: bool = False
-    billing_admin_cost_alert_threshold_fen: int = 0
-    billing_admin_cost_alert_emails: str = ""
-    billing_admin_cost_alert_period: str = "monthly"
-    billing_admin_cost_alert_last_period_key: str = ""
-    billing_admin_cost_alert_last_level: int = 0
-
-    # SMTP（管理员费用告警邮件）
+    # SMTP（密码重置与团队邀请邮件）
     smtp_enabled: bool = False
     smtp_host: str = ""
     smtp_port: int = 587
@@ -201,6 +215,8 @@ class Settings(BaseSettings):
     public_base_url: str = "http://127.0.0.1:8000"
     ffmpeg_path: str = "ffmpeg"
     ffprobe_path: str = "ffprobe"
+    # 数字资产市场。环境变量 MARKETPLACE_ENABLED；管理端保存后以数据库为准。
+    marketplace_enabled: bool = False
 
     tos_endpoint: str = ""
     tos_bucket: str = ""
@@ -240,6 +256,10 @@ class Settings(BaseSettings):
     )
     # Comma-separated emails promoted to admin on startup (existing users only)
     admin_bootstrap_emails: str = ""
+
+    def admin_bootstrap_email_set(self) -> set[str]:
+        """启动提权名单（小写）。"""
+        return {item.strip().lower() for item in (self.admin_bootstrap_emails or "").split(",") if item.strip()}
 
 
 @lru_cache

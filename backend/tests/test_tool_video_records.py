@@ -75,12 +75,15 @@ async def test_historical_success_projects_snapshot_without_financial_change(db_
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('billing', ['skipped', 'frozen'])
 @pytest.mark.parametrize('expired', [False, True])
-async def test_background_failure_and_timeout_update_record(db_session, expired):
+async def test_background_failure_and_timeout_update_record(db_session, expired, billing):
+    """费用未知的失败/超时：确有冻结才转待核对；计费关闭（skipped）无钱可留，按普通失败收尾。"""
     from datetime import timedelta
-    user = await make_user(db_session)
+    user = await make_user(db_session, frozen_fen=100 if billing == 'frozen' else 0)
     task = await make_task(db_session, user, domain='studio', task_type='tool_video',
-                           status='awaiting_poll', billing_status='skipped', provider_task_id=f'tool-failure-{expired}')
+                           status='awaiting_poll', billing_status=billing, provider_task_id=f'tool-failure-{expired}-{billing}')
+    task.billing_estimate_fen = 100 if billing == 'frozen' else 0
     task.started_at = datetime.now(UTC) - timedelta(hours=1) if expired else datetime.now(UTC)
     row = await tool_record(db_session, user, task)
     await db_session.commit()
@@ -92,8 +95,12 @@ async def test_background_failure_and_timeout_update_record(db_session, expired)
     upstream = AsyncMock(return_value={'status': 'failed', 'error': 'upstream error with secret'})
     with patch.object(poller, 'AsyncSessionLocal', session), patch('app.services.studio_tools.poll_video_task', upstream):
         await poller._poll_one_ephemeral_task(task.id, now=datetime.now(UTC), timeout_sec=900)
-    assert row.status == task.status == 'awaiting_review'
+    expected = 'awaiting_review' if billing == 'frozen' else 'failed'
+    assert row.status == task.status == expected
     assert row.error and 'secret' not in row.error
+    if billing == 'frozen':
+        await db_session.refresh(user)
+        assert task.billing_status == 'frozen' and user.frozen_fen == 100
     assert upstream.await_count == (0 if expired else 1)
 
 

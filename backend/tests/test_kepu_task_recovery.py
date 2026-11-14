@@ -60,8 +60,13 @@ async def test_create_failure_does_not_commit_running_state_or_clear_final(db_se
 
 
 @pytest.mark.parametrize("route", REGEN_ROUTES)
-async def test_regen_commits_task_and_project_together(db_session, route):
+async def test_regen_commits_task_and_project_together(db_session, monkeypatch, route):
     """真实create_task写入完成前，入口不得裸提交项目状态。"""
+    if route is projects.regen_audio:
+        # 视频内置口播时单镜重配音在建任务前即被拒绝；此处验证外部配音模式的提交边界。
+        from app.config import get_settings
+
+        monkeypatch.setattr(get_settings(), "kepu_seedance_native_audio", False)
     user, project, shot = await seed_project(db_session)
     commit = db_session.commit
     snapshots = []
@@ -240,8 +245,10 @@ async def test_parallel_regen_success_then_failure_preserves_stable_status_and_r
         SimpleNamespace(local_url="/static/new.png", remote_url="https://upstream.test/new.png"),
         RuntimeError("第二镜图片生成失败"),
     ]))
+    # handler 收尾的产物快照经 app.database 取会话，同样指向隔离事务。
     with (patch.object(executor, "AsyncSessionLocal", same_session),
           patch.object(pipeline, "AsyncSessionLocal", same_session),
+          patch("app.database.AsyncSessionLocal", same_session),
           patch.object(pipeline, "get_ark", return_value=ark),
           patch.object(pipeline, "_record_seedream_usage", AsyncMock()),
           patch.object(executor, "freeze_for_task", AsyncMock()) as freeze):

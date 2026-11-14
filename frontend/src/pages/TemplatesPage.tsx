@@ -5,15 +5,13 @@ import { api } from '../api'
 import type { Template } from '../api'
 import BillingErrorNotice from '../components/billing/BillingErrorNotice'
 import AppShell from '../components/layout/AppShell'
-import PillTabs from '../components/ui/PillTabs'
-import { CATEGORY_ORDER, HOME_CATEGORY_LABELS } from '../lib/categories'
+import { shortVideoCreatePath } from '../lib/shortVideoRoutes'
 
 export default function TemplatesPage() {
   const { t: translateUi } = useI18n()
   const nav = useNavigate()
   const [templates, setTemplates] = useState<Template[]>([])
   const [error, setError] = useState('')
-  const [category, setCategory] = useState('全部')
   const [q, setQ] = useState('')
 
   useEffect(() => {
@@ -23,26 +21,8 @@ export default function TemplatesPage() {
       .catch((e) => setError(String(e.message || e)))
   }, [])
 
-  const categoryKeys = useMemo(() => {
-    const found = new Set<string>()
-    for (const t of templates) {
-      for (const c of t.category || []) {
-        if (CATEGORY_ORDER.includes(c)) found.add(c)
-      }
-    }
-    return ['全部', ...CATEGORY_ORDER.filter((c) => found.has(c))]
-  }, [templates])
-
-  const categoryLabels = categoryKeys.map((k) => HOME_CATEGORY_LABELS[k] || k)
-  const labelToKey = useMemo(() => {
-    const m = new Map<string, string>()
-    for (const k of categoryKeys) m.set(HOME_CATEGORY_LABELS[k] || k, k)
-    return m
-  }, [categoryKeys, translateUi])
-
   const filtered = useMemo(() => {
     let list = templates
-    if (category !== '全部') list = list.filter((t) => (t.category || []).includes(category))
     if (q.trim()) {
       const s = q.trim().toLowerCase()
       list = list.filter(
@@ -50,14 +30,11 @@ export default function TemplatesPage() {
       )
     }
     return list
-  }, [templates, category, q])
+  }, [templates, q])
 
   function openTemplate(t: Template) {
-    if (!localStorage.getItem('token')) {
-      nav('/auth')
-      return
-    }
-    nav(`/studio/new?template=${t.id}`)
+    const path = shortVideoCreatePath(t.id)
+    nav(localStorage.getItem('token') ? path : `/auth?next=${encodeURIComponent(path)}`)
   }
 
   return (
@@ -65,7 +42,7 @@ export default function TemplatesPage() {
       <div className="pf-section-head">
         <div>
           <h2>{translateUi("workflow.templateLibrary")}</h2>
-          <p>{translateUi("workflow.chooseAVisualStyleForExplainersAndKnowledgeVideos")}</p>
+          <p>四种精选动画与插画风格，从想法、文案分镜到画面配音，分步完成短片。默认使用 3D 动画。</p>
         </div>
       </div>
       <div className="pf-search" style={{ maxWidth: 420, marginBottom: '1rem' }}>
@@ -75,12 +52,6 @@ export default function TemplatesPage() {
           placeholder={translateUi("workflow.searchTemplateNamesOrDescriptions")}
         />
       </div>
-      <PillTabs
-        items={categoryLabels}
-        value={HOME_CATEGORY_LABELS[category] || category}
-        onChange={(label) => setCategory(labelToKey.get(label) || '全部')}
-        ariaLabel={translateUi("workflow.templateCategories")}
-      />
       {error ? <BillingErrorNotice message={error} /> : null}
       <div className="pf-template-grid" style={{ marginTop: '1rem' }}>
         {filtered.map((t) => (

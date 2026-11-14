@@ -1,5 +1,7 @@
 import { cn } from "@/lib/utils";
 import { AdminField } from "@/components/admin/AdminField";
+import { Select } from "@/components/ui/select";
+import { useId } from "react";
 
 export type AdminSelectOption = {
   value: string;
@@ -26,26 +28,28 @@ export function AdminSelect({
   className,
   onChange,
 }: AdminSelectProps) {
+  const id = useId();
   const control = (
-    <div className={cn("admin-select-wrap", className)}>
-      <select
-        className="admin-select"
+    <div className={cn("admin-select-container", className)}>
+      <Select
+        id={id}
+        aria-label={label || placeholder || "筛选选项"}
         value={value}
         onChange={(e) => onChange(e.target.value)}
       >
-        {placeholder ? <option value="">{placeholder}</option> : null}
+        {placeholder && !options.some((option) => option.value === "") ? <option value="">{placeholder}</option> : null}
         {options.map((opt) => (
           <option key={opt.value || "__empty"} value={opt.value}>
             {opt.label}
           </option>
         ))}
-      </select>
+      </Select>
     </div>
   );
 
   if (!label && !hint) return control;
   return (
-    <AdminField label={label} hint={hint}>
+    <AdminField label={label} hint={hint} htmlFor={id}>
       {control}
     </AdminField>
   );

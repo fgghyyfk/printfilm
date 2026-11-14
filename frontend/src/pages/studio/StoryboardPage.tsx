@@ -1,11 +1,12 @@
 import { translate as translateUi } from '../../i18n/runtime'
 import { applyComplianceSuggestion } from '../../lib/complianceChanges'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { api, defaultsFromTemplate } from '../../api'
 import type { Project, Shot, Template } from '../../api'
 import AppShell from '../../components/layout/AppShell'
 import Stepper from '../../components/ui/Stepper'
+import ImageTextStoryboard from './ImageTextStoryboard'
 import {
   IconChevronLeft,
   IconDownload,
@@ -19,7 +20,9 @@ import {
 } from '../../components/ui/Icons'
 import { scenePromptForDisplay } from '../../promptDisplay'
 import { dialog } from '../../lib/dialog'
-import { hasActiveUnifiedTasks, isProjectBusy, requestProjectCancellation } from '../../lib/kepuTaskControls'
+import { hasActiveUnifiedTasks, requestProjectCancellation } from '../../lib/kepuTaskControls'
+import { downloadSingleVideo } from '../../lib/clientDownload'
+import { withReturn } from '../../features/marketplace/ui'
 import { handleBillingError } from '../../lib/billingError'
 import BillingErrorNotice from '../../components/billing/BillingErrorNotice'
 import ComplianceNotice from '../../components/compliance/ComplianceNotice'
@@ -27,10 +30,12 @@ import EcomSetSourceLink from '../../components/daihuo/EcomSetSourceLink'
 import { getProjectCompliance, undoProjectReplacement, applyProjectSuggestion } from '../../api/compliance'
 import { kepuComplianceLabel, projectComplianceKey, scrollToShotRow, shotRowDomId } from '../../lib/compliance'
 import { useI18n } from '../../i18n'
+import { getActiveLocale } from '../../i18n/detect'
 import { useKepuProgress } from '../../hooks/useKepuProgress'
 import {
   effectiveStatus,
   formatMmSs,
+  isProjectBusy,
   kepuBillingPhase,
   kepuPhaseHint,
   kepuStepIndex,
@@ -44,6 +49,7 @@ import {
   shotDisplayLabel,
   statusLabel,
 } from '../../lib/status'
+import { batchRegenAudioPlan, canRegenShotAudio, shotImageAction } from '../../lib/kepuShotActions'
 import {
   SEGMENT_SCRIPT_PLACEHOLDER,
   SHOT_DURATION_MAX,
@@ -56,6 +62,11 @@ import {
   sumDuration,
   validateSegmentScriptDuration,
 } from '../../lib/segmentDuration'
+
+/** 线上新增文案的中英文切换（未进 i18n 词表的少量句子） */
+function lt(zh: string, en: string): string {
+  return getActiveLocale() === 'en' ? en : zh
+}
 
 function csvEscape(value: string | number | null | undefined) {
   const s = String(value ?? '')
@@ -116,7 +127,8 @@ export default function StoryboardPage() {
   const { id } = useParams()
   const projectId = Number(id)
   const nav = useNavigate()
-  const { t , t: translateUi } = useI18n()
+  const location = useLocation()
+  const { t, t: translateUi } = useI18n()
   const [project, setProject] = useState<Project | null>(null)
   const [template, setTemplate] = useState<Template | null>(null)
   const [busy, setBusy] = useState(false)
@@ -158,9 +170,15 @@ export default function StoryboardPage() {
       .getProject(projectId, { signal: controller.signal })
       .then((p) => {
         if (controller.signal.aborted) return
+        if (p.creation_session_id) {
+          nav(`/studio/sessions/${p.creation_session_id}?project=${p.id}`, { replace: true })
+          return
+        }
         setProject(p)
-        return api.templates().then((list) => {
-          if (!controller.signal.aborted) setTemplate(list.find((t) => t.id === p.template_id) || null)
+        return api.templates().then(async (list) => {
+          const selected = list.find((t) => t.id === p.template_id)
+          const resolved = selected || (p.template_id ? await api.getTemplate(p.template_id) : null)
+          if (!controller.signal.aborted) setTemplate(resolved)
         })
       })
       .catch((err) => {
@@ -244,14 +262,14 @@ export default function StoryboardPage() {
       : needsScriptConfirm
         ? isAvatar
           ? translateUi("workflow.confirmStoryboardAndVoiceEachSegment")
-          : translateUi("workflow.confirmStoryboardAndGenerateImagesAndVoiceover")
+          : lt('确认分镜，生成参考图画面', 'Confirm storyboard and generate reference images')
         : needsVideos
           ? isAvatar
             ? translateUi("workflow.generateAvatarVideo")
-            : translateUi("workflow.generateShotVideos")
+            : lt('使用图片，逐镜生成视频', 'Generate shot videos from images')
           : translateUi("workflow.continueGeneration")
 
-  // 工作台进度：完整模式要镜头视频 + 外部 TTS，静图模式只配音合成
+  // 完整模式的默认旁白由视频模型生成；仅实际存在外部配音时展示 TTS 进度。
   const progressItems = useMemo(() => {
     if (!project) return []
     const list = project.shots || []
@@ -266,13 +284,13 @@ export default function StoryboardPage() {
       { label: translateUi("workflow.topicAnalysis"), done: true },
       { label: translateUi("workflow.storyboardScript"), done: list.length > 0 || !['DRAFT', 'SCRIPTING'].includes(project.status) },
       {
-        label: avatar ? translateUi("workflow.portraits", { v1: String(imgs), v2: String(list.length || 0) }) : translateUi("workflow.imageGeneration", { v1: String(imgs), v2: String(list.length || 0) }),
+        label: avatar ? translateUi("workflow.portraits", { v1: String(imgs), v2: String(list.length || 0) }) : `${lt('参考图画面', 'Reference images')} (${imgs}/${list.length || 0})`,
         done: list.length > 0 && imgs === list.length,
       },
     ]
     if (full) {
       items.push({
-        label: `${avatar ? translateUi("workflow.talkingHeadVideo") : translateUi("workflow.videoClips")} (${vids}/${list.length || 0})`,
+        label: `${avatar ? translateUi("workflow.talkingHeadVideo") : lt('镜头视频与声音', 'Shot videos and sound')} (${vids}/${list.length || 0})`,
         done:
           list.length > 0 &&
           (vids === list.length ||
@@ -281,12 +299,14 @@ export default function StoryboardPage() {
         pct: stage === 'VIDEOING' ? project.progress : undefined,
       })
     }
-    items.push({
-      label: translateUi("workflow.narration", { v1: String(auds), v2: String(list.length || 0) }),
-      done: list.length > 0 && auds === list.length,
-      run: stage === 'AUDIOING',
-      pct: stage === 'AUDIOING' ? project.progress : undefined,
-    })
+    if (!full || auds > 0 || stage === 'AUDIOING') {
+      items.push({
+        label: translateUi("workflow.narration", { v1: String(auds), v2: String(list.length || 0) }),
+        done: list.length > 0 && auds === list.length,
+        run: stage === 'AUDIOING',
+        pct: stage === 'AUDIOING' ? project.progress : undefined,
+      })
+    }
     items.push({
       label: full ? translateUi("workflow.clipComposition") : translateUi("workflow.finalRendering"),
       done: Boolean(project.final_video_url) || project.status === 'DONE',
@@ -392,10 +412,25 @@ export default function StoryboardPage() {
   async function composeOnly() {
     if (!project) return
     setBusy(true)
+    setError('')
     try {
       setProject(await api.compose(project.id))
     } catch (err) {
       setError(err instanceof Error ? err.message : translateUi("workflow.compositionFailed"))
+      await handleBillingError(err, nav)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function downloadFinal() {
+    if (!project?.final_video_url) return
+    setBusy(true)
+    setError('')
+    try {
+      await downloadSingleVideo({ url: api.assetUrl(project.final_video_url, project.updated_at), title: project.title, projectId: project.id })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : translateUi("history.downloadFailed"))
     } finally {
       setBusy(false)
     }
@@ -457,13 +492,15 @@ export default function StoryboardPage() {
     setBusy(true)
     setError('')
     try {
-      for (const shotId of batchSelected) {
-        if (durationVal != null) {
+      // 先改完时长：配音任务一旦开始，整片级占用会挡住后续保存
+      if (durationVal != null) {
+        for (const shotId of batchSelected) {
           await api.updateShot(project.id, shotId, { duration: durationVal })
         }
-        if (batchRegenAudio) {
-          await api.regenAudio(project.id, shotId)
-        }
+      }
+      const audioPlan = batchRegenAudio ? batchRegenAudioPlan(project, batchSelected) : null
+      if (audioPlan) {
+        await api.regenAudio(project.id, audioPlan.shotId, audioPlan.extraShotIds)
       }
       setProject(await api.getProject(project.id))
       setBatchOpen(false)
@@ -512,7 +549,7 @@ export default function StoryboardPage() {
     try {
       // 数字人：按该段场景描述重画「同一个人 + 场景」
       setProject(
-        project.pipeline_mode === 'avatar'
+        shotImageAction(project.pipeline_mode) === 'avatar_scene'
           ? await api.regenAvatarScene(project.id, shot.id)
           : await api.regenImage(project.id, shot.id),
       )
@@ -709,6 +746,32 @@ export default function StoryboardPage() {
 
   return (
     <AppShell active="studio" wide>
+      {!isFullPipeline ? <>
+        {error ? <BillingErrorNotice message={error} /> : null}
+        {project.error_msg ? <p className="pf-error">{project.error_msg}</p> : null}
+        <ImageTextStoryboard
+          key={project.id}
+          project={project}
+          template={template}
+          busy={busy}
+          running={running}
+          busyShotIds={busyShotIds}
+          onBack={() => nav('/history')}
+          onSettings={() => nav(`/studio/new?project=${project.id}`)}
+          onGenerate={() => void continueGenerate()}
+          onCompose={() => void composeOnly()}
+          onCancel={() => void cancelGenerate()}
+          onRestart={() => void restartGenerate()}
+          onExport={() => downloadStoryboardCsv(project)}
+          onDownload={() => void downloadFinal()}
+          onEditor={() => nav(`/studio/${project.id}/editor`)}
+          onEditShot={openShotEdit}
+          onPreviewShot={(shot) => setPreview({ kind: 'shot', shotNo: shot.shot_no, imageUrl: shot.image_url, videoUrl: shot.video_url, audioUrl: shot.audio_url, caption: shotCaption(shot) })}
+          onRegenImage={(shot) => void regenImage(shot)}
+          onRegenAudio={(shot) => void regenAudio(shot)}
+        />
+        <ProjectMediaCostSummary project={project} />
+      </> : <>
       <header className="pf-page-head">
         <div className="pf-page-head-row">
           <div>
@@ -829,6 +892,7 @@ title={translateUi("workflow.composeAgainFromTheCurrentShots")}
       </header>
 
       {error ? <BillingErrorNotice message={error} /> : null}
+      <ProjectMediaCostSummary project={project} />
       {project.error_msg ? <p className="pf-error">{project.error_msg}</p> : null}
 
       <div className="pf-board">
@@ -941,7 +1005,7 @@ title={translateUi("workflow.composeAgainFromTheCurrentShots")}
           <div className="pf-prompt-panel">
             <h4>{translateUi("workflow.builtInPrompts")}</h4>
             <p className="pf-muted" style={{ fontSize: '0.72rem', margin: '0 0 0.45rem' }}>
-              {translateUi("workflow.theTemplateProvidesTheVisualStyleAiDecidesWhether")}
+              {lt('生图使用模板画风参考图，并参考前镜画面延续角色、服装与色彩；每镜图片再用于生成视频。', 'Images use the template style reference and the previous shot to keep characters, outfits and colors consistent; each shot image is then used to generate video.')}
             </p>
             {(
               [
@@ -1015,9 +1079,14 @@ title={translateUi("workflow.composeAgainFromTheCurrentShots")}
                   </button>
                 ) : null}
                 {hasFinal ? (
-                  <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm" onClick={openFinalPreview}>
-                    {translateUi("workflow.previewVideo")}
-                  </button>
+                  <>
+                    <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm" onClick={openFinalPreview}>
+                      {translateUi("workflow.previewVideo")}
+                    </button>
+                    <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm" onClick={() => nav(withReturn(`/marketplace/from-printfilm?project=${project.id}`, `${location.pathname}${location.search}`))}>
+                      发布到数字资产市场
+                    </button>
+                  </>
                 ) : (
                   <button
                     type="button"
@@ -1248,19 +1317,27 @@ title={translateUi("workflow.composeAgainFromTheCurrentShots")}
                                   {shot.video_url ? translateUi("workflow.regenerateVideo") : translateUi("workflow.generateVideo_d2252f")}
                                 </button>
                               ) : null}
-                              <button
-                                type="button"
-                                className="more"
-                                aria-label={translateUi("workflow.moreActions")}
-                                disabled={rowBusy}
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setMenuShotId((id) => (id === shot.id ? null : shot.id))
-                                }}
-                              >
-                                ⋮
-                              </button>
-                              {menuShotId === shot.id ? (
+                              {shot.video_url ? (
+                                <button type="button" className="op" onClick={() => setPreview({ kind: 'shot', shotNo: shot.shot_no, imageUrl: shot.image_url, videoUrl: shot.video_url, audioUrl: shot.audio_url, caption: shotCaption(shot) })}>
+                                  {lt('预览视频', 'Preview video')}
+                                </button>
+                              ) : null}
+                              {/* 菜单目前只有重配音，内置口播时没有可用项 */}
+                              {canRegenShotAudio(project) ? (
+                                <button
+                                  type="button"
+                                  className="more"
+                                  aria-label={translateUi("workflow.moreActions")}
+                                  disabled={rowBusy}
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setMenuShotId((id) => (id === shot.id ? null : shot.id))
+                                  }}
+                                >
+                                  ⋮
+                                </button>
+                              ) : null}
+                              {menuShotId === shot.id && canRegenShotAudio(project) ? (
                                 <div className="pf-shot-menu" onClick={(e) => e.stopPropagation()}>
                                   <button
                                     type="button"
@@ -1285,7 +1362,11 @@ title={translateUi("workflow.composeAgainFromTheCurrentShots")}
             )}
             <div className="pf-shot-footer">
               <span className="pf-muted" style={{ fontSize: '0.82rem' }}>
-                {translateUi("workflow.durationImagesAudioSegmentsResolutionPreview", { v1: formatMmSs(totalDuration), v2: project.shots.length, v3: ' ', v4: project.shots.filter((s) => s.audio_url).length })}</span>
+                {lt(
+                  `总时长: ${formatMmSs(totalDuration)} | 画面: ${project.shots.filter((s) => s.image_url).length}/${project.shots.length} 个 | 视频: ${project.shots.filter((s) => s.video_url).length}/${project.shots.length} 段 | 清晰度: ${project.video_resolution || '默认'}`,
+                  `Duration: ${formatMmSs(totalDuration)} | Images: ${project.shots.filter((s) => s.image_url).length}/${project.shots.length} | Videos: ${project.shots.filter((s) => s.video_url).length}/${project.shots.length} | Resolution: ${project.video_resolution || 'default'}`,
+                )}
+              </span>
               <div className="pf-toolbar">
                 <button
                   type="button"
@@ -1338,6 +1419,8 @@ title={translateUi("workflow.composeAgainFromTheCurrentShots")}
           </p>
         </aside>
       </div>
+
+      </>}
 
       {batchOpen && project ? (
         <div className="modal-backdrop" onClick={() => !busy && setBatchOpen(false)}>
@@ -1396,14 +1479,16 @@ title={translateUi("workflow.composeAgainFromTheCurrentShots")}
                 onChange={(e) => setBatchDuration(e.target.value)}
               />
             </label>
-            <label style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <input
-                type="checkbox"
-                checked={batchRegenAudio}
-                onChange={(e) => setBatchRegenAudio(e.target.checked)}
-              />
-              {translateUi("workflow.regenerateNarrationForSelectedShots")}
-            </label>
+            {canRegenShotAudio(project) ? (
+              <label style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={batchRegenAudio}
+                  onChange={(e) => setBatchRegenAudio(e.target.checked)}
+                />
+                {translateUi("workflow.regenerateNarrationForSelectedShots")}
+              </label>
+            ) : null}
             <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
               <button
                 type="button"
@@ -1444,7 +1529,9 @@ title={translateUi("workflow.composeAgainFromTheCurrentShots")}
                 ? translateUi("workflow.editShotNarrationAndTitle", { v1: String(editing.shot_no) })
                 : editMode === 'segment'
                   ? translateUi("workflow.editShotSegmentScript", { v1: String(editing.shot_no) })
-                  : translateUi("workflow.editShotAllPrompts", { v1: String(editing.shot_no) })}
+                  : isFullPipeline
+                    ? translateUi("workflow.editShotAllPrompts", { v1: String(editing.shot_no) })
+                    : lt(`编辑镜头 ${editing.shot_no} · 画面与旁白`, `Edit shot ${editing.shot_no} · visual and narration`)}
             </h3>
             <div className="pf-prompt-modal-scroll">
               {editMode === 'narration' || editMode === 'full' ? (
@@ -1467,7 +1554,7 @@ title={translateUi("workflow.composeAgainFromTheCurrentShots")}
                       onChange={(e) => setEditing({ ...editing, overlay_subtitle: e.target.value })}
                     />
                     <span className="pf-muted pf-prompt-hint">
-                      {translateUi("workflow.overlaidInImageTextVideosUsedOnlyAsA")}
+                      {isFullPipeline ? lt('作为分镜说明使用', 'Used as the storyboard note') : lt('可选，会和标题一起显示在成片中', 'Optional; shown with the title in the final video')}
                     </span>
                   </label>
                   <label>
@@ -1512,7 +1599,7 @@ title={translateUi("workflow.composeAgainFromTheCurrentShots")}
               ) : null}
               {editMode === 'full' ? (
                 <label>
-                  {translateUi("workflow.imagePromptFirstFrame")}
+                  {isFullPipeline ? translateUi("workflow.imagePromptFirstFrame") : lt('画面描述', 'Visual description')}
                   <textarea
                     autoFocus={editFocus === 'img_prompt'}
                     value={editing.img_prompt}
@@ -1520,11 +1607,11 @@ title={translateUi("workflow.composeAgainFromTheCurrentShots")}
                     rows={3}
                   />
                   <span className="pf-muted pf-prompt-hint">
-                    {translateUi("workflow.syncsToTheFirstVisualInTheScriptAnd")}
+                    {isFullPipeline ? translateUi("workflow.syncsToTheFirstVisualInTheScriptAnd") : lt('描述角色、场景和动作；修改后可重新生成这一张图片', 'Describe characters, scene and action; regenerate this image after editing')}
                   </span>
                 </label>
               ) : null}
-              {editMode === 'segment' || editMode === 'full' ? (
+              {isFullPipeline && (editMode === 'segment' || editMode === 'full') ? (
                 <>
                   <label>
                     {translateUi("workflow.segmentScriptVisualRhythmAndDuration")}
@@ -1583,7 +1670,7 @@ title={translateUi("workflow.composeAgainFromTheCurrentShots")}
               ) : null}
             </div>
             <div className="pf-prompt-modal-foot">
-              {editMode !== 'segment' ? (
+              {isFullPipeline && editMode !== 'segment' ? (
                 <button
                   type="button"
                   className="pf-btn pf-btn-ghost pf-btn-sm"
@@ -1595,7 +1682,7 @@ title={translateUi("workflow.composeAgainFromTheCurrentShots")}
                   {translateUi("workflow.segmentScript_a54c3b")}
                 </button>
               ) : null}
-              {editMode !== 'narration' ? (
+              {isFullPipeline && editMode !== 'narration' ? (
                 <button
                   type="button"
                   className="pf-btn pf-btn-ghost pf-btn-sm"
@@ -1607,7 +1694,7 @@ title={translateUi("workflow.composeAgainFromTheCurrentShots")}
                   {translateUi("workflow.narrationAndTitle")}
                 </button>
               ) : null}
-              {editMode !== 'full' ? (
+              {isFullPipeline && editMode !== 'full' ? (
                 <button
                   type="button"
                   className="pf-btn pf-btn-ghost pf-btn-sm"
@@ -1729,3 +1816,4 @@ title={translateUi("workflow.composeAgainFromTheCurrentShots")}
     </AppShell>
   )
 }
+import { ProjectMediaCostSummary } from '../../components/billing/ProjectMediaCostSummary'

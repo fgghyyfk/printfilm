@@ -35,6 +35,9 @@ export function useCanvasAutoSave({
   const dirtyEpochRef = useRef(0)
   const latestRef = useRef({ nodes, edges, projectId })
   latestRef.current = { nodes, edges, projectId }
+  // pendingRef 是否有尚未落盘的改动；防抖定时器在卸载时会被清掉，靠它补存
+  const pendingRef = useRef(false)
+  pendingRef.current = enabled && dirty
 
   /** 立刻保存；可传入覆盖节点/边（删除后未等一轮渲染时用） */
   const flush = useCallback(
@@ -109,6 +112,15 @@ export function useCanvasAutoSave({
       if (timerRef.current) clearTimeout(timerRef.current)
     }
   }, [dirty, enabled, nodes, edges, flush, onStatus])
+
+  // 离开画布时立刻保存还在防抖中的改动，不能丢；只在卸载时执行。
+  const flushRef = useRef(flush)
+  flushRef.current = flush
+  useEffect(() => {
+    return () => {
+      if (pendingRef.current) void flushRef.current().catch(() => undefined)
+    }
+  }, [])
 
   return { flush }
 }

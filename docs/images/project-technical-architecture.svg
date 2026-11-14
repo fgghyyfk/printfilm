@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1260" height="960" viewBox="0 0 1260 960" role="img" aria-label="PRINTFILM · 技术架构总图">
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#6b7686"/></marker></defs>
+<style>text{font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif;fill:#202d3d}.title{font-size:26px;font-weight:600}.sub{font-size:14px;fill:#586779}.label{font-size:16px;font-weight:600}.body{font-size:14px}.edge{fill:none;stroke:#6b7686;stroke-width:1.5;marker-end:url(#arrow)}.caption{font-size:13px;fill:#586779}</style>
+<rect width="1260" height="960" fill="#ffffff"/>
+<text class="title" x="36" y="45">PRINTFILM · 技术架构总图</text>
+<text class="sub" x="36" y="73">两个 React 应用 + 一个 FastAPI 模块化单体；业务、执行、资金三套对象相互关联。</text>
+<rect x="40" y="345" width="1180" height="300" rx="8" fill="#f4f6f8"/>
+<text class="caption" x="56" y="369">同一个 API 进程：没有单独 Celery Worker；部分生成与上传直接用后台协程</text>
+<path class="edge" d="M220.0 213 L220.0 231.5 L425.0 231.5 L425.0 250"/>
+<path class="edge" d="M630.0 213 L630.0 231.5 L425.0 231.5 L425.0 250"/>
+<path class="edge" d="M425.0 327 L425.0 351.0 L630.0 351.0 L630.0 375"/>
+<path class="edge" d="M1040.0 213 L1040.0 294.0 L630.0 294.0 L630.0 375"/>
+<path class="edge" d="M630.0 452 L630.0 476.0 L240.0 476.0 L240.0 500"/>
+<path class="edge" d="M630.0 452 L630.0 476.0 L630.0 476.0 L630.0 500"/>
+<path class="edge" d="M630.0 452 L630.0 476.0 L1020.0 476.0 L1020.0 500"/>
+<path class="edge" d="M240.0 604 L240.0 652.0 L175.0 652.0 L175.0 700"/>
+<path class="edge" d="M630.0 604 L630.0 652.0 L175.0 652.0 L175.0 700"/>
+<path class="edge" d="M240.0 604 L240.0 652.0 L480.0 652.0 L480.0 700"/>
+<path class="edge" d="M240.0 604 L240.0 652.0 L785.0 652.0 L785.0 700"/>
+<path class="edge" d="M1020.0 604 L1020.0 652.0 L1090.0 652.0 L1090.0 700"/>
+<rect x="40" y="115" width="360" height="98" rx="5" fill="#edf4fa" stroke="#bec9d4"/>
+<text class="label" x="56" y="142">用户端 frontend</text>
+<text class="body" x="56" y="166">React 19 / TypeScript / Vite 8</text>
+<text class="body" x="56" y="189">短视频 / 漫剧 / 工具 / React Flow</text>
+<rect x="450" y="115" width="360" height="98" rx="5" fill="#ffffff" stroke="#bec9d4"/>
+<text class="label" x="466" y="142">管理端 admin</text>
+<text class="body" x="466" y="166">React / Tailwind / Radix</text>
+<text class="body" x="466" y="189">用户 / 财务 / 模型 / 模板 / 任务</text>
+<rect x="860" y="115" width="360" height="98" rx="5" fill="#ffffff" stroke="#bec9d4"/>
+<text class="label" x="876" y="142">外部程序</text>
+<text class="body" x="876" y="166">/api/v1：图片、视频与任务查询</text>
+<text class="body" x="876" y="189">Bearer JWT / API Key / X-Api-Key</text>
+<rect x="245" y="250" width="360" height="77" rx="5" fill="#ffffff" stroke="#bec9d4"/>
+<text class="label" x="261" y="277">Nginx 入口</text>
+<text class="body" x="261" y="301">SPA；反代 /api、/static、支付通知</text>
+<rect x="450" y="375" width="360" height="77" rx="5" fill="#edf4fa" stroke="#bec9d4"/>
+<text class="label" x="466" y="402">FastAPI 路由与权限</text>
+<text class="body" x="466" y="426">JWT / admin / 对象归属 / 输入校验</text>
+<rect x="70" y="500" width="340" height="104" rx="5" fill="#edf4fa" stroke="#bec9d4"/>
+<text class="label" x="86" y="527">领域服务</text>
+<text class="body" x="86" y="551">kepu 分阶段流水线 / drama 剧集资产</text>
+<text class="body" x="86" y="574">工具 / Skill / 模型路由 / 媒体编排</text>
+<rect x="460" y="500" width="340" height="104" rx="5" fill="#edf4fa" stroke="#bec9d4"/>
+<text class="label" x="476" y="527">进程内任务 Runtime</text>
+<text class="body" x="476" y="551">scheduler → executor / poller</text>
+<text class="body" x="476" y="574">watchdog；持久化任务与恢复</text>
+<rect x="850" y="500" width="340" height="104" rx="5" fill="#ffffff" stroke="#bec9d4"/>
+<text class="label" x="866" y="527">计费与临时执行路径</text>
+<text class="body" x="866" y="551">估价 → 冻结 → 用量 → 结算</text>
+<text class="body" x="866" y="574">ephemeral / asyncio 后台协程</text>
+<rect x="40" y="700" width="270" height="98" rx="5" fill="#ffffff" stroke="#bec9d4"/>
+<text class="label" x="56" y="727">PostgreSQL 16</text>
+<text class="body" x="56" y="751">业务 / TaskRun / 财务 / 配置</text>
+<text class="body" x="56" y="774">任务与资金的持久化来源</text>
+<rect x="345" y="700" width="270" height="98" rx="5" fill="#ffffff" stroke="#bec9d4"/>
+<text class="label" x="361" y="727">Redis 7</text>
+<text class="body" x="361" y="751">进度 PubSub / 重置密码</text>
+<text class="body" x="361" y="774">缓存 / OSS 上传去重标记</text>
+<rect x="650" y="700" width="270" height="98" rx="5" fill="#ffffff" stroke="#bec9d4"/>
+<text class="label" x="666" y="727">本地媒体 + FFmpeg</text>
+<text class="body" x="666" y="751">generated 持久卷 / 合成</text>
+<text class="body" x="666" y="774">可选 OSS 上传及 URL 回填</text>
+<rect x="955" y="700" width="270" height="98" rx="5" fill="#ffffff" stroke="#bec9d4"/>
+<text class="label" x="971" y="727">外部服务</text>
+<text class="body" x="971" y="751">TokenFree：文字 / 图 / 视频</text>
+<text class="body" x="971" y="774">可选配音 / 易支付 / SMTP</text>
+<text class="caption" x="36" y="936">来源：当前仓库 345495e · 2026-10-20 静态核对；完整分支、时序与源码入口见 PROJECT_ARCHITECTURE.md</text></svg>

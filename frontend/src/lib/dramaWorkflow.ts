@@ -2,6 +2,7 @@ import { translate as translateUi } from '../i18n/runtime'
 import type { DramaProject, DramaProjectListItem } from '../api/drama'
 
 export type DramaWorkflow = 'script' | 'canvas'
+export type DramaProjectFilter = 'all' | 'running' | 'done' | 'draft'
 
 const CANVAS_SOURCE_MARKER = '自由画布创作项目'
 const CANVAS_TITLE_MARKER = '自由画布'

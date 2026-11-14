@@ -89,8 +89,11 @@ export default function ComplianceNotice<T extends { hits: ComplianceHit[] }>({
 
   if (!report || (report.count <= 0 && !report.replacements?.length)) return null
 
+  // 有命中：自动替换模式提示「已替换、仍需确认」，否则提示命中数；无命中仅剩生成替换记录
   const headline = report.count > 0
-    ? t('compliance.found', { count: report.count })
+    ? (report.auto_replace
+      ? t('compliance.autoReplaced', { count: report.count })
+      : t('compliance.found', { count: report.count }))
     : t('compliance.generatedHistory')
 
   return (

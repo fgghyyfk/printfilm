@@ -15,6 +15,7 @@ BULLETS_MAX = 3
 # 按字符宽度放宽：英文窄字符约为汉字一半；日文助词较多，给予约 25% 余量。
 COPY_LIMITS = {"zh": (10, 16, 12), "en": (24, 40, 30), "ja": (12, 20, 15), "none": (0, 0, 0)}
 LANGUAGE_NAMES = {"zh": "中文", "en": "English", "ja": "日本語", "none": "无文字"}
+EN_MAX = 40
 
 # 底图统一后缀：锁定商品外观、禁止画面文字
 LOCK_SUFFIX = (
@@ -38,7 +39,7 @@ PLAN_SYSTEM = """你是资深电商视觉策划与文案。根据商品图片（
 {
   "product": {"name": "品名", "category": "品类", "colors": ["主色"], "selling_points": ["卖点1", "卖点2", "卖点3"]},
   "items": [
-    {"slot": "槽位key（与输入一致，顺序一致）", "scene": "底图画面描述", "title": "主标题", "subtitle": "副标题", "bullets": ["要点"]}
+    {"slot": "槽位key（与输入一致，顺序一致）", "scene": "底图画面描述", "title": "主标题", "subtitle": "副标题", "bullets": ["要点"], "en": "英文小标", "shot": "镜头key（有可选镜头时）", "elements": ["元素名"]}
   ]
 }
 要求：
@@ -47,12 +48,19 @@ PLAN_SYSTEM = """你是资深电商视觉策划与文案。根据商品图片（
 3. title/subtitle/bullets 必须使用输入指定的目标语言和字符上限；bullets 最多 3 条；标注为「无文案」的槽位 title/subtitle/bullets 留空。
 4. 文案口语、具体、有画面感，突出用户利益；不同图片的标题不要重复。
 5. 严禁使用《广告法》极限词：最、第一、唯一、顶级、国家级、极致、绝对、100%、全网、永久、万能 等；不得虚构认证、销量、功效数据。
-6. 如果看不到图片，就只根据用户给的品名和卖点来规划，不要假装看到了图片。"""
+6. 如果看不到图片，就只根据用户给的品名和卖点来规划，不要假装看到了图片。
+7. en 是排在标题上方的英文小标（2-5 个英文单词，如 Soft & Fragrant），与该张主题呼应，不要拼音。
+8. 如果提供了「商品资料」：每张图的文案只能使用资料里的事实（成分、香调、规格、数据、功效都必须出自资料），不得编造；
+   不同的图分别讲资料里不同的卖点，尽量覆盖资料中的主要卖点、香调或成分，副标题写具体（如成分名、香调、使用感受），不要空泛；
+   资料里有「讲述顺序」时，按它安排各卖点图的先后；资料里的违规用语不要照抄。
+9. 如果提供了「镜头与元素」：有可选镜头的槽位从中选一个写进 shot（写 key）；有元素池时，每张合成图从元素池里选 2～3 个写进 elements（写名称，原料静物可选 4 个），
+   不同的图镜头与元素组合尽量不重复；scene 只写这张图的机位与元素如何摆放，不要罗列元素池以外的道具。"""
 
 
 # 组装规划的用户消息文本
 def build_plan_user_text(
-    *, name: str, notes: str, platform_name: str, style: str, slots: list[Slot], language: str = "zh"
+    *, name: str, notes: str, platform_name: str, style: str, slots: list[Slot], language: str = "zh",
+    knowledge: str = "", extra: str = "",
 ) -> str:
     style_name, _ = STYLES[normalize_style(style)]
     lines = [
@@ -66,6 +74,10 @@ def build_plan_user_text(
         lines.append("所有槽位无文案：title/subtitle 为空字符串，bullets 为空列表，只出纯视觉图，不为文案留白。")
     if notes.strip():
         lines.append(f"用户补充的卖点/信息：{notes.strip()}")
+    if knowledge.strip():
+        lines.append("商品资料（文案只能使用其中的事实）：\n" + knowledge.strip())
+    if extra.strip():
+        lines.append(extra.strip())
     lines.append("槽位列表（按顺序）：")
     for i, slot in enumerate(slots, 1):
         copy_hint = "无文案" if language == "none" or slot.layout == "none" else f"版式 {slot.layout}"
@@ -100,11 +112,20 @@ def clip(text: str, limit: int) -> str:
 
 
 # 规整一组文案：截断 + 过滤极限词，返回 (copy dict, 命中词)
-def normalize_copy(raw: dict | None, *, layout: str, language: str = "zh") -> tuple[dict, list[Hit]]:
+def title_limit(slot_key: str) -> int:
+    """某张图的主标题字数上限：日化封面版式会自动换行，放宽到 16 字。"""
+    return 16 if slot_key in {"goods_cover", "tool_cover"} else TITLE_MAX
+
+
+def normalize_copy(
+    raw: dict | None, *, layout: str, language: str = "zh", title_max: int | None = None
+) -> tuple[dict, list[Hit]]:
     if layout == "none" or language == "none":
         return {"title": "", "subtitle": "", "bullets": []}, []
     body = raw if isinstance(raw, dict) else {}
-    title_max, subtitle_max, bullet_max = COPY_LIMITS[language]
+    lang_title, subtitle_max, bullet_max = COPY_LIMITS.get(language, COPY_LIMITS["zh"])
+    # 中文沿用按槽位的标题上限（日化封面放宽），其他语言按字符宽度上限
+    title_max = title_max if title_max and language == "zh" else lang_title
     hits: list[Hit] = []
     title, h1 = sanitize_copy(str(body.get("title") or ""))
     subtitle, h2 = sanitize_copy(str(body.get("subtitle") or ""))
@@ -115,8 +136,18 @@ def normalize_copy(raw: dict | None, *, layout: str, language: str = "zh") -> tu
         hits += h
         if text:
             bullets.append(clip(text, bullet_max))
-    return {
+    out = {
         "title": clip(title, title_max),
         "subtitle": clip(subtitle, subtitle_max),
         "bullets": bullets,
-    }, hits
+    }
+    en = clean_en(str(body.get("en") or ""))
+    if en:
+        out["en"] = en
+    return out, hits
+
+
+def clean_en(text: str) -> str:
+    """英文小标：只留英文字母、数字与常见符号，最多 40 字符。"""
+    s = re.sub(r"[^A-Za-z0-9&'.,·\- ]", "", text or "")
+    return re.sub(r"\s+", " ", s).strip()[:EN_MAX]

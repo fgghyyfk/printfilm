@@ -142,7 +142,7 @@ function StyleWorkspace() {
   return (
     <AppShell active="ecom">
       <div className="pf-tool-detail pf-job-page">
-        <Link to="/ecom" className="pf-tool-back"><ArrowLeft size={16} aria-hidden />{t('ecomHub.back')}</Link>
+        <Link to="/ecom/workbench" className="pf-tool-back"><ArrowLeft size={16} aria-hidden />{t('ecomHub.back')}</Link>
         <header className="pf-tool-detail-head"><Sparkles size={26} aria-hidden /><div><h1>{t('ecomJobs.style.title')}</h1><p className="pf-muted">{t('ecomJobs.style.lead')}</p></div></header>
         {error ? <BillingErrorNotice message={ecomJobErrorText(error, t)} className="pf-tool-error" /> : null}
         {jobId && optionsError ? <div role="alert"><p className="pf-tool-error">{ecomJobErrorText(optionsError, t)}</p><Button type="button" variant="outline" onClick={() => setReloadOptions((value) => value + 1)}>{t('ecomJobs.retry')}</Button></div> : null}

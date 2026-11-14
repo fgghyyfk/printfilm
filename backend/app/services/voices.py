@@ -13,6 +13,121 @@ VOICE_PRESETS: list[dict[str, Any]] = [
         "gender": "female",
         "speaker": "zh_female_xinlingjitang_uranus_bigtts",
     },
+    # 豆包 2.0 口播 / 解说音色（2026-11 实测可用）
+    {
+        "id": "zh_female_jitangnv_uranus_bigtts",
+        "label": "鸡汤女 · 爆款口播女声",
+        "gender": "female",
+        "speaker": "zh_female_jitangnv_uranus_bigtts",
+    },
+    {
+        "id": "zh_female_jitangmei_uranus_bigtts",
+        "label": "鸡汤妹妹 · 口播女声",
+        "gender": "female",
+        "speaker": "zh_female_jitangmei_uranus_bigtts",
+    },
+    {
+        "id": "zh_female_kailangjiejie_uranus_bigtts",
+        "label": "开朗姐姐 · 热情女声",
+        "gender": "female",
+        "speaker": "zh_female_kailangjiejie_uranus_bigtts",
+    },
+    {
+        "id": "zh_female_linxiao_uranus_bigtts",
+        "label": "林潇 · 干练女声",
+        "gender": "female",
+        "speaker": "zh_female_linxiao_uranus_bigtts",
+    },
+    {
+        "id": "zh_female_lingling_uranus_bigtts",
+        "label": "玲玲姐姐 · 亲和女声",
+        "gender": "female",
+        "speaker": "zh_female_lingling_uranus_bigtts",
+    },
+    {
+        "id": "zh_female_liuchangnv_uranus_bigtts",
+        "label": "流畅女声 · 讲解",
+        "gender": "female",
+        "speaker": "zh_female_liuchangnv_uranus_bigtts",
+    },
+    {
+        "id": "zh_female_zhishuaiyingzi_uranus_bigtts",
+        "label": "直率英子 · 爽利女声",
+        "gender": "female",
+        "speaker": "zh_female_zhishuaiyingzi_uranus_bigtts",
+    },
+    {
+        "id": "zh_female_nvleishen_uranus_bigtts",
+        "label": "女雷神 · 气场女声",
+        "gender": "female",
+        "speaker": "zh_female_nvleishen_uranus_bigtts",
+    },
+    {
+        "id": "ICL_uranus_zh_female_reqingaina_tob",
+        "label": "热情艾娜 · 带货女声",
+        "gender": "female",
+        "speaker": "ICL_uranus_zh_female_reqingaina_tob",
+    },
+    {
+        "id": "ICL_uranus_zh_female_qingxixiaoxue_tob",
+        "label": "清晰小雪 · 清晰女声",
+        "gender": "female",
+        "speaker": "ICL_uranus_zh_female_qingxixiaoxue_tob",
+    },
+    {
+        "id": "ICL_uranus_zh_female_lingdongxinxin_tob",
+        "label": "灵动欣欣 · 活泼女声",
+        "gender": "female",
+        "speaker": "ICL_uranus_zh_female_lingdongxinxin_tob",
+    },
+    {
+        "id": "ICL_uranus_zh_female_kaixinxiaohong_tob",
+        "label": "开心小鸿 · 开朗女声",
+        "gender": "female",
+        "speaker": "ICL_uranus_zh_female_kaixinxiaohong_tob",
+    },
+    {
+        "id": "ICL_uranus_zh_female_yuanqitianmei_tob",
+        "label": "元气甜妹 · 甜美女声",
+        "gender": "female",
+        "speaker": "ICL_uranus_zh_female_yuanqitianmei_tob",
+    },
+    {
+        "id": "ICL_uranus_zh_female_xingganyujie_tob",
+        "label": "性感御姐 · 成熟女声",
+        "gender": "female",
+        "speaker": "ICL_uranus_zh_female_xingganyujie_tob",
+    },
+    {
+        "id": "ICL_uranus_zh_female_wumeiyujie_tob",
+        "label": "妩媚御姐 · 成熟女声",
+        "gender": "female",
+        "speaker": "ICL_uranus_zh_female_wumeiyujie_tob",
+    },
+    {
+        "id": "zh_male_guanggaojieshuo_uranus_bigtts",
+        "label": "广告解说 · 男声",
+        "gender": "male",
+        "speaker": "zh_male_guanggaojieshuo_uranus_bigtts",
+    },
+    {
+        "id": "zh_male_jieshuoxiaoming_uranus_bigtts",
+        "label": "解说小明 · 男声",
+        "gender": "male",
+        "speaker": "zh_male_jieshuoxiaoming_uranus_bigtts",
+    },
+    {
+        "id": "zh_male_cixingjieshuonan_uranus_bigtts",
+        "label": "磁性解说 · 男声",
+        "gender": "male",
+        "speaker": "zh_male_cixingjieshuonan_uranus_bigtts",
+    },
+    {
+        "id": "zh_male_dayi_uranus_bigtts",
+        "label": "大壹 · 男声",
+        "gender": "male",
+        "speaker": "zh_male_dayi_uranus_bigtts",
+    },
     {
         "id": "openai_shimmer",
         "label": "Shimmer · 激情女声",
@@ -203,6 +318,11 @@ def infer_speaker_gender(speaker: str) -> str | None:
     s = (speaker or "").strip().lower()
     if not s:
         return None
+    # 豆包 ICL 音色形如 ICL_uranus_zh_female_xxx_tob，去掉前缀再判断
+    for prefix in ("icl_uranus_", "icl_"):
+        if s.startswith(prefix):
+            s = s[len(prefix):]
+            break
     if s.startswith("zh_female_") or s.startswith("saturn_female") or s in ("openai_shimmer", "openai_nova"):
         return "female"
     if s.startswith("zh_male_") or s.startswith("saturn_male"):

@@ -42,6 +42,8 @@ async def test_pending_tts_usage_preserves_freeze_across_settle_and_cancel(
         return await gateway.tts("你好", "narrator_calm", project_id=project.id)
 
     if entry == "ephemeral":
+        from app.config import get_settings
+        monkeypatch.setattr(get_settings(), "drama_voice_generation_enabled", True)
         with pytest.raises(RuntimeError, match="计费"):
             await run_billed_ephemeral(
                 db_session, user, domain="drama", task_type="voice_synthesis", executor=synthesize, commit_before_execute=True,

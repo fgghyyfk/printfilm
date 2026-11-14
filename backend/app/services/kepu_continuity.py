@@ -41,11 +41,9 @@ def _usable_seedream_url(raw: str | None, *, allow_republish: bool = False) -> s
     if is_tokenfree_image_url(url):
         return None
     if allow_republish and not (url.startswith("http://") or url.startswith("https://")):
-        from app.services import storage
+        from app.services.kepu_image_references import public_image_reference
 
-        url = str(storage.republish_url(url, sync=True) or "").strip()
-        if is_tokenfree_image_url(url):
-            return None
+        return public_image_reference(url)
     ok = seedream_ref_urls(url)
     return ok[0] if ok else None
 
@@ -73,6 +71,14 @@ def _any_shot_image(shot: Any) -> str | None:
         if url:
             return url
     return None
+
+
+def video_image_ref(shot: Any) -> str:
+    """本镜图生视频首图优先公网/本地落盘图，跳过需要上游鉴权的产物 URL。"""
+    for raw in (getattr(shot, "image_url", None), getattr(shot, "image_ark_url", None)):
+        if url := _usable_seedream_url(raw):
+            return url
+    return _any_shot_image(shot) or ""
 
 
 def shot_last_frame_ref(shot: Any | None) -> str | None:

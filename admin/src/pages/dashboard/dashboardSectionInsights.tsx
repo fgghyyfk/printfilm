@@ -6,35 +6,23 @@ import {
   Clapperboard,
   Film,
   Layers,
-  Percent,
   TrendingDown,
-  TrendingUp,
-  Wallet,
   Zap,
   type LucideIcon,
 } from "lucide-react";
-import type { AdminStats, AdminUpstreamUsage } from "@/api/client";
+import type { AdminStats } from "@/api/client";
 import type { DashboardInsightItem } from "@/pages/dashboard/DashboardInsightGrid";
-import { calcProfitFen, sumDailyUsage, sumProjectStatuses } from "@/pages/dashboard/dashboardMetrics";
+import { sumDailyUsage, sumProjectStatuses } from "@/pages/dashboard/dashboardMetrics";
 import { fenToYuan } from "@/lib/utils";
 import { projectStatusLabel } from "@/lib/statusLabels";
 
 /** 财务账单 Tab 图标指标 */
-export function buildFinanceInsights(
-  stats: AdminStats | null,
-  upstream: AdminUpstreamUsage | null,
-): DashboardInsightItem[] {
+export function buildFinanceInsights(stats: AdminStats | null): DashboardInsightItem[] {
   if (!stats) return [];
 
   const monthCharge = stats.usage_charge_month_fen ?? 0;
-  const monthCost = stats.usage_cost_month_fen ?? 0;
-  const profitFen = calcProfitFen(monthCharge, monthCost);
-  const recent = (upstream?.series ?? []).slice(-7);
-  const localCost7 = recent.reduce((sum, row) => sum + row.local_cost_fen, 0);
-  const officialCost7 = recent.reduce((sum, row) => sum + row.official_cost_fen, 0);
-  const delta7 = localCost7 - officialCost7;
 
-  const items: DashboardInsightItem[] = [
+  return [
     {
       key: "paid-total",
       label: "累计充值",
@@ -52,44 +40,14 @@ export function buildFinanceInsights(
       tone: "purple",
     },
     {
-      key: "cost-month",
-      label: "本月成本",
-      value: `¥${fenToYuan(monthCost)}`,
-      hint: `今日 ¥${fenToYuan(stats.usage_cost_today_fen ?? 0)}`,
-      icon: Wallet,
-      tone: "sand",
-    },
-    {
-      key: "profit-month",
-      label: "本月毛利",
-      value: `¥${fenToYuan(profitFen)}`,
-      hint: monthCharge > 0 ? `毛利率 ${((profitFen / monthCharge) * 100).toFixed(1)}%` : undefined,
-      icon: Percent,
-      tone: profitFen >= 0 ? "mint" : "rose",
+      key: "paid-today",
+      label: "今日到账",
+      value: `¥${fenToYuan(stats.order_paid_today_fen)}`,
+      hint: "充值订单",
+      icon: CircleDollarSign,
+      tone: "teal",
     },
   ];
-
-  if (upstream?.configured && officialCost7 > 0) {
-    items.push({
-      key: "upstream-delta",
-      label: "近 7 日成本差额",
-      value: `¥${fenToYuan(delta7)}`,
-      hint: `本地 ¥${fenToYuan(localCost7)} / 官方 ¥${fenToYuan(officialCost7)}`,
-      icon: delta7 >= 0 ? TrendingUp : TrendingDown,
-      tone: delta7 >= 0 ? "teal" : "rose",
-    });
-  }
-
-  items.push({
-    key: "paid-today",
-    label: "今日到账",
-    value: `¥${fenToYuan(stats.order_paid_today_fen)}`,
-    hint: "充值订单",
-    icon: CircleDollarSign,
-    tone: "teal",
-  });
-
-  return items;
 }
 
 const STATUS_META: Record<string, { icon: LucideIcon; tone: DashboardInsightItem["tone"] }> = {

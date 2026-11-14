@@ -1,8 +1,9 @@
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { useI18n } from '../../i18n'
-import { BRAND_NAME, BRAND_NAME_EN } from '../../lib/siteLinks'
+import { brandFullName } from '../../lib/siteLinks'
 import SiteNav, { type NavActive } from './SiteNav'
+import './topbar.css'
 
 type Props = {
   children: ReactNode
@@ -14,12 +15,13 @@ type Props = {
 }
 
 export default function AppShell({ children, active, wide, flush, hideFooter }: Props) {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
 
   return (
-    <div className="pf-shell">
+    <div className="pf-shell pf-shell--topbar">
+      <a className="pf-skip-content" href="#pf-main-content">{t('nav.skipContent')}</a>
       <SiteNav active={active} />
-      <main className={['pf-shell-main', wide ? 'wide' : '', flush ? 'flush' : ''].filter(Boolean).join(' ')}>
+      <main id="pf-main-content" tabIndex={-1} className={['pf-shell-main', wide ? 'wide' : '', flush ? 'flush' : ''].filter(Boolean).join(' ')}>
         {children}
       </main>
       {!hideFooter && !flush ? (
@@ -30,7 +32,7 @@ export default function AppShell({ children, active, wide, flush, hideFooter }: 
             <Link to="/contact">{t('footer.contact')}</Link>
             <Link to="/help">{t('footer.help')}</Link>
           </nav>
-          <p>© {new Date().getFullYear()} {BRAND_NAME} {BRAND_NAME_EN}</p>
+          <p>© {new Date().getFullYear()} {brandFullName(locale)}</p>
         </footer>
       ) : null}
     </div>

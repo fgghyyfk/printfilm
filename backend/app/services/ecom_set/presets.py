@@ -46,6 +46,10 @@ class Slot:
     ratio: str
     blank: str
     is_main: bool = False
+    # 底图参考：product 商品图 | model 固定模特 + 商品图 | flat 不调模型、直接用商品图排版
+    # | composite 标品：按比例摆好商品抠图 → AI 搭景 → 原图贴回 | texture 只拍内容物质地（不带商品）
+    # | info 信息屏：按商品资料直接排版（不调模型）| hand 手持：商品图作参考，AI 画手握商品（不贴回）
+    ref: str = "product"
 
 
 SLOTS: dict[str, Slot] = {
@@ -98,6 +102,221 @@ SLOTS: dict[str, Slot] = {
         "title_sub", "3:4", "top",
     ),
 }
+# 通用商品槽位快照（自定义槽位只允许从中选择，品类槽位走 slots_for）
+GENERAL_SLOTS: dict[str, Slot] = dict(SLOTS)
+
+# 丝巾详情页槽位（参照真丝方巾店铺详情页的构成）
+SCARF_SLOTS: dict[str, Slot] = {
+    "scarf_cover": Slot(
+        "scarf_cover", "封面·模特",
+        "模特半身照，脸部清晰占画面较大，丝巾对折成三角披在双肩、在胸前打一个松结，一只手轻扶丝巾；人物偏右，画面左上留出竖排文字的干净空间",
+        "vertical_title", "3:4", "none", is_main=True, ref="model",
+    ),
+    "scarf_hold": Slot(
+        "scarf_hold", "整幅图案展示",
+        "模特站在画面中央，双手捏住丝巾两角把整条丝巾完全展开平举在身前，完整展示丝巾的全部图案与四边，脸在丝巾上方，微笑看镜头",
+        "label_bar", "3:4", "bottom", is_main=True, ref="model",
+    ),
+    "scarf_texture": Slot(
+        "scarf_texture", "面料特写",
+        "丝巾自然揉褶堆叠的微距特写，近距离看清面料的织纹与光泽、垂坠与印花细节，柔和侧光掠过布面突出织理，浅景深，下半部为丝巾，上部留出浅色留白",
+        "title_bullets", "3:4", "top", ref="product",
+    ),
+    "scarf_knot": Slot(
+        "scarf_knot", "颈前打结",
+        "近景胸像，脸约占画面高度三分之一，丝巾折成三角在颈前打一个小结，两端自然垂落胸前，一只手轻捏结口",
+        "label_bar", "3:4", "bottom", is_main=True, ref="model",
+    ),
+    "scarf_size": Slot(
+        "scarf_size", "尺寸规格",
+        "丝巾平铺图与尺寸标注",
+        "size_spec", "3:4", "none", ref="flat",
+    ),
+    "scarf_back": Slot(
+        "scarf_back", "背面披肩",
+        "模特背对镜头、侧脸回望，丝巾展开成大三角披在肩背，三角尖垂到腰际，大面积图案在背部展开",
+        "label_bar", "3:4", "bottom", ref="model",
+    ),
+    "scarf_closeup": Slot(
+        "scarf_closeup", "近景特写",
+        "近景特写，从头顶到锁骨，脸占画面高度约三分之一，微侧脸看向镜头，丝巾在颈侧打结、结口与花纹清晰",
+        "none", "3:4", "none", ref="model",
+    ),
+    "scarf_long": Slot(
+        "scarf_long", "长条领结",
+        "模特半身，丝巾折成约 8 厘米宽的长条，在颈前打一个领结，两条长飘带垂到胸前，飘带上的图案清晰",
+        "label_bar", "3:4", "bottom", ref="model",
+    ),
+    "scarf_street": Slot(
+        "scarf_street", "街拍大衣",
+        "街拍半身构图（从头顶到腰部），模特穿驼色羊毛大衣敞开，丝巾折成长条挂在脖子上、两端自然垂在大衣前襟，走在午后柔和阳光的石板街道上，背景虚化；"
+        "脸部清晰、占画面较大，面部光线柔和均匀、干净通透，不要硬光阴影和逆光把脸压暗",
+        "label_bar", "3:4", "bottom", ref="model",
+    ),
+    "scarf_crop": Slot(
+        "scarf_crop", "纹样细节",
+        "平铺图局部放大",
+        "crop", "3:4", "none", ref="flat",
+    ),
+    "scarf_flat": Slot(
+        "scarf_flat", "平铺原图",
+        "丝巾平铺原图",
+        "flat", "3:4", "none", ref="flat",
+    ),
+}
+SLOTS.update(SCARF_SLOTS)
+
+
+def _m(key: str, label: str, prompt: str, layout: str = "label_bar", blank: str = "bottom", main: bool = False) -> Slot:
+    """模特上身槽位。"""
+    return Slot(key, label, prompt, layout, "3:4", blank, is_main=main, ref="model")
+
+
+def _p(key: str, label: str, prompt: str, layout: str = "title_bullets", blank: str = "top") -> Slot:
+    """只用商品图的槽位。"""
+    return Slot(key, label, prompt, layout, "3:4", blank, ref="product")
+
+
+def _f(key: str, label: str) -> Slot:
+    """不调模型、直接用商品图排版的槽位。"""
+    return Slot(key, label, "商品原图", "flat", "3:4", "none", ref="flat")
+
+
+# 服饰 / 首饰 / 包袋槽位
+GENERIC_SLOTS: dict[str, Slot] = {s.key: s for s in (
+    _m("apparel_cover", "封面·模特", "模特半身照，脸部清晰占画面较大，穿着这件服饰，姿态松弛自然；人物偏右，画面左上留出竖排文字的干净空间",
+       "vertical_title", "none", True),
+    _m("apparel_front", "正面上身", "模特正面全身或七分身，完整展示这件服饰的正面版型与长度", main=True),
+    _m("apparel_side", "侧面上身", "模特侧身站立，展示这件服饰的侧面版型与垂坠"),
+    _m("apparel_back", "背面上身", "模特背对镜头、侧脸回望，展示这件服饰的背面设计"),
+    _p("apparel_fabric", "面料特写", "服饰面料的微距特写，看清织纹、光泽与垂坠，柔和侧光，浅景深，上部留出浅色留白"),
+    _p("apparel_craft", "做工细节", "服饰领口、袖口、纽扣或缝线等做工细节特写，浅景深，上部留出浅色留白"),
+    _m("apparel_street", "街拍场景", "街拍半身，模特穿着这件服饰走在午后柔和阳光的街道上，背景虚化，生活感强；脸部清晰、面部光线柔和均匀"),
+    _f("apparel_flat", "平铺原图"),
+    _m("jewelry_cover", "封面·佩戴", "模特近景胸像，脸部清晰，佩戴这件首饰，首饰清晰醒目；人物偏右，画面左上留出竖排文字的干净空间",
+       "vertical_title", "none", True),
+    _m("jewelry_wear", "佩戴效果", "模特近景，从头顶到锁骨，佩戴这件首饰，首饰位置自然、比例真实", main=True),
+    _m("jewelry_closeup", "近景特写", "首饰佩戴部位的近景特写（颈部/耳垂/手部），首饰占画面主体，皮肤质感真实，浅景深", "none", "none"),
+    _m("jewelry_hand", "手部佩戴", "模特手部特写，自然摆放，佩戴这件首饰，手部线条优美"),
+    _p("jewelry_hero", "商品主图", "首饰单品摆放在浅色丝绒或石材展台上，居中构图，柔和影棚光，干净背景", "title_corner", "top"),
+    _p("jewelry_macro", "细节微距", "首饰的微距特写，展示镶嵌、雕刻、抛光等工艺细节，浅景深"),
+    _m("jewelry_lifestyle", "生活场景", "模特在咖啡馆窗边或花园里，佩戴这件首饰，生活感强，自然光"),
+    _f("jewelry_flat", "商品原图"),
+    _m("bag_cover", "封面·模特", "模特半身，背着这只包，包清晰醒目；人物偏右，画面左上留出竖排文字的干净空间",
+       "vertical_title", "none", True),
+    _m("bag_shoulder", "肩背效果", "模特七分身，把这只包挎在肩上，展示包的大小比例与上身效果", main=True),
+    _m("bag_hand", "手提效果", "模特手提这只包，半身构图，展示提手与包型"),
+    _p("bag_hero", "商品主图", "这只包正面摆放在浅色台面上，居中构图，柔和影棚光，干净背景", "title_corner", "top"),
+    _p("bag_side", "侧面与容量", "这只包的侧面或打开的内部结构展示，柔和光，浅色背景"),
+    _p("bag_detail", "五金与做工", "包的五金、拉链、走线或皮面纹理的微距特写，浅景深"),
+    _m("bag_street", "街拍场景", "街拍半身，模特背着这只包走在城市街道上，午后柔和阳光，背景虚化；脸部清晰、面部光线柔和均匀"),
+    _f("bag_flat", "商品原图"),
+)}
+SLOTS.update(GENERIC_SLOTS)
+
+
+def _c(key: str, label: str, prompt: str, layout: str = "title_sub", blank: str = "top", main: bool = False) -> Slot:
+    """标品合成槽位：商品按比例摆好后让 AI 搭景，再贴回品牌原图。"""
+    return Slot(key, label, prompt, layout, "3:4", blank, is_main=main, ref="composite")
+
+
+# 日化 / 标品槽位
+GOODS_SLOTS: dict[str, Slot] = {s.key: s for s in (
+    _c("goods_cover", "封面·场景", "高级商品静物主视觉，商品是画面视觉中心", "title_sub", "top", True),
+    Slot("goods_white", "白底主图", "纯白背景商品图", "none", "3:4", "none", is_main=True, ref="flat"),
+    _c("goods_scene", "场景主图", "商品在场景中的展示图，构图稳定，主体突出", "title_corner", "top", True),
+    _c("goods_selling", "卖点图", "突出商品核心卖点的氛围图，构图简洁", "title_bullets", "top"),
+    _c("goods_selling2", "卖点图二", "从另一个角度展示商品的氛围图，与卖点图同一场景但道具与机位有变化", "title_sub", "top"),
+    Slot("goods_texture", "质地特写",
+         "商品内容物的质地微距特写：一抹膏体或液体自然涂抹在干净的浅色背景或手背上，质地细腻真实，浅景深",
+         "label_bar", "3:4", "bottom", ref="texture"),
+    _c("goods_usage", "使用场景", "商品放在真实的使用环境里，生活感强，商品清晰", "title_corner", "top"),
+    _c("goods_lineup", "多款陈列", "多款商品一字排开陈列，整齐有序", "title_sub", "top"),
+    _c("goods_ingredient_still", "原料静物", "商品与一两样香调、成分原料组成的简洁静物，原料真实新鲜、小而精，留白充足不堆满", "title_sub", "top"),
+    _c("goods_flatlay", "平铺俯拍", "正上方俯拍的平铺构图，商品与元素在台面上有序排布", "title_corner", "top"),
+    Slot("goods_hand", "手持展示",
+         "一只干净自然的女性手轻轻握着商品，手部姿态优雅放松，背景为同一场景的虚化环境",
+         "title_corner", "3:4", "top", ref="hand"),
+    Slot("goods_ingredients_photo", "成分图",
+         "成分图（AI 画成分示意圆图，程序排版成分名与说明，不出商品画面）：只需写标题（≤10字）、副标题与英文小标",
+         "info", "3:4", "none", ref="ingredients"),
+    Slot("goods_pain", "痛点图",
+         "使用痛点图：标题直击用户困扰（如秋冬手干起皮、粗糙），画面是商品在能联想到该困扰的情境里（如干冷季节的窗边、"
+         "冷色调晨光），氛围克制，商品清晰为主体",
+         "title_bullets", "3:4", "top", ref="composite"),
+    *(Slot(k, label, f"信息屏（程序排版，不出画面）：{hint}；只需写标题（≤10字）、副标题与英文小标", "info", "3:4", "none",
+           ref="info") for k, label, hint in (
+        ("goods_info_variants", "多款一览", "各款式/香型的名称与香调一览"),
+        ("goods_info_points", "卖点详解", "逐条讲清商品卖点"),
+        ("goods_info_ingredients", "成分说明", "核心成分及作用"),
+        ("goods_info_usage", "使用方法", "分步骤的使用方法"),
+        ("goods_info_specs", "产品信息", "品名、规格、保质期等信息表"),
+        ("goods_info_story", "品牌故事", "品牌理念与故事"),
+        ("goods_info_size", "尺寸标注", "商品实际尺寸标注（高、宽、厚）"),
+    )),
+)}
+# 不调模型的槽位类型（免费）
+FREE_REFS = frozenset({"flat", "info"})
+SLOTS.update(GOODS_SLOTS)
+
+# 电动工具 / 五金槽位（白底图、信息屏复用日化的 goods_white / goods_info_*）
+TOOL_SLOTS: dict[str, Slot] = {s.key: s for s in (
+    _c("tool_cover", "封面·场景", "专业电动工具主视觉，工具是画面视觉中心，硬朗有力量感的工业质感场景", "title_sub", "top", True),
+    _c("tool_power", "动力卖点", "突出工具动力与性能的氛围图：深色工业背景，冷暖对比的轮廓光勾勒机身，空气中有少量细微粉尘颗粒在光中漂浮",
+       "title_bullets", "top"),
+    _c("tool_scene", "场景主图", "工具放在真实的作业环境里（家装现场或工作台），构图稳定，主体突出", "title_corner", "top", True),
+    # 程序排版：合成模式下 AI 无法真正拉近（会整机重画、镜像），改为从实拍商品图裁局部放大
+    Slot("tool_detail", "细节特写",
+         "细节图（程序排版，从商品实拍图裁取机头、铭牌、握把、电池局部放大，不出画面）：只需写标题（≤10字）、副标题与英文小标",
+         "info", "3:4", "none", ref="info"),
+    _c("tool_workbench", "工作台陈列", "工具摆在整洁的木质工作台上，旁边有少量钻头、螺丝等配件整齐排布，生活化的手作氛围",
+       "title_sub", "top"),
+    _c("tool_pain", "痛点图",
+       "使用痛点图：标题直击用户困扰（如手拧螺丝费力、装修打孔难），画面是工具在能联想到该困扰的家装情境里，氛围克制，工具清晰为主体",
+       "title_bullets", "top"),
+    Slot("tool_usage", "使用场景",
+         "侧面视角：一只成年人的手握住握把，工具机身保持水平，夹头里装着一根钻头，钻头水平向前钻入一块竖立固定的木板，"
+         "钻孔处有少量木屑飞出；工具结构与参考图完全一致（直筒机身、夹头在机身正前方，没有任何转角或额外部件），"
+         "不能立在台面上；动作自然真实，背景是虚化的工作台环境",
+         "title_corner", "3:4", "top", ref="hand"),
+    Slot("tool_hand", "手持展示",
+         "一只成年人的手稳稳握着工具的握把，工具侧面朝向镜头，展示单手握持的轻巧感，背景为同一场景的虚化环境",
+         "title_corner", "3:4", "top", ref="hand"),
+)}
+SLOTS.update(TOOL_SLOTS)
+
+SCARF_COMPOSITION: dict[int, tuple[str, ...]] = {
+    6: ("scarf_cover", "scarf_hold", "scarf_texture", "scarf_knot", "scarf_size", "scarf_back"),
+    8: ("scarf_cover", "scarf_hold", "scarf_texture", "scarf_knot", "scarf_size", "scarf_closeup", "scarf_long",
+        "scarf_back"),
+    10: ("scarf_cover", "scarf_hold", "scarf_texture", "scarf_knot", "scarf_size", "scarf_crop", "scarf_long",
+         "scarf_back", "scarf_street", "scarf_flat"),
+}
+CATEGORIES = {"general": "通用商品", "scarf": "丝巾详情页", "apparel": "服饰上身", "jewelry": "首饰佩戴", "bag": "包袋上身",
+              "goods": "日化/标品场景图", "tool": "电动工具/五金"}
+
+
+# 规整品类，未知回落通用
+def normalize_category(value: str | None) -> str:
+    key = (value or "").strip().lower()
+    return key if key in CATEGORIES else "general"
+
+
+# 按品类与张数（或用户勾选的槽位）返回槽位列表
+def slots_for(category: str, count: int | str | None, picked: list[str] | None = None) -> list[Slot]:
+    category = normalize_category(category)
+    if category == "general":
+        return slots_for_count(normalize_count(count))
+    from app.services.ecom_set import categories
+
+    if picked:
+        allowed = set(categories.slot_keys(category))
+        keys = list(dict.fromkeys(k for k in picked if k in allowed))
+        if not keys:
+            raise ValueError("请至少选择一张要生成的图")
+        return [SLOTS[k] for k in keys]
+    return [SLOTS[k] for k in categories.composition(category, count)]
+
 
 # 各张数对应的槽位顺序
 SET_COMPOSITION: dict[int, tuple[str, ...]] = {
@@ -133,17 +352,17 @@ def slots_for_count(count: int) -> list[Slot]:
     return [SLOTS[k] for k in SET_COMPOSITION[normalize_count(count)]]
 
 
-# 自定义列表严格校验；未指定时沿用 4/6/8 预设。
+# 通用商品自定义槽位严格校验；未指定时沿用 4/6/8 预设。
 def select_slots(count: int, keys: list[str] | None) -> list[Slot]:
     if keys is None:
         return slots_for_count(count)
     if not isinstance(keys, list) or not 3 <= len(keys) <= 10:
         raise ValueError("请选择 3 至 10 个槽位")
-    if any(not isinstance(key, str) or key not in SLOTS for key in keys):
+    if any(not isinstance(key, str) or key not in GENERAL_SLOTS for key in keys):
         raise ValueError("槽位不存在")
     if len(set(keys)) != len(keys):
         raise ValueError("槽位不能重复")
-    slots = [SLOTS[key] for key in keys]
+    slots = [GENERAL_SLOTS[key] for key in keys]
     if not any(slot.is_main for slot in slots):
         raise ValueError("请至少选择一个主图槽位")
     return slots
@@ -151,11 +370,16 @@ def select_slots(count: int, keys: list[str] | None) -> list[Slot]:
 
 # 按清晰度选取尺寸：最长边不超过 4096，总像素不超过 4096²。
 def generation_size(ratio: str, clarity: str = "2k") -> str:
-    return (GEN_SIZE_4K if clarity == "4k" else GEN_SIZE)[ratio]
+    table = GEN_SIZE_4K if clarity == "4k" else GEN_SIZE
+    return table.get(ratio, table["1:1"])
 
 
-# 按平台与槽位取输出尺寸；4K 保留生图分辨率，广告槽位使用固定画幅。
+# 按平台与槽位取输出尺寸；品类槽位按画幅，4K 保留生图分辨率，广告槽位使用固定画幅。
 def output_size(platform: str, slot_key: str, clarity: str = "2k") -> tuple[int, int]:
+    if slot_key.split("_", 1)[0] in {"scarf", "apparel", "jewelry", "bag", "goods", "tool"}:
+        from app.services.ecom_set.categories import frame_size
+
+        return frame_size(platform)
     _, main, detail = PLATFORMS[normalize_platform(platform)]
     slot = SLOTS.get(slot_key)
     if slot_key in {"ad_banner", "ad_square"}:

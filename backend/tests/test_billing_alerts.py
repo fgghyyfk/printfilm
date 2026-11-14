@@ -1,6 +1,7 @@
-"""额度告警：用户里程碑弹窗与管理员邮件。"""
+"""额度告警：用户里程碑弹窗。"""
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -10,7 +11,6 @@ from app.models import UsageEvent
 from app.services.billing.alerts import (
     acknowledge_user_alert,
     list_pending_user_alerts,
-    process_admin_cost_alert,
     process_billing_alerts_after_charge,
     process_user_milestone_alert,
 )
@@ -26,7 +26,7 @@ async def _add_settled_usage(
 ) -> UsageEvent:
     ev = UsageEvent(
         user_id=user_id,
-        domain="api",
+        domain="studio",
         capability="llm",
         billing_key="llm_chat",
         model="test",
@@ -99,39 +99,10 @@ async def test_pending_alerts_collapse_to_latest(db_session: AsyncSession, monke
 
 
 @pytest.mark.asyncio
-async def test_admin_cost_alert_sends_email_once_per_level(db_session: AsyncSession, monkeypatch) -> None:
-    settings = __import__("app.config", fromlist=["get_settings"]).get_settings()
-    monkeypatch.setattr(settings, "billing_admin_cost_alert_enabled", True)
-    monkeypatch.setattr(settings, "billing_admin_cost_alert_threshold_fen", 1000)
-    monkeypatch.setattr(settings, "billing_admin_cost_alert_period", "all_time")
-    monkeypatch.setattr(settings, "billing_admin_cost_alert_emails", "ops@test.local")
-    monkeypatch.setattr(settings, "billing_admin_cost_alert_last_period_key", "")
-    monkeypatch.setattr(settings, "billing_admin_cost_alert_last_level", 0)
-    monkeypatch.setattr(settings, "app_name", "PRINTFILM")
-
-    user = await make_user(db_session)
-    await _add_settled_usage(db_session, user_id=user.id, charge_fen=100, cost_fen=1500)
-    await db_session.commit()
-
-    with patch("app.services.billing.alerts.send_email", new_callable=AsyncMock) as send_mock:
-        send_mock.return_value = True
-        sent = await process_admin_cost_alert(db_session, settings=settings)
-        await db_session.commit()
-        assert sent is True
-        send_mock.assert_called_once()
-
-        send_mock.reset_mock()
-        sent_again = await process_admin_cost_alert(db_session, settings=settings)
-        assert sent_again is False
-        send_mock.assert_not_called()
-
-
-@pytest.mark.asyncio
 async def test_process_after_charge_triggers_user_alert(db_session: AsyncSession, monkeypatch) -> None:
     settings = __import__("app.config", fromlist=["get_settings"]).get_settings()
     monkeypatch.setattr(settings, "billing_user_alert_enabled", True)
     monkeypatch.setattr(settings, "billing_user_alert_interval_fen", 1000)
-    monkeypatch.setattr(settings, "billing_admin_cost_alert_enabled", False)
 
     user = await make_user(db_session)
     await _add_settled_usage(db_session, user_id=user.id, charge_fen=900)
@@ -144,3 +115,22 @@ async def test_process_after_charge_triggers_user_alert(db_session: AsyncSession
     pending = await list_pending_user_alerts(db_session, user.id)
     assert len(pending) == 1
     assert pending[0].milestone_fen == 1000
+
+
+@pytest.mark.asyncio
+async def test_process_after_charge_ignores_legacy_admin_cost_alert_settings() -> None:
+    """旧配置曾启用费用告警时，结算也不再聚合上游成本或发邮件。"""
+    settings = SimpleNamespace(
+        billing_user_alert_enabled=False,
+        billing_admin_cost_alert_enabled=True,
+        billing_admin_cost_alert_threshold_fen=1000,
+        billing_admin_cost_alert_period="all_time",
+    )
+    db = AsyncMock(spec=AsyncSession)
+    db.execute.side_effect = AssertionError("settlement must not query platform costs")
+
+    with patch("app.services.email.send_email", new_callable=AsyncMock) as send_mock:
+        await process_billing_alerts_after_charge(db, None, charged_fen=200, settings=settings)
+
+    db.execute.assert_not_awaited()
+    send_mock.assert_not_awaited()

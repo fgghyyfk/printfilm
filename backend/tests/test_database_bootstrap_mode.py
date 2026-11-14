@@ -33,7 +33,7 @@ def _isolated_startup(monkeypatch, bootstrap_enabled):
         name: AsyncMock(name=name)
         for name in (
             "init_db", "_apply_schema_patches", "_load_startup_model_settings",
-            "seed_templates", "bootstrap_admins", "seed_agent_skills", "start_task_runtime",
+            "seed_templates", "seed_ecom_scenes", "bootstrap_admins", "seed_agent_skills", "start_task_runtime",
         )
     }
     oss = ModuleType("app.services.oss")
@@ -58,7 +58,8 @@ async def test_mode_controls_mutations_but_always_loads_cache_and_starts_runtime
     callbacks["_load_startup_model_settings"].assert_awaited_once()
     callbacks["start_task_runtime"].assert_awaited_once()
     oss.ensure_browser_cors.assert_called_once()
-    for name in ("init_db", "_apply_schema_patches", "seed_templates", "bootstrap_admins", "seed_agent_skills"):
+    for name in ("init_db", "_apply_schema_patches", "seed_templates", "seed_ecom_scenes", "bootstrap_admins",
+                 "seed_agent_skills"):
         assert callbacks[name].await_count == int(enabled), name
 
 

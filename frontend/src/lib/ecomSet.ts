@@ -9,6 +9,7 @@ import type {
   EcomSetPlanItemPatch,
   EcomSetStatus,
 } from '../api/ecomSet'
+import type { TFunction } from '../i18n'
 
 /** 带货视频可选画幅（第一个为默认） */
 export const DAIHUO_RATIOS: DaihuoRatio[] = ['9:16', '16:9', '1:1', '4:3']
@@ -17,7 +18,12 @@ export const DAIHUO_RATIOS: DaihuoRatio[] = ['9:16', '16:9', '1:1', '4:3']
 export type EcomSetStep = 'form' | 'plan' | 'generating' | 'done'
 
 /** 文案字数上限（与后端约定一致） */
-export const ECOM_COPY_LIMITS = { title: 10, subtitle: 16, bullet: 12, bullets: 3 } as const
+export const ECOM_COPY_LIMITS = { title: 10, subtitle: 16, bullet: 12, bullets: 3, en: 40 } as const
+
+/** 某张图的主标题字数上限：日化封面版式会自动换行，放宽到 16 字（与后端 title_limit 一致） */
+export function titleLimitOf(slot: string): number {
+  return slot === 'goods_cover' || slot === 'tool_cover' ? 16 : ECOM_COPY_LIMITS.title
+}
 
 /** 生成中轮询间隔 */
 export const ECOM_POLL_MS = 3000
@@ -123,6 +129,9 @@ export function toPlanPatch(items: EcomSetItem[]): EcomSetPlanItemPatch[] {
     title: hasCopy(item) ? item.title.trim() : '',
     subtitle: hasCopy(item) ? item.subtitle.trim() : '',
     bullets: hasCopy(item) ? normalizeBullets(item.bullets) : [],
+    en: hasCopy(item) ? (item.en || '').trim() : '',
+    ...(item.shot !== undefined ? { shot: item.shot } : {}),
+    ...(item.elements ? { elements: item.elements.map((e) => e.key) } : {}),
   }))
 }
 
@@ -132,6 +141,7 @@ export function toCopyPatch(copy: EcomSetCopyPatch): EcomSetCopyPatch {
     title: copy.title.trim(),
     subtitle: copy.subtitle.trim(),
     bullets: normalizeBullets(copy.bullets),
+    en: (copy.en || '').trim(),
   }
 }
 
@@ -147,10 +157,40 @@ export function ecomSetCover(set: EcomSet): string {
   return set.items.find((item) => item.final_url)?.final_url || set.product_image_url || ''
 }
 
-// 生成全部的预估总价（后端未给时按单价 × 张数）
+// 生成全部的预估总价：以后端只计收费张数的 total_fen 为准，全免费时就是 0
 export function ecomSetTotalFen(set: EcomSet): number {
-  if (set.total_fen > 0) return set.total_fen
-  return set.image_fen * set.items.length
+  return set.total_fen
+}
+
+// 上传或生成模特后选中新加入的那位；默认模特排在列表首位，不能取第一项
+export function newlyAddedModelId(before: { id: number }[], after: { id: number }[]): number | null {
+  const known = new Set(before.map((item) => item.id))
+  return (after.find((item) => !known.has(item.id)) ?? after[0])?.id ?? null
+}
+
+// 商品颜色款增删后，按原图地址找回当前颜色的新序号；原颜色已删除时回到第一个
+export function reconcileColorIndex(
+  previous: { image_url: string }[],
+  index: number,
+  next: { image_url: string }[],
+): number {
+  const found = next.findIndex((color) => color.image_url === previous[index]?.image_url)
+  return found >= 0 ? found : 0
+}
+
+/** 套图表单实际支持的品类；服饰、首饰、包袋只能从电商图（/ecom）选商品出图 */
+const ECOM_FORM_CATEGORIES = ['general', 'scarf']
+
+// 过滤出套图表单能处理的品类选项
+export function ecomFormCategories<T extends { id: string }>(options: T[] | undefined): T[] {
+  return (options || []).filter((option) => ECOM_FORM_CATEGORIES.includes(option.id))
+}
+
+// 重新规划的去向：从商品库建的或表单不支持的品类回电商图，并带上原商品与颜色款；其余（返回 null）回本页表单
+export function ecomReplanPath(set: Pick<EcomSet, 'category' | 'styled'>): string | null {
+  const productId = set.styled?.product_id
+  if (productId) return `/ecom?product=${productId}&color=${set.styled?.color_index ?? 0}`
+  return ECOM_FORM_CATEGORIES.includes(set.category || 'general') ? null : '/ecom'
 }
 
 // CSS aspect-ratio 值：'3:4' → '3 / 4'
@@ -220,4 +260,20 @@ export function parseRefineSource(job: string | null, item: string | null): { jo
   if (!job || item === null || !/^[1-9]\d*$/.test(job) || !/^\d+$/.test(item)) return null
   const jobId = Number(job), idx = Number(item)
   return Number.isSafeInteger(jobId) && Number.isSafeInteger(idx) ? { jobId, idx } : null
+}
+
+/** 把第 pos 张与相邻一张交换，返回新顺序（现有序号列表）；越界返回 null */
+export function swapOrder(items: { idx: number }[], pos: number, dir: -1 | 1): number[] | null {
+  const order = items.map((it) => it.idx)
+  const to = pos + dir
+  if (to < 0 || to >= order.length) return null
+  ;[order[pos], order[to]] = [order[to], order[pos]]
+  return order
+}
+
+/** 槽位显示名：优先取本地化文案；缺失时（如线上新增的日化/工具槽位）回退后端给的 slot_label */
+export function ecomSlotLabel(t: TFunction, item: { slot: string; slot_label?: string }): string {
+  const key = `ecomSet.enhanced.slots.${item.slot}.name`
+  const text = t(key)
+  return text === key ? (item.slot_label || item.slot) : text
 }

@@ -135,7 +135,6 @@ export function DramaProjectDetailPage() {
             <AdminDetailStatGrid
               items={[
                 { label: "扣费", value: `¥${fenToYuan(usage?.charge_fen ?? detail.charge_fen ?? 0)}` },
-                { label: "成本", value: `¥${fenToYuan(usage?.cost_fen ?? 0)}` },
                 { label: "调用", value: usage?.calls ?? 0 },
                 {
                   label: "图/视/LLM/TTS",

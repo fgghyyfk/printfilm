@@ -18,19 +18,18 @@ async def isolated_scheduler(monkeypatch):
     monkeypatch.setattr(scheduler, "_scheduler_task", None)
     monkeypatch.setattr(scheduler, "_maintenance_task", None)
     monkeypatch.setattr(scheduler, "_running_jobs", {})
+    monkeypatch.setattr(scheduler, "_running_queues", {})
     monkeypatch.setattr(scheduler, "_cancel_jobs", {})
     monkeypatch.setattr(scheduler, "_stop_event", asyncio.Event())
     monkeypatch.setattr(scheduler, "_intentionally_stopped", False)
     monkeypatch.setattr(scheduler, "_loop_started_mono", 0.0)
+    monkeypatch.setattr(scheduler, "_claim_direct_llm_tasks", AsyncMock())
     monkeypatch.setattr(scheduler, "get_settings", lambda: SimpleNamespace(
         task_runtime_max_concurrency=4,
         task_user_max_concurrency=1,
         task_runtime_tick_stale_sec=60,
         task_runtime_orphan_check_sec=30,
     ))
-    # 普通池 4 槽 / 单用户 1；GPU 长任务池 1 槽 / 单用户 1
-    monkeypatch.setattr(scheduler, "pool_limits", lambda gpu: (1, 1) if gpu else (4, 1))
-    monkeypatch.setattr(scheduler, "_gpu_job_ids", set())
     yield
     await scheduler.stop_scheduler()
 
@@ -58,6 +57,7 @@ class _QueueSession:
         self.rowcount = rowcount
         self.selects = []
         self.claimed = []
+        self.bind = SimpleNamespace(dialect=SimpleNamespace(name="sqlite"))
 
     async def __aenter__(self):
         """进入内存事务。"""
@@ -66,6 +66,10 @@ class _QueueSession:
     async def __aexit__(self, *_args):
         """无需提交真实资源。"""
         return False
+
+    async def scalar(self, _statement, _params=None):
+        """No pre-existing tasks occupy the per-lane database capacity."""
+        return 0
 
     async def execute(self, statement):
         """模拟领取 CAS 与有上限的候选查询。"""
@@ -92,10 +96,10 @@ async def test_claim_pages_past_user_filled_by_this_tick(monkeypatch):
     db = _QueueSession([first_page, [other_user], []])
     monkeypatch.setattr(scheduler, "AsyncSessionLocal", lambda: db)
     monkeypatch.setattr(scheduler, "_claim_cancel_requests", AsyncMock())
-    monkeypatch.setattr(scheduler, "_count_user_active", AsyncMock(return_value=0))
+    monkeypatch.setattr(scheduler, "count_user_active_runtime_tasks", AsyncMock(return_value=0))
     monkeypatch.setattr(scheduler, "append_task_event", AsyncMock())
     monkeypatch.setattr(scheduler, "_run_one", AsyncMock())
-    await scheduler._tick()
+    await scheduler._claim_queue("text", datetime.now(UTC))
     assert db.claimed == [1, 17]
     sql = str(db.selects[0].compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
     assert "count(" in sql and "requested_by" in sql
@@ -113,11 +117,10 @@ async def test_failed_compare_and_swap_never_launches_executor(monkeypatch):
     executor = AsyncMock()
     monkeypatch.setattr(scheduler, "AsyncSessionLocal", lambda: db)
     monkeypatch.setattr(scheduler, "_claim_cancel_requests", AsyncMock())
-    monkeypatch.setattr(scheduler, "_count_user_active", AsyncMock(return_value=0))
+    monkeypatch.setattr(scheduler, "count_user_active_runtime_tasks", AsyncMock(return_value=0))
     monkeypatch.setattr(scheduler, "_run_one", executor)
-    await scheduler._tick()
-    # 普通池与 GPU 长任务池各自最多扫 _MAX_CLAIM_PAGES 页
-    assert len(db.selects) == 2 * scheduler._MAX_CLAIM_PAGES
+    await scheduler._claim_queue("text", datetime.now(UTC))
+    assert len(db.selects) == scheduler._MAX_CLAIM_PAGES
     assert db.claimed == []
     executor.assert_not_awaited()
 
@@ -126,7 +129,8 @@ async def test_failed_compare_and_swap_never_launches_executor(monkeypatch):
 async def test_cancellation_runs_when_normal_capacity_is_full(monkeypatch):
     """取消独立于普通容量，并且只执行取消收敛，不进入业务 handler。"""
     active = asyncio.create_task(asyncio.Event().wait())
-    scheduler._running_jobs.update({i: active for i in range(1, 5)})
+    scheduler._running_jobs.update({i: active for i in range(100, 112)})
+    scheduler._running_queues.update({i: ("text", "image", "video")[(i - 100) // 4] for i in range(100, 112)})
     db = _QueueSession([[9]])
     cancelled = AsyncMock()
     business = AsyncMock()
@@ -256,31 +260,28 @@ def test_watchdog_restart_grace_does_not_erase_failure_diagnostics(monkeypatch):
     }
 
 
-@pytest.mark.asyncio
-async def test_gpu_tasks_claim_in_separate_pool(monkeypatch):
-    """数字人长任务走独立槽位池：普通池 SQL 排除它们，GPU 池只领它们，并登记为 GPU 任务。"""
-    gpu_row = SimpleNamespace(id=42, status="pending", requested_by=7)
-    db = _QueueSession([[], [gpu_row], []])
-    monkeypatch.setattr(scheduler, "AsyncSessionLocal", lambda: db)
-    monkeypatch.setattr(scheduler, "_claim_cancel_requests", AsyncMock())
-    monkeypatch.setattr(scheduler, "_count_user_active", AsyncMock(return_value=0))
-    monkeypatch.setattr(scheduler, "append_task_event", AsyncMock())
-    monkeypatch.setattr(scheduler, "_run_one", AsyncMock())
-    await scheduler._tick()
-    assert db.claimed == [42]
-    assert 42 in scheduler._gpu_job_ids
-    normal_sql = str(db.selects[0].compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
-    gpu_sql = str(db.selects[1].compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
-    assert "NOT (" in normal_sql and "'avatar_auto'" in normal_sql
-    assert "'avatar_auto'" in gpu_sql and "NOT (task_runs.domain" not in gpu_sql.split("WHERE", 1)[1].split("AND (SELECT")[0]
+def test_avatar_long_jobs_use_gpu_queue():
+    """数字人全自动出片与数字人「视频」阶段走 GPU 队列，其余照旧。"""
+    from app.services.tasks.queues import task_queue
+
+    assert task_queue("avatar_auto") == "gpu"
+    assert task_queue("project_pipeline", {"pipeline_mode": "avatar", "phase": "videos"}) == "gpu"
+    assert task_queue("project_pipeline", {"pipeline_mode": "avatar", "phase": "assets"}) == "image"
+    assert task_queue("project_pipeline", {"pipeline_mode": "full", "phase": "videos"}) == "video"
+    assert task_queue("fragment_video", {}) == "video"
 
 
-def test_is_gpu_task_matches_avatar_long_jobs():
-    """只有全自动出片与数字人视频阶段算 GPU 长任务。"""
-    from app.services.tasks.gpu_pool import is_gpu_task
+def test_gpu_queue_uses_its_own_limits():
+    """GPU 队列容量与单用户上限读 task_gpu_*，不受普通队列配置影响。"""
+    from types import SimpleNamespace
 
-    assert is_gpu_task("kepu", "avatar_auto", None)
-    assert is_gpu_task("kepu", "project_pipeline", {"pipeline_mode": "avatar", "phase": "videos"})
-    assert not is_gpu_task("kepu", "project_pipeline", {"pipeline_mode": "avatar", "phase": "assets"})
-    assert not is_gpu_task("kepu", "project_pipeline", {"pipeline_mode": "full", "phase": "videos"})
-    assert not is_gpu_task("drama", "fragment_video", {})
+    from app.services.tasks.queues import queue_capacity, queue_user_limit
+
+    s = SimpleNamespace(
+        task_gpu_max_concurrency=3, task_gpu_user_max_concurrency=1,
+        task_runtime_max_concurrency=8, task_user_max_concurrency=4, task_queue_video_concurrency=None,
+    )
+    assert queue_capacity(s, "gpu") == 3
+    assert queue_user_limit(s, "gpu") == 1
+    assert queue_capacity(s, "video") == 8
+    assert queue_user_limit(s, "video") == 4

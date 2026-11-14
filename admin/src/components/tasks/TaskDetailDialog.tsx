@@ -17,6 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TaskUpstreamPanel } from "@/components/tasks/TaskUpstreamPanel";
 import { TaskEventsPanel } from "@/components/tasks/TaskEventsPanel";
 import { TaskDetailSummary } from "@/components/tasks/TaskDetailSummary";
+import { TaskBillingReviewPanel } from "@/components/tasks/TaskBillingReviewPanel";
 import { useTaskClock } from "@/hooks/useTaskClock";
 import { taskDomainLabel, taskStatusLabel, taskTypeLabel } from "@/lib/statusLabels";
 import { hasJsonContent, prettyJson } from "@/lib/jsonPreview";
@@ -130,10 +131,6 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<DetailTab>("overview");
   const [cancelling, setCancelling] = useState(false);
-  const [reviewCost, setReviewCost] = useState("");
-  const [reviewNote, setReviewNote] = useState("");
-  const [reviewConfirmed, setReviewConfirmed] = useState(false);
-  const [reviewing, setReviewing] = useState(false);
   const now = useTaskClock(open && Boolean(task) && !TERMINAL.has(task?.status || ""));
   const billing = taskBilling(task || {});
 
@@ -155,7 +152,6 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
       setTab("overview");
       return;
     }
-    setReviewCost(""); setReviewNote(""); setReviewConfirmed(false);
     void loadDetail(taskId);
   }, [open, taskId]);
 
@@ -192,21 +188,6 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
   }, [task]);
 
   const payloadRows = useMemo(() => payloadSummaryRows(redactTaskData(task?.payload) as Record<string, unknown> | null), [task?.payload]);
-
-  async function handleBillingReview() {
-    if (!task || reviewing || !reviewConfirmed || !/^\d+$/.test(reviewCost) || reviewNote.trim().length < 2) return;
-    if (!window.confirm(`将补记尚未入账的费用 ${reviewCost} 分，并按已有用量结算、结束本地任务。已记录费用保持不变。确认已核对最终费用？`)) return;
-    setReviewing(true);
-    try {
-      setTask(await api<AdminTaskDetail>(`/api/admin/tasks/${task.id}/billing-review`, {
-        method: "POST", body: JSON.stringify({ missing_cost_fen: Number(reviewCost), final_cost_confirmed: true, note: reviewNote.trim() }),
-      }));
-      toast.success("费用已核对并结算");
-      onCancelled?.();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "核对结算失败");
-    } finally { setReviewing(false); }
-  }
 
   async function handleCancel() {
     if (!task || !canCancel) return;
@@ -270,6 +251,15 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
       ) : task ? (
         <Tabs className="task-detail-body" value={tab} onValueChange={(value) => setTab(value as DetailTab)}>
           <TaskDetailSummary task={task} now={now} onJump={setTab} />
+          {task.status === "awaiting_review" ? (
+            <TaskBillingReviewPanel
+              task={task}
+              onResolved={(updated) => {
+                setTask(updated);
+                onCancelled?.();
+              }}
+            />
+          ) : null}
           <TabsList className="task-detail-tabs !h-auto !justify-start !rounded-none !bg-white !p-0">
             {(
               [
@@ -433,23 +423,12 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
                   </dl>
                 </section>
 
-                {task.status === "awaiting_review" && task.billing_status !== "settled" ? (
-                  <section className="task-detail-section task-detail-section--full">
-                    <h4>核对后结算</h4>
-                    <p className="mb-3 text-xs text-[var(--admin-muted)]">按原上游任务核实最终费用。仅补记缺失调用费用，已有费用继续计入；填写 0 也须有明确依据。此操作结束本地处理，保留原任务和媒体。</p>
-                    <label className="block mb-3">尚未记账的缺失费用（分）
-                      <input aria-label="尚未记账的缺失费用（分）" className="admin-input block mt-1" type="number" min="0" max="100000000" step="1" value={reviewCost} onChange={(e) => setReviewCost(e.target.value)} />
-                    </label>
-                    <label className="block mb-3">核对依据（仅管理员可见）
-                      <textarea aria-label="核对依据" className="admin-input block mt-1 w-full" maxLength={120} value={reviewNote} onChange={(e) => setReviewNote(e.target.value)} />
-                    </label>
-                    <label className="block mb-3"><input type="checkbox" checked={reviewConfirmed} onChange={(e) => setReviewConfirmed(e.target.checked)} /> 已确认最终费用，缺失费用不包含已有用量</label>
-                    <Button disabled={reviewing || !reviewConfirmed || !/^\d+$/.test(reviewCost) || Number(reviewCost) > 100000000 || reviewNote.trim().length < 2} onClick={() => void handleBillingReview()}>{reviewing ? "结算中…" : "确认核对并结算"}</Button>
-                  </section>
-                ) : null}
-
                 <section className="task-detail-section task-detail-section--full">
                   <h4>用量明细</h4>
+                  {task.billing_snapshot && <div className="mb-3 text-xs text-[var(--admin-muted)]">
+                    <p>受理时计费模式：{task.billing_snapshot.mode === 'fixed_media' ? `站内价格 #${task.billing_snapshot.price_version}` : '原计费规则'} · 路由固定，失败不自动切换</p>
+                    {task.billing_snapshot.items.map((item, index) => <p key={index}>{item.model_id} · {item.params.resolution} · {item.params.duration ? `${item.params.duration} 秒` : `${item.params.count} 张`} · {item.route.channel_name || item.route.channel_id} → {item.route.upstream_model}</p>)}
+                  </div>}
                   <p className="mb-3 text-xs text-[var(--admin-muted)]">用量记录表示调用计费依据；钱包实际扣款与退还以任务结算摘要为准。</p>
                   <div className="admin-table-wrap">
                     <table>
@@ -461,14 +440,13 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
                           <th>模型</th>
                           <th>Tokens</th>
                           <th>扣费</th>
-                          <th>上游成本</th>
                           <th>计费依据</th>
                         </tr>
                       </thead>
                       <tbody>
                         {(task.usage_lines?.length ?? 0) === 0 ? (
                           <tr>
-                            <td colSpan={8} className="text-center text-sm text-[#909399]">
+                            <td colSpan={7} className="text-center text-sm text-[#909399]">
                               暂无用量记录
                             </td>
                           </tr>
@@ -481,8 +459,10 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
                               <td className="max-w-[120px] truncate text-xs">{line.model || "—"}</td>
                               <td>{line.total_tokens ?? 0}</td>
                               <td>¥{fenToYuan(line.charge_fen ?? 0)}</td>
-                              <td>¥{fenToYuan(line.cost_fen ?? 0)}</td>
-                              <td>{line.billing_basis_label ?? (line.estimated ? "估算" : "实测")}</td>
+                              <td>{line.billing_detail?.mode === 'fixed_media' ? <>
+                                <div>{line.billing_detail.resolution} · ¥{line.billing_detail.unit_price_yuan} × {line.billing_detail.duration ?? 1}{line.billing_detail.duration ? ' 秒' : ' 张'}</div>
+                                <div className="text-xs text-[var(--admin-muted)]">价格 #{line.billing_detail.price_version} · {line.billing_detail.route.channel_name || line.billing_detail.route.channel_id} · {line.billing_detail.delivered ? '已交付' : '未交付'}</div>
+                              </> : line.billing_basis_label ?? (line.estimated ? "估算" : "实测")}</td>
                             </tr>
                           ))
                         )}

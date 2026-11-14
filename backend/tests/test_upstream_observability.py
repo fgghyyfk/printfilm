@@ -216,9 +216,8 @@ async def test_caller_session_logging_error_does_not_repeat_network_request(monk
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("deferred", [False, True])
-async def test_ephemeral_executor_installs_caller_event_session(monkeypatch, deferred):
-    """同步和异步轻量任务都在未提交事务内记录，不由日志增加提交或 flush。"""
+async def test_ephemeral_executor_installs_caller_event_session(monkeypatch):
+    """同步和异步任务先登记受理；请求日志共用执行会话且不额外提交。"""
     from app.services.billing import ephemeral
 
     task = TaskRun(id=42, status="pending", current_step_key="submit")
@@ -238,11 +237,11 @@ async def test_ephemeral_executor_installs_caller_event_session(monkeypatch, def
         await upstream.observed_request(client, "POST", "https://gateway.test/v1/videos", json={"model": "MiniMax-H3"})
         return {"task_id": "inline-provider"}
 
-    run = ephemeral.run_billed_ephemeral_deferred if deferred else ephemeral.run_billed_ephemeral
-    await run(db, SimpleNamespace(id=9), domain="api", task_type="v1_video", executor=executor, commit=False)
+    run = ephemeral.run_billed_ephemeral
+    await run(db, SimpleNamespace(id=9), domain="studio", task_type="tool_video", executor=executor, commit=False)
     assert [event.event_type for event in events] == ["upstream.request.started", "upstream.request.accepted"]
     assert db.flush.await_count == 1  # 仅业务已有的 task.started flush。
-    db.commit.assert_not_awaited()
+    db.commit.assert_awaited_once()  # 接受任务在模型调用前持久化。
     assert upstream._event_session.get() is None
 
 

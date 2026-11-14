@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { apiErrorMessage, createHttpTransport, resolveApiBase } from '../src/api/http.ts'
+import { getMediaPriceVersion, setMediaPriceVersion } from '../src/lib/mediaPriceVersion.ts'
 
 /** 创建带可观察 token 的客户端；错误策略不依赖浏览器弹窗。 */
 function testTransport(getToken = () => 'first-token') {
@@ -100,4 +101,34 @@ test('网关返回非 JSON、null 或空 detail 时错误处理仍可运行', as
     await assert.rejects(testTransport().json('/failed'), /Bad Gateway/)
     t.mock.restoreAll()
   }
+})
+test('目录中的价格版本随生成请求提交', async (t) => {
+  const originalVersion = getMediaPriceVersion()
+  t.after(() => setMediaPriceVersion(originalVersion))
+  const calls = []
+  t.mock.method(globalThis, 'fetch', async (url, init) => {
+    calls.push({ url, init })
+    return Response.json(url.endsWith('/api/media-models') ? { price_version: 7 } : { ok: true })
+  })
+  const transport = testTransport()
+  await transport.json('/api/media-models')
+  await transport.json('/api/generate', { method: 'POST', body: '{}' })
+  assert.equal(calls[1].init.headers.get('X-Media-Price-Version'), '7')
+})
+
+test('价格冲突通知目录刷新，但不自动重发生成请求', async (t) => {
+  const previous = globalThis.window
+  const window = new EventTarget()
+  globalThis.window = window
+  t.after(() => { if (previous === undefined) delete globalThis.window; else globalThis.window = previous })
+  let refreshes = 0
+  let requests = 0
+  window.addEventListener('media-prices-changed', () => { refreshes += 1 })
+  t.mock.method(globalThis, 'fetch', async () => {
+    requests += 1
+    return Response.json({ detail: '价格已更新' }, { status: 409 })
+  })
+  await assert.rejects(() => testTransport().json('/api/generate', { method: 'POST', body: '{}' }), /价格已更新/)
+  assert.equal(refreshes, 1)
+  assert.equal(requests, 1)
 })

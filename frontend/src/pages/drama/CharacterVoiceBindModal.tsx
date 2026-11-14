@@ -4,6 +4,9 @@ import { translate as translateUi } from '../../i18n/runtime'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { dramaApi, resolveDramaMediaUrl, type DramaAsset } from '../../api/drama'
 import Modal from '../../components/ui/Modal'
+import { AssetCard, AssetEmpty, AssetGrid, AssetTypeFilter } from '../../components/assets/AssetLibrary'
+import { useCharacterVoiceGenerationEnabled } from '../../hooks/usePublicCapabilities'
+import { VOICE_GENERATION_DISABLED_MESSAGE } from '../../lib/publicCapabilities'
 
 const AUDIO_ACCEPT = 'audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/mp4,audio/m4a,.mp3,.wav,.m4a'
 
@@ -42,7 +45,7 @@ export function readVoicePrompt(asset: DramaAsset): string {
 }
 
 // 从角色资产 params 读取已绑定音色
-export function readAssetVoiceBinding(asset: DramaAsset): VoiceBinding | null {
+export function readAssetVoiceBinding(asset: Pick<DramaAsset, 'params'>): VoiceBinding | null {
   const params = (asset.params || {}) as Record<string, unknown>
   const raw = params.voiceAudio
   if (raw && typeof raw === 'object') {
@@ -117,6 +120,7 @@ export function CharacterVoiceBindModal({
   onError,
 }: Props) {
   const { t: translateUi } = useI18n()
+  const voiceGenerationEnabled = useCharacterVoiceGenerationEnabled()
   /*
    * voiceAssets 项目内 voice/audio 资产
    * selectedId 选中音色
@@ -144,6 +148,7 @@ export function CharacterVoiceBindModal({
   // 根据角色设定 AI 生成音色描述
   const fetchVoicePrompt = useCallback(
     async (force = false) => {
+      if (!voiceGenerationEnabled) return
       if (promptBusy) return
       if (!force && newPrompt.trim()) return
       setPromptBusy(true)
@@ -160,7 +165,7 @@ export function CharacterVoiceBindModal({
         setPromptBusy(false)
       }
     },
-    [asset.id, newPrompt, onError, projectId, promptBusy],
+    [asset.id, newPrompt, onError, projectId, promptBusy, voiceGenerationEnabled],
   )
 
   useEffect(() => {
@@ -192,10 +197,14 @@ export function CharacterVoiceBindModal({
 
   // 进入「AI 合成」时自动生成音色描述
   useEffect(() => {
-    if (!open || mode !== 'create' || promptRequestedRef.current) return
+    if (!open || !voiceGenerationEnabled || mode !== 'create' || promptRequestedRef.current) return
     promptRequestedRef.current = true
     void fetchVoicePrompt(true)
-  }, [open, mode, fetchVoicePrompt])
+  }, [open, mode, fetchVoicePrompt, voiceGenerationEnabled])
+
+  useEffect(() => {
+    if (!voiceGenerationEnabled && mode === 'create') setMode('pick')
+  }, [voiceGenerationEnabled, mode])
 
   if (!open) return null
 
@@ -236,6 +245,7 @@ export function CharacterVoiceBindModal({
 
   // 按提示词新建并合成 voice 资产
   async function handleCreateAndSynth() {
+    if (!voiceGenerationEnabled) { onError(VOICE_GENERATION_DISABLED_MESSAGE); return }
     const prompt = newPrompt.trim()
     if (!prompt || synthBusy) return
     setSynthBusy(true)
@@ -261,6 +271,7 @@ export function CharacterVoiceBindModal({
 
   // 对已有 voice 资产重新合成
   async function handleResynth(voice: DramaAsset) {
+    if (!voiceGenerationEnabled) { onError(VOICE_GENERATION_DISABLED_MESSAGE); return }
     const prompt = readVoicePrompt(voice)
     if (!prompt || synthBusy) return
     setSynthBusy(true)
@@ -360,47 +371,27 @@ export function CharacterVoiceBindModal({
       }
     >
       <p className="drama-muted">
-        {translateUi("workflow.giveAVoiceChooseASampleUploadARecording", { v1: asset.name || translateUi("workflow.character") })}</p>
+        给「{asset.name || '角色'}」配上说话声音。选择已有音色或上传录音{voiceGenerationEnabled ? '，也可用 AI 合成' : ''}。
+        之后生成带对白的镜头时，会尽量按这段声音来念。
+      </p>
       <p className="drama-muted" style={{ marginTop: -6, fontSize: 12 }}>
         {translateUi("workflow.onTheCanvasConnectingAnAudioNodeToA")}
       </p>
 
-      <div className="drama-voice-mode-tabs">
-        <button
-          type="button"
-          className={mode === 'pick' ? 'active' : ''}
-          onClick={() => setMode('pick')}
+      <div className="pf-library-toolbar">
+        <AssetTypeFilter
+          options={[{ value: 'pick', label: '选择已有' }, { value: 'upload', label: '上传音频' }, ...(voiceGenerationEnabled ? [{ value: 'create' as const, label: 'AI 合成' }] : [])] as const}
+          value={mode}
           disabled={anyBusy}
-        >
-          {translateUi("workflow.chooseExisting")}
-        </button>
-        <button
-          type="button"
-          className={mode === 'upload' ? 'active' : ''}
-          onClick={() => setMode('upload')}
-          disabled={anyBusy}
-        >
-          {translateUi("workflow.uploadAudio")}
-        </button>
-        <button
-          type="button"
-          className={mode === 'create' ? 'active' : ''}
-          onClick={() => {
-            setMode('create')
-            if (!newPrompt.trim() && !promptBusy) {
-              promptRequestedRef.current = false
-            }
-          }}
-          disabled={anyBusy}
-        >
-          {translateUi("workflow.synthesizeWithAi")}
-        </button>
+          ariaLabel="音色来源"
+          onChange={(value) => { setMode(value); if (value === 'create' && !newPrompt.trim() && !promptBusy) promptRequestedRef.current = false }}
+        />
       </div>
 
       {mode === 'pick' ? (
-        <div className="drama-voice-list">
+        <AssetGrid picker>
           {voiceAssets.length === 0 ? (
-            <p className="drama-muted">{translateUi("workflow.noVoicesAvailableUploadAudioOrSynthesizeAVoice")}</p>
+            <AssetEmpty>还没有可用音色，请先「上传音频」{voiceGenerationEnabled ? '或「AI 合成」' : ''}。</AssetEmpty>
           ) : (
             voiceAssets.map((voice) => {
               const hasAudio = Boolean(voice.url)
@@ -411,18 +402,14 @@ export function CharacterVoiceBindModal({
                   ? translateUi("workflow.synthesized")
                   : translateUi("workflow.uploaded")
               return (
-                <label key={voice.id} className="drama-voice-option">
-                  <input
-                    type="radio"
-                    name="drama-voice-asset"
-                    checked={selectedId === voice.id}
-                    onChange={() => setSelectedId(voice.id)}
-                  />
-                  <span>
-                    {voice.name || translateUi("workflow.voice", { v1: String(voice.id) })}
-                    <small>{statusLabel}</small>
-                  </span>
-                  {hasAudio && canResynth ? (
+                <AssetCard
+                  key={voice.id}
+                  asset={voice}
+                  selected={selectedId === voice.id}
+                  subtitle={statusLabel}
+                  footer="项目音色"
+                  onOpen={() => setSelectedId(voice.id)}
+                  actions={voiceGenerationEnabled && hasAudio && canResynth ? <>
                     <button
                       type="button"
                       className="pf-btn pf-btn-sm"
@@ -434,12 +421,12 @@ export function CharacterVoiceBindModal({
                     >
                       {translateUi("workflow.resynthesize")}
                     </button>
-                  ) : null}
-                </label>
+                  </> : undefined}
+                />
               )
             })
           )}
-        </div>
+        </AssetGrid>
       ) : mode === 'upload' ? (
         <div className="drama-voice-create-form">
           <p className="drama-muted" style={{ margin: 0 }}>
@@ -464,7 +451,7 @@ export function CharacterVoiceBindModal({
             {uploadBusy ? translateUi("workflow.uploading") : translateUi("workflow.chooseAudioFile")}
           </button>
         </div>
-      ) : (
+      ) : voiceGenerationEnabled ? (
         <div className="drama-voice-create-form">
           <label className="drama-field">
             <span>{translateUi("workflow.voiceName")}</span>
@@ -512,7 +499,7 @@ export function CharacterVoiceBindModal({
             {synthBusy ? translateUi("workflow.synthesizing") : translateUi("workflow.generateVoicePreview")}
           </button>
         </div>
-      )}
+      ) : null}
 
       {previewUrl ? (
         <audio className="drama-voice-audio" controls src={previewUrl} />

@@ -12,7 +12,11 @@ from app.schemas import AdminOrderListOut, AdminOrderOut, PageMeta
 router = APIRouter()
 
 
-@router.get("/orders", response_model=AdminOrderListOut)
+@router.get("/orders", response_model=AdminOrderListOut,
+    summary="分页查询充值订单",
+    description="管理员按订单状态、所属用户或商户订单号精确筛选充值订单，返回订单及用户邮箱，按订单编号倒序排列。",
+    response_description="操作成功，返回结果详见响应结构",
+)
 async def list_orders(
     status: str | None = None,
     user_id: int | None = None,
