@@ -15,7 +15,7 @@ export const zhPages = {
     sub2: '写稿、出图、配音、剪辑，都在映创一站完成。',
     start: '开始创作',
     ecom: '做电商图',
-    showcaseNote: '示例画面',
+    showcaseNote: '示意图',
     showcase: ['电商套图', '数字人口播', 'AI 短剧', 'AI 短视频'],
     platformsLabel: '成片适配主流平台',
     platforms: ['抖音', '视频号', '小红书', '快手', 'B 站', '淘宝', '拼多多'],

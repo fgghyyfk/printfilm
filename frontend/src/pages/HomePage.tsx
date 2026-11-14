@@ -1,4 +1,4 @@
-/** 映创官网首页：平台主张 + 样图四宫格 + 平台条 + 产品线卡片 + 三步出片 + 收尾 */
+/** 映创官网首页：平台主张 + 示意插画四宫格 + 平台条 + 产品线卡片 + 三步出片 + 收尾 */
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ArrowRight, AudioLines, Clapperboard, Film, ImagePlus, Mic, PanelsTopLeft, ShoppingBag, Video, Wand2 } from 'lucide-react'
@@ -8,24 +8,20 @@ import CreateChoiceModal from '../components/ui/CreateChoiceModal'
 import { useI18n } from '../i18n'
 import { brandFullName } from '../lib/siteLinks'
 import { SHORT_VIDEO_CREATE_PATH } from '../lib/shortVideoRoutes'
+import HomeArt, { type HomeArtKind } from './home/HomeArt'
 import './home/home.css'
 
-/* 首屏四宫格样图，顺序与文案 home.showcase 一致 */
-const SHOWCASE = [
-  '/ecom-examples/scarf_cover.jpg',
-  '/char-presets/real.jpg',
-  '/image-styles/ancient-romance-soft.jpg',
-  '/mode-presets/full.jpg',
-]
+/* 首屏四宫格示意插画，顺序与文案 home.showcase 一致 */
+const SHOWCASE: HomeArtKind[] = ['ecom', 'avatar', 'drama', 'video']
 
-/* 产品线卡片：入口、图标、样图，顺序与文案 home.lines 一致 */
-const LINES = [
-  { path: '/ecom', icon: ShoppingBag, image: '/ecom-examples/scarf_street.jpg' },
-  { path: '/daihuo', icon: Video, image: '/ecom-examples/scarf_hold.jpg' },
-  { path: `${SHORT_VIDEO_CREATE_PATH}?mode=avatar`, icon: Mic, image: '/char-presets/real.jpg' },
-  { path: SHORT_VIDEO_CREATE_PATH, icon: Film, image: '/mode-presets/image_text.jpg' },
-  { path: '/drama', icon: Clapperboard, image: '/image-styles/chinese-urban-realistic.jpg' },
-  { path: '/canvas', icon: PanelsTopLeft, image: '/image-styles/cgi-3d-animation.jpg' },
+/* 产品线卡片：入口、图标、示意插画，顺序与文案 home.lines 一致 */
+const LINES: { path: string; icon: typeof ShoppingBag; art: HomeArtKind }[] = [
+  { path: '/ecom', icon: ShoppingBag, art: 'ecom' },
+  { path: '/daihuo', icon: Video, art: 'daihuo' },
+  { path: `${SHORT_VIDEO_CREATE_PATH}?mode=avatar`, icon: Mic, art: 'avatar' },
+  { path: SHORT_VIDEO_CREATE_PATH, icon: Film, art: 'video' },
+  { path: '/drama', icon: Clapperboard, art: 'drama' },
+  { path: '/canvas', icon: PanelsTopLeft, art: 'canvas' },
 ]
 
 /* 单独使用的生成工具，顺序与文案 home.tools 一致 */
@@ -97,7 +93,7 @@ export default function HomePage() {
           <div className="kk-showcase-grid">
             {m.home.showcase.map((label, i) => (
               <div key={label} className={`kk-shot is-${i}`}>
-                <img src={SHOWCASE[i]} alt="" decoding="async" />
+                <HomeArt kind={SHOWCASE[i]} />
                 <span>{label}</span>
               </div>
             ))}
@@ -120,11 +116,11 @@ export default function HomePage() {
         <p className="kk-sub">{t('home.linesSub')}</p>
         <div className="kk-lines-grid">
           {m.home.lines.map((line, i) => {
-            const { path, icon: Icon, image } = LINES[i]
+            const { path, icon: Icon, art } = LINES[i]
             return (
               <button key={line.title} type="button" className="kk-line" onClick={() => goAuthOr(path)}>
                 <span className="kk-line-media">
-                  <img src={image} alt="" loading="lazy" decoding="async" />
+                  <HomeArt kind={art} />
                 </span>
                 <span className="kk-line-body">
                   <span className="kk-line-head">

@@ -190,11 +190,10 @@
   transform: translateY(1.4rem);
 }
 
-.kk-shot img {
+.kk-shot .kk-art {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
 }
 
 .kk-shot span {
@@ -212,6 +211,24 @@
 .kk-showcase .kk-note {
   margin-top: 0.8rem;
 }
+
+/* ---------- 示意插画（HomeArt）：统一配色，全部取主题变量 ---------- */
+.kk-art .bg { fill: var(--pf-lime-soft); }
+.kk-art .dot { fill: var(--pf-card); opacity: 0.55; }
+.kk-art .pa { fill: var(--pf-card); }
+.kk-art .ac { fill: var(--pf-lime); }
+.kk-art .cp { fill: var(--pf-caption); }
+.kk-art .cpf { fill: var(--pf-caption); }
+.kk-art .ink { fill: var(--pf-ink); }
+.kk-art .sk { fill: var(--pf-ink); opacity: 0.18; }
+.kk-art .nf { fill: none; }
+.kk-art .st {
+  stroke: var(--pf-ink);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.kk-art .dash { stroke-dasharray: 2 8; }
 
 /* ---------- 产品线 ---------- */
 .kk-lines,
@@ -267,15 +284,14 @@
   background: var(--pf-ink);
 }
 
-.kk-line-media img {
+.kk-line-media .kk-art {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
   transition: transform 0.3s ease;
 }
 
-.kk-line:hover .kk-line-media img {
+.kk-line:hover .kk-line-media .kk-art {
   transform: scale(1.04);
 }
 
@@ -514,7 +530,7 @@
 
   .kk-pill,
   .kk-line,
-  .kk-line-media img {
+  .kk-line-media .kk-art {
     transition: none;
   }
 }

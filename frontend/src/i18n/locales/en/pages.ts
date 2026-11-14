@@ -15,7 +15,7 @@ export const enPages = {
     sub2: 'Script, images, voice and editing, all in one place.',
     start: 'Start creating',
     ecom: 'Make product images',
-    showcaseNote: 'Sample visuals',
+    showcaseNote: 'Illustrations',
     showcase: ['Product set', 'Talking avatar', 'AI drama', 'AI short video'],
     platformsLabel: 'Ready for',
     platforms: ['Douyin', 'Channels', 'Xiaohongshu', 'Kuaishou', 'Bilibili', 'Taobao', 'Pinduoduo'],
