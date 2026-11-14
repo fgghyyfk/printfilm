@@ -24,8 +24,8 @@ __pycache__/
 .ruff_cache/
 .coverage
 htmlcov/
-backend/.venv/
-.venv/
+backend/.venv
+.venv
 venv/
 
 # Secrets & local env（仅允许 *.example 与 frontend/.env.production）

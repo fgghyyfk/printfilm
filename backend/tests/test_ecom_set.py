@@ -156,3 +156,11 @@ def test_parse_target_keeps_zero_idx():
 def test_sanitize_keeps_sentence_fluent():
     text, _ = prompts.sanitize_copy("全网最好用的暖壶")
     assert text == "好用的暖壶"
+
+
+# 副标题软截断：略超几个字原样保留，超太多在标点处断开，不把词截成半个
+def test_subtitle_soft_clip():
+    assert prompts.clip_soft("20V锂电配2.0Ah电池无线作业", 16) == "20V锂电配2.0Ah电池无线作业"
+    long = "两档调速，多档扭力调节，正反转一键切换，家具组装墙面打孔都适用"
+    assert prompts.clip_soft(long, 16) == "两档调速，多档扭力调节"
+    assert prompts.clip_soft("二" * 30, 16) == "二" * 16

@@ -138,13 +138,28 @@ def normalize_copy(
             bullets.append(clip(text, bullet_max))
     out = {
         "title": clip(title, title_max),
-        "subtitle": clip(subtitle, subtitle_max),
+        "subtitle": clip_soft(subtitle, subtitle_max),
         "bullets": bullets,
     }
     en = clean_en(str(body.get("en") or ""))
     if en:
         out["en"] = en
     return out, hits
+
+
+SUBTITLE_SLACK = 6
+BREAKS = " ，,、；;·/|｜。"
+
+
+def clip_soft(text: str, limit: int, slack: int = SUBTITLE_SLACK) -> str:
+    """副标题软截断：超出 slack 以内原样保留（排版会换行并缩字号）；超太多时尽量在标点 / 空格处断开，
+    找不到断点才硬截，避免「…无线作」这种词被截成半个。"""
+    s = (text or "").strip()
+    if len(s) <= limit + slack:
+        return s
+    cut = s[:limit]
+    pos = max(cut.rfind(ch) for ch in BREAKS)
+    return cut[:pos].rstrip(BREAKS) if pos >= limit // 2 else cut
 
 
 def clean_en(text: str) -> str:

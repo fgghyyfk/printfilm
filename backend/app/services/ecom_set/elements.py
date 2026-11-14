@@ -157,6 +157,7 @@ async def recommend(db: AsyncSession, user: User, *, knowledge: dict | None, ind
     """
     from app.services.ecom_set import festivals
 
+    await ensure_seeded(db)
     fest = festivals.of_scene(scene_key)
     if fest is not None:
         head = await get_many(db, user, festivals.pack_keys(fest)[:6])

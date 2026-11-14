@@ -148,18 +148,36 @@ async def list_scenes(db: AsyncSession, user_id: int, *, industry: str | None = 
 
 
 async def get_scene(db: AsyncSession, user_id: int, key: str) -> EcomScene:
-    """按 key 取一个可用场景（系统场景或自己的场景）。"""
-    row = (
-        await db.execute(
-            select(EcomScene).where(
-                EcomScene.key == key, EcomScene.is_active.is_(True),
-                or_(EcomScene.scope == "system", EcomScene.owner_user_id == user_id),
+    """按 key 取一个可用场景（系统场景或自己的场景）。
+
+    关闭启动建库（DATABASE_BOOTSTRAP_ENABLED=false）时，新版本加的系统场景要等首次请求才补进库：
+    查不到且是内置场景 key 时先补种再查一次，避免没打开过场景列表就规划时报「场景不存在」。
+    """
+    async def _find() -> EcomScene | None:
+        return (
+            await db.execute(
+                select(EcomScene).where(
+                    EcomScene.key == key, EcomScene.is_active.is_(True),
+                    or_(EcomScene.scope == "system", EcomScene.owner_user_id == user_id),
+                )
             )
-        )
-    ).scalar_one_or_none()
+        ).scalar_one_or_none()
+
+    row = await _find()
+    if row is None and key in _system_scene_keys():
+        await ensure_seeded()
+        row = await _find()
     if row is None:
         raise ValueError("场景不存在或已下架")
     return row
+
+
+def _system_scene_keys() -> set[str]:
+    """内置系统场景（含节日场景）的 key。"""
+    from app.services.ecom_set.festivals_seed import FESTIVAL_SCENES
+    from app.services.ecom_set.scenes_seed import SYSTEM_SCENES
+
+    return {item["key"] for item in (*SYSTEM_SCENES, *FESTIVAL_SCENES)}
 
 
 def industries_out() -> list[dict]:
