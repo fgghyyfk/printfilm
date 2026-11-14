@@ -95,7 +95,7 @@ export default function AuthorizationPanel({ onSigned }: { onSigned?: () => void
     } catch (e) { setError((e as Error).message) }
     finally { setBusy(false) }
   }
-  return <section className="pf-market-authorization"><h2>开口播作品授权函</h2><p>按现行条款签署一次，本账号后续开口播作品可引用。本函是许可使用，不是著作权转让。</p>
+  return <section className="pf-market-authorization"><h2>映创作品授权函</h2><p>按现行条款签署一次，本账号后续映创作品可引用。本函是许可使用，不是著作权转让。</p>
     {status && <>
       <h3>{status.template.title}</h3>
       <p>版本 {status.template.version}</p>
@@ -107,7 +107,7 @@ export default function AuthorizationPanel({ onSigned }: { onSigned?: () => void
         <Modal open={previewOpen} onClose={() => setPreviewOpen(false)} title="授权函预览" size="xl" className="pf-market-letter-modal">
           <div className="pf-market-letter-modal-summary">
             <div className="pf-market-letter-modal-summary-top">
-              <span className="pf-market-letter-modal-eyebrow"><ShieldCheck size={14} /> 开口播 · 数字资产市场</span>
+              <span className="pf-market-letter-modal-eyebrow"><ShieldCheck size={14} /> 映创 · 数字资产市场</span>
               <span className="pf-market-letter-modal-status"><FileCheck2 size={13} /> 已签署</span>
             </div>
             <strong>账号授权函</strong>

@@ -2,8 +2,8 @@
 
 export const zhShell = {
   meta: {
-    title: '开口播 · 一张照片，开口讲科普',
-    description: '开口播（KaiKou）：上传一张半身照，自动配音、对口型、加标题条，生成竖屏口播视频；也支持科普短视频与 AI 漫剧。',
+    title: '映创 · AI 图片、视频与短剧创作',
+    description: '一句话做商品图、口播视频、科普短视频和 AI 短剧，生成、配音、剪辑一站完成。',
   },
   common: {
     comingSoon: '即将推出',
@@ -94,7 +94,7 @@ export const zhShell = {
     registerTitle: '创建创作者账号',
     forgotTitle: '找回密码',
     resetTitle: '设置新密码',
-    lede: '开口播 · 一张照片，开口讲科普',
+    lede: '映创 · AI 图片、视频与短剧创作',
     nickname: '昵称',
     email: '邮箱',
     password: '密码',

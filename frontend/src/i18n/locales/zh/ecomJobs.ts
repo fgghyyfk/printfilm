@@ -8,7 +8,7 @@ export const zhEcomJobs = {
       language: '目标语言',
       languages: { zh: '中文', en: '英文', ja: '日文' },
       glossary: '品牌 / 术语保留（选填，最多 2000 字）',
-      glossaryHint: '例如：保留 KaiKou；将「随行杯」译为 travel tumbler',
+      glossaryHint: '例如：保留 YingChuang；将「随行杯」译为 travel tumbler',
       hint: '保持原图比例，按 2K 档出图。识别不到文字时跳过，不生图、不计费；只对有文字的图片收费。',
       start: '开始翻译',
       confirmTitle: '确认图片翻译',

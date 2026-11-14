@@ -1,7 +1,7 @@
 /** 品牌与站点固定信息 */
 
-export const BRAND_NAME = '开口播'
-export const BRAND_NAME_EN = 'KaiKou'
+export const BRAND_NAME = '映创'
+export const BRAND_NAME_EN = 'YingChuang'
 
 /** 按界面语言取品牌短名：英文界面不出现中文名 */
 export function brandName(locale: string): string {

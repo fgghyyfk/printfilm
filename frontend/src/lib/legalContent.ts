@@ -20,12 +20,12 @@ export const LEGAL_DOCS: Record<'terms' | 'privacy', LegalDoc> = {
     title: '用户协议',
     updatedAt: '2026-08-17',
     intro:
-      '欢迎使用 开口播（以下简称「本平台」）。在注册或使用本平台服务前，请仔细阅读本协议。一旦您开始使用，即视为已阅读并同意以下条款。',
+      '欢迎使用 映创平台（以下简称「本平台」）。在注册或使用本平台服务前，请仔细阅读本协议。一旦您开始使用，即视为已阅读并同意以下条款。',
     sections: [
       {
         title: '1. 服务说明',
         paragraphs: [
-          '开口播 提供 AI 漫剧、AI短视频及创作工具（含文生图、图生图、文生视频等）相关服务。服务内容可能随产品迭代调整，我们将尽可能在页面或公告中说明重大变更。',
+          '映创平台 提供 AI 漫剧、AI短视频及创作工具（含文生图、图生图、文生视频等）相关服务。服务内容可能随产品迭代调整，我们将尽可能在页面或公告中说明重大变更。',
           '本平台按实际上游模型用量计费，余额充值后永久有效，不设强制订阅。具体价格与赠送规则以定价页及下单时展示为准。',
         ],
       },
@@ -43,7 +43,7 @@ export const LEGAL_DOCS: Record<'terms' | 'privacy', LegalDoc> = {
         paragraphs: [
           '您输入的提示词、脚本、素材等仍归您或原权利人所有。您保证对上传内容拥有合法权利，不得侵犯第三方知识产权、肖像权、隐私权等。',
           '使用 AI 生成的内容可能存在不准确、不完整或与预期不符的情况，请在正式发布前自行审核。因您对外发布、商用使用生成内容引发的纠纷，由您自行负责。',
-          '本平台的界面、商标、软件与文档等知识产权归 开口播 或相关权利人所有，未经许可不得复制、反向工程或用于与本服务无关的商业用途。',
+          '本平台的界面、商标、软件与文档等知识产权归 映创平台 或相关权利人所有，未经许可不得复制、反向工程或用于与本服务无关的商业用途。',
         ],
       },
       {
@@ -90,7 +90,7 @@ export const LEGAL_DOCS: Record<'terms' | 'privacy', LegalDoc> = {
     title: '隐私政策',
     updatedAt: '2026-08-17',
     intro:
-      '开口播 重视您的隐私。本政策说明我们如何收集、使用、存储与保护您的个人信息。使用本平台即表示您理解本政策所述处理方式。',
+      '映创平台 重视您的隐私。本政策说明我们如何收集、使用、存储与保护您的个人信息。使用本平台即表示您理解本政策所述处理方式。',
     sections: [
       {
         title: '1. 我们收集的信息',
@@ -161,12 +161,12 @@ export const LEGAL_DOCS_EN: Record<'terms' | 'privacy', LegalDoc> = {
     title: 'Terms of Service',
     updatedAt: '2026-08-17',
     intro:
-      'Welcome to KaiKou (“the Platform”). Please read these terms before you register or use the service. Using the Platform means you have read and agree to them.',
+      'Welcome to YingChuang (“the Platform”). Please read these terms before you register or use the service. Using the Platform means you have read and agree to them.',
     sections: [
       {
         title: '1. The service',
         paragraphs: [
-          'KaiKou provides AI drama, explainer video, and creation tools (including text-to-image, image-to-image, and text-to-video). Features may change as the product evolves; we will try to note material changes on the site or in notices.',
+          'YingChuang provides AI drama, explainer video, and creation tools (including text-to-image, image-to-image, and text-to-video). Features may change as the product evolves; we will try to note material changes on the site or in notices.',
           'Billing follows actual upstream model usage. Topped-up balance does not expire and there is no forced subscription. Prices and bonuses follow the Pricing page and the checkout screen.',
         ],
       },
@@ -184,7 +184,7 @@ export const LEGAL_DOCS_EN: Record<'terms' | 'privacy', LegalDoc> = {
         paragraphs: [
           'Prompts, scripts, and uploads remain yours or the original rights holder’s. You warrant you have the right to upload them and will not infringe IP, portrait, or privacy rights.',
           'AI output may be inaccurate or unexpected. Review it before publishing. Disputes from your public or commercial use are your responsibility.',
-          'The Platform UI, marks, software, and docs belong to KaiKou or licensors. Do not copy, reverse-engineer, or use them outside this service without permission.',
+          'The Platform UI, marks, software, and docs belong to YingChuang or licensors. Do not copy, reverse-engineer, or use them outside this service without permission.',
         ],
       },
       {
@@ -231,7 +231,7 @@ export const LEGAL_DOCS_EN: Record<'terms' | 'privacy', LegalDoc> = {
     title: 'Privacy Policy',
     updatedAt: '2026-08-17',
     intro:
-      'KaiKou respects your privacy. This policy explains how we collect, use, store, and protect personal information. Using the Platform means you understand this processing.',
+      'YingChuang respects your privacy. This policy explains how we collect, use, store, and protect personal information. Using the Platform means you understand this processing.',
     sections: [
       {
         title: '1. Information we collect',
@@ -325,7 +325,7 @@ export const CONTACT_CHANNELS: ContactChannel[] = [
   {
     title: '企业合作 / 对公转账',
     desc: '企业批量充值、API 合作或发票需求，请邮件说明公司名称与需求，我们会安排对接。',
-    href: 'mailto:support@haituike.com?subject=KaiKou%20企业合作',
+    href: 'mailto:support@haituike.com?subject=YingChuang%20企业合作',
     actionLabel: '发送合作邮件',
   },
 ]

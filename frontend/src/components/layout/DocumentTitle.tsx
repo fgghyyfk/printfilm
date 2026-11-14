@@ -21,7 +21,7 @@ const TITLE_KEYS: Partial<Record<NavActive, string>> = {
   settings: 'nav.profile',
 }
 
-/** 路由变化时同步浏览器标签标题，例如「定价 · 开口播」 */
+/** 路由变化时同步浏览器标签标题，例如「定价 · 映创」 */
 export default function DocumentTitle() {
   const { pathname, search } = useLocation()
   const { t, m, locale } = useI18n()

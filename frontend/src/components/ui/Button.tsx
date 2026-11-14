@@ -47,7 +47,7 @@ function buttonClass(props: {
   )
 }
 
-/** 开口播 统一按钮：lime / dark / ghost / outline / text；可作 Link */
+/** 映创 统一按钮：lime / dark / ghost / outline / text；可作 Link */
 export default function Button(props: Props) {
   const {
     children,

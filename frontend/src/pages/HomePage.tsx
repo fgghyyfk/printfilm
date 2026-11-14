@@ -1,20 +1,38 @@
-/** 开口播官网首页：演播室字幕风，主张 + 监视器示意 + 平台条 + 流程标签页 + 其他出片方式 */
-import { useState, type KeyboardEvent } from 'react'
+/** 映创官网首页：平台主张 + 样图四宫格 + 平台条 + 产品线卡片 + 三步出片 + 收尾 */
+import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowRight, Clapperboard, ShoppingBag, Video, Wand2 } from 'lucide-react'
+import { ArrowRight, AudioLines, Clapperboard, Film, ImagePlus, Mic, PanelsTopLeft, ShoppingBag, Video, Wand2 } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import BrandMark from '../components/BrandMark'
-import HomeFlowPreview from './home/HomeFlowPreview'
+import CreateChoiceModal from '../components/ui/CreateChoiceModal'
 import { useI18n } from '../i18n'
 import { brandFullName } from '../lib/siteLinks'
+import { SHORT_VIDEO_CREATE_PATH } from '../lib/shortVideoRoutes'
 import './home/home.css'
 
-const AVATAR_PATH = '/studio/new?mode=avatar'
-const MORE_LINKS = [
-  { path: '/daihuo', icon: ShoppingBag },
-  { path: '/studio/new', icon: Video },
-  { path: '/drama', icon: Clapperboard },
-  { path: '/tools/image', icon: Wand2 },
+/* 首屏四宫格样图，顺序与文案 home.showcase 一致 */
+const SHOWCASE = [
+  '/ecom-examples/scarf_cover.jpg',
+  '/char-presets/real.jpg',
+  '/image-styles/ancient-romance-soft.jpg',
+  '/mode-presets/full.jpg',
+]
+
+/* 产品线卡片：入口、图标、样图，顺序与文案 home.lines 一致 */
+const LINES = [
+  { path: '/ecom', icon: ShoppingBag, image: '/ecom-examples/scarf_street.jpg' },
+  { path: '/daihuo', icon: Video, image: '/ecom-examples/scarf_hold.jpg' },
+  { path: `${SHORT_VIDEO_CREATE_PATH}?mode=avatar`, icon: Mic, image: '/char-presets/real.jpg' },
+  { path: SHORT_VIDEO_CREATE_PATH, icon: Film, image: '/mode-presets/image_text.jpg' },
+  { path: '/drama', icon: Clapperboard, image: '/image-styles/chinese-urban-realistic.jpg' },
+  { path: '/canvas', icon: PanelsTopLeft, image: '/image-styles/cgi-3d-animation.jpg' },
+]
+
+/* 单独使用的生成工具，顺序与文案 home.tools 一致 */
+const TOOLS = [
+  { path: '/tools/image', icon: ImagePlus },
+  { path: '/tools/video', icon: Wand2 },
+  { path: '/tools/audio', icon: AudioLines },
 ]
 
 /** 首页：未登录的创作入口先去登录，登录后回跳到原目标。 */
@@ -22,24 +40,18 @@ export default function HomePage() {
   const nav = useNavigate()
   const { t, m, locale } = useI18n()
   const loggedIn = Boolean(localStorage.getItem('token'))
-  /* flowIdx 流程标签页当前项 */
-  const [flowIdx, setFlowIdx] = useState(0)
-  const flow = m.home.flow[flowIdx]
+  /* chooserOpen 「开始创作」选择产品线弹层 */
+  const [chooserOpen, setChooserOpen] = useState(false)
 
   // 未登录先去登录，带 next 回跳
   function goAuthOr(path: string) {
     nav(loggedIn ? path : `/auth?next=${encodeURIComponent(path)}`)
   }
 
-  // 流程标签页的方向键切换（WAI-ARIA tabs 约定），焦点跟随选中项
-  function onFlowKeyDown(e: KeyboardEvent<HTMLDivElement>) {
-    const count = m.home.flow.length
-    const target = { ArrowRight: flowIdx + 1, ArrowLeft: flowIdx - 1, Home: 0, End: count - 1 }[e.key]
-    if (target === undefined) return
-    e.preventDefault()
-    const next = (target + count) % count
-    setFlowIdx(next)
-    e.currentTarget.querySelectorAll('button')[next]?.focus()
+  // 开始创作：已登录弹出产品线选择，未登录先注册登录
+  function startCreating() {
+    if (loggedIn) setChooserOpen(true)
+    else nav('/auth?mode=register')
   }
 
   return (
@@ -63,7 +75,7 @@ export default function HomePage() {
             {t('home.sub2')}
           </p>
           <div className="kk-cta">
-            <button type="button" className="kk-pill is-fill" onClick={() => goAuthOr(AVATAR_PATH)}>
+            <button type="button" className="kk-pill is-fill" onClick={startCreating}>
               {t('home.start')}
             </button>
             <button type="button" className="kk-pill is-line" onClick={() => goAuthOr('/ecom')}>
@@ -75,46 +87,23 @@ export default function HomePage() {
               <Link to="/tasks">{t('home.myTasks')}</Link>
             ) : (
               <>
-                {t('home.newHere')}{' '}
-                <Link to={`/auth?mode=register&next=${encodeURIComponent(AVATAR_PATH)}`}>{t('home.trial')}</Link>
+                {t('home.newHere')} <Link to="/auth?mode=register">{t('home.trial')}</Link>
               </>
             )}
           </p>
         </div>
 
-        <div className="kk-monitor-wrap">
-          <div className="kk-monitor" aria-hidden>
-            <div className="kk-monitor-bar">
-              <span className="kk-rec">
-                <i />
-                REC
-              </span>
-              <span className="kk-monitor-title">{t('home.winTask')}</span>
-              <span className="kk-timecode">00:00:18:06</span>
-            </div>
-            <div className="kk-monitor-body">
-              <div className="kk-phone">
-                <img src="/char-presets/real.jpg" alt="" width={190} height={338} decoding="async" />
-                <div className="kk-phone-title">
-                  <span className="is-top">{t('home.winTitleTop')}</span>
-                  <span>{t('home.winTitleBottom')}</span>
-                </div>
+        <figure className="kk-showcase">
+          <div className="kk-showcase-grid">
+            {m.home.showcase.map((label, i) => (
+              <div key={label} className={`kk-shot is-${i}`}>
+                <img src={SHOWCASE[i]} alt="" decoding="async" />
+                <span>{label}</span>
               </div>
-              <ul className="kk-rows">
-                {m.home.winRows.map((r, i) => (
-                  <li key={r.label} className={`is-${i < 2 ? 'done' : i === 2 ? 'run' : 'wait'}`}>
-                    <span>{r.label}</span>
-                    <em>{r.state}</em>
-                    <span className="kk-bar">
-                      <i />
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
+            ))}
           </div>
-          <p className="kk-note">{t('home.winNote')}</p>
-        </div>
+          <figcaption className="kk-note">{t('home.showcaseNote')}</figcaption>
+        </figure>
       </section>
 
       <section className="kk-platforms">
@@ -126,52 +115,59 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="kk-flow" id="how">
-        <h2>{t('home.flowTitle')}</h2>
-        <p className="kk-sub">{t('home.flowSub')}</p>
-        <div className="kk-tabs" role="tablist" aria-label={t('home.flowTitle')} onKeyDown={onFlowKeyDown}>
-          {m.home.flow.map((f, i) => (
-            <button
-              key={f.tab}
-              type="button"
-              role="tab"
-              id={`kk-flow-tab-${i}`}
-              aria-selected={i === flowIdx}
-              aria-controls="kk-flow-panel"
-              tabIndex={i === flowIdx ? 0 : -1}
-              className={i === flowIdx ? 'is-on' : ''}
-              onClick={() => setFlowIdx(i)}
-            >
-              <small>0{i + 1}</small>
-              {f.tab}
-            </button>
-          ))}
-        </div>
-        <div className="kk-flow-panel" id="kk-flow-panel" role="tabpanel" aria-labelledby={`kk-flow-tab-${flowIdx}`}>
-          <div key={flowIdx} className="kk-flow-copy">
-            <span className="kk-flow-no">00:0{flowIdx + 1}</span>
-            <h3>{flow.title}</h3>
-            <p>{flow.desc}</p>
-          </div>
-          <HomeFlowPreview key={`preview-${flowIdx}`} step={flowIdx} />
-        </div>
-      </section>
-
-      <section className="kk-more">
-        <h2>{t('home.moreTitle')}</h2>
-        <div className="kk-more-grid">
-          {m.home.more.map((item, i) => {
-            const { path, icon: Icon } = MORE_LINKS[i]
+      <section className="kk-lines" id="products">
+        <h2>{t('home.linesTitle')}</h2>
+        <p className="kk-sub">{t('home.linesSub')}</p>
+        <div className="kk-lines-grid">
+          {m.home.lines.map((line, i) => {
+            const { path, icon: Icon, image } = LINES[i]
             return (
-              <button key={item.title} type="button" className="kk-more-card" onClick={() => goAuthOr(path)}>
-                <Icon size={20} strokeWidth={1.7} aria-hidden />
-                <strong>{item.title}</strong>
-                <span>{item.desc}</span>
-                <ArrowRight className="kk-more-go" size={16} strokeWidth={2} aria-hidden />
+              <button key={line.title} type="button" className="kk-line" onClick={() => goAuthOr(path)}>
+                <span className="kk-line-media">
+                  <img src={image} alt="" loading="lazy" decoding="async" />
+                </span>
+                <span className="kk-line-body">
+                  <span className="kk-line-head">
+                    <Icon size={18} strokeWidth={1.8} aria-hidden />
+                    <strong>{line.title}</strong>
+                    <ArrowRight className="kk-line-go" size={16} strokeWidth={2} aria-hidden />
+                  </span>
+                  <span className="kk-line-desc">{line.desc}</span>
+                  <span className="kk-line-tags">
+                    {line.tags.map((tag) => (
+                      <em key={tag}>{tag}</em>
+                    ))}
+                  </span>
+                </span>
               </button>
             )
           })}
         </div>
+        <div className="kk-tools">
+          <span>{t('home.toolsLabel')}</span>
+          {m.home.tools.map((label, i) => {
+            const { path, icon: Icon } = TOOLS[i]
+            return (
+              <button key={label} type="button" onClick={() => goAuthOr(path)}>
+                <Icon size={16} strokeWidth={1.8} aria-hidden />
+                {label}
+              </button>
+            )
+          })}
+        </div>
+      </section>
+
+      <section className="kk-steps">
+        <h2>{t('home.stepsTitle')}</h2>
+        <ol>
+          {m.home.steps.map((step, i) => (
+            <li key={step.title}>
+              <span className="kk-step-no">0{i + 1}</span>
+              <strong>{step.title}</strong>
+              <p>{step.desc}</p>
+            </li>
+          ))}
+        </ol>
       </section>
 
       <section className="kk-close">
@@ -179,7 +175,7 @@ export default function HomePage() {
           <span className="kk-caption-line">{t('home.closeTitle')}</span>
         </h2>
         <p className="kk-sub">{t('home.closeSub')}</p>
-        <button type="button" className="kk-pill is-fill" onClick={() => goAuthOr(AVATAR_PATH)}>
+        <button type="button" className="kk-pill is-fill" onClick={startCreating}>
           {t('home.start')}
         </button>
       </section>
@@ -200,6 +196,8 @@ export default function HomePage() {
           © {new Date().getFullYear()} {brandFullName(locale)}
         </p>
       </footer>
+
+      <CreateChoiceModal open={chooserOpen} onClose={() => setChooserOpen(false)} />
     </AppShell>
   )
 }

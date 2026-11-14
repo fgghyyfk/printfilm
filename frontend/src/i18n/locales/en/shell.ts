@@ -2,9 +2,9 @@
 
 export const enShell = {
   meta: {
-    title: 'KaiKou · One photo, ready to talk',
+    title: 'YingChuang · AI image, video and short drama studio',
     description:
-      'KaiKou turns one half-body photo into a vertical talking-head video with voice, lip sync, and a title bar.',
+      'Make product images, talking-head videos, explainer shorts, and AI short dramas from one prompt, with generation, voiceover, and editing in one place.',
   },
   common: {
     comingSoon: 'Coming soon',
@@ -71,7 +71,7 @@ export const enShell = {
     pricing: 'Pricing',
     help: 'Help',
     helpCenter: 'Help center',
-    kaikou: 'Talking head',
+    kaikou: 'Avatar',
     login: 'Sign in',
     startCreate: 'Start creating',
     profile: 'Account',
@@ -95,7 +95,7 @@ export const enShell = {
     registerTitle: 'Create a creator account',
     forgotTitle: 'Reset your password',
     resetTitle: 'Choose a new password',
-    lede: 'KaiKou · One photo, ready to talk',
+    lede: 'YingChuang · AI image, video and short drama studio',
     nickname: 'Display name',
     email: 'Email',
     password: 'Password',

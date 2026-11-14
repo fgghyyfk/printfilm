@@ -303,8 +303,8 @@ export function AdminLayout() {
         role={mobileDrawerOpen ? "dialog" : undefined} aria-modal={mobileDrawerOpen ? true : undefined}
         aria-hidden={isMobile && !mobileOpen ? true : undefined} inert={isMobile && !mobileOpen}>
         <div className="admin-brand">
-          <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="开口播" className="admin-brand-logo" width={38} height={38} />
-          <div className="admin-brand-copy"><div className="admin-brand-name">开口播</div><div className="admin-brand-sub">运营控制台</div></div>
+          <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="映创" className="admin-brand-logo" width={38} height={38} />
+          <div className="admin-brand-copy"><div className="admin-brand-name">映创</div><div className="admin-brand-sub">运营控制台</div></div>
           <button ref={sidebarCloseRef} type="button" className="admin-icon-btn admin-sidebar-close" aria-label="关闭导航" onClick={() => setMobileOpen(false)}><X size={18} /></button>
         </div>
         <nav className="admin-nav" aria-label="主导航">

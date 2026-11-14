@@ -70,7 +70,7 @@ export function AppearanceSettingsPanel() {
               >
                 <div className="flex h-32 flex-col justify-center gap-2 px-5" style={{ background: bg, color: ink }} aria-hidden>
                   <strong style={{ fontFamily: theme.serif ? "'Noto Serif SC', 'Songti SC', serif" : "inherit", fontSize: 22 }}>
-                    一张照片，开口讲
+                    一句话，图片视频一站做
                   </strong>
                   <span className="inline-flex w-fit rounded-md px-3 py-1 text-xs font-semibold text-white" style={{ background: accent }}>
                     立即制作

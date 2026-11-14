@@ -8,7 +8,7 @@ export const enEcomJobs = {
       language: 'Target language',
       languages: { zh: 'Chinese', en: 'English', ja: 'Japanese' },
       glossary: 'Brands / glossary (optional, up to 2000 characters)',
-      glossaryHint: 'For example: keep KaiKou unchanged; translate 随行杯 as travel tumbler',
+      glossaryHint: 'For example: keep YingChuang unchanged; translate 随行杯 as travel tumbler',
       hint: 'Keep the original aspect ratio and use 2K generation. Images without text are skipped with no image generation or charge. Only images with text are charged.',
       start: 'Translate images',
       confirmTitle: 'Confirm image translation',
