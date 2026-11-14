@@ -241,3 +241,42 @@ def test_apply_log_quota_overwrites_charge() -> None:
     assert event.charge_fen == 700
     assert event.estimated is False
     assert "newapi_log" in (event.raw_usage_json or "")
+
+
+_GPT_IMAGE_25 = (
+    'u("resolution") == "4K" ? 0.08 * 1.5 : (u("resolution") == "2K" ? 0.05 * 1.5 : 0.03 * 1.5)'
+)
+
+
+def test_expr_string_compare_ignores_case() -> None:
+    """上游写 "4K"，本地事实归一成小写 "4k" 也要命中同一档。"""
+    for res, usd in (("1k", 0.045), ("2k", 0.075), ("4K", 0.12), ("4k", 0.12)):
+        got = expression_usd(_GPT_IMAGE_25, tokens={}, usage={"resolution": res})
+        assert got is not None and abs(got - usd) < 1e-9
+
+
+def test_gpt_image_25_charge_tiers_by_resolution() -> None:
+    """gpt-image-2.5 按 1K/2K/4K 分档预估，不再全部落到 1K 档。"""
+    settings = get_settings()
+    settings.billing_usd_cny = 7.0
+    settings.billing_markup = 1.0
+    payload = {
+        "data": [
+            {
+                "model_name": "gpt-image-2.5",
+                "quota_type": 1,
+                "model_price": 0,
+                "model_ratio": 0,
+                "completion_ratio": 0,
+                "billing_mode": "tiered_expr",
+                "billing_expr": _GPT_IMAGE_25,
+            }
+        ]
+    }
+    set_cached_rates(parse_pricing_payload(payload, settings))
+    try:
+        fens = [charge_fen_official_image(settings, model="gpt-image-2.5", size=s) for s in ("1K", "2K", "4K")]
+        # $0.045 / $0.075 / $0.12 × 7
+        assert fens == [32, 53, 84]
+    finally:
+        set_cached_rates(None)

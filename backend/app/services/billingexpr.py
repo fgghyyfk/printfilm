@@ -150,7 +150,11 @@ def _truthy(value: Any) -> bool:
 
 def _cmp(op: str, left: Any, right: Any) -> bool:
     if op in {"==", "!="}:
-        same = left == right
+        # 字符串不区分大小写：本地事实常被归一成小写（"4k"），上游规则写的是 "4K"
+        if isinstance(left, str) and isinstance(right, str):
+            same = left.strip().lower() == right.strip().lower()
+        else:
+            same = left == right
         if not same:
             try:
                 same = float(left) == float(right)
