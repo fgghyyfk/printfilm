@@ -1,3 +1,4 @@
+import { isVideoSkipped } from './daihuoMotion'
 import { translate as translateUi } from '../i18n/runtime'
 import { getActiveLocale } from '../i18n/detect'
 import { messages } from '../i18n/messages'
@@ -122,6 +123,8 @@ export type ShotAssetLike = {
   status?: string | null
   image_url?: string | null
   video_url?: string | null
+  /** static=带货静图推拉；privacy=真人拦截后用静图 */
+  video_skip_reason?: string | null
 }
 
 /*
@@ -152,6 +155,7 @@ export function shotDisplayKind(
   if (shot.status === 'FAILED') return 'failed'
   if (!shot.image_url) return 'wait_image'
   const full = opts?.pipelineMode !== 'image_text'
+  if (full && !shot.video_url && isVideoSkipped(shot)) return 'image_ready'
   if (full && !shot.video_url) return 'wait_video'
   if (full) return 'video_ready'
   return 'image_ready'

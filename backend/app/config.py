@@ -54,6 +54,12 @@ class Settings(BaseSettings):
     # 一图出套图：规划一次收费（分）；排版字体路径（空则按系统候选自动查找）
     ecom_set_plan_fen: int = 10
     ecom_font_path: str = ""
+    # 带货动态展示：首帧交给视频模型的角色（first_frame 保真高；reference_image 画幅稳）
+    daihuo_video_image_role: str = "first_frame"
+    # 未开 OSS 时把本地首帧压成 data URI 随请求发送（BytePlus 直连可用）；关闭则动态展示要求 OSS
+    daihuo_video_inline_refs: bool = True
+    # 混合展示最多几个动态镜头（含首镜）
+    daihuo_motion_max_shots: int = 3
     # 广告法极限词库：额外追加的自定义禁用词（逗号分隔，命中即删除）
     ad_banned_extra: str = ""
     # Seedream: 2k|3k|4k or WIDTHxHEIGHT，且总像素 >= 3686400（约 2560x1440）
@@ -212,14 +218,6 @@ class Settings(BaseSettings):
     epay_notify_url: str = ""
     epay_return_url: str = ""
 
-    public_base_url: str = "http://127.0.0.1:8000"
-    ffmpeg_path: str = "ffmpeg"
-    ffprobe_path: str = "ffprobe"
-    # 数字资产市场。环境变量 MARKETPLACE_ENABLED；管理端保存后以数据库为准。
-    marketplace_enabled: bool = False
-
-    tos_endpoint: str = ""
-    tos_bucket: str = ""
     # 充值通道：epay（易支付聚合）| stripe（Stripe Checkout，支付宝/微信走 Stripe 托管收银台）
     payment_provider: str = "epay"
     # Stripe（参考 Promptoll 实现，直连 REST，不依赖 stripe SDK）
@@ -232,6 +230,14 @@ class Settings(BaseSettings):
     stripe_success_url: str = ""
     stripe_cancel_url: str = ""
 
+    public_base_url: str = "http://127.0.0.1:8000"
+    ffmpeg_path: str = "ffmpeg"
+    ffprobe_path: str = "ffprobe"
+    # 数字资产市场。环境变量 MARKETPLACE_ENABLED；管理端保存后以数据库为准。
+    marketplace_enabled: bool = False
+
+    tos_endpoint: str = ""
+    tos_bucket: str = ""
     tos_access_key: str = ""
     tos_secret_key: str = ""
     cdn_base: str = "http://localhost:8000/static"

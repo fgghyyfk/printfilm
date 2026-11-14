@@ -1,5 +1,6 @@
 import { createJsonRequester } from './client'
 import type { DaihuoProjectPayload, DaihuoVideoQuote } from './ecomSet'
+import type { Shot } from '../api'
 import type { EcomKind } from '../lib/ecomHub'
 
 /* 聚合历史和批量图片带货客户端，沿用统一请求与鉴权。 */
@@ -34,4 +35,9 @@ export function quoteJobVideo(id: number, payload: DaihuoProjectPayload, signal?
 /** 只启动带货脚本阶段；已有分镜或任务时返回原项目，不自动推进配音。 */
 export function startDaihuoScript(id: number): Promise<{ project_id: number }> {
   return request(`${BASE}/projects/${id}/script`, { method: 'POST' })
+}
+
+/** 带货分镜切换动态/静图与镜头动作；只改标记，视频在分镜页继续生成时才提交。 */
+export function setShotMotion(projectId: number, shotId: number, body: { motion: boolean; action?: string; detail?: string }): Promise<Shot> {
+  return request(`${BASE}/projects/${projectId}/shots/${shotId}/motion`, { method: 'PATCH', body: JSON.stringify(body) })
 }

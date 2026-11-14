@@ -171,15 +171,24 @@ def _estimate_videos_fen(project: Project, settings: Settings) -> int:
         return max(1, _estimate_privacy_audio_fen(project, settings))
     total = 0
     mid = _payload_video_model({}, settings)
+    from app.services.daihuo.motion import is_daihuo, is_motion_frame, video_duration
+
+    daihuo = is_daihuo(project)
+    images = 0
     for sh in shots:
         secs = max(float(sh.duration or 4), 2.0)
+        if daihuo:
+            # 带货按实际请求时长估；还没有满幅首帧的镜头要先扩图一张
+            secs = float(video_duration(sh.duration))
+            if not is_motion_frame(sh.image_url):
+                images += _catalog_image_fen(settings)
         total += charge_fen_official_video(
             secs,
             settings,
             model=mid,
             resolution=_kepu_video_resolution(project, settings),
         )
-    return _buffered_fen(total, settings) + _estimate_privacy_audio_fen(project, settings, possible=True)
+    return _buffered_fen(total, settings) + images + _estimate_privacy_audio_fen(project, settings, possible=True)
 
 
 def estimate_phase_fen(project: Project, phase: str, settings: Settings | None = None) -> int:

@@ -75,3 +75,57 @@
   font-weight: 600;
   text-decoration: underline;
 }
+
+/* 分镜页：带货单镜动态/静图切换 */
+.pf-daihuo-motion {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.4rem;
+  font-size: 0.82rem;
+}
+
+.pf-daihuo-motion-toggle {
+  display: inline-flex;
+  border: 1px solid var(--pf-line, #e2e2e2);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.pf-daihuo-motion-toggle button {
+  padding: 0.2rem 0.7rem;
+  border: 0;
+  background: transparent;
+  color: var(--pf-ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.pf-daihuo-motion-toggle button.active {
+  background: var(--pf-lime);
+  color: #fff;
+}
+
+.pf-daihuo-motion-toggle button:disabled:not(.active) {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pf-daihuo-motion-toggle button.active:disabled {
+  cursor: default;
+}
+
+.pf-daihuo-motion-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.pf-daihuo-motion-action select {
+  padding: 0.15rem 0.4rem;
+  border: 1px solid var(--pf-line, #e2e2e2);
+  border-radius: 8px;
+  background: #fff;
+  font: inherit;
+}

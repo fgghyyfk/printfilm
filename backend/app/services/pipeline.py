@@ -218,6 +218,13 @@ def _is_image_text(project: Project) -> bool:
     return (getattr(project, "pipeline_mode", None) or "full") == "image_text"
 
 
+def _is_daihuo(project: Project) -> bool:
+    """商品带货项目：视频阶段走 daihuo.motion 的首帧与提示词，声音全部后期配音。"""
+    from app.services.daihuo.motion import is_daihuo
+
+    return is_daihuo(project)
+
+
 def _is_avatar(project: Project) -> bool:
     """数字人口播模式（素材/视频阶段见 kepu_avatar.py）。"""
     return (getattr(project, "pipeline_mode", None) or "full") == "avatar"
@@ -231,8 +238,8 @@ async def _project_is_avatar(project_id: int) -> bool:
 
 
 def _kepu_seedance_native_audio(project: Project | None = None) -> bool:
-    """科普 full：Seedance 视频内置口播，不走外部 TTS。"""
-    if project is not None and (_is_image_text(project) or _is_avatar(project)):
+    """科普 full：Seedance 视频内置口播，不走外部 TTS（带货动态展示一律后期配音）。"""
+    if project is not None and (_is_image_text(project) or _is_avatar(project) or _is_daihuo(project)):
         return False
     return bool(getattr(get_settings(), "kepu_seedance_native_audio", True))
 
@@ -241,7 +248,7 @@ def _kepu_seedance_sfx_audio(project: Project | None = None) -> bool:
     """科普 full 回退：Seedance 只要操作音效，口播改后期 TTS。"""
     if _kepu_seedance_native_audio(project):
         return False
-    if project is not None and (_is_image_text(project) or _is_avatar(project)):
+    if project is not None and (_is_image_text(project) or _is_avatar(project) or _is_daihuo(project)):
         return False
     return bool(get_settings().kepu_seedance_sfx_audio)
 
@@ -1300,8 +1307,8 @@ async def _parallel_image_and_audio(project_id: int) -> None:
 
 
 async def _parallel_videos(project_id: int) -> None:
-    """按镜序逐个出视频；后镜参考上一镜尾帧。数字人模式改为逐段对口型。"""
-    from app.services.kepu_stages import VIDEO_SKIP_REASON_PRIVACY
+    """按镜序逐个出视频；后镜参考上一镜尾帧。数字人模式改为逐段对口型；带货只出动态镜头、不串尾帧。"""
+    from app.services.kepu_stages import VIDEO_SKIP_REASON_PRIVACY, VIDEO_SKIP_REASON_STATIC
 
     if await _project_is_avatar(project_id):
         from app.services.kepu_avatar import generate_videos
@@ -1352,6 +1359,7 @@ async def _parallel_videos(project_id: int) -> None:
             for s in sorted(project.shots, key=lambda s: s.shot_no)
         ]
         style_prefix = _effective_style(project)
+        daihuo = _is_daihuo(project)
         total = len(shot_meta)
         video_model = (getattr(project, "video_model", None) or "").strip()
 
@@ -1368,6 +1376,14 @@ async def _parallel_videos(project_id: int) -> None:
             image_url=meta.get("image_url"),
             last_frame_url=meta.get("last_frame_url"),
         )
+        if meta.get("video_skip_reason") == VIDEO_SKIP_REASON_STATIC and not meta.get("has_video"):
+            done += 1
+            await publish_progress(project_id, {
+                "event": "progress", "stage": "VIDEOING", "shot": meta["shot_no"], "total": total,
+                "percent": 55 + int(30 * done / max(total, 1)),
+                "message": f"镜头 {meta['shot_no']} 使用静图推拉",
+            })
+            return proxy
         if meta.get("has_video") or meta.get("video_skip_reason") == VIDEO_SKIP_REASON_PRIVACY:
             done += 1
             pct = 55 + int(30 * done / max(total, 1))
@@ -1410,33 +1426,43 @@ async def _parallel_videos(project_id: int) -> None:
             )
             return proxy
         await _ensure_not_cancelled(project_id)
-        script = (meta.get("segment_script") or meta.get("video_prompt") or "").strip()
-        prompt = _kepu_video_prompt(
-            script,
-            style_prefix=style_prefix,
-            motion_bias=motion,
-            camera=str(meta.get("camera") or ""),
-            ambient_only=ambient_only,
-            no_bgm=no_bgm,
-        )
-        dur = segplan.resolve_api_duration(
-            script,
-            fallback=meta["duration"],
-            lo=cfg.seedance_duration_min,
-            hi=cfg.seedance_duration_max,
-        )
+        if daihuo:
+            from app.services.daihuo.motion_stage import daihuo_shot_request
+
+            request = await daihuo_shot_request(project_id, meta, ratio=ratio)
+            if request is None:  # 首帧准备失败已降级为静图镜头
+                done += 1
+                return proxy
+            dur = request["duration"]
+        else:
+            script = (meta.get("segment_script") or meta.get("video_prompt") or "").strip()
+            prompt = _kepu_video_prompt(
+                script,
+                style_prefix=style_prefix,
+                motion_bias=motion,
+                camera=str(meta.get("camera") or ""),
+                ambient_only=ambient_only,
+                no_bgm=no_bgm,
+            )
+            dur = segplan.resolve_api_duration(
+                script,
+                fallback=meta["duration"],
+                lo=cfg.seedance_duration_min,
+                hi=cfg.seedance_duration_max,
+            )
+            request = {"image_url": meta["image_ref"], "prompt": prompt, "duration": int(dur),
+                       "extra_image_urls": extra_refs or None}
         try:
             local_video, task_result = await generate_shot_video(
-                ark, shot_id=meta["id"], image_url=meta["image_ref"],
-                prompt=prompt, duration=int(dur),
+                ark, shot_id=meta["id"],
                 project_id=project_id,
                 shot_no=meta["shot_no"],
-                character_consistency=consistency,
+                character_consistency=consistency and not daihuo,
                 resolution=resolution,
                 ratio=ratio,
                 generate_audio=generate_audio,
                 model=video_model,
-                extra_image_urls=extra_refs or None,
+                **request,
             )
         except Exception as exc:  # noqa: BLE001
             msg = str(exc)
@@ -1552,7 +1578,8 @@ async def _parallel_videos(project_id: int) -> None:
 
     prev_proxy: SimpleNamespace | None = None
     for meta in shot_meta:
-        extra = video_extra_refs_for_shot(prev_proxy)
+        # 带货每镜是不同的商品图，不参考上一镜尾帧
+        extra = [] if daihuo else video_extra_refs_for_shot(prev_proxy)
         prev_proxy = await one_video(meta, extra)
 
     async with _db_write_lock():
@@ -1619,6 +1646,8 @@ async def _compose_stage(project_id: int) -> None:
                     video_path=video_path if video_path and video_path.exists() else None,
                     audio_path=audio_path if audio_path and audio_path.exists() else None,
                     image_path=image_path if image_path and image_path.exists() else None,
+                    # 带货静图镜头：与静图口播一致的推拉 + 叠字
+                    kenburns=getattr(shot, "video_skip_reason", None) == "static",
                 )
             )
 
@@ -1636,8 +1665,9 @@ async def _compose_stage(project_id: int) -> None:
                 item.overlay_title = (project.title or "").strip()
                 item.highlights = split_highlights(getattr(shot, "highlights", ""))
 
-        # full 模式：成片节奏跟镜头视频真实时长，勿被整片旁白重分配后的短 duration 裁掉画面
-        if mode in ("full", "avatar"):
+        # full 模式：成片节奏跟镜头视频真实时长，勿被整片旁白重分配后的短 duration 裁掉画面；
+        # 带货以口播节奏为准（视频按口播时长裁切/定格），否则整片配音会与画面错位
+        if mode in ("full", "avatar") and not _is_daihuo(project):
             for item in media:
                 if not item.video_path:
                     continue
@@ -1842,7 +1872,8 @@ async def regen_shot_image(project_id: int, shot_id: int) -> None:
             shot.image_ark_url = img.remote_url
             shot.video_url = None
             shot.last_frame_url = None
-            shot.video_skip_reason = None  # 换了首帧图，真人隐私可能已消失
+            if shot.video_skip_reason != "static":
+                shot.video_skip_reason = None  # 换了首帧图，真人隐私可能已消失；带货静图镜头保留
             shot.status = ShotStatus.IMAGE_READY
             shot.version += 1
             project.status = ProjectStatus.IMAGE_READY
@@ -1912,16 +1943,29 @@ async def regen_shot_video(project_id: int, shot_id: int) -> None:
         extra_refs = video_extra_refs_for_shot(previous_usable_shot(list(project.shots), shot_no))
         video_model = (getattr(project, "video_model", None) or "").strip()
         ratio = _project_output_ratio(project) or cfg.ark_video_ratio
+        daihuo = _is_daihuo(project)
+        if daihuo and shot.video_skip_reason == "static":
+            raise ValueError("这是静图镜头，请先切换为动态再生成视频")
+        daihuo_meta = {"id": shot.id, "shot_no": shot.shot_no, "video_prompt": shot.video_prompt,
+                       "duration": shot.duration}
+    request = {"image_url": image_ref, "prompt": prompt, "duration": int(dur), "extra_image_urls": extra_refs or None}
+    if daihuo:
+        from app.services.daihuo.motion_stage import daihuo_shot_request
+
+        request = await daihuo_shot_request(project_id, daihuo_meta, ratio=ratio)
+        if request is None:
+            raise ValueError("动态首帧生成失败，已改为静图镜头")
+        dur = request["duration"]
     local_video, task_result = await generate_shot_video(
-        ark, shot_id=shot_id, image_url=image_ref, prompt=prompt, duration=int(dur),
+        ark, shot_id=shot_id,
         project_id=project_id,
         shot_no=shot_no,
-        character_consistency=consistency,
+        character_consistency=consistency and not daihuo,
         resolution=resolution,
         ratio=ratio,
         generate_audio=generate_audio,
         model=video_model,
-        extra_image_urls=extra_refs or None,
+        **request,
     )
     last = persist_last_frame_from_video(
         project_id,

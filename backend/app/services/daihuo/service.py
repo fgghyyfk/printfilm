@@ -16,6 +16,16 @@ from app.models import Project, ProjectStatus, Shot, ShotStatus, User
 from app.models_ecom import EcomJobVideo, EcomSet
 from app.services import storage
 from app.services.daihuo.frames import pad_to_frame
+from app.services.daihuo.motion import (
+    MOTION_ACTIONS,
+    normalize_form,
+    action_key,
+    build_video_prompt,
+    crop_full_bleed,
+    motion_frame_path,
+    pick_motion_positions,
+)
+from app.services.kepu_stages import VIDEO_SKIP_REASON_STATIC
 from app.services.daihuo.images import ALLOWED_RATIOS, create_image_project, quote_images
 from app.services.daihuo.script import DAIHUO_SYSTEM, build_user_prompt, mock_segments, parse_segments
 from app.services.ecom_set.presets import slot_label
@@ -25,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 async def create_project_from_set(
     db: AsyncSession, user: User, set_id: int, *, output_ratio: str = "9:16", voice_id: str = "",
-    create_new: bool = False, request_id: str | None = None,
+    create_new: bool = False, request_id: str | None = None, video_form: str = "static",
 ) -> Project:
     """用一套已生成的套图建「商品带货」静图口播项目（status=DRAFT，前端随后调 generate 写稿）。"""
     ecom = (
@@ -44,7 +54,8 @@ async def create_project_from_set(
             Project.daihuo_request_id == request_id,
         ))).scalar_one_or_none()
         if requested is not None:
-            if requested.output_ratio != ratio or requested.voice_id != voice:
+            if (requested.output_ratio != ratio or requested.voice_id != voice
+                    or (requested.daihuo_video_form or "static") != normalize_form(video_form)):
                 raise ValueError("请重新选择生成选项后再试")
             return requested
     elif ecom.project_id:
@@ -56,7 +67,7 @@ async def create_project_from_set(
     project = await create_image_project(
         db, user, name=ecom.name, notes=ecom.notes or "", product=(ecom.plan or {}).get("product") or {},
         items=usable_items(ecom), output_ratio=ratio, voice_id=voice, ecom_set_id=ecom.id,
-        request_id=request_id if create_new else None,
+        request_id=request_id if create_new else None, video_form=video_form,
     )
     # 兼容单指针入口：指向最近创建的视频，旧项目与作品仍各自保留。
     ecom.project_id = project.id
@@ -88,16 +99,18 @@ def usable_items(ecom: EcomSet) -> list[dict]:
     return out
 
 
-# 调 LLM 写分段口播（ARK_MOCK 时用固定口播）
-async def write_segments(ecom: EcomSet, items: list[dict]) -> dict:
+# 调 LLM 写分段口播（ARK_MOCK 时用固定口播）；动态展示时顺带要每段的动作建议
+async def write_segments(ecom: EcomSet, items: list[dict], *, motion: bool = False) -> dict:
     if get_settings().ark_mock:
         return mock_segments(items, name=ecom.name)
+    from app.services.daihuo.script import motion_addon
     from app.services.llm_client import chat_completions
 
     prompt = build_user_prompt(
         name=ecom.name, notes=ecom.notes or "", product=(ecom.plan or {}).get("product") or {}, items=items
     )
-    raw = await chat_completions(DAIHUO_SYSTEM, prompt, temperature=0.7, max_tokens=4096, timeout=180.0)
+    system = DAIHUO_SYSTEM + (motion_addon() if motion else "")
+    raw = await chat_completions(system, prompt, temperature=0.7, max_tokens=4096, timeout=180.0)
     return parse_segments(raw, items, name=ecom.name)
 
 
@@ -132,9 +145,12 @@ async def build_daihuo_shots(project_id: int) -> int:
         if not items:
             raise ValueError("套图还没有生成好的图片")
         ratio = _project_output_ratio(project)
+        form = "static" if (project.pipeline_mode or "") != "full" else (project.daihuo_video_form or "mixed")
 
-    script = await write_segments(ecom, items)
+    script = await write_segments(ecom, items, motion=form != "static")
     seg_by_idx = {s["idx"]: s for s in script["segments"]}
+    segs = [seg_by_idx.get(it["idx"]) or {} for it in items]
+    moving = pick_motion_positions([bool(s.get("motion")) for s in segs], form)
 
     async with AsyncSessionLocal() as db:
         project = (
@@ -147,19 +163,22 @@ async def build_daihuo_shots(project_id: int) -> int:
         await clear_storyboard_rows(db, project)
         out_dir = storage.project_dir(project_id) / "daihuo"
         for no, it in enumerate(items, start=1):
-            seg = seg_by_idx.get(it["idx"]) or {}
+            seg = segs[no - 1]
             narration = seg.get("narration") or ""
-            frame = out_dir / f"frame_{no:02d}_{uuid.uuid4().hex[:6]}.jpg"
-            await asyncio.to_thread(pad_to_frame, Path(it["base_path"]), frame, ratio=ratio)
-            image_url = storage.rel_static_url(frame)
+            dynamic = (no - 1) in moving
+            image_url = await _shot_frame(project_id, Path(it["base_path"]), no, ratio=ratio, dynamic=dynamic)
+            action = action_key(seg.get("action"), first=no == 1)
+            video_prompt = build_video_prompt(action, seg.get("video") or "") if form != "static" else ""
             db.add(Shot(
                 project_id=project_id, shot_no=no,
                 duration=float(max(3, min(10, estimate_narration_duration(narration)))),
                 narration=narration, overlay_title=seg.get("title", it["title"]),
                 compliance_changes=seg.get("compliance_changes") or {},
                 overlay_subtitle=it["subtitle"], img_prompt=it["scene"][:500],
-                video_prompt="", segment_script="", camera="slow push in",
+                video_prompt=video_prompt, segment_script="",
+                camera=MOTION_ACTIONS[action][0] if form != "static" else "slow push in",
                 image_url=image_url, status=ShotStatus.IMAGE_READY,
+                video_skip_reason=None if form == "static" or dynamic else VIDEO_SKIP_REASON_STATIC,
             ))
         if project.title in {"", "商品带货", ecom.name[:60]} and script.get("title"):
             project.title = script["title"][:60]
@@ -174,9 +193,21 @@ async def build_daihuo_shots(project_id: int) -> int:
     return len(items)
 
 
-async def quote_project_from_set(db: AsyncSession, user: User, set_id: int, *, output_ratio: str = '9:16', voice_id: str = '') -> dict:
+async def _shot_frame(project_id: int, src: Path, no: int, *, ratio: str, dynamic: bool) -> str:
+    """分镜画面：动态镜头画幅接近时直接裁成满幅首帧；其余补边（动态镜头的扩图留到视频阶段）。"""
+    if dynamic:
+        dest = motion_frame_path(project_id, no)
+        if await asyncio.to_thread(crop_full_bleed, src, dest, ratio=ratio):
+            return storage.rel_static_url(dest)
+    frame = storage.project_dir(project_id) / "daihuo" / f"frame_{no:02d}_{uuid.uuid4().hex[:6]}.jpg"
+    await asyncio.to_thread(pad_to_frame, src, frame, ratio=ratio)
+    return storage.rel_static_url(frame)
+
+
+async def quote_project_from_set(db: AsyncSession, user: User, set_id: int, *, output_ratio: str = '9:16', voice_id: str = '',
+                                 video_form: str = "static") -> dict:
     """只读套图归属与可用底图；沿现有阶段估价，不创建项目、任务或冻结。"""
     ecom = (await db.execute(select(EcomSet).where(EcomSet.id == set_id, EcomSet.user_id == user.id))).scalar_one_or_none()
     if ecom is None:
         raise LookupError("套图不存在")
-    return await quote_images(user, usable_items(ecom), output_ratio=output_ratio, voice_id=voice_id)
+    return await quote_images(user, usable_items(ecom), output_ratio=output_ratio, voice_id=voice_id, video_form=video_form)

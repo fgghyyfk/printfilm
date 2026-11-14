@@ -118,6 +118,8 @@ class ShotOut(BaseModel):
     audio_url: str | None
     tts_metadata: dict | None = None
     highlights: str = ""
+    # privacy=真人拦截后用静图；static=带货静图推拉镜头
+    video_skip_reason: str | None = None
     status: str
     version: int
 
@@ -254,6 +256,7 @@ class ProjectOut(BaseModel):
     image_reference_mode: str = "chain"
     # 商品带货：关联套图 id
     ecom_set_id: int | None = None
+    daihuo_video_form: str | None = None
     output_ratio: str = ""
     voice_id: str = ""
     character_bible: str = ""

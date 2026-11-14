@@ -93,7 +93,6 @@ export function defaultsFromTemplate(t: Template): {
 export type Shot = {
   tts_metadata?: { audio_url: string; provider: string; model: string; is_fallback: boolean; fingerprint: string } | null
   compliance_changes?: ComplianceAudit
-  video_skip_reason?: string | null
   id: number
   shot_no: number
   duration: number
@@ -110,6 +109,8 @@ export type Shot = {
   audio_url: string | null
   /** 数字人：重点文字，「|」分隔 */
   highlights?: string
+  /** static=带货静图推拉；privacy=真人拦截后用静图 */
+  video_skip_reason?: string | null
   status: string
   version: number
 }
@@ -182,6 +183,8 @@ export type Project = {
   avatar_resolution?: '' | '480p' | '720p'
   /** 商品带货：画面来源套图 id（非带货项目为 null） */
   ecom_set_id?: number | null
+  /** 带货视频形式：static | mixed | motion */
+  daihuo_video_form?: string | null
   created_at: string
   updated_at: string
   /** 声音由视频模型内置生成，没有可单独重配的配音。 */

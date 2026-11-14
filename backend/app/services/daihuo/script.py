@@ -23,6 +23,20 @@ DAIHUO_SYSTEM = """你是抖音/小红书带货短视频的口播编导。根据
 5. 严禁广告法极限词：最、第一、唯一、顶级、国家级、极致、绝对、100%、全网、永久、万能 等。"""
 
 
+# 动态展示附加要求：每段多给动作建议，动作只能取白名单 key
+def motion_addon() -> str:
+    from app.services.daihuo.motion import MOTION_ACTIONS
+
+    keys = "、".join(f"{k}（{v[0]}）" for k, v in MOTION_ACTIONS.items())
+    return (
+        "\n6. 这条视频部分画面会做成动态镜头。每段额外输出三个字段："
+        "\"motion\": 这张图是否适合做动态（商品主体清晰、做动作有看点时为 true）；"
+        f"\"action\": 只能从 {keys} 中选一个 key；"
+        "\"video\": 一句不超过 40 字的画面动作补充（只描述商品与镜头，不出现人物、文字和其他品牌）。"
+        "使用演示 demo 只在商品本身支持该动作时才选。"
+    )
+
+
 # 组装写稿用户消息：商品信息 + 每张图的用途与文案
 def build_user_prompt(*, name: str, notes: str, product: dict, items: list[dict]) -> str:
     lines = [f"品名：{name}"]
@@ -84,9 +98,13 @@ def parse_segments(raw: str, items: list[dict], *, name: str) -> dict[str, Any]:
         fields, audit = clean_fields({
             "narration": clip(narration, SEG_MAX_CHARS),
             "overlay_title": fit_title(str(src.get("title") or ""), it.get("title") or ""),
+            "video_prompt": clip(str(src.get("video") or "").strip(), 60),
         })
         segments.append({"idx": int(it["idx"]), "title": fields["overlay_title"],
-                         "narration": fields["narration"], "compliance_changes": audit})
+                         "narration": fields["narration"], "compliance_changes": audit,
+                         "motion": src.get("motion") is True or str(src.get("motion")).lower() == "true",
+                         "action": str(src.get("action") or "").strip(),
+                         "video": fields["video_prompt"]})
     fields, audit = clean_fields({"title": clip(str(data.get("title") or name), 16)})
     # 回退品名同样生成可追溯清洗结果，不把已删除的极限词重新带回标题。
     if not fields["title"]:
@@ -98,7 +116,8 @@ def parse_segments(raw: str, items: list[dict], *, name: str) -> dict[str, Any]:
 def mock_segments(items: list[dict], *, name: str) -> dict[str, Any]:
     segs = [
         {"idx": int(it["idx"]), "title": it.get("title") or "",
-         "narration": fallback_narration(it, name=name, first=i == 0, last=i == len(items) - 1)}
+         "narration": fallback_narration(it, name=name, first=i == 0, last=i == len(items) - 1),
+         "motion": i == len(items) // 2, "action": "push_in" if i == 0 else "light_sweep", "video": ""}
         for i, it in enumerate(items)
     ]
     return {"title": clip(name, 16), "segments": segs}

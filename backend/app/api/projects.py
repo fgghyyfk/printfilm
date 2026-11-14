@@ -51,7 +51,7 @@ from app.services.tasks.service import (
     list_active_tasks_for_owner,
 )
 from app.services.voices import ensure_voice_preview, list_voices
-from app.services.kepu_stages import VIDEO_SKIP_REASON_PRIVACY, resolve_kepu_billing_phase
+from app.services.kepu_stages import VIDEO_SKIP_REASON_PRIVACY, VIDEO_SKIP_REASON_STATIC, resolve_kepu_billing_phase
 from app.services.kepu_projects import list_project_page, project_runtime_view
 from app.services.kepu_shot_edits import shot_video_content_changed
 
@@ -1163,13 +1163,15 @@ async def update_shot(
         shot.image_ark_url = None
         shot.video_url = None
         shot.last_frame_url = None
-        shot.video_skip_reason = None  # 画面变更，隐私拦截结论失效
+        if shot.video_skip_reason != VIDEO_SKIP_REASON_STATIC:
+            shot.video_skip_reason = None  # 画面变更，隐私拦截结论失效；带货静图镜头是用户选择，保留
         shot.status = ShotStatus.PENDING
     elif video_dirty:
         shot.video_url = None
         shot.last_frame_url = None
-        # 仅口播变化不撤销同一画面的隐私降级结论，按新旁白补本镜音轨即可。
-        if visual_video_dirty or shot.video_skip_reason != VIDEO_SKIP_REASON_PRIVACY:
+        # 仅口播变化不撤销同一画面的隐私降级结论，按新旁白补本镜音轨即可；带货静图镜头是用户选择，始终保留。
+        if shot.video_skip_reason != VIDEO_SKIP_REASON_STATIC and (
+                visual_video_dirty or shot.video_skip_reason != VIDEO_SKIP_REASON_PRIVACY):
             shot.video_skip_reason = None
     if audio_dirty and (project.pipeline_mode or "") != "avatar":
         full_narration = storage.project_dir(project_id) / "full_narration.mp3"

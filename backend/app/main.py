@@ -234,6 +234,7 @@ async def _apply_schema_patches(engine_override: AsyncEngine | None = None) -> N
         await conn.execute(text("ALTER TABLE drama_assets ADD COLUMN IF NOT EXISTS image_revision VARCHAR(32)"))
         await conn.execute(text("ALTER TABLE shots ADD COLUMN IF NOT EXISTS tts_metadata JSON"))
         await conn.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS daihuo_request_id VARCHAR(64)"))
+        await conn.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS daihuo_video_form VARCHAR(16)"))
         await conn.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS auto_advance BOOLEAN NOT NULL DEFAULT false"))
         await conn.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS auto_chain_id VARCHAR(32)"))
         await conn.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS image_reference_mode VARCHAR(16) NOT NULL DEFAULT 'chain'"))
@@ -319,11 +320,11 @@ async def _apply_schema_patches(engine_override: AsyncEngine | None = None) -> N
         if "avatar_resolution" not in pcols:
             await conn.execute(text("ALTER TABLE projects ADD COLUMN avatar_resolution VARCHAR(8) DEFAULT ''"))
 
-        # User billing columns
         # 充值订单：多通道（易支付 / Stripe）
         await conn.execute(text("ALTER TABLE orders ADD COLUMN IF NOT EXISTS provider VARCHAR(16) NOT NULL DEFAULT 'epay'"))
         await conn.execute(text("ALTER TABLE orders ADD COLUMN IF NOT EXISTS external_id VARCHAR(128)"))
 
+        # User billing columns
         ucols = await _pg_columns(conn, "users")
         # 早期库可能无 create_all 后缺此列（模型有、补丁曾遗漏）
         if "quota_left" not in ucols:

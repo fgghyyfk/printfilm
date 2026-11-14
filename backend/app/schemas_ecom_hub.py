@@ -38,3 +38,10 @@ class EcomJobToProjectIn(EcomToProjectIn):
     """批量出图缺少套图规划，创建视频时补充品名和卖点。"""
     name: str = Field(default="", max_length=128)
     notes: str = Field(default="", max_length=500)
+
+
+class ShotMotionIn(BaseModel):
+    """带货分镜切换动态/静图；action 取白名单 key，detail 为一句动作补充。"""
+    motion: bool
+    action: str | None = Field(default=None, max_length=32)
+    detail: str | None = Field(default=None, max_length=60)

@@ -48,6 +48,8 @@ class ShotMedia:
     overlay_subtitle: str = ""
     # 数字人：该段重点文字，按口播出现位置依次弹出（band 布局才画）
     highlights: list[str] = field(default_factory=list)
+    # full 模式下也按静图推拉合成（带货混合展示的静图镜头）
+    kenburns: bool = False
 
 
 @dataclass
@@ -1290,7 +1292,7 @@ def compose_project(
             else:
                 _make_silent_audio(audio, shot.duration)
 
-            if opts.mode == "image_text" and shot.image_path and shot.image_path.exists():
+            if (opts.mode == "image_text" or shot.kenburns) and shot.image_path and shot.image_path.exists():
                 title = (shot.overlay_title or "").strip()
                 subtitle = (shot.overlay_subtitle or "").strip()
                 _image_to_video_kenburns(

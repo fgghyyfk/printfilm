@@ -10,6 +10,8 @@ from app.services.ffmpeg_compose import is_near_silent_audio
 
 # 真人隐私被 Seedance 拦截、确认跳过 AI 视频（成片用静图）的镜头标记
 VIDEO_SKIP_REASON_PRIVACY = "privacy"
+# 带货混合展示里用户/系统选定用静图推拉的镜头：不提交视频、不预扣、合成走推拉
+VIDEO_SKIP_REASON_STATIC = "static"
 
 
 def _is_image_text(project: Any) -> bool:
@@ -27,8 +29,8 @@ def shot_image_ready(shot: Any) -> bool:
 
 
 def shot_video_skipped(shot: Any) -> bool:
-    """分镜是否被确认跳过 AI 视频（如真人隐私拦截），无需再提交上游。"""
-    return getattr(shot, "video_skip_reason", None) == VIDEO_SKIP_REASON_PRIVACY
+    """分镜是否被确认跳过 AI 视频（真人隐私拦截或带货静图镜头），无需再提交上游。"""
+    return getattr(shot, "video_skip_reason", None) in (VIDEO_SKIP_REASON_PRIVACY, VIDEO_SKIP_REASON_STATIC)
 
 
 def shot_video_ready(shot: Any) -> bool:
@@ -59,8 +61,10 @@ def project_audio_ready(project: Any) -> bool:
     # 数字人：每段单独配音（口型对齐该段音频），不认整片旁白
     if is_avatar(project):
         return bool(shots) and all(shot_audio_file_ok(s) for s in shots)
-    # full + Seedance 内置口播：assets 阶段不强制外部配音
-    if not _is_image_text(project):
+    # full + Seedance 内置口播：assets 阶段不强制外部配音（带货动态展示一律后期配音，不适用）
+    from app.services.daihuo.motion import is_daihuo
+
+    if not _is_image_text(project) and not is_daihuo(project):
         try:
             from app.config import get_settings
 

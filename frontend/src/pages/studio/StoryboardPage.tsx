@@ -27,6 +27,8 @@ import { handleBillingError } from '../../lib/billingError'
 import BillingErrorNotice from '../../components/billing/BillingErrorNotice'
 import ComplianceNotice from '../../components/compliance/ComplianceNotice'
 import EcomSetSourceLink from '../../components/daihuo/EcomSetSourceLink'
+import DaihuoShotMotion from '../../components/daihuo/DaihuoShotMotion'
+import { isDaihuoProject } from '../../lib/daihuoMotion'
 import { getProjectCompliance, undoProjectReplacement, applyProjectSuggestion } from '../../api/compliance'
 import { kepuComplianceLabel, projectComplianceKey, scrollToShotRow, shotRowDomId } from '../../lib/compliance'
 import { useI18n } from '../../i18n'
@@ -255,6 +257,7 @@ export default function StoryboardPage() {
         : 'generate'
 
   const isAvatar = project?.pipeline_mode === 'avatar'
+  const isDaihuo = isDaihuoProject(project)
   const generateLabel = running
     ? translateUi("workflow.generating")
     : shots.length === 0
@@ -558,6 +561,12 @@ export default function StoryboardPage() {
     } finally {
       markShotIdle(shot.id)
     }
+  }
+
+  // 带货逐镜切换后重新拉取项目（静图口播首次打开动态会改变整片模式）
+  async function reloadProject() {
+    if (!project) return
+    setProject(await api.getProject(project.id))
   }
 
   async function regenVideo(shot: Shot) {
@@ -1289,6 +1298,10 @@ title={translateUi("workflow.composeAgainFromTheCurrentShots")}
                             </span>
                           </td>
                           <td className="col-ops">
+                            {isDaihuo ? (
+                              <DaihuoShotMotion projectId={project.id} pipelineMode={project.pipeline_mode} shot={shot}
+                                disabled={rowBusy} onChanged={reloadProject} onError={setError} />
+                            ) : null}
                             <div className="pf-shot-ops">
                               <button
                                 type="button"
@@ -1306,7 +1319,7 @@ title={translateUi("workflow.composeAgainFromTheCurrentShots")}
                               >
                                 {isAvatar ? translateUi("workflow.redrawScene") : shot.image_url ? translateUi("workflow.redrawImage") : translateUi("workflow.generateImage_c9c7b0")}
                               </button>
-                              {isFullPipeline ? (
+                              {isFullPipeline && !(isDaihuo && shot.video_skip_reason === 'static') ? (
                                 <button
                                   type="button"
                                   className="op op-video"

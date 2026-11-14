@@ -8,6 +8,7 @@ from app.models import Project
 from app.models_ecom import EcomJob, EcomJobVideo
 from app.services import storage
 from app.services.daihuo.images import ALLOWED_RATIOS, create_image_project, quote_images
+from app.services.daihuo.motion import normalize_form
 from app.services.ecom_jobs.sources import item_result_path
 
 
@@ -44,14 +45,15 @@ async def latest_project(db, user, job_id: int) -> Project | None:
 
 
 # 已成功图片的只读报价不创建任务、项目或冻结；mock 不访问网络。
-async def quote_project_from_job(db, user, job_id: int, *, output_ratio="9:16", voice_id="") -> dict:
+async def quote_project_from_job(db, user, job_id: int, *, output_ratio="9:16", voice_id="", video_form="static") -> dict:
     job = await owned_job(db, user, job_id)
-    return await quote_images(user, await job_images(user, job), output_ratio=output_ratio, voice_id=voice_id)
+    return await quote_images(user, await job_images(user, job), output_ratio=output_ratio, voice_id=voice_id,
+                              video_form=video_form)
 
 
 # 建项目时复制素材快照；同一请求只建一个项目，另一条视频必须显式新建。
 async def create_project_from_job(db, user, job_id: int, *, output_ratio="9:16", voice_id="",
-                                  create_new=False, request_id=None, name="", notes="") -> Project:
+                                  create_new=False, request_id=None, name="", notes="", video_form="static") -> Project:
     job = await owned_job(db, user, job_id, lock=True)
     ratio = output_ratio if output_ratio in ALLOWED_RATIOS else "9:16"
     voice = (voice_id or "").strip()
@@ -66,6 +68,7 @@ async def create_project_from_job(db, user, job_id: int, *, output_ratio="9:16",
             requested_name = (name or job.title or "").strip()
             requested_notes = (notes or "").strip()
             if (existing.output_ratio != ratio or existing.voice_id != voice
+                    or (existing.daihuo_video_form or "static") != normalize_form(video_form)
                     or snapshot.name != requested_name or snapshot.notes != requested_notes):
                 raise ValueError("请重新选择生成选项后再试")
     else:
@@ -78,7 +81,7 @@ async def create_project_from_job(db, user, job_id: int, *, output_ratio="9:16",
         raise ValueError("请填写品名")
     notes = (notes or "").strip()
     project = await create_image_project(db, user, name=name, notes=notes, product={}, items=items,
-                                         output_ratio=ratio, voice_id=voice)
+                                         output_ratio=ratio, voice_id=voice, video_form=video_form)
     directory = storage.project_dir(project.id) / "daihuo" / "sources"
     try:
         directory.mkdir(parents=True, exist_ok=True)

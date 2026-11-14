@@ -124,6 +124,8 @@ class Project(Base):
     ecom_set_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     # 显式新建另一条带货视频的幂等键，不由普通项目编辑接口写入。
     daihuo_request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # 带货视频形式：static 静图口播 | mixed 混合展示 | motion 全动态（空视为 static）
+    daihuo_video_form: Mapped[str | None] = mapped_column(String(16), nullable=True)
     # 数字人口播：半身照（/static 或 OSS URL）与引擎（infinitetalk | longcat，空则用后台默认）
     avatar_image_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     avatar_engine: Mapped[str] = mapped_column(String(32), default="")
@@ -304,12 +306,12 @@ class Order(Base):
     amount_fen: Mapped[int] = mapped_column(Integer)
     credit_fen: Mapped[int] = mapped_column(Integer)
     pay_type: Mapped[str] = mapped_column(String(16))  # alipay | wxpay
-    status: Mapped[str] = mapped_column(String(16), default="pending")  # pending|paid|closed
-    trade_no: Mapped[str | None] = mapped_column(String(128), nullable=True)
     # 充值通道：epay | stripe
     provider: Mapped[str] = mapped_column(String(16), default="epay", server_default="epay")
     # 通道侧会话号（Stripe Checkout Session cs_…），用于 webhook 迟到时主动补单
     external_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="pending")  # pending|paid|closed
+    trade_no: Mapped[str | None] = mapped_column(String(128), nullable=True)
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

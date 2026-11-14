@@ -202,7 +202,10 @@ export type EcomSetPlanItemPatch = Pick<EcomSetItem, 'idx' | 'scene' | 'title' |
 export type DaihuoRatio = '9:16' | '16:9' | '1:1' | '4:3'
 
 /** 生成带货视频项目参数 */
-export type DaihuoProjectPayload = { output_ratio: DaihuoRatio; voice_id?: string; create_new?: boolean; request_id?: string }
+export type DaihuoProjectPayload = { output_ratio: DaihuoRatio; voice_id?: string; video_form?: DaihuoVideoForm; create_new?: boolean; request_id?: string }
+
+/** 带货视频形式：静图口播 / 混合展示 / 全动态 */
+export type DaihuoVideoForm = 'static' | 'mixed' | 'motion'
 
 /** 文案编辑：单张排版文字 */
 export type EcomSetCopyPatch = Pick<EcomSetItem, 'title' | 'subtitle' | 'bullets' | 'en'>
@@ -322,11 +325,20 @@ export function createDaihuoProject(id: number, payload: DaihuoProjectPayload): 
 export type DaihuoVideoQuote = {
   output_ratio: DaihuoRatio
   voice_id: string
+  /** 旧后端无此字段，视为静图口播 */
+  video_form?: DaihuoVideoForm
   usable_images: number
+  /** 预计动态镜头数（混合按上限估） */
+  motion_shots?: number
+  /** 首帧扩图费（画幅差太多时才有） */
   image_fen: number
   script_fen: number
   tts_fen: number
+  /** 动态镜头视频费 */
+  video_fen?: number
   estimate_fen: number
+  motion_available?: boolean
+  motion_unavailable_reason?: string
 }
 
 export function quoteDaihuoProject(id: number, payload: DaihuoProjectPayload, signal?: AbortSignal): Promise<DaihuoVideoQuote> {

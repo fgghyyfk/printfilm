@@ -7,7 +7,8 @@ from app.database import get_db
 from app.deps import get_current_user
 from app.models import User
 from app.schemas_ecom import EcomToProjectIn, EcomToProjectOut
-from app.schemas_ecom_hub import EcomJobToProjectIn, EcomRecentOut, EcomVideoLink
+from app.schemas import ShotOut
+from app.schemas_ecom_hub import EcomJobToProjectIn, EcomRecentOut, EcomVideoLink, ShotMotionIn
 from app.services.daihuo import job_source
 from app.services.ecom_hub import list_recent
 
@@ -42,7 +43,8 @@ async def create_project(job_id: int, body: EcomJobToProjectIn,
 async def quote_project(job_id: int, body: EcomToProjectIn,
                         db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     return await _guard(db, job_source.quote_project_from_job(db, user, job_id,
-                         output_ratio=body.output_ratio, voice_id=body.voice_id))
+                         output_ratio=body.output_ratio, voice_id=body.voice_id,
+                         video_form=body.video_form))
 
 
 # 来源面板只授权写稿，即使旧页面重试，也不自动进入配音等下一收费阶段。
@@ -52,3 +54,13 @@ async def start_script(project_id: int, db: AsyncSession = Depends(get_db), user
 
     project = await _guard(db, start_image_project_script(db, user, project_id))
     return {"project_id": project.id}
+
+
+# 带货分镜逐镜切换动态/静图与动作；只改镜头标记，不自动开始生成。
+@router.patch("/projects/{project_id}/shots/{shot_id}/motion", response_model=ShotOut)
+async def shot_motion(project_id: int, shot_id: int, body: ShotMotionIn,
+                      db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    from app.services.daihuo.motion_edit import set_shot_motion
+
+    return await _guard(db, set_shot_motion(db, user, project_id, shot_id, motion=body.motion,
+                                            action=body.action, detail=body.detail))

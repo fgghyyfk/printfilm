@@ -194,6 +194,8 @@ class EcomToProjectIn(BaseModel):
 
     output_ratio: str = Field(default="9:16", pattern=r"^(9:16|16:9|1:1|4:3)$")
     voice_id: str = Field(default="", max_length=128)
+    # 视频形式：static 静图口播 | mixed 混合展示 | motion 全动态
+    video_form: str = Field(default="static", pattern=r"^(static|mixed|motion)$")
     create_new: bool = False
     request_id: str | None = Field(default=None, min_length=16, max_length=64, pattern=r"^[a-zA-Z0-9_-]+$")
 

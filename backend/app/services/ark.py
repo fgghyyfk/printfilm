@@ -1445,7 +1445,14 @@ class ArkGateway:
         generate_audio: bool = False,
         extra_image_urls: list[str] | None = None,
         model: str | None = None,
+        image_role: str | None = None,
+        inline_refs: bool = False,
     ) -> str:
+        """提交 Seedance 图生视频任务。
+
+        image_role 指定 first_frame 时不传画幅（首帧已按画幅准备好，保真优先）；
+        inline_refs 为 True 时本地图在无公网地址的情况下压成 data URI 随请求发送。
+        """
         strategy, normalized, pinned_route = execution_params("video", {
             "duration": duration, "resolution": resolution, "aspect_ratio": ratio or "9:16",
             "generate_audio": generate_audio,
@@ -1465,7 +1472,7 @@ class ArkGateway:
 
         safe_image_url = await ensure_seedance_compatible_image_url(image_url)
         # Seedance needs a publicly reachable https image (data URI often rejected / odd errors)
-        image_ref = await self._resolve_image_ref(safe_image_url, prefer_https=True)
+        image_ref = await self._resolve_video_image_ref(safe_image_url, inline_refs=inline_refs)
         route = pinned_route or self._resolve_ark_route("video", model or strategy.model_id)
         from app.services.tokenfree_pricing import canonicalize_channel_model_id
 
@@ -1485,7 +1492,10 @@ class ArkGateway:
             prompt_as_json = False
         # 有目标画幅时用 reference_image + ratio（可强制 9:16）。
         # 纯 first_frame 禁止传 ratio，且实测即使静帧竖屏也可能吐横屏。
-        image_role, target_ratio = resolve_seedance_i2v_image_role(ratio)
+        image_role_resolved, target_ratio = resolve_seedance_i2v_image_role(ratio)
+        if image_role == "first_frame":
+            image_role_resolved, target_ratio = "first_frame", None
+        image_role = image_role_resolved
         extra_refs: list[str] = []
         for raw in extra_image_urls or []:
             text_url = str(raw or "").strip()
@@ -1493,7 +1503,7 @@ class ArkGateway:
                 continue
             try:
                 safe_extra = await ensure_seedance_compatible_image_url(text_url)
-                extra_refs.append(await self._resolve_image_ref(safe_extra, prefer_https=True))
+                extra_refs.append(await self._resolve_video_image_ref(safe_extra, inline_refs=inline_refs))
             except Exception as exc:
                 raise ValueError("reference_images: 参考图无法处理，请修正后重新提交") from exc
         if extra_refs:
@@ -2023,6 +2033,9 @@ class ArkGateway:
         extra_image_urls: list[str] | None = None,
         provider_task_id: str | None = None,
         on_task_created: Any | None = None,
+        image_role: str | None = None,
+        inline_refs: bool = False,
+        prompt_as_json: bool = True,
     ) -> tuple[str, TaskResult]:
         """创建一次并持久化原任务号，轮询/下载失败不再提交另一付费任务；开源版只走 TokenFree。"""
         if current_snapshot.get():
@@ -2035,7 +2048,8 @@ class ArkGateway:
             task_id = await self.gen_video_i2v(
                 image_url, prompt, duration, character_consistency=character_consistency,
                 resolution=resolution, ratio=ratio, generate_audio=generate_audio,
-                extra_image_urls=extra_image_urls, model=model,
+                extra_image_urls=extra_image_urls, model=model, image_role=image_role, inline_refs=inline_refs,
+                prompt_as_json=prompt_as_json,
             )
             if on_task_created is not None:
                 try:
@@ -2460,6 +2474,20 @@ class ArkGateway:
         if local and local.exists():
             return await asyncio.to_thread(_compact_image_data_uri, local)
         return await self._resolve_image_ref(raw)
+
+    async def _resolve_video_image_ref(self, image_url: str, *, inline_refs: bool = False) -> str:
+        """视频参考图：优先公网 https；允许内嵌时本地图拿不到公网地址就压成 data URI。"""
+        try:
+            return await self._resolve_image_ref(image_url, prefer_https=True)
+        except RuntimeError:
+            if not inline_refs:
+                raise
+            local = storage.local_path_from_url((image_url or "").strip())
+            if not local or not local.is_file():
+                raise
+            from app.services.image_ref_inline import encode_ref_image
+
+            return await asyncio.to_thread(encode_ref_image, local)
 
     async def _resolve_image_ref(self, image_url: str, *, prefer_https: bool = False) -> str:
         raw = (image_url or "").strip()
