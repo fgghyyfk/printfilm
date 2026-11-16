@@ -22,22 +22,25 @@ import { brandFullName } from '../lib/siteLinks'
 import { SHORT_VIDEO_CREATE_PATH } from '../lib/shortVideoRoutes'
 import './home/home.css'
 
+/* 首页配图版本号：替换 public/home/ 下同名图片时加一，避免浏览器缓存旧图 */
+const ART_VERSION = 2
+
 /* 首屏控制台四宫格样图（统一风格专门生成，见 public/home/），顺序与文案 home.showcase 一致 */
 const SHOWCASE = [
-  '/home/showcase-ecom.jpg',
-  '/home/showcase-avatar.jpg',
-  '/home/showcase-drama.jpg',
-  '/home/showcase-video.jpg',
+  `/home/showcase-ecom.jpg?v=${ART_VERSION}`,
+  `/home/showcase-avatar.jpg?v=${ART_VERSION}`,
+  `/home/showcase-drama.jpg?v=${ART_VERSION}`,
+  `/home/showcase-video.jpg?v=${ART_VERSION}`,
 ]
 
 /* 产品线卡片：入口、图标、样图，顺序与文案 home.lines 一致 */
 const LINES = [
-  { path: '/ecom', icon: ShoppingBag, image: '/home/line-ecom.jpg' },
-  { path: '/daihuo', icon: Video, image: '/home/line-daihuo.jpg' },
-  { path: `${SHORT_VIDEO_CREATE_PATH}?mode=avatar`, icon: Mic, image: '/home/line-avatar.jpg' },
-  { path: SHORT_VIDEO_CREATE_PATH, icon: Film, image: '/home/line-video.jpg' },
-  { path: '/drama', icon: Clapperboard, image: '/home/line-drama.jpg' },
-  { path: '/canvas', icon: PanelsTopLeft, image: '/home/line-canvas.jpg' },
+  { path: '/ecom', icon: ShoppingBag, image: `/home/line-ecom.jpg?v=${ART_VERSION}` },
+  { path: '/daihuo', icon: Video, image: `/home/line-daihuo.jpg?v=${ART_VERSION}` },
+  { path: `${SHORT_VIDEO_CREATE_PATH}?mode=avatar`, icon: Mic, image: `/home/line-avatar.jpg?v=${ART_VERSION}` },
+  { path: SHORT_VIDEO_CREATE_PATH, icon: Film, image: `/home/line-video.jpg?v=${ART_VERSION}` },
+  { path: '/drama', icon: Clapperboard, image: `/home/line-drama.jpg?v=${ART_VERSION}` },
+  { path: '/canvas', icon: PanelsTopLeft, image: `/home/line-canvas.jpg?v=${ART_VERSION}` },
 ]
 
 /* 单独使用的生成工具，顺序与文案 home.tools 一致 */
