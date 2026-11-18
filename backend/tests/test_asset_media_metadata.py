@@ -143,6 +143,26 @@ async def test_image_generation_saves_the_actual_call(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_image_generation_keeps_local_url_instead_of_expiring_cdn(monkeypatch):
+    """未开 OSS 时资产图存本地地址，不存上游带过期时间的签名链接。"""
+    from app.services.drama import generation
+
+    asset = media_asset(cover="", url="")
+    signed = "https://ark-acg.tos-cn-beijing.volces.com/x.jpeg?X-Tos-Expires=86400"
+    image = AsyncMock(return_value=SimpleNamespace(local_url="/static/generated/p2/a.png", remote_url=signed))
+    monkeypatch.setattr(generation, "get_ark", lambda: SimpleNamespace(gen_image=image))
+    monkeypatch.setattr(generation, "resolve_seedream_model_endpoint", lambda _: "m")
+    monkeypatch.setattr(generation, "resolve_seedream_size", lambda **kwargs: "1536x2048")
+    monkeypatch.setattr(generation, "resolve_image_style_board_url", lambda _: None)
+    monkeypatch.setattr(generation, "build_generation_prompt", lambda prompt, **kwargs: prompt)
+    monkeypatch.setattr(generation, "record_seedream_image_usage", AsyncMock())
+    monkeypatch.setattr("app.services.storage.republish_url", lambda url, **kwargs: url)
+    result = await generation.generate_asset_image(AsyncMock(), SimpleNamespace(id=1), SimpleNamespace(id=2, params={}), "portrait", asset=asset, model_id="m", aspect_ratio="3:4", resolution="2K")
+    assert result.url == "/static/generated/p2/a.png"
+    assert "X-Tos-Expires" not in (result.cover or "")
+
+
+@pytest.mark.asyncio
 async def test_video_publish_saves_successful_model_and_false_options(monkeypatch):
     from app.services.drama.asset_video import _publish_asset_video
 

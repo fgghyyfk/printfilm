@@ -106,6 +106,11 @@ def _is_configured_oss_url(url: str) -> bool:
     return url.startswith(oss_svc.public_base().rstrip("/") + "/")
 
 
+# 对外暴露：URL 是否为已配置 OSS 上的对象（上游可直接拉取，无需内嵌）。
+def is_configured_oss_url(url: str) -> bool:
+    return _is_configured_oss_url(url)
+
+
 def local_path_from_url(url: str) -> Path | None:
     """把库内媒体 URL 映射为 static 下的本地路径；外部域名和越界路径返回 None。"""
     if not url:

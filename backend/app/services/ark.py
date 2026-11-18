@@ -2466,13 +2466,17 @@ class ArkGateway:
 
     async def _native_image_ref(self, image_url: str) -> str:
         """方舟原生生图参考图：本地 /static 文件压成长边 ≤1024 的 JPEG data URI（约 100–200KB，跨境上行慢也能发完）；
-        https 原样保留，其余交给通用解析。"""
+        本站公网地址（public_base_url/static/...）同样内嵌：上游经隧道拉取常超时；OSS 与外部 https 原样保留，其余交给通用解析。"""
         raw = (image_url or "").strip()
-        if raw.startswith(("https://", "data:")):
+        if raw.startswith("data:"):
+            return raw
+        if raw.startswith("https://") and storage.is_configured_oss_url(raw):
             return raw
         local = storage.local_path_from_url(raw)
         if local and local.exists():
             return await asyncio.to_thread(_compact_image_data_uri, local)
+        if raw.startswith("https://"):
+            return raw
         return await self._resolve_image_ref(raw)
 
     async def _resolve_video_image_ref(self, image_url: str, *, inline_refs: bool = False) -> str:

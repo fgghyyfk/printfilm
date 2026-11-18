@@ -238,8 +238,19 @@ async def test_set_shot_motion_guards(db_session):
 def test_motion_unavailable_reason(monkeypatch):
     fake = SimpleNamespace(ark_mock=False, oss_enabled=False, daihuo_video_inline_refs=False)
     monkeypatch.setattr(motion, "get_settings", lambda: fake)
+    monkeypatch.setattr(motion, "_video_model_ready", lambda s: True)
     assert "OSS" in (motion.motion_unavailable_reason() or "")
     fake.daihuo_video_inline_refs = True
+    assert motion.motion_unavailable_reason() is None
+
+
+# 后台没配视频模型时动态展示不可用（此前报价显示可用，扣完写稿配音才在视频阶段失败）
+def test_motion_unavailable_without_video_model(monkeypatch):
+    fake = SimpleNamespace(ark_mock=False, oss_enabled=True, daihuo_video_inline_refs=True, model_video="")
+    monkeypatch.setattr(motion, "get_settings", lambda: fake)
+    monkeypatch.setattr("app.services.logical_model_router.resolve_logical_model_id", lambda cap, mid: "")
+    assert "视频模型" in (motion.motion_unavailable_reason() or "")
+    fake.model_video = "doubao-seedance-2-5-260628"
     assert motion.motion_unavailable_reason() is None
 
 

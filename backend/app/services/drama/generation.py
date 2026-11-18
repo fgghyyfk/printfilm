@@ -1397,17 +1397,16 @@ async def generate_asset_image(
 
     from app.services import storage as storage_svc
 
+    # 未开 OSS 时保留本地 /static 地址：上游 CDN 是带过期时间的签名链接（约 24 小时），
+    # 存进资产后次日即失效；视频参考图在提交时再按公网地址或内嵌方式解析。
     url = result.local_url or ""
     if url:
         published = storage_svc.republish_url(url, sync=True)
         if published and str(published).startswith("https://"):
             url = str(published)
-        elif result.remote_url and str(result.remote_url).startswith("https://"):
-            url = str(result.remote_url)
-            logger.warning(
-                "OSS 未拿到 https，回退上游 CDN project_id=%s",
-                project.id,
-            )
+    elif result.remote_url and str(result.remote_url).startswith("https://"):
+        url = str(result.remote_url)
+        logger.warning("生图结果未落本地，暂用上游临时链接 project_id=%s", project.id)
     if not (url or "").strip():
         raise RuntimeError("生图成功但未拿到可用图片 URL")
     logger.info("Seedream 返回 project_id=%s url=%s", project.id, url[:100])

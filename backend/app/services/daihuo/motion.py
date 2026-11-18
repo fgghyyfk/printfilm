@@ -84,11 +84,27 @@ def is_daihuo(project: Any) -> bool:
 
 
 def motion_unavailable_reason() -> str | None:
-    """动态展示的前置条件：视频模型需拿到首帧图（公网 OSS 或允许内嵌）。返回 None 表示可用。"""
+    """动态展示的前置条件：已配置可用的视频模型，且模型能拿到首帧图（公网 OSS 或允许内嵌）。返回 None 表示可用。"""
     s = get_settings()
-    if s.ark_mock or s.oss_enabled or s.daihuo_video_inline_refs:
+    if s.ark_mock:
+        return None
+    if not _video_model_ready(s):
+        return "暂未开通视频模型，动态展示不可用，请联系管理员"
+    if s.oss_enabled or s.daihuo_video_inline_refs:
         return None
     return "动态展示需要启用 OSS 存储，请联系管理员"
+
+
+def _video_model_ready(s) -> bool:
+    """按视频阶段计费规划的同一规则解析默认视频模型（项目未指定模型时），能找到策略才算可用。"""
+    from app.services.logical_model_router import resolve_logical_model_id
+    from app.services.media_models.prices import resolve_strategy
+
+    try:
+        model = resolve_logical_model_id("video", None) or (s.model_video or "").strip()
+        return bool(model) and resolve_strategy(model).capability == "video"
+    except Exception:  # noqa: BLE001 — 未注册或配置异常都视为不可用
+        return False
 
 
 def action_key(raw: Any, *, first: bool) -> str:
