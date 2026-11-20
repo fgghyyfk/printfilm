@@ -119,8 +119,11 @@ async def generate_image(db: AsyncSession, job: EcomJob, item: EcomJobItem) -> t
     explicit_roles = job.kind in {"buyer_show", "sku"} or any(ref["role"] == "source" for ref in item.inputs)
     refs = [storage.to_public_url(ref["url"]) for ref in item.inputs if explicit_roles or ref["role"] == "product"]
     style_refs = [] if explicit_roles else [storage.to_public_url(ref["url"]) for ref in item.inputs if ref["role"] == "style"]
+    prompt = item.prompt
+    if job.kind == "style" and not explicit_roles:
+        prompt, style_refs = await _style_without_reference_product(directory, params, item, len(refs))
     result = await get_ark().gen_image(
-        item.prompt, translate.NEGATIVE_PROMPT if job.kind == "translate" else NEGATIVE_PROMPT, refs, project_id=0, shot_no=job.user_id,
+        prompt, translate.NEGATIVE_PROMPT if job.kind == "translate" else NEGATIVE_PROMPT, refs, project_id=0, shot_no=job.user_id,
         size=item.size, aspect_ratio=item.ratio, structured_refs=True,
         **({"style_ref_urls": style_refs} if style_refs else {}),
         **({"reference_roles": [ref["role"] for ref in item.inputs]} if explicit_roles else {}),
@@ -129,6 +132,23 @@ async def generate_image(db: AsyncSession, job: EcomJob, item: EcomJobItem) -> t
     if not url:
         raise RuntimeError("生图未返回图片")
     return await storage.ensure_local_media(url, source), result
+
+
+# 风格复刻不把参考图原样交给生图模型（会照抄图里的商品）：优先换成文字风格描述，读图失败用强模糊色板。
+async def _style_without_reference_product(directory: Path, params: dict, item: EcomJobItem,
+                                           product_count: int) -> tuple[str, list[str]]:
+    from app.services.ecom_jobs.style_ref import (
+        blurred_reference, build_blur_prompt, build_brief_prompt, style_brief,
+    )
+
+    reference = next((Path(ref["path"]) for ref in item.inputs if ref["role"] == "style" and ref.get("path")), None)
+    if reference is None or not reference.is_file():
+        return item.prompt, []
+    brief = await style_brief(directory, reference)
+    if brief:
+        return build_brief_prompt(params, brief, product_count), []
+    blurred = await asyncio.to_thread(blurred_reference, reference, directory / f"style_blur_{item.idx}.jpg")
+    return build_blur_prompt(params, product_count), [storage.to_public_url(storage.publish_local(blurred))]
 
 
 # 单张任务失败时回写可读短句并重抛，由统一任务平台退回冻结费用。

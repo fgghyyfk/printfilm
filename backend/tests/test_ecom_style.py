@@ -181,7 +181,8 @@ async def test_style_provider_roles(monkeypatch, tmp_path):
     ])
     await jobs.generate_image(None, job, item)
     assert called["refs"] == ["https://example.com/product.png"]
-    assert called["style_ref_urls"] == ["https://example.com/style.png"]
+    # 参考设计图不再原样发给生图模型（会照抄图里的商品），见 test_ecom_style_ref.py
+    assert "style_ref_urls" not in called
     assert called["structured_refs"] is True
 
 
