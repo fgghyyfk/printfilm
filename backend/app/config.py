@@ -124,6 +124,9 @@ class Settings(BaseSettings):
     # 生图渠道：openai 官方 | promptoll（自有网关 https://api.promptoll.com/v1，Key 以 zai_ 开头）
     openai_image_provider: str = "openai"
     promptoll_api_key: str = ""
+    # 漫剧/视频改走 Promptoll 的 Seedance（方舟协议透传，复用上面的 Promptoll Key），主渠道继续负责文本与生图
+    promptoll_video_enabled: bool = False
+    promptoll_video_default: str = "seedance-2.0"
     # 非 2.0 音色用的资源（2.0 音色自动用 seed-tts-2.0）
     volc_tts_resource_id: str = "seed-tts-1.0"
     # 语速 -50~100（0 正常，10 约 1.1 倍）

@@ -312,6 +312,10 @@ def get_strategy(model_id: str) -> MediaModelStrategy:
                                ("doubao-seedance-2-0-", "seedance-2.0"),
                                ("doubao-seedream-5-0-pro-", "seedream-5.0-pro"),
                                ("doubao-seedream-5-0-", "seedream-5.0"),
+                               # Promptoll（Zenlayer）上的 Seedance 用 dreamina- 前缀；mini 不在此列
+                               ("dreamina-seedance-2-5-", "seedance-2.5"),
+                               ("dreamina-seedance-2-0-fast-", "seedance-2.0-fast"),
+                               ("dreamina-seedance-2-0-", "seedance-2.0"),
                                # BytePlus 国际站同款模型的 dola- 前缀 ID
                                ("dola-seedream-5-0-pro-", "seedream-5.0-pro"),
                                ("dola-seedream-5-0-", "seedream-5.0")):

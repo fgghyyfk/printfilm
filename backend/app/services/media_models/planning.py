@@ -26,10 +26,12 @@ def _kepu_stored_reference(*candidates: str | None) -> str | None:
     """Inspect saved refs without publishing files or forwarding private artifacts."""
     from app.services.tokenfree_image import is_tokenfree_image_url
     from app.services.tokenfree_video import is_tokenfree_content_url
+    from app.services.promptoll_video import is_promptoll_result_url
 
     for raw in candidates:
         url = str(raw or "").strip()
-        if url and not is_tokenfree_image_url(url) and not is_tokenfree_content_url(url):
+        if url and not is_tokenfree_image_url(url) and not is_tokenfree_content_url(url) \
+                and not is_promptoll_result_url(url):
             return url
     return None
 

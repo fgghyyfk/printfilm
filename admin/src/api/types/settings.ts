@@ -67,6 +67,9 @@ export type AdminModelSettings = {
   openai_image_provider: string;
   promptoll_api_key: string;
   has_promptoll_api_key: boolean;
+  /** 漫剧/视频改走 Promptoll 的 Seedance（复用 Promptoll Key，主渠道仍负责文本与生图） */
+  promptoll_video_enabled: boolean;
+  promptoll_video_default: string;
   volc_tts_resource_id: string;
   volc_tts_speech_rate: number;
   volc_tts_instruction: string;

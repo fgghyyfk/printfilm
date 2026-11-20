@@ -87,6 +87,8 @@ class AdminModelSettingsOut(BaseModel):
     openai_image_provider: str = "openai"
     promptoll_api_key: str = ""
     has_promptoll_api_key: bool = False
+    promptoll_video_enabled: bool = False
+    promptoll_video_default: str = "seedance-2.0"
 
     # Aliyun OSS
     oss_enabled: bool = Field(default=False, description="是否启用阿里云 OSS 媒体上传")
@@ -251,6 +253,8 @@ class AdminModelSettingsPatch(BaseModel):
     openai_image_provider: str | None = Field(default=None, pattern=r"^(openai|promptoll)$")
     promptoll_api_key: str | None = None
     clear_promptoll_api_key: bool = False
+    promptoll_video_enabled: bool | None = None
+    promptoll_video_default: str | None = Field(default=None, pattern=r"^seedance-2\.(0|0-fast|5)$")
 
     oss_enabled: bool | None = Field(default=None, description="是否启用阿里云 OSS 媒体上传；省略或 null 时不修改")
     oss_endpoint: str | None = Field(default=None, description="阿里云 OSS 服务域名；省略或 null 时不修改")
@@ -404,6 +408,8 @@ def model_config_field_names() -> tuple[str, ...]:
         "openai_image_scope",
         "openai_image_provider",
         "promptoll_api_key",
+        "promptoll_video_enabled",
+        "promptoll_video_default",
         "oss_enabled",
         "oss_endpoint",
         "oss_region",

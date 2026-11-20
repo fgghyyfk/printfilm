@@ -98,8 +98,9 @@ def _usable_video_ref(raw: str | None) -> str | None:
         return None
     from app.services.tokenfree_image import is_tokenfree_image_url
     from app.services.tokenfree_video import is_tokenfree_content_url
+    from app.services.promptoll_video import is_promptoll_result_url
 
-    if is_tokenfree_image_url(url) or is_tokenfree_content_url(url):
+    if is_tokenfree_image_url(url) or is_tokenfree_content_url(url) or is_promptoll_result_url(url):
         return None
     return url
 

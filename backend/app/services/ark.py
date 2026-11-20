@@ -668,7 +668,15 @@ class ArkGateway:
             headers: dict[str, str] | None = None
             timeout: float | httpx.Timeout = 300.0
             download_url = source
-            if is_tokenfree_content_url(download_url) or is_tokenfree_image_url(download_url):
+            from app.services.promptoll_video import is_promptoll_base, is_promptoll_result_url, promptoll_media_headers
+
+            if is_promptoll_result_url(download_url):
+                # Promptoll 代理上游成片：只对该地址带 Promptoll Key（固定路由的 Key 优先）
+                route = self._poll_route()
+                route_key = route.api_key if route and is_promptoll_base(route.base_url) else ""
+                headers = promptoll_media_headers(download_url, route_key)
+                timeout = httpx.Timeout(connect=30.0, read=600.0, write=60.0, pool=30.0)
+            elif is_tokenfree_content_url(download_url) or is_tokenfree_image_url(download_url):
                 from app.services.tokenfree_gateway import tokenfree_media_headers
 
                 from app.services.provider_profiles import is_byteplus

@@ -53,9 +53,11 @@ VIDEO_FAILED_STATUSES = {"failed", "cancelled", "canceled", "expired", "failure"
 
 def uses_tokenfree_video(*, base_url: str = "", channel_id: str = "") -> bool:
     """官方 Ark 原生接口保留任务协议，其余沿用 TokenFree / New API。"""
+    from app.services.promptoll_video import is_promptoll_base
     from app.services.provider_profiles import is_ark_native
 
-    return not is_ark_native(base_url)
+    # Promptoll 的 /contents/generations/tasks 是方舟协议透传，同样保留任务协议
+    return not (is_ark_native(base_url) or is_promptoll_base(base_url))
 
 
 def remap_video_path(path: str, *, base_url: str = "", channel_id: str = "") -> str:

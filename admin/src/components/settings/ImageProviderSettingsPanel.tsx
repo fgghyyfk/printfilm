@@ -20,12 +20,17 @@ const PROVIDER_OPTIONS = [
   { value: "openai", label: "OpenAI 官方" },
 ];
 const PROVIDER_NAME: Record<string, string> = { promptoll: "Promptoll", openai: "OpenAI" };
+const VIDEO_MODEL_OPTIONS = [
+  { value: "seedance-2.0", label: "Seedance 2.0（推荐）" },
+  { value: "seedance-2.0-fast", label: "Seedance 2.0 Fast（更快更省）" },
+  { value: "seedance-2.5", label: "Seedance 2.5（最长 30 秒，最贵）" },
+];
 const SCOPE_OPTIONS = [
   { value: "tools", label: "仅工具中心（图片生成页，推荐）" },
   { value: "all", label: "全站（含短视频分镜、漫剧资产等生图）" },
 ];
 
-/** 生图改走 gpt-image：渠道（Promptoll / OpenAI 官方，各自 Key）、开关、模型、质量与作用范围；主渠道继续负责文本与视频 */
+/** 生图改走 gpt-image：渠道（Promptoll / OpenAI 官方，各自 Key）、开关、模型、质量与作用范围；另可让视频改走 Promptoll 的 Seedance */
 export function ImageProviderSettingsPanel() {
   const { form, loading, saving, patchField, save } = useAdminModelSettings();
   /* 两个渠道各自的 Key 输入与清除状态 */
@@ -47,7 +52,9 @@ export function ImageProviderSettingsPanel() {
       clear_openai_image_api_key: clearKey,
       promptoll_api_key: clearPtKey ? undefined : ptKeyInput.trim() || undefined,
       clear_promptoll_api_key: clearPtKey,
-    }, "生图配置已保存");
+      promptoll_video_enabled: form.promptoll_video_enabled,
+      promptoll_video_default: form.promptoll_video_default,
+    }, "生图与视频配置已保存");
     if (!saved) return;
     setKeyInput("");
     setClearKey(false);
@@ -63,6 +70,7 @@ export function ImageProviderSettingsPanel() {
   const hasPtKey = !clearPtKey && (form.has_promptoll_api_key || Boolean(ptKeyInput.trim()));
   const hasKey = provider === "promptoll" ? hasPtKey : hasOpenaiKey;
   const active = form.openai_image_enabled && hasKey;
+  const videoActive = form.promptoll_video_enabled && hasPtKey;
   const scopeLabel = SCOPE_OPTIONS.find((o) => o.value === form.openai_image_scope)?.label ?? form.openai_image_scope;
 
   return <SettingsTabShell onSave={() => void handleSave()} saving={saving}>
@@ -72,6 +80,7 @@ export function ImageProviderSettingsPanel() {
         { id: "provider", label: "当前生图", ready: active, readyText: `${providerName} · ${form.openai_image_model}`, pendingText: "沿用主渠道（模型页的生效配置）" },
         { id: "key", label: `${providerName} Key`, ready: hasKey, readyText: "已配置", pendingText: "未配置" },
         { id: "scope", label: "作用范围", ready: active, readyText: scopeLabel, pendingText: "未启用" },
+        { id: "video", label: "视频", ready: videoActive, readyText: "Promptoll · Seedance", pendingText: "沿用主渠道" },
       ]}
     />
 
@@ -103,6 +112,19 @@ export function ImageProviderSettingsPanel() {
         </LabeledControl>
       </div>
       <p className="mt-4 text-xs text-[#909399]">用户侧按价目表里 gpt-image-2 的张价计费；上游实际成本（Promptoll 回传）记在用量明细里，可据此在「支付计费」调价。</p>
+    </SettingsPanel>
+
+    <SettingsPanel title="视频改走 Promptoll（Seedance）" description="开启后漫剧分镜、短视频与视频生成页可选 Seedance 2.0 / 2.0 Fast / 2.5，经 Promptoll 网关出片；多参考图、首尾帧、参考音频与尾帧续接与方舟一致。主渠道已配视频模型时以主渠道为准。">
+      <div className="settings-toggle-row">
+        <div><strong>启用 Promptoll 视频</strong><span>{hasPtKey ? "复用上方的 Promptoll Key；关闭则恢复主渠道视频。" : "先把生图渠道切到 Promptoll 并填写 Key。"}</span></div>
+        <Switch aria-label="启用 Promptoll 视频" checked={form.promptoll_video_enabled} onCheckedChange={(value) => patchField("promptoll_video_enabled", value)} />
+      </div>
+      <div className="settings-field-grid mt-5">
+        <LabeledControl label="默认视频模型" hint="主渠道没有视频模型时作为站点默认；用户仍可在生成时切换。">
+          <SettingsSelect value={form.promptoll_video_default || "seedance-2.0"} options={VIDEO_MODEL_OPTIONS} onChange={(v) => patchField("promptoll_video_default", v)} />
+        </LabeledControl>
+      </div>
+      <p className="mt-4 text-xs text-[#909399]">用户侧按「支付计费 → 图片与视频价格」里 Seedance 的秒价计费；Seedance 不接受真人人脸参考图（需走上游素材库），真人照片会被拒绝。</p>
     </SettingsPanel>
   </SettingsTabShell>;
 }

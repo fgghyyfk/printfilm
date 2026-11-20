@@ -434,6 +434,12 @@ async def _compose_runtime_state(db: AsyncSession) -> tuple[list[SystemModelChan
         channels, default_models_from_dict(config.get("default_models")), set(config.get("disabled_models") or []),
     )
     flat = profile_overlay(_effective_flat(_decrypt_flat_config(config)), channels, default_models)
+    # 开启「Promptoll 视频」时追加只含视频的运行时渠道与 Seedance 模型（不落库）
+    from app.services.promptoll_video import augment_routing
+
+    channels, logical_models, default_models, flat = augment_routing(
+        channels, logical_models, default_models, flat, set(config.get("disabled_models") or []),
+    )
     return channels, logical_models, default_models, flat, app_row
 
 
@@ -516,7 +522,11 @@ async def get_admin_routing_settings(db: AsyncSession) -> AdminRoutingSettingsOu
 
     channels, logical_models, defaults, _, app_row = await _compose_runtime_state(db)
     admin_channels = await _load_channels(db, runtime=False)
-    errors = model_routing_validation_errors(logical_models, admin_channels or channels, defaults)
+    # Promptoll 视频渠道只存在于运行时路由，校验时一并计入，避免误报「引用了不存在的渠道」
+    from app.services.promptoll_video import PROMPTOLL_VIDEO_CHANNEL_ID
+
+    runtime_only = [c for c in channels if c.id == PROMPTOLL_VIDEO_CHANNEL_ID]
+    errors = model_routing_validation_errors(logical_models, [*(admin_channels or channels), *runtime_only], defaults)
     return AdminRoutingSettingsOut(
         system_channels=admin_channels,
         logical_models=logical_models,
