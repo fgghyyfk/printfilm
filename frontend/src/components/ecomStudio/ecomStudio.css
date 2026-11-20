@@ -131,3 +131,4 @@
 .pf-es-color img.pf-es-cutimg { object-fit: contain; background: #fff; }
 .pf-es-color .pf-es-link { justify-content: center; font-size: 0.75rem; }
 .pf-es-cutting { display: inline-flex; align-items: center; justify-content: center; gap: 4px; font-size: 0.72rem; color: var(--pf-muted, var(--pf-faint)); }
+.pf-es-ref-ingredients { color: #5a7a4a; }

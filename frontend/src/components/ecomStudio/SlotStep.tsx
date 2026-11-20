@@ -1,4 +1,4 @@
-import { Check, Droplet, FileText, Hand, ImageIcon, Layers, Shirt, UserRound } from 'lucide-react'
+import { Check, Droplet, FileText, Hand, ImageIcon, Layers, Leaf, Shirt, UserRound } from 'lucide-react'
 import type { EcomStyledCategory } from '../../api/ecomSet'
 import { formatFen } from '../../lib/ecomSet'
 import { useGenerationText } from '../../lib/generationMedia'
@@ -33,8 +33,10 @@ export default function SlotStep({ category, frames, frame, slots, onFrame, onSl
   const refLabel = {
     model: text('模特上身', 'On model'), product: text('商品特写', 'Product'), flat: text('免费', 'Free'),
     composite: text('原图合成', 'Composite'), texture: text('质地特写', 'Texture'), info: text('免费·信息屏', 'Free · Info'), hand: text('手持展示', 'In hand'),
+    ingredients: text('成分示意', 'Ingredients'),
   }
-  const RefIcon = { model: UserRound, product: Shirt, flat: ImageIcon, composite: Layers, texture: Droplet, info: FileText, hand: Hand }
+  /* 后端新增槽位类型时前端可能缺图标：缺省回落通用图标，避免整页渲染崩溃 */
+  const RefIcon = { model: UserRound, product: Shirt, flat: ImageIcon, composite: Layers, texture: Droplet, info: FileText, hand: Hand, ingredients: Leaf }
 
   return <div className="pf-es-step">
     <div className="pf-tool-field"><span>{text('画幅', 'Format')}</span>
@@ -54,11 +56,11 @@ export default function SlotStep({ category, frames, frame, slots, onFrame, onSl
     <div className="pf-es-slots">
       {category.slots.map((s) => {
         const on = slots.includes(s.key)
-        const Icon = RefIcon[s.ref]
+        const Icon = RefIcon[s.ref] ?? ImageIcon
         return <button key={s.key} type="button" className={`pf-es-slot${on ? ' active' : ''}`} aria-pressed={on} onClick={() => toggle(s.key)}>
           {EXAMPLES.has(s.key) ? <img src={`/ecom-examples/${s.key}.jpg`} alt="" loading="lazy" /> : <span className="pf-es-slot-ph"><Icon size={28} /></span>}
           <strong>{s.label}</strong>
-          <span className={`pf-es-ref pf-es-ref-${s.ref}`}>{refLabel[s.ref]}</span>
+          <span className={`pf-es-ref pf-es-ref-${s.ref}`}>{refLabel[s.ref] ?? ''}</span>
           {on ? <span className="pf-es-tick"><Check size={14} /></span> : null}
         </button>
       })}
