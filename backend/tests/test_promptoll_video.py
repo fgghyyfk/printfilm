@@ -113,6 +113,7 @@ def test_catalog_lists_promptoll_seedance(promptoll_snapshot):
     payload = catalog_payload()
     ids = [row["id"] for row in payload["video_models"]]
     assert "seedance-2.0" in ids and "seedance-2.5" in ids
+    assert not [i for i in ids if i.startswith("dreamina-")]
     assert payload["defaults"]["video_model"] == "seedance-2.0"
 
 

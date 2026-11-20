@@ -153,8 +153,11 @@ def build_media_catalog(
         elif model.capability == "video":
             _append(model_id=mid, label=label, capability="video")
 
+    from app.services.promptoll_video import PROMPTOLL_VIDEO_CHANNEL_ID
+
     for channel in channels:
-        if not channel.enabled:
+        # Promptoll 视频渠道只通过逻辑模型（seedance-2.0 等）对外，不列原始上游 ID
+        if not channel.enabled or channel.id == PROMPTOLL_VIDEO_CHANNEL_ID:
             continue
         for raw in channel.models:
             mid = (raw or "").strip()
