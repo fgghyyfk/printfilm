@@ -121,9 +121,9 @@ async def _download_existing_asset_video(
             counts_attempt=False,
         )
     if result.status != "succeeded" or not result.url:
-        from app.services.video_recovery import VideoBillingPending, VideoGenerationFailed
+        from app.services.video_recovery import VideoBillingPending, VideoGenerationFailed, terminal_cost_known
 
-        if result.total_tokens or result.upstream_cost_fen:
+        if terminal_cost_known(result):
             raise VideoGenerationFailed(result)
         raise VideoBillingPending("upstream_terminal_cost_unknown", provider_task_id=provider_task_id)
     try:

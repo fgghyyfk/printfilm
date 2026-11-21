@@ -164,12 +164,32 @@ async def test_promptoll_terminal_failure_settles_as_failed(monkeypatch, via_pro
 
     gw = ark_mod.ArkGateway()
 
-    async def fake_poll(task_id):
-        return ark_mod.TaskResult(status="failed", error="上游拒绝")
-
     base = pv.PROMPTOLL_BASE_URL if via_promptoll else "https://ark.cn-beijing.volces.com/api/v3"
-    monkeypatch.setattr(gw, "poll_task", fake_poll)
     monkeypatch.setattr(gw, "_poll_route", lambda: SimpleNamespace(base_url=base))
+
+    async def fake_poll(task_id):
+        # 与真实轮询一致：解析到上游终态后经 _finalize_video_result 打标
+        return gw._finalize_video_result(ark_mod.TaskResult(status="failed", error="上游拒绝"), task_id)
+
+    monkeypatch.setattr(gw, "poll_task", fake_poll)
     with pytest.raises(Exception) as info:
         await gw.wait_video_assets("t1", project_id=1, shot_no=1)
     assert type(info.value).__name__ == expected
+
+
+
+def test_finalize_marks_only_promptoll_failures_free(monkeypatch):
+    from types import SimpleNamespace
+
+    from app.services import ark as ark_mod
+    from app.services.video_recovery import terminal_cost_known
+
+    gw = ark_mod.ArkGateway()
+    monkeypatch.setattr(gw, "_poll_route", lambda: SimpleNamespace(base_url=pv.PROMPTOLL_BASE_URL))
+    failed = gw._finalize_video_result(ark_mod.TaskResult(status="failed"), "t")
+    assert failed.free_terminal and failed.upstream_cost_fen == 0 and terminal_cost_known(failed)
+    running = gw._finalize_video_result(ark_mod.TaskResult(status="running"), "t")
+    assert not running.free_terminal and running.upstream_cost_fen is None
+    monkeypatch.setattr(gw, "_poll_route", lambda: SimpleNamespace(base_url="https://ark.cn-beijing.volces.com/api/v3"))
+    other = gw._finalize_video_result(ark_mod.TaskResult(status="failed"), "t")
+    assert not other.free_terminal and not terminal_cost_known(other)

@@ -1692,7 +1692,9 @@ async def poll_fragment_video_task(task_id: int) -> None:
                 return
             if result.status != "succeeded":
                 request = (task.result_payload or {}).get("video_request") or {}
-                if not (result.total_tokens or result.upstream_cost_fen) or "generate_audio" not in request or not request.get("model"):
+                from app.services.video_recovery import terminal_cost_known
+
+                if not terminal_cost_known(result) or "generate_audio" not in request or not request.get("model"):
                     await _fail_task(db, task, VideoBillingPending("upstream_terminal_cost_unknown", provider_task_id=task.provider_task_id))
                     return
                 from app.services.drama.billing_util import record_seedance_video_usage, seedance_billing_key

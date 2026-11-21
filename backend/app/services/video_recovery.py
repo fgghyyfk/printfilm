@@ -29,6 +29,11 @@ class VideoSubmissionRejected(RuntimeError):
     """上游明确400拒绝，未创建任务；与提交结果未知严格区分。"""
 
 
+def terminal_cost_known(result) -> bool:
+    """上游终态失败的成本是否已知：有用量/成本，或渠道保证失败不收费（Promptoll）。"""
+    return bool(result.total_tokens or result.upstream_cost_fen or getattr(result, "free_terminal", False))
+
+
 class VideoGenerationFailed(RuntimeError):
     def __init__(self, result, *, generate_audio=None, model=None):
         super().__init__(result.error or "视频生成失败")
