@@ -153,3 +153,23 @@ async def test_download_result_media_sends_promptoll_key(monkeypatch, tmp_path):
     assert seen == {"url": url, "headers": {"Authorization": "Bearer zai_settings"}}
     await gw.download_result_media("https://cdn.example/v.mp4", tmp_path / "w.mp4")
     assert seen["headers"] is None
+
+
+@pytest.mark.parametrize("via_promptoll,expected", [(True, "VideoGenerationFailed"), (False, "VideoBillingPending")])
+async def test_promptoll_terminal_failure_settles_as_failed(monkeypatch, via_promptoll, expected):
+    """经 Promptoll 的明确失败成本为 0，直接按失败结算；其它渠道无成本信息仍转人工核对。"""
+    from types import SimpleNamespace
+
+    from app.services import ark as ark_mod
+
+    gw = ark_mod.ArkGateway()
+
+    async def fake_poll(task_id):
+        return ark_mod.TaskResult(status="failed", error="上游拒绝")
+
+    base = pv.PROMPTOLL_BASE_URL if via_promptoll else "https://ark.cn-beijing.volces.com/api/v3"
+    monkeypatch.setattr(gw, "poll_task", fake_poll)
+    monkeypatch.setattr(gw, "_poll_route", lambda: SimpleNamespace(base_url=base))
+    with pytest.raises(Exception) as info:
+        await gw.wait_video_assets("t1", project_id=1, shot_no=1)
+    assert type(info.value).__name__ == expected

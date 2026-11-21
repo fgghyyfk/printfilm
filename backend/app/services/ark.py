@@ -1987,6 +1987,15 @@ class ArkGateway:
                 logger.warning("failed to save last frame project=%s shot=%s", project_id, shot_no)
         return video_local, last_local
 
+    def _promptoll_terminal_free(self, result: TaskResult) -> bool:
+        """Promptoll 对 failed/cancelled/expired 任务全额退回预扣，映创侧成本确定为 0，可直接按失败结算。"""
+        from app.services.promptoll_video import is_promptoll_base
+
+        if str(result.status or "").lower() not in {"failed", "cancelled", "canceled", "expired"}:
+            return False
+        route = self._poll_route()
+        return bool(route and is_promptoll_base(route.base_url))
+
     async def wait_video_assets(
         self,
         task_id: str,
@@ -1998,7 +2007,7 @@ class ArkGateway:
         result = await self.poll_task(task_id)
         result.provider_task_id = result.provider_task_id or task_id
         if result.status != "succeeded":
-            if result.total_tokens or result.upstream_cost_fen:
+            if result.total_tokens or result.upstream_cost_fen or self._promptoll_terminal_free(result):
                 raise VideoGenerationFailed(result)
             # 已接受任务的失败并不能证明上游免费；保留结果供核对。
             raise VideoBillingPending("upstream_terminal_cost_unknown", provider_task_id=task_id)
