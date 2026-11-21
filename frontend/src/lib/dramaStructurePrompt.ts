@@ -1,3 +1,5 @@
+import { isNonHumanCharacter } from './dramaCharacterForm'
+
 /** 资产生图结构前缀（与 backend generation_prompt 对齐）：抽取/刷新提示词时写入框内，生图提交不再静默拼接。 */
 
 export const CHARACTER_PROMPT_PREFIX =
@@ -14,6 +16,22 @@ export const CHARACTER_PROMPT_PREFIX =
   '严禁：只出单张全身或缺三视图；缺面部特写或缺半身像；风景/道具为主体；复杂背景。' +
   '即使用户描述偏向场景、物品或动作片段，也必须转化为可辨识的白底角色设定板来呈现，' +
   '并据此补全外貌、体态与服饰。请严格依据以下用户描述生成上述结构的角色设定图：'
+
+/** 非人角色（会说话的纸鹤、动物、器物等）设定板：保留三视图，禁止画成人 */
+export const NON_HUMAN_CHARACTER_PROMPT_PREFIX =
+  '【强制任务：非人角色设定板构图】' +
+  '纯白背景，无复杂背景、无遮挡、无文字水印。' +
+  '本角色不是人类：必须按用户描述的本体形态（动物、物件、器物、植物或精灵等）呈现，' +
+  '严禁画成人类、人形或拟人化人物，严禁出现任何人物、人手或手持者。' +
+  '画面左侧为同一角色本体的完整三视图，占据主要视觉区域，从左到右固定为：' +
+  '1.正面完整视图；2.左侧面完整视图；3.背面完整视图。' +
+  '三者必须是同一角色：外形轮廓、材质、颜色、比例与标志性细节完全一致。' +
+  '同图还必须同时包含：①标志性部位特写（眼睛、纹样、折痕、光效等可辨识细节）；' +
+  '②神态/姿态特写（体现性格与动态感）。' +
+  '镜头平视，中性棚拍光，无夸张透视。' +
+  '本体边缘清晰，比例明确，整体留白充足，类似角色建模参考页/设定板排版。' +
+  '严禁：画成人或人形；出现人物或人手；缺三视图；风景为主体；复杂背景。' +
+  '请严格依据以下用户描述生成上述结构的角色设定图：'
 
 export const SCENE_PROMPT_PREFIX =
   '【强制任务：场景设计参考图构图】' +
@@ -69,9 +87,25 @@ export function promptHasStructurePrefix(prompt: string): boolean {
 export function ensureStructureInPrompt(userPrompt: string, assetType?: string | null): string {
   const trimmed = (userPrompt || '').trim()
   if (!trimmed) return trimmed
-  if (promptHasStructurePrefix(trimmed)) return trimmed
   const kind = (assetType || '').trim().toLowerCase()
+  if (promptHasStructurePrefix(trimmed)) {
+    return kind === 'character' ? fixCharacterStructurePrefix(trimmed) : trimmed
+  }
+  if (kind === 'character') return `${characterPromptPrefix(trimmed)}${trimmed}`
   const prefix = STRUCTURE_PREFIX_BY_KIND[kind]
   if (!prefix) return trimmed
   return `${prefix}${trimmed}`
+}
+
+/** 按角色正文选人物/非人设定板前缀 */
+export function characterPromptPrefix(body: string): string {
+  return isNonHumanCharacter(body) ? NON_HUMAN_CHARACTER_PROMPT_PREFIX : CHARACTER_PROMPT_PREFIX
+}
+
+/** 已带人物设定板前缀、但正文是非人本体时换成非人前缀（修正旧资产，正文原样保留） */
+export function fixCharacterStructurePrefix(prompt: string): string {
+  const text = prompt || ''
+  if (!text.startsWith(CHARACTER_PROMPT_PREFIX)) return text
+  const body = text.slice(CHARACTER_PROMPT_PREFIX.length)
+  return isNonHumanCharacter(body) ? `${NON_HUMAN_CHARACTER_PROMPT_PREFIX}${body}` : text
 }

@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import re
+
 # 长词优先，避免短词先替换破坏短语
 _SEEDREAM_TEXT_SOFTEN: list[tuple[str, str]] = [
     # 酒精 / 配饰
@@ -77,6 +79,24 @@ _COMPACT_TURNAROUND_PREFIX = (
 )
 
 
+# 非人角色（纸鹤、动物、器物等）的简化设定板前缀，避免重试时又被画成人
+_COMPACT_NON_HUMAN_TURNAROUND_PREFIX = (
+    "【强制任务：非人角色设定板】纯白背景，无复杂背景、无文字水印。"
+    "角色不是人类，按描述的本体形态呈现，严禁画成人或人形，严禁出现人物或人手；"
+    "画面含同一角色本体三视图（正面、左侧面、背面），并含标志性部位特写；外形材质颜色一致。"
+    "请依据以下描述生成："
+)
+
+
+# 按正文选人物/非人简化前缀
+def _compact_prefix_for(prompt: str, body: str) -> str:
+    from app.services.drama.character_form import is_non_human_character
+
+    if "非人角色设定板" in (prompt or "") or is_non_human_character(body):
+        return _COMPACT_NON_HUMAN_TURNAROUND_PREFIX
+    return _COMPACT_TURNAROUND_PREFIX
+
+
 # 对纯文本做敏感词替换
 def _replace_sensitive_terms(text: str) -> str:
     out = text or ""
@@ -119,7 +139,7 @@ def compact_seedream_prompt_for_retry(prompt: str) -> str:
     body = _replace_sensitive_terms(extract_seedream_user_body(prompt))
     if not body:
         body = _replace_sensitive_terms(prompt or "")
-    return f"{_COMPACT_TURNAROUND_PREFIX}{body}"
+    return f"{_compact_prefix_for(prompt, body)}{body}"
 
 
 # 仍审核失败时：简化三视图 + 只保留服装/风格线索
@@ -141,6 +161,11 @@ def style_only_seedream_prompt_for_retry(prompt: str) -> str:
         if key in body and key not in style_bits:
             style_bits.append(key)
     style = "、".join(style_bits) if style_bits else "手作可爱质感"
+    prefix = _compact_prefix_for(prompt, body)
+    if prefix == _COMPACT_NON_HUMAN_TURNAROUND_PREFIX:
+        # 非人角色只留开头一句本体描述，不能退化成「青年书生」
+        lead = re.split(r"[，,。；;\n]", body.strip(), maxsplit=1)[0]
+        return f"{prefix}{lead}，{style}，禁止出现人物。"
     robe = "白衣宽袖" if ("白衣" in body or "月白" in body) else "古风常服"
     return (
         f"{_COMPACT_TURNAROUND_PREFIX}"

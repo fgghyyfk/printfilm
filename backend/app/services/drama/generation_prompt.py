@@ -7,6 +7,7 @@ ai_movie 扩展：prop/material 增加静物/空镜前缀（manju 无此前缀�
 
 from __future__ import annotations
 
+from app.services.drama.character_form import is_non_human_character
 from app.services.drama.image_styles import STYLE_BOARD_PROMPT_HINT, resolve_image_style_prompt
 
 # CHARACTER_PROMPT_PREFIX 角色设定板结构要求（无风格词）
@@ -25,6 +26,27 @@ CHARACTER_PROMPT_PREFIX = (
     "即使用户描述偏向场景、物品或动作片段，也必须转化为可辨识的白底角色设定板来呈现，"
     "并据此补全外貌、体态与服饰。请严格依据以下用户描述生成上述结构的角色设定图："
 )
+
+# CHARACTER_BODY_MARKER 角色设定板前缀的结束标记（人物/非人两套共用，之后为用户正文）
+CHARACTER_BODY_MARKER = "请严格依据以下用户描述生成上述结构的角色设定图："
+
+# NON_HUMAN_CHARACTER_PROMPT_PREFIX 非人角色（会说话的纸鹤、动物、器物等）设定板：保留三视图，禁止画成人
+NON_HUMAN_CHARACTER_PROMPT_PREFIX = (
+    "【强制任务：非人角色设定板构图】"
+    "纯白背景，无复杂背景、无遮挡、无文字水印。"
+    "本角色不是人类：必须按用户描述的本体形态（动物、物件、器物、植物或精灵等）呈现，"
+    "严禁画成人类、人形或拟人化人物，严禁出现任何人物、人手或手持者。"
+    "画面左侧为同一角色本体的完整三视图，占据主要视觉区域，从左到右固定为："
+    "1.正面完整视图；2.左侧面完整视图；3.背面完整视图。"
+    "三者必须是同一角色：外形轮廓、材质、颜色、比例与标志性细节完全一致。"
+    "同图还必须同时包含：①标志性部位特写（眼睛、纹样、折痕、光效等可辨识细节）；"
+    "②神态/姿态特写（体现性格与动态感）。"
+    "镜头平视，中性棚拍光，无夸张透视。"
+    "本体边缘清晰，比例明确，整体留白充足，类似角色建模参考页/设定板排版。"
+    "严禁：画成人或人形；出现人物或人手；缺三视图；风景为主体；复杂背景。"
+    + CHARACTER_BODY_MARKER
+)
+
 
 # SCENE_PROMPT_PREFIX 场景设计参考图结构要求（无风格词）
 SCENE_PROMPT_PREFIX = (
@@ -112,13 +134,31 @@ def ensure_structure_in_prompt(user_prompt: str, asset_type: str | None = None) 
     trimmed = (user_prompt or "").strip()
     if not trimmed:
         return trimmed
-    if prompt_has_structure_prefix(trimmed):
-        return trimmed
     kind = (asset_type or "").strip().lower()
+    if prompt_has_structure_prefix(trimmed):
+        return fix_character_structure_prefix(trimmed) if kind == "character" else trimmed
+    if kind == "character":
+        return f"{character_prompt_prefix(trimmed)}{trimmed}"
     prefix = _STRUCTURE_PREFIX_BY_KIND.get(kind)
     if not prefix:
         return trimmed
     return f"{prefix}{trimmed}"
+
+
+# 按角色正文选人物/非人设定板前缀
+def character_prompt_prefix(body: str) -> str:
+    return NON_HUMAN_CHARACTER_PROMPT_PREFIX if is_non_human_character(body) else CHARACTER_PROMPT_PREFIX
+
+
+# 已带人物设定板前缀、但正文是非人本体时换成非人前缀（修正旧资产，正文原样保留）
+def fix_character_structure_prefix(prompt: str) -> str:
+    text = prompt or ""
+    if not text.startswith(CHARACTER_PROMPT_PREFIX):
+        return text
+    body = text[len(CHARACTER_PROMPT_PREFIX):]
+    if not is_non_human_character(body):
+        return text
+    return f"{NON_HUMAN_CHARACTER_PROMPT_PREFIX}{body}"
 
 
 # 按资产类型与风格 ID 组装 Seedream 提交提示词（结构前缀须已在正文中，此处只追加风格）
@@ -131,7 +171,13 @@ def build_generation_prompt(
 ) -> str:
     trimmed = (user_prompt or "").strip()
     kind = (asset_type or "").strip().lower()
+    if kind == "character":
+        trimmed = fix_character_structure_prefix(trimmed)
     structure_locked = kind in {"character", "prop"} and prompt_has_structure_prefix(trimmed)
-    return append_style_prompt(
+    out = append_style_prompt(
         trimmed, style_id, structure_locked=structure_locked, has_style_board=has_style_board
     )
+    if out != trimmed and trimmed.startswith(NON_HUMAN_CHARACTER_PROMPT_PREFIX):
+        # 画风词里常有「人体比例、五官、服饰」，非人角色只借笔触与色彩
+        out += "（本角色为非人本体，画风只取笔触、色彩与光影，不得据此画出人物或人形）"
+    return out
